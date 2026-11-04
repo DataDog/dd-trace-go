@@ -29,17 +29,29 @@ const (
 
 var instr = internal.Instr
 
-func EnrichOperation(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, operation string) {
+// enricher adds the Datadog trace context and the Data Streams checkpoint to SQS requests.
+// The zero value injects the trace context.
+type enricher struct {
+	noInject bool
+}
+
+// NewEnricher returns an enricher that writes the trace context into the request only if inject is true.
+// The span tags and the Data Streams checkpoint are recorded either way.
+func NewEnricher(inject bool) *enricher {
+	return &enricher{noInject: !inject}
+}
+
+func (e *enricher) EnrichOperation(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, operation string) {
 	switch operation {
 	case "SendMessage":
-		handleSendMessage(ctx, span, in)
+		e.handleSendMessage(ctx, span, in)
 	case "SendMessageBatch":
-		handleSendMessageBatch(ctx, span, in)
+		e.handleSendMessageBatch(ctx, span, in)
 	}
 	span.SetTag(ext.MessagingSystem, ext.MessagingSystemSQS)
 }
 
-func handleSendMessage(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
+func (e *enricher) handleSendMessage(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sqs.SendMessageInput)
 	if !ok {
 		instr.Logger().Debug("Unable to read SendMessage params")
@@ -51,6 +63,9 @@ func handleSendMessage(ctx context.Context, span *tracer.Span, in middleware.Ini
 		instr.Logger().Debug("Unable to get trace context: %s", err.Error())
 		return
 	}
+	if e.noInject {
+		return
+	}
 
 	if params.MessageAttributes == nil {
 		params.MessageAttributes = make(map[string]types.MessageAttributeValue)
@@ -59,7 +74,7 @@ func handleSendMessage(ctx context.Context, span *tracer.Span, in middleware.Ini
 	injectTraceContext(traceContext, params.MessageAttributes)
 }
 
-func handleSendMessageBatch(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
+func (e *enricher) handleSendMessageBatch(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sqs.SendMessageBatchInput)
 	if !ok {
 		instr.Logger().Debug("Unable to read SendMessageBatch params")
@@ -70,6 +85,9 @@ func handleSendMessageBatch(ctx context.Context, span *tracer.Span, in middlewar
 		traceContext, err := getTraceContext(ctx, span, queueName(params.QueueUrl), sendMessageBatchEntrySize(&params.Entries[i]))
 		if err != nil {
 			instr.Logger().Debug("Unable to get trace context: %s", err.Error())
+			continue
+		}
+		if e.noInject {
 			continue
 		}
 		if params.Entries[i].MessageAttributes == nil {

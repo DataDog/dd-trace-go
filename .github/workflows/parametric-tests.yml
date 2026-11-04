@@ -16,44 +16,71 @@ on:
       - 'instrumentation/**'
       - 'internal/**'
       - 'orchestrion/**'
+      - 'otelc/**'
       - 'scripts/**'
   pull_request:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'System Tests ref/tag/branch'
-        required: true
-        default: main
+        description: 'System Tests ref/tag/branch (defaults to the pinned SYSTEM_TESTS_REF)'
+        required: false
+        default: ''
         type: string
   schedule:
     - cron:  '00 04 * * 2-6'
+
+env:
+  GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
+  SYSTEM_TESTS_REF: f95c57973421d121c6a7163955aa714b18524f03 # Automated: Updated by .github/workflows/update-system-tests.yml.
 
 permissions:
   contents: read
 
 jobs:
+  # Classifies the PR diff against .github/ci-components.yml. Fails open: every
+  # gate is enabled if the diff cannot be determined or the classifier errors,
+  # and for every event other than pull_request.
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      parametric-tests: ${{ steps.detect.outputs.parametric-tests }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # HEAD is the merge commit; HEAD^1 is the base tip
+      - name: Detect
+        id: detect
+        uses: ./.github/actions/changed-components
   parametric-tests:
-    if: github.event_name != 'pull_request' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go')
+    needs: [changes]
+    if: >-
+      (github.event_name != 'pull_request'
+        || (github.event.pull_request.head.repo.full_name == 'DataDog/dd-trace-go'
+            && needs.changes.outputs.parametric-tests == 'true'))
     runs-on:
       group: "APM Larger Runners"
     env:
       TEST_LIBRARY: golang
     steps:
       - name: Checkout system tests
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           repository: 'DataDog/system-tests'
-          ref: ${{ inputs.ref }}
+          ref: ${{ inputs.ref || env.SYSTEM_TESTS_REF }}
 
       - name: Checkout dd-trace-go
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ inputs.branch_ref || github.ref }}
           path: 'binaries/dd-trace-go'
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: "oldstable"
 

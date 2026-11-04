@@ -18,16 +18,15 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 )
 
-// Route returns the route part of a go1.22 style ServeMux pattern. I.e.
-// it returns "/foo" for the pattern "/foo" as well as the pattern "GET /foo".
+// Route returns a Go 1.22 ServeMux pattern without its optional method.
+// It retains any host: "GET example.com/foo" becomes "example.com/foo".
 func Route(s string) string {
-	// Support go1.22 serve mux patterns: [METHOD ][HOST]/[PATH]
-	// Consider any text before a space or tab to be the method of the pattern.
-	// See net/http.parsePattern and the link below for more information.
-	// https://pkg.go.dev/net/http#hdr-Patterns-ServeMux
+	// Go 1.22 ServeMux validates patterns as [METHOD ][HOST]/[PATH], so text before
+	// the first space or tab is the method. See net/http.parsePattern and
+	// https://pkg.go.dev/net/http#hdr-Patterns-ServeMux.
 	if i := strings.IndexAny(s, " \t"); i > 0 && len(s) >= i+1 {
 		return strings.TrimLeft(s[i+1:], " \t")
 	}
@@ -47,10 +46,10 @@ func PathParameters(pattern string, request *http.Request) map[string]string {
 	return res
 }
 
-var patternSegmentsCache = xsync.NewMapOf[string, []string]()
+var patternSegmentsCache = xsync.NewMap[string, []string]()
 
 func patternNames(pattern string) []string {
-	v, _ := patternSegmentsCache.LoadOrCompute(pattern, func() []string {
+	v, _ := patternSegmentsCache.LoadOrCompute(pattern, func() ([]string, bool) {
 		segments, err := parsePatternNames(pattern)
 		if err != nil {
 			// Ignore the error: Something as gone wrong, but we are not eager to find out why.
@@ -58,7 +57,7 @@ func patternNames(pattern string) []string {
 			log.Warn("instrumentation/net/http/pattern: failed to parse mux path pattern", slog.Any("error", log.NewSafeError(err)))
 			// here we fallthrough instead of returning to load a nil value into the cache to avoid reparsing the pattern.
 		}
-		return segments
+		return segments, false
 	})
 	return v
 }

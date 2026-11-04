@@ -9,15 +9,20 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -119,6 +124,152 @@ func runTransportTest(t *testing.T, agentless, shouldSetAPIKey bool) {
 	}
 	assert.Equal(hits, len(testCases))
 	assert.Equal(remainingEvents, 0)
+}
+
+func TestCIVisibilityAgentlessDoesNotReuseAgentUDSClient(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix domain sockets are not available on Windows")
+	}
+
+	var intakeHits atomic.Int32
+	intake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		intakeHits.Add(1)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(intake.Close)
+
+	var agentHits atomic.Int32
+	socketPath := newCIVisibilityUDSServer(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		agentHits.Add(1)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+
+	t.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "true")
+	t.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, intake.URL)
+	t.Setenv(constants.APIKeyEnvironmentVariable, "test-api-key")
+
+	cfg, err := newTestConfig()
+	require.NoError(t, err)
+	cfg.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode)
+	cfg.internalConfig.SetAgentURL(&url.URL{Scheme: "unix", Path: socketPath}, internalconfig.OriginCode)
+	cfg.httpClient = internal.UDSClient(socketPath, defaultHTTPTimeout)
+	t.Cleanup(cfg.httpClient.CloseIdleConnections)
+
+	transport := newCiVisibilityTransport(cfg)
+	body, err := transport.send(newSingleEventCIVisibilityPayload(t))
+	if body != nil {
+		require.NoError(t, body.Close())
+	}
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, intakeHits.Load())
+	assert.EqualValues(t, 0, agentHits.Load())
+}
+
+func TestCIVisibilityAgentlessDoesNotUseCustomAgentHTTPClient(t *testing.T) {
+	var intakeHits atomic.Int32
+	intake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		intakeHits.Add(1)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(intake.Close)
+
+	t.Setenv(constants.CIVisibilityEnabledEnvironmentVariable, "true")
+	t.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "true")
+	t.Setenv(constants.CIVisibilityAgentlessURLEnvironmentVariable, intake.URL)
+	t.Setenv(constants.APIKeyEnvironmentVariable, "test-api-key")
+
+	agentClient := &http.Client{Transport: &ErrTransport{}}
+	cfg, err := newTestConfig(WithHTTPClient(agentClient))
+	require.NoError(t, err)
+	transport, ok := cfg.ddTransport.(*ciVisibilityTransport)
+	require.True(t, ok)
+	t.Cleanup(transport.httpClient.CloseIdleConnections)
+
+	assert.NotSame(t, agentClient, transport.httpClient)
+	selectedTransport, ok := transport.httpClient.Transport.(*http.Transport)
+	require.True(t, ok)
+	assert.Equal(t,
+		reflect.ValueOf(http.ProxyFromEnvironment).Pointer(),
+		reflect.ValueOf(selectedTransport.Proxy).Pointer(),
+		"agentless requests should continue to honor proxy environment variables",
+	)
+
+	body, err := transport.send(newSingleEventCIVisibilityPayload(t))
+	if body != nil {
+		require.NoError(t, body.Close())
+	}
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, intakeHits.Load())
+}
+
+func TestCIVisibilityAgentModeUsesAgentUDSClient(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix domain sockets are not available on Windows")
+	}
+
+	type agentRequest struct {
+		path      string
+		subdomain string
+	}
+	requests := make(chan agentRequest, 1)
+	socketPath := newCIVisibilityUDSServer(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests <- agentRequest{
+			path:      r.URL.Path,
+			subdomain: r.Header.Get("X-Datadog-EVP-Subdomain"),
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+
+	t.Setenv(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, "false")
+	cfg, err := newTestConfig()
+	require.NoError(t, err)
+	cfg.internalConfig.SetCIVisibilityEnabled(true, internalconfig.OriginCode)
+	cfg.internalConfig.SetAgentURL(&url.URL{Scheme: "unix", Path: socketPath}, internalconfig.OriginCode)
+	cfg.httpClient = internal.UDSClient(socketPath, defaultHTTPTimeout)
+	t.Cleanup(cfg.httpClient.CloseIdleConnections)
+
+	transport := newCiVisibilityTransport(cfg)
+	body, err := transport.send(newSingleEventCIVisibilityPayload(t))
+	if body != nil {
+		require.NoError(t, body.Close())
+	}
+	require.NoError(t, err)
+
+	request := <-requests
+	assert.Equal(t, "/evp_proxy/v2/api/v2/citestcycle", request.path)
+	assert.Equal(t, TestCycleSubdomain, request.subdomain)
+}
+
+func newCIVisibilityUDSServer(t *testing.T, handler http.Handler) string {
+	t.Helper()
+
+	socketDir, err := os.MkdirTemp("/tmp", "dd-trace-go-civisibility-uds-")
+	require.NoError(t, err)
+	socketPath := filepath.Join(socketDir, "apm.socket")
+	listener, err := net.Listen("unix", socketPath)
+	require.NoError(t, err)
+
+	server := &http.Server{Handler: handler}
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.Serve(listener)
+	}()
+
+	t.Cleanup(func() {
+		require.NoError(t, server.Close())
+		require.ErrorIs(t, <-errCh, http.ErrServerClosed)
+		require.NoError(t, os.RemoveAll(socketDir))
+	})
+	return socketPath
+}
+
+func newSingleEventCIVisibilityPayload(t *testing.T) payload {
+	t.Helper()
+
+	p := newCiVisibilityPayload()
+	_, err := p.push(getCiVisibilityEvent(getTestTrace(1, 1)[0][0]))
+	require.NoError(t, err)
+	return p.payload
 }
 
 func TestCIVisibilityTransportSecureLogging(t *testing.T) {

@@ -22,3 +22,9 @@ func WithService(serviceName string) Option {
 func WithMeasured() Option {
 	return pubsubtrace.WithMeasured()
 }
+
+// WithPropagationAsSpanLinks configures the receive handler to record the producer span as a span
+// link rather than as a parent span.
+func WithPropagationAsSpanLinks() Option {
+	return pubsubtrace.WithPropagationAsSpanLinks()
+}

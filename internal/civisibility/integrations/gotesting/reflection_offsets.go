@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 	"unsafe"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // unsafeField describes a private field discovered from a runtime type.
@@ -54,6 +56,7 @@ type commonFieldsLayout struct {
 	cleanupPc       unsafeField
 	finished        unsafeField
 	inFuzzFn        unsafeField
+	isSynctest      unsafeField
 	chatty          wordCopiedField
 	bench           unsafeField
 	hasSub          unsafeField
@@ -63,6 +66,8 @@ type commonFieldsLayout struct {
 	parent          wordCopiedField
 	level           unsafeField
 	creator         unsafeField
+	modulePath      unsafeField
+	importPath      unsafeField
 	name            unsafeField
 	start           wordCopiedField
 	duration        unsafeField
@@ -97,6 +102,7 @@ type contextMatcherLayout struct {
 type chattyPrinterLayout struct {
 	w        unsafeField
 	lastName unsafeField
+	json     unsafeField
 }
 
 // outputWriterLayout stores the Go 1.25+ output writer internals. These fields
@@ -105,6 +111,15 @@ type outputWriterLayout struct {
 	typ     reflect.Type
 	c       unsafeField
 	partial unsafeField
+}
+
+type testStateLayout struct {
+	mu            unsafeField
+	startParallel unsafeField
+	running       unsafeField
+	numWaiting    unsafeField
+	maxParallel   unsafeField
+	deadline      unsafeField
 }
 
 // benchmarkFieldsLayout stores private testing.B fields that are outside the
@@ -129,6 +144,7 @@ type testingInternalsLayout struct {
 	contextMatcher contextMatcherLayout
 	chattyPrinter  chattyPrinterLayout
 	outputWriter   outputWriterLayout
+	testState      testStateLayout
 	benchmark      benchmarkFieldsLayout
 
 	testFieldsOK      bool
@@ -138,7 +154,9 @@ type testingInternalsLayout struct {
 	createTestOK      bool
 	outputWriterOK    bool
 	chattyOK          bool
+	testStateOK       bool
 	benchmarkFieldsOK bool
+	retryAttemptOK    bool
 }
 
 var (
@@ -204,6 +222,7 @@ func buildTestingInternalsLayout(tType, bType reflect.Type) (layout *testingInte
 	l.common.cleanupPc, _ = exactField(commonType, "cleanupPc", reflect.TypeFor[[]uintptr](), false)
 	l.common.finished, _ = exactField(commonType, "finished", reflect.TypeFor[bool](), false)
 	l.common.inFuzzFn, _ = exactField(commonType, "inFuzzFn", reflect.TypeFor[bool](), false)
+	l.common.isSynctest, _ = optionalExactField(commonType, "isSynctest", reflect.TypeFor[bool]())
 	l.common.chatty, _ = wordField(commonType, "chatty", false)
 	l.common.bench, _ = exactField(commonType, "bench", reflect.TypeFor[bool](), false)
 	l.common.hasSub, _ = exactField(commonType, "hasSub", reflect.TypeFor[atomic.Bool](), false)
@@ -213,6 +232,8 @@ func buildTestingInternalsLayout(tType, bType reflect.Type) (layout *testingInte
 	l.common.parent, _ = wordField(commonType, "parent", false)
 	l.common.level, _ = exactField(commonType, "level", reflect.TypeFor[int](), false)
 	l.common.creator, _ = exactField(commonType, "creator", reflect.TypeFor[[]uintptr](), false)
+	l.common.modulePath, _ = optionalExactField(commonType, "modulePath", reflect.TypeFor[string]())
+	l.common.importPath, _ = optionalExactField(commonType, "importPath", reflect.TypeFor[string]())
 	l.common.name, _ = exactField(commonType, "name", reflect.TypeFor[string](), false)
 	l.common.start, _ = pointerSizedField(commonType, "start", false)
 	l.common.duration, _ = exactField(commonType, "duration", reflect.TypeFor[time.Duration](), false)
@@ -230,7 +251,7 @@ func buildTestingInternalsLayout(tType, bType reflect.Type) (layout *testingInte
 	l.common.cancelCtx, _ = optionalExactField(commonType, "cancelCtx", reflect.TypeFor[context.CancelFunc]())
 	l.common.o, _ = optionalPointerToStructField(commonType, "o")
 
-	l.denyParallel, _ = exactField(tType, "denyParallel", reflect.TypeFor[bool](), false)
+	l.denyParallel, _ = denyParallelField(tType)
 	l.tstate, _ = optionalWordField(tType, "tstate")
 	l.benchmark.benchFunc, _ = exactField(bType, "benchFunc", reflect.TypeFor[func(*testing.B)](), false)
 	l.benchmark.result, _ = exactField(bType, "result", reflect.TypeFor[testing.BenchmarkResult](), false)
@@ -238,8 +259,32 @@ func buildTestingInternalsLayout(tType, bType reflect.Type) (layout *testingInte
 	l.buildOutputWriterLayout()
 	l.buildContextMatcherLayout()
 	l.buildChattyPrinterLayout()
+	l.buildTestStateLayout()
 	l.computeSectionFlags()
 	return l
+}
+
+func (l *testingInternalsLayout) buildTestStateLayout() {
+	if !l.tstate.available || l.tstate.typ.Kind() != reflect.Pointer || l.tstate.typ.Elem().Kind() != reflect.Struct {
+		return
+	}
+	testStateType := l.tstate.typ.Elem()
+	mu, muOK := exactField(testStateType, "mu", reflect.TypeFor[sync.Mutex](), false)
+	startParallel, startParallelOK := exactField(testStateType, "startParallel", reflect.TypeFor[chan bool](), false)
+	running, runningOK := exactField(testStateType, "running", reflect.TypeFor[int](), false)
+	numWaiting, numWaitingOK := exactField(testStateType, "numWaiting", reflect.TypeFor[int](), false)
+	maxParallel, maxParallelOK := exactField(testStateType, "maxParallel", reflect.TypeFor[int](), false)
+	deadline, deadlineOK := exactField(testStateType, "deadline", reflect.TypeFor[time.Time](), false)
+	if !muOK || !startParallelOK || !runningOK || !numWaitingOK || !maxParallelOK || !deadlineOK {
+		return
+	}
+	l.testState.mu = mu
+	l.testState.startParallel = startParallel
+	l.testState.running = running
+	l.testState.numWaiting = numWaiting
+	l.testState.maxParallel = maxParallel
+	l.testState.deadline = deadline
+	l.testStateOK = true
 }
 
 // buildOutputWriterLayout discovers Go 1.25+'s output writer shape when it is
@@ -302,11 +347,13 @@ func (l *testingInternalsLayout) buildChattyPrinterLayout() {
 	chattyType := l.common.chatty.typ.Elem()
 	wField, wOK := exactField(chattyType, "w", reflect.TypeFor[io.Writer](), false)
 	lastNameField, lastNameOK := exactField(chattyType, "lastName", reflect.TypeFor[string](), false)
-	if !wOK || !lastNameOK {
+	jsonField, jsonOK := exactField(chattyType, "json", reflect.TypeFor[bool](), false)
+	if !wOK || !lastNameOK || !jsonOK {
 		return
 	}
 	l.chattyPrinter.w = wField
 	l.chattyPrinter.lastName = lastNameField
+	l.chattyPrinter.json = jsonField
 	l.chattyOK = true
 }
 
@@ -327,18 +374,44 @@ func (l *testingInternalsLayout) computeSectionFlags() {
 	l.copyTestOK = allAvailable(
 		l.common.mu, l.common.output, l.common.w, l.common.ran, l.common.failed,
 		l.common.skipped, l.common.done, l.common.helperPCs, l.common.helperNames,
-		l.common.cleanups, l.common.cleanupName, l.common.cleanupPc, l.common.finished,
+		l.common.cleanups, l.common.cleanupName, l.common.cleanupPc,
 		l.common.inFuzzFn, l.common.chatty.unsafeField, l.common.bench, l.common.hasSub,
 		l.common.cleanupStarted, l.common.runner, l.common.isParallel, l.common.level,
 		l.common.creator, l.common.name, l.common.start.unsafeField, l.common.duration,
 		l.common.sub, l.common.lastRaceErrors, l.common.raceErrorLogged, l.common.tempDir,
-		l.common.tempDirErr, l.common.tempDirSeq, l.denyParallel,
+		l.common.tempDirErr, l.common.tempDirSeq,
 	)
 	l.benchmarkFieldsOK = allAvailable(
 		l.common.mu, l.common.level, l.common.name, l.common.failed,
 		l.common.skipped, l.common.parent.unsafeField,
 		l.benchmark.benchFunc, l.benchmark.result,
 	)
+	l.retryAttemptOK = allAvailable(
+		l.common.mu, l.common.output, l.common.w, l.common.ran,
+		l.common.failed, l.common.skipped, l.common.done,
+		l.common.helperPCs, l.common.helperNames, l.common.cleanups,
+		l.common.cleanupName, l.common.cleanupPc, l.common.finished,
+		l.common.inFuzzFn, l.common.chatty.unsafeField, l.common.hasSub,
+		l.common.cleanupStarted, l.common.runner, l.common.isParallel,
+		l.common.parent.unsafeField, l.common.level, l.common.creator,
+		l.common.name, l.common.start.unsafeField, l.common.duration,
+		l.common.barrier, l.common.signal, l.common.sub,
+		l.common.lastRaceErrors, l.common.raceErrorLogged,
+		l.common.tempDir, l.common.tempDirErr, l.common.tempDirSeq,
+		l.common.ctx, l.common.cancelCtx, l.tstate.unsafeField, l.denyParallel,
+	) && l.testStateOK
+}
+
+func denyParallelField(owner reflect.Type) (unsafeField, bool) {
+	field, ok := exactField(owner, "denyParallel", nil, true)
+	if !ok || !field.available {
+		return field, ok
+	}
+	if field.typ != reflect.TypeFor[bool]() && field.typ != reflect.TypeFor[string]() {
+		log.Debug("civisibility: testing.T.denyParallel has unexpected type %s; disabling retry fast path", field.typ)
+		return unsafeField{name: "denyParallel", optional: true}, false
+	}
+	return field, true
 }
 
 // exactField validates that a struct contains a field with the expected type.
@@ -507,6 +580,17 @@ func commonBaseForBenchmark(b *testing.B, l *testingInternalsLayout) unsafe.Poin
 // write barriers remain intact.
 func copyTypedField[T any](sourceBase, targetBase unsafe.Pointer, field unsafeField) {
 	*fieldPtr[T](targetBase, field) = *fieldPtr[T](sourceBase, field)
+}
+
+func copyDenyParallelField(sourceBase, targetBase unsafe.Pointer, field unsafeField) {
+	switch field.typ {
+	case reflect.TypeFor[bool]():
+		copyTypedField[bool](sourceBase, targetBase, field)
+	case reflect.TypeFor[string]():
+		copyTypedField[string](sourceBase, targetBase, field)
+	default:
+		panic("unsupported testing.T.denyParallel field type")
+	}
 }
 
 // copyConvertedField copies a typed field through a conversion function. It is

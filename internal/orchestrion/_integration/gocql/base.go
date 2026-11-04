@@ -35,7 +35,7 @@ func (b *base) setup(ctx context.Context, t *testing.T) {
 
 	var err error
 	b.container, err = testcassandra.Run(ctx,
-		"cassandra:4.1",
+		containers.Image("cassandra"),
 		testcontainers.WithLogger(tclog.TestLogger(t)),
 		containers.WithTestLogConsumer(t),
 	)

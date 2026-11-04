@@ -14,8 +14,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
@@ -27,6 +25,17 @@ type OptionFn = internal.OptionFn
 
 // HandlerOptionFn represents options applicable to NewServeMux and WrapHandler.
 type HandlerOptionFn = internal.HandlerOptionFn
+
+// WithServeMux sets the given *http.ServeMux as the underlying ServeMux instead
+// of allocating a new one. This is useful when the traced ServeMux needs to wrap
+// a ServeMux that was already configured elsewhere, or when it needs to be the
+// outermost handler in a chain of wrapped handlers.
+// This option only affects NewServeMux; it has no effect when passed to WrapHandler.
+func WithServeMux(mux *http.ServeMux) HandlerOptionFn {
+	return func(cfg *internal.Config) {
+		cfg.Mux = mux
+	}
+}
 
 // WithIgnoreRequest holds the function to use for determining if the
 // incoming HTTP request should not be traced.
@@ -116,10 +125,17 @@ type RoundTripperOption = internal.RoundTripperOption
 type RoundTripperOptionFn = internal.RoundTripperOptionFn
 
 func newRoundTripperConfig() *internal.RoundTripperConfig {
+	instr := internal.Instrumentation
+	otelSemantics := instr.OTelSemanticsEnabled()
 	defaultResourceNamer := func(_ *http.Request) string {
 		return "http.request"
 	}
-	instr := internal.Instrumentation
+	if otelSemantics {
+		defaultResourceNamer = func(req *http.Request) string {
+			_, spanName, _ := internal.NormalizeClientRequestMethod(req)
+			return spanName
+		}
+	}
 	spanName := instr.OperationName(instrumentation.ComponentClient, nil)
 	defaultSpanNamer := func(_ *http.Request) string {
 		return spanName
@@ -130,19 +146,15 @@ func newRoundTripperConfig() *internal.RoundTripperConfig {
 		AnalyticsRate: instr.GlobalAnalyticsRate(),
 		ResourceNamer: defaultResourceNamer,
 		IgnoreRequest: func(_ *http.Request) bool { return false },
-		IsStatusError: isClientError,
-	}
-
-	v := env.Get(internal.EnvClientErrorStatuses)
-	if fn := httptrace.GetErrorCodesFromInput(v); fn != nil {
-		sharedCfg.IsStatusError = fn
+		IsStatusError: internal.ClientStatusErrorCheck(otelSemantics),
 	}
 
 	rtConfig := internal.RoundTripperConfig{
-		CommonConfig: sharedCfg,
-		Propagation:  true,
-		SpanNamer:    defaultSpanNamer,
-		QueryString:  options.GetBoolEnv(internal.EnvClientQueryStringEnabled, true),
+		CommonConfig:         sharedCfg,
+		Propagation:          true,
+		SpanNamer:            defaultSpanNamer,
+		QueryString:          options.GetBoolEnv(internal.EnvClientQueryStringEnabled, true),
+		OTelSemanticsEnabled: otelSemantics,
 	}
 
 	return &rtConfig
@@ -205,8 +217,4 @@ func WithClientTimings(enabled bool) RoundTripperOptionFn {
 	return func(cfg *internal.RoundTripperConfig) {
 		cfg.ClientTimings = enabled
 	}
-}
-
-func isClientError(statusCode int) bool {
-	return statusCode >= 400 && statusCode < 500
 }

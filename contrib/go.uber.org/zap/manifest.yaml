@@ -1,0 +1,11 @@
+_v: 1
+name: go.uber.org/zap
+display_name: zap
+description: Instruments zap logging with trace and span ID correlation fields through manual helpers and optional Orchestrion
+  injection into regular and sugared logger calls.
+packages:
+- name: go.uber.org/zap
+category:
+- log.emission
+systems: []
+creation_date: '2026-07-24'

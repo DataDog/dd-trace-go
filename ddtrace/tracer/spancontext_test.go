@@ -23,6 +23,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
+	"github.com/DataDog/dd-trace-go/v2/internal/statsdtest"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 
@@ -275,19 +276,52 @@ func TestSpanTracePushOne(t *testing.T) {
 	assert.Equal(0, len(trace.spans), "no more spans in the trace")
 }
 
-// Tests to confirm that when the payload queue is full, chunks are dropped
-// and the associated trace is counted as dropped.
+// Tests to confirm that when the payload queue is full, chunks are dropped,
+// the associated trace is counted as dropped, and the drop is reported via statsd.
 func TestSubmitChunkQueueFull(t *testing.T) {
 	assert := assert.New(t)
-	tracer, err := newUnstartedTracer()
+	var tg statsdtest.TestStatsdClient
+	tracer, err := newUnstartedTracer(withStatsdClient(&tg))
 	assert.Nil(err)
 	defer tracer.Stop()
 
-	for range payloadQueueSize + 1 {
+	for range cap(tracer.out) + 1 {
 		c := chunk{spans: make([]*Span, 1)}
 		tracer.submitChunk(&c)
 	}
 	assert.Equal(uint32(1), tracer.totalTracesDropped)
+
+	tracesDropped := tg.GetCallsByName("datadog.tracer.traces_dropped")
+	assert.Equal(int64(1), tg.CountCallsByTag(tracesDropped, "reason:queue_full"))
+
+	spansDropped := tg.GetCallsByName("datadog.tracer.spans_dropped")
+	assert.Equal(int64(1), tg.CountCallsByTag(spansDropped, "reason:queue_full"))
+}
+
+// Tests to confirm that a filter-rejected chunk that also overflows the
+// payload queue is only counted once, under reason:trace_filter, and not
+// double-counted under reason:queue_full.
+func TestSubmitChunkQueueFullFilterRejected(t *testing.T) {
+	assert := assert.New(t)
+	var tg statsdtest.TestStatsdClient
+	tracer, err := newUnstartedTracer(withStatsdClient(&tg))
+	assert.Nil(err)
+	defer tracer.Stop()
+
+	for range cap(tracer.out) {
+		c := chunk{spans: make([]*Span, 1)}
+		tracer.submitChunk(&c)
+	}
+	c := chunk{spans: make([]*Span, 1), filterRejected: true}
+	tracer.submitChunk(&c)
+
+	tracesDropped := tg.GetCallsByName("datadog.tracer.traces_dropped")
+	assert.Equal(int64(1), tg.CountCallsByTag(tracesDropped, "reason:trace_filter"))
+	assert.Equal(int64(0), tg.CountCallsByTag(tracesDropped, "reason:queue_full"))
+
+	spansDropped := tg.GetCallsByName("datadog.tracer.spans_dropped")
+	assert.Equal(int64(1), tg.CountCallsByTag(spansDropped, "reason:trace_filter"))
+	assert.Equal(int64(0), tg.CountCallsByTag(spansDropped, "reason:queue_full"))
 }
 
 func TestPartialFlush(t *testing.T) {
@@ -303,7 +337,7 @@ func TestPartialFlush(t *testing.T) {
 
 		root := tracer.StartSpan("root")
 		root.context.trace.setTag("someTraceTag", "someValue")
-		var children []*Span
+		children := make([]*Span, 0, 3)
 		for i := range 3 { // create 3 child spans
 			child := tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context()))
 			children = append(children, child)
@@ -350,7 +384,7 @@ func TestPartialFlush(t *testing.T) {
 		defer stop()
 
 		root := tracer.StartSpan("root")
-		var children []*Span
+		children := make([]*Span, 0, 4)
 		for i := range 4 {
 			children = append(children, tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context())))
 		}
@@ -396,7 +430,7 @@ func TestPartialFlush(t *testing.T) {
 
 		root := tracer.StartSpan("root")
 		root.context.trace.setTag("someTraceTag", "someValue")
-		var children []*Span
+		children := make([]*Span, 0, 4)
 		for i := range 4 {
 			children = append(children, tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context())))
 		}
@@ -509,6 +543,101 @@ func TestPartialFlush(t *testing.T) {
 
 }
 
+// TestOTLPExportMarkerOnChunks verifies that OTLP export omits the native export
+// marker from chunk-leading spans. Native v0.4 and v1.0 wire behavior is covered
+// by TestOTLPExportMarkerAgentPOV.
+func TestOTLPExportMarkerOnChunks(t *testing.T) {
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "2")
+
+	for _, tc := range []struct {
+		name string
+		otlp bool
+		want bool
+	}{
+		{name: "native", want: true},
+		{name: "otlp", otlp: true, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tracer, transport, flush, stop, err := startTestTracer(t)
+			require.NoError(t, err)
+			defer stop()
+			tracer.otlpExportMode = tc.otlp
+
+			// child0 and child1 are partially flushed as one chunk; root and
+			// child2 follow as a second chunk.
+			root := tracer.StartSpan("root")
+			for i := range 3 {
+				tracer.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context())).Finish()
+			}
+			root.Finish()
+			flush(2)
+
+			chunks := transport.Traces()
+			require.Len(t, chunks, 2)
+			for i, chunk := range chunks {
+				require.Len(t, chunk, 2)
+				v, ok := chunk[0].meta.Get(keySDKOTLPExport)
+				assert.Equal(t, tc.want, ok, "chunk %d first span", i)
+				if tc.want {
+					assert.Equal(t, "false", v)
+				}
+				assert.False(t, chunk[1].meta.Has(keySDKOTLPExport), "chunk %d second span", i)
+			}
+		})
+	}
+}
+
+// TestOTLPExportMarkerAgentPOV verifies the native export marker as the agent
+// receives it over HTTP: on the first span of each chunk for v0.4 and v1.0, and
+// additionally as a payload-level attribute of every v1.0 request.
+func TestOTLPExportMarkerAgentPOV(t *testing.T) {
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "2")
+
+	for _, protocol := range testTraceProtocols {
+		t.Run(protocol.name, func(t *testing.T) {
+			agent := startTestAgent(t)
+			tr := newAgentTracerTest(t, agent, protocol)
+			defer stopTracerTest(tr)
+
+			// child0 and child1 are partially flushed as one chunk; root and
+			// child2 follow as a second chunk.
+			root := tr.StartSpan("root")
+			for i := range 3 {
+				tr.StartSpan(fmt.Sprintf("child%d", i), ChildOf(root.Context())).Finish()
+			}
+			root.Finish()
+			flushAgentTracerTest(t, tr, agent, 4)
+			requireProtocolRequests(t, agent.Requests(), protocol)
+
+			// Only the chunk-leading spans carry the marker: child0 leads the
+			// partially flushed chunk, root leads the final one.
+			spans := agent.Spans()
+			require.Len(t, spans, 4)
+			for _, s := range spans {
+				v, ok := s.meta.Get(keySDKOTLPExport)
+				want := s.name == "child0" || s.name == "root"
+				assert.Equal(t, want, ok, s.name)
+				if want {
+					assert.Equal(t, "false", v, s.name)
+				}
+			}
+
+			attrs := agent.PayloadAttributes()
+			if protocol.path != tracesAPIPathV1 {
+				assert.Empty(t, attrs)
+				return
+			}
+			require.Len(t, attrs, len(agent.Requests()))
+			for i, a := range attrs {
+				require.Contains(t, a, keySDKOTLPExport, "request %d", i)
+				assert.Equal(t, "false", a[keySDKOTLPExport].value, "request %d", i)
+			}
+		})
+	}
+}
+
 func TestSpanTracePushNoFinish(t *testing.T) {
 	defer setupteardown(2, 5)()
 
@@ -613,6 +742,32 @@ func TestSpanFinishPriority(t *testing.T) {
 		}
 	}
 	assert.Fail("span not found")
+}
+
+func TestSpanDoesNotDerivePeerServiceWithOTelSemantics(t *testing.T) {
+	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+	t.Run("defaults remain disabled", func(t *testing.T) {
+		tracer, err := newUnstartedTracer(
+			withNoopInfoHTTPClient(),
+			withNoopStats(),
+			WithPeerServiceDefaults(true),
+		)
+		require.NoError(t, err)
+		assert.False(t, tracer.config.internalConfig.PeerServiceDefaultsEnabled())
+		setGlobalTracer(tracer)
+		t.Cleanup(func() { setGlobalTracer(&NoopTracer{}) })
+
+		span := tracer.StartSpan("HTTP",
+			Tag(ext.SpanKind, ext.SpanKindClient),
+			Tag("server.address", "example.com"),
+			Tag("out.host", "legacy.example.com"),
+		)
+		span.Finish()
+
+		assert.False(t, span.meta.Has(ext.PeerService))
+		assert.False(t, span.meta.Has(keyPeerServiceSource))
+	})
 }
 
 func TestSpanPeerService(t *testing.T) {
@@ -1119,7 +1274,7 @@ func TestNewSpanContext(t *testing.T) {
 	})
 
 	t.Run("root", func(t *testing.T) {
-		t.Setenv(headerPropagationStyleExtract, "datadog")
+		t.Setenv(envPropagationStyleExtract, "datadog")
 		_, _, _, stop, err := startTestTracer(t)
 		assert.Nil(t, err)
 		defer stop()
@@ -1281,51 +1436,59 @@ func BenchmarkBaggageItemEmpty(b *testing.B) {
 	}
 }
 
+func TestReplacePropagatingTagsImmutability(t *testing.T) {
+	// Mutating the input map after replacePropagatingTags must not affect the
+	// stored snapshot — lock-free readers rely on the map being immutable.
+	var tr trace
+	tags := map[string]string{"key": "original"}
+	tr.replacePropagatingTags(tags)
+
+	tags["key"] = "mutated"
+	tags["extra"] = "added"
+
+	assert.Equal(t, "original", tr.propagatingTag("key"))
+	assert.Equal(t, "", tr.propagatingTag("extra"))
+}
+
 func TestSetSamplingPriorityLocked(t *testing.T) {
 	t.Run("NoPriorAndP0IsIgnored", func(t *testing.T) {
-		tr := trace{
-			propagatingTags: map[string]string{},
-		}
+		var tr trace
 		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoReject, samplernames.RemoteRate)
 		tr.mu.Unlock()
-		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
+		assert.Empty(t, tr.propagatingTag(keyDecisionMaker))
 	})
 	t.Run("UnknownSamplerIsIgnored", func(t *testing.T) {
-		tr := trace{
-			propagatingTags: map[string]string{},
-		}
+		var tr trace
 		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoReject, samplernames.Unknown)
 		tr.mu.Unlock()
-		assert.Empty(t, tr.propagatingTags[keyDecisionMaker])
+		assert.Empty(t, tr.propagatingTag(keyDecisionMaker))
 	})
 	t.Run("NoPriorAndP1IsAccepted", func(t *testing.T) {
-		tr := trace{
-			propagatingTags: map[string]string{},
-		}
+		var tr trace
 		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.RemoteRate)
 		tr.mu.Unlock()
-		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "-2", tr.propagatingTag(keyDecisionMaker))
 	})
 	t.Run("PriorAndP1AndSameDMIsIgnored", func(t *testing.T) {
-		tr := trace{
-			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
-		}
+		var tr trace
+		tr.propagatingTags.Store(map[string]string{keyDecisionMaker: "-1"})
+		tr.dm = parseDecisionMaker("-1")
 		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.AgentRate)
 		tr.mu.Unlock()
-		assert.Equal(t, "-1", tr.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "-1", tr.propagatingTag(keyDecisionMaker))
 	})
 	t.Run("PriorAndP1DifferentDMAccepted", func(t *testing.T) {
-		tr := trace{
-			propagatingTags: map[string]string{keyDecisionMaker: "-1"},
-		}
+		var tr trace
+		tr.propagatingTags.Store(map[string]string{keyDecisionMaker: "-1"})
+		tr.dm = parseDecisionMaker("-1")
 		tr.mu.Lock()
 		tr.setSamplingPriorityLocked(ext.PriorityAutoKeep, samplernames.RemoteRate)
 		tr.mu.Unlock()
-		assert.Equal(t, "-2", tr.propagatingTags[keyDecisionMaker])
+		assert.Equal(t, "-2", tr.propagatingTag(keyDecisionMaker))
 	})
 }
 

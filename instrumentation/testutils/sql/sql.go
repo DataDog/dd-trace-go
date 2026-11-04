@@ -22,7 +22,7 @@ import (
 // Prepare sets up a table with the given name in both the MySQL and Postgres databases and returns
 // a teardown function which will drop it.
 func Prepare(tableName string) func() {
-	queryDrop := fmt.Sprintf("DROP TABLE IF EXISTS %s", tableName)
+	queryDrop := "DROP TABLE IF EXISTS " + tableName
 	queryCreate := fmt.Sprintf("CREATE TABLE %s (id integer NOT NULL DEFAULT '0', name text)", tableName)
 	mysql, err := sql.Open("mysql", "test:test@tcp(127.0.0.1:3306)/test")
 	defer mysql.Close()
@@ -32,7 +32,7 @@ func Prepare(tableName string) func() {
 	mysql.Exec(queryDrop)
 	_, err = mysql.Exec(queryCreate)
 	if err != nil {
-		log.Fatalf("Failed to create table %s in MySQL: %v", tableName, err)
+		log.Fatalf("Failed to create table %s in MySQL: %s", tableName, err.Error())
 	}
 	postgres, err := sql.Open("postgres", "postgres://postgres:postgres@127.0.0.1:5432/postgres?sslmode=disable")
 	defer postgres.Close()
@@ -42,7 +42,7 @@ func Prepare(tableName string) func() {
 	postgres.Exec(queryDrop)
 	_, err = postgres.Exec(queryCreate)
 	if err != nil {
-		log.Fatalf("Failed to create table %s in Postgres: %v", tableName, err)
+		log.Fatalf("Failed to create table %s in Postgres: %s", tableName, err.Error())
 	}
 	mssql, err := sql.Open("sqlserver", "sqlserver://sa:myPassw0rd@localhost:1433?database=master")
 	defer mssql.Close()
@@ -52,7 +52,7 @@ func Prepare(tableName string) func() {
 	mssql.Exec(queryDrop)
 	_, err = mssql.Exec(queryCreate)
 	if err != nil {
-		log.Fatalf("Failed to create table %s in SQL Server: %v", tableName, err)
+		log.Fatalf("Failed to create table %s in SQL Server: %s", tableName, err.Error())
 	}
 	return func() {
 		mysql.Exec(queryDrop)
@@ -123,7 +123,7 @@ func testQuery(cfg *Config) func(*testing.T) {
 	case "postgres", "pgx", "mysql":
 		query = fmt.Sprintf("SELECT id, name FROM %s LIMIT 5", cfg.TableName)
 	case "sqlserver":
-		query = fmt.Sprintf("SELECT TOP 5 id, name FROM %s", cfg.TableName)
+		query = "SELECT TOP 5 id, name FROM " + cfg.TableName
 	}
 	return func(t *testing.T) {
 		cfg.mockTracer.Reset()

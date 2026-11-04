@@ -25,7 +25,7 @@ This directory contains scripts and small Go tool programs used for development,
 
 The Makefile provides convenient targets that automatically handle tool dependencies:
 
-[embedmd]:# (../tmp/make-help.txt)
+
 ```txt
 Usage: make [target]
 
@@ -43,6 +43,7 @@ Targets:
   lint/shell           Run shell script linting checks
   lint/misc            Run miscellaneous linting checks (copyright, Makefiles)
   lint/action          Lint GitHub Actions workflows
+  lint/errlog          Run SDK logging safety analyzers — constant messages, SafeError/LogValuer telemetry scrubbing, unsafe %v format verbs
   format               Format code
   format/go            Format Go code
   format/shell         install shfmt
@@ -82,7 +83,7 @@ PATH="$(pwd)/bin:$PATH" ./scripts/script-name.sh
 
 The test script provides many options for different testing scenarios:
 
-[embedmd]:# (../tmp/test-help.txt)
+
 ```txt
 test.sh - Run the tests for dd-trace-go
   this script requires gotestsum, goimports, docker and docker-compose.
@@ -90,7 +91,6 @@ test.sh - Run the tests for dd-trace-go
   -i | --integration - Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib
   -c | --contrib     - Run contrib tests
   --all              - Synonym for -l -a -i -c
-  -s | --sleep       - The amount of seconds to wait for docker containers to be ready - default: 30 seconds
   -t | --tools       - Install gotestsum and goimports
   -h | --help        - Print this help message
 
@@ -146,12 +146,14 @@ Measures build time and binary size for Orchestrion integration samples. Builds 
 ```
 
 **Options:**
+
 - `--sample NAME` - Sample to build (default: net_http)
 - `--mode MODE` - Build mode: `standard` or `orchestrion` (required)
 - `--output PATH` - Output JSON file path (default: stdout)
 - `--repeats N` - Number of build repeats (default: 3)
 
 **Output format:**
+
 ```json
 {
   "sample": "net_http",
@@ -169,7 +171,9 @@ Measures build time and binary size for Orchestrion integration samples. Builds 
 
 ### publish_build_metrics.sh
 
-Publishes build metrics to Datadog CI Visibility using `datadog-ci`. Attaches measures (`go.build.duration_seconds.0`, `go.build.duration_seconds.1`, ..., `go.build.binary_size_bytes`) and tags (`build.toolchain`, `build.sample`, `build.cache`, `go.version`, `orchestrion.version`) to the current CI job span. Each element of `build_duration_samples` is published as an individually-indexed measure.
+Publishes build metrics to Datadog CI Visibility using `datadog-ci`. Attaches measures (`go.build.duration_seconds`, `go.build.duration_seconds.0`, `go.build.duration_seconds.1`, ..., `go.build.binary_size_bytes`, and, in standard mode with dependency attribution, `go.build.dependency_size_bytes.<dep>`, `go.build.top_dependency_size_bytes.0`, `go.build.top_dependency_size_bytes.1`, ...) and tags (`build.toolchain`, `build.sample`, `build.cache`, `go.version`, `orchestrion.version`, and, in standard mode, `build.top_dependency_name.0`, `build.top_dependency_name.1`, ...) to the current CI job span.
+
+Each attributed dependency is published as a measure named after it (`go.build.dependency_size_bytes.<dep>`) for querying one dependency's size trend over time. It's also published by rank — `go.build.top_dependency_size_bytes.<i>` paired with a `build.top_dependency_name.<i>` tag holding that rank's dependency name, where index `0` is the single largest dependency in that build.
 
 ```bash
 # Set environment and publish
@@ -180,9 +184,195 @@ export DATADOG_SITE=datadoghq.com
 ```
 
 **Required environment variables:**
+
 - `METRICS_FILE` - Path to metrics JSON from `measure_build.sh`
 - `DATADOG_API_KEY` - Datadog API key
 - `DATADOG_SITE` - Datadog site (default: datadoghq.com)
+
+## CI Timing Scripts
+
+Scripts for measuring CI durations and Go build-cache behaviour from
+completed GitHub Actions runs. GitHub completed-run data is the source of
+truth; Datadog series are secondary.
+
+### citiming
+
+`go run ./scripts/citiming` collects deduplicated observations (one record
+per run, attempt, and job) plus one PR feedback record per PR revision,
+and compares two collected windows using baseline-frozen strata and
+baseline-frequency weights.
+
+Collection requires an authenticated `gh` with read access to workflow
+runs, jobs, logs, check runs, and the cache API. Raw job logs are input
+data only: they are never executed or republished in full.
+
+```bash
+# Collect one window of completed runs (daily cadence during measurement
+# programs; collects logs before they expire). Evidence stays outside the
+# source tree.
+go run ./scripts/citiming collect \
+  --repo DataDog/dd-trace-go \
+  --since 2026-09-14 --until 2026-09-20 \
+  --output-dir /tmp/ci-timing/baseline-week-1 \
+  --events pull_request --cache-snapshot
+
+# Compare two windows (offline, no API access needed).
+go run ./scripts/citiming compare \
+  --baseline /tmp/ci-timing/baseline-week-1 \
+  --candidate /tmp/ci-timing/candidate-week-1 \
+  --output-dir /tmp/ci-timing/comparison
+```
+
+Metric definitions (job wall time including post steps, post time, restore
+and save result classification, PR feedback time including the all-green
+delay, and the exact accepted check-name exclusions) live in the doc
+comment of `scripts/citiming/main.go` and are the report contract. The `comparison.csv` columns are not a stable interface: new fields are
+inserted as needed, so consumers must match columns by header name, not
+by position.
+
+Only seeding runs save Go build/module caches: a seed-set key (the
+setup-go action's `seed` input) on the nightly schedule or a
+default-branch `workflow_dispatch`. Four dispatch doors reach that
+state on `main`: `main-branch-tests`, the `multios-unit-tests`
+free-form dispatch, the bare `smoke-tests` dispatch, and
+`dynamic-checks`. Every other event restores only. Revert a cloudx
+seed by setting that job's `seed` back to `"false"`. The pool gauges
+(`citiming pool`, run hourly by the `cache-pool-metrics` workflow)
+watch whether the seed entries stay present in the pool. Jobs running
+with `cache: "false"` emit no online series; their observation records
+live only in the job logs, where `scripts/citiming` reads them.
+
+Restores are classified from the structured `cache-observation:` record
+that the Go setup actions print into every job log (when a job emits
+several records, the collector keeps the last one): exact, prefix,
+`cold_miss`, disabled, error, or unknown. For isolated-cache providers a
+raw cache-hit of `false` is ambiguous between a prefix restore and a
+cold miss. This applies to the cloudx provider: the setup action passes
+the provider's `cache-matched-key` output through, and when the record
+carries it, the classification comes from the matched key (a non-empty
+matched key with a false cache-hit is a prefix restore, an empty one a
+cold miss). Records collected before the field existed keep the optional
+`restored` cross-check (`"true"` when the module cache is non-empty
+after the restore), which classifies the restore as prefix (`"true"`)
+or `cold_miss` (`"false"`); without either the collector reports
+`unknown`. `actions/setup-go` restores with the primary key only, so for
+the github-cache provider `false` is a cold miss. The setup_go entry
+also carries the derived `restore_source` (exact / default / branch /
+none — `default` marks a default-branch fallback restore, the signal
+the seed program measures) and `dep_match` (whether the matched entry
+was keyed with this job's dependency digest); the collector stores
+both, reports restore source per stratum in the cache-behavior table,
+and counts entries whose matched key and `restored` cross-check
+disagree. The
+Datadog count series keeps the contract it has always had, where `miss`
+means "not an exact hit", so every successful restore stays counted and
+existing dashboards remain continuous. The precise exact/prefix/cold
+split remains with completed-log classification in this tool. Saves are
+classified per event from completed log markers (`Cache saved with key:`, `Cache hit occurred on the
+primary key ... not saving cache`, reservation conflicts, failures); a
+successful job never counts as a successful save on its own.
+
+Observations are trusted, best-effort records read from the job log; they
+are not tamper-proof. A later step that prints a `cache-observation:` line
+replaces the setup record, because the last line wins. Job durations come
+from the GitHub API and are unaffected, but restore classification,
+workload family and resolved Go version (and therefore the
+toolchain-changed exclusion) can be skewed by such a line.
+
+Collection fetches one job log at a time and skips the log fetch for jobs
+whose stored record already has logs, so a refresh never loses stored
+evidence. When the API rate limit is reached it waits for the reset and
+retries once; a second failure aborts the collection before the store is
+written. The collect summary reports how many job observations have no
+logs.
+
+The filesystem sizes published by `.github/actions/cache-metrics` are
+end-of-job uncompressed usage under the `ci.cache.disk_size_bytes` series
+with `phase:end_of_job` (the former
+`ci.step.cache.restore.disk_size_bytes` name was misleading and is
+retired; dashboards querying the old name must move to the new one at
+merge time). Compressed cache-service storage comes from the cache API
+`size_in_bytes` field in dated `cache_snapshot_<timestamp>.json` files,
+one per daily collection.
+
+Tests live in `scripts/citiming/citiming_test.go`; the payload builder of
+`.github/actions/cache-metrics` is tested in `scripts/actiontest`:
+
+```bash
+go test -race -count=1 ./scripts/citiming/ ./scripts/actiontest/
+```
+
+### Weekly review procedure
+
+1. Collect each day of the window before job logs expire, with
+   `--cache-snapshot`.
+2. Collect lists runs in hourly slices (the GitHub list-runs endpoint
+   returns at most 1000 results per query) and fails if a slice reaches
+   that limit; the collector never truncates silently.
+3. Compare only windows collected with the same workflow and job set. A
+   stratum is one workflow file, full job name (which carries the matrix
+   dimensions, including those of a reusable-workflow caller), and runner
+   identity (`<group> (<sorted labels>)`);
+   workload family and resolved Go version are not part of the key, so a
+   treatment that changes them does not split a stratum. A stratum is
+   comparable when both windows have at least five distinct successful
+   first-attempt run IDs, it has candidate data, and its known resolved
+   Go versions do not differ between windows (reported as "toolchain
+   changed"; an unknown version never excludes). Extend the window rather
+   than triggering runs to reach a count.
+4. The headline is baseline-weighted job-minutes over the comparable
+   strata: each stratum's weight is its baseline success count, and the
+   improvement is `1 - sum(w * candidate p50) / sum(w * baseline p50)`.
+   PR feedback uses the same approach per selection signature, with the
+   baseline measured revisions as weight and a five-revision minimum per
+   window; it is computed from every `pull_request` run in the window,
+   regardless of `--workflows` and `--events`, starting at the earliest
+   `pull_request` run of the revision even when that run predates the
+   window. The report gives the
+   covered share of baseline weight and lists every excluded stratum
+   with its reason. The tool refuses the headline (improvement `n/a`,
+   non-zero exit for the job headline) when the comparable strata cover
+   less than 80% of the baseline weight.
+   Jobs whose log has no cache-observation record are counted per stratum
+   as "no observation" in the cache-behavior table; their restores are
+   missing evidence, not zero restores.
+5. Record failures, retries (runs with a later attempt, counted per
+   stratum from first attempts), cancellations, and unknown classifications
+   from the reports; skipped jobs are absent work, not zero durations.
+6. Publish aggregates and run URLs in the PR description, never raw logs.
+
+### citiming pool
+
+`go run ./scripts/citiming pool --repo OWNER/NAME [--format text|datadog]`
+classifies one snapshot of the repository's shared Actions cache pool.
+It reuses the collector's cache snapshot (usage endpoint, entry
+inventory) and classifies every entry by cache kind
+(`go_build`, `tools`, `setup_go_builtin`, `gitdb`, `appsec_modules`,
+`datadog_ci`, `other`), cloudx workload family (`n/a` outside `go_build`
+keys in the `ddtg-cx1-` layout), `os.platform`, and ref type (`default`
+for the default branch, `pr`, `mq`, `release`, `other`).
+
+`--format datadog` prints a `/api/v2/series` payload of gauges; the
+`cache-pool-metrics` workflow submits it hourly:
+
+- `ci.cache.pool.size_bytes` and `ci.cache.pool.entries`, per kind,
+  workload, platform and ref type.
+- `ci.cache.pool.total_bytes` (the usage endpoint's active size, falling
+  back to the listed entry sum).
+- `ci.cache.pool.limit_bytes`, only when the storage-limit endpoint
+  returns it; without admin rights it answers 403 and the gauge is
+  skipped.
+- `ci.cache.pool.oldest_access_age_seconds`, the eviction horizon.
+- `ci.cache.pool.default_entry_age_seconds`, the age of the newest
+  default-branch entry per kind, workload and platform: the seed
+  presence signal. A missing series means no seed of that cell exists.
+  Until a monitor exists for this, treat a missing series on a seeded
+  cell as an evicted seed and re-seed by dispatching `main-branch-tests`
+  on `main`.
+
+Every series is tagged with the repository. The text format prints the
+same data as a snapshot summary, and the workflow keeps that summary in
+the job log, so evidence exists even when submission fails.
 
 ## Guidelines
 

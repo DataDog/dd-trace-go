@@ -6,6 +6,7 @@
 package openfeature
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,13 +14,21 @@ import (
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 
+	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 )
 
+var errInvalidSemverComparand = errors.New("invalid semantic version comparand")
+
 func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
-	provider := newDatadogProvider(config)
+	logOnboarding("starting remote_config configuration source (Agent Remote Configuration)")
+	provider := newDatadogProviderWithSourceAndEVP(
+		config,
+		internalffe.SourceRemoteConfig,
+		newEVPClient(),
+	)
 
 	// Subscribe via the internal package, which serializes with tracer subscription
 	// and starts RC only if needed (slow path).
@@ -34,7 +43,7 @@ func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 	}
 	if !attachProvider(provider) {
 		// This shouldn't happen since SubscribeProvider just told us tracer subscribed.
-		return nil, fmt.Errorf("failed to attach to tracer's RC subscription")
+		return nil, errors.New("failed to attach to tracer's RC subscription")
 	}
 	log.Debug("openfeature: attached to tracer's RC subscription")
 	return provider, nil
@@ -56,7 +65,7 @@ func (p *DatadogProvider) rcCallback(update remoteconfig.ProductUpdate) map[stri
 func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc.ApplyStatus {
 	// Handle configuration deletion (nil data means the config was removed)
 	if data == nil {
-		log.Debug("openfeature: remote config: removing configuration %q", path)
+		logOnboarding("remote_config configuration %q removed", path)
 		// For now, we treat deletion as clearing the configuration
 		// In a multi-config scenario, we might track configs per path
 		provider.updateConfiguration(nil)
@@ -66,11 +75,11 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	}
 
 	// Parse the configuration
-	log.Debug("openfeature: remote config: processing configuration update %q", path)
+	logOnboarding("remote_config configuration %q received", path)
 
 	var config universalFlagsConfiguration
 	if err := json.Unmarshal(data, &config); err != nil {
-		log.Error("openfeature: remote config: failed to unmarshal configuration %q: %v", path, err.Error())
+		log.Error("openfeature: remote config: failed to unmarshal configuration %q, keeping the last known configuration: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
 		return rc.ApplyStatus{
 			State: rc.ApplyStateError,
 			Error: fmt.Sprintf("failed to unmarshal configuration: %v", err),
@@ -80,7 +89,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	// Validate the configuration
 	err := validateConfiguration(&config)
 	if err != nil {
-		log.Error("openfeature: remote config: invalid configuration %q: %v", path, err.Error())
+		log.Error("openfeature: remote config: invalid configuration %q, keeping the last known configuration: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
 		return rc.ApplyStatus{
 			State: rc.ApplyStateError,
 			Error: fmt.Sprintf("invalid configuration: %v", err),
@@ -89,7 +98,15 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 
 	// Update the provider with the new configuration
 	provider.updateConfiguration(&config)
-	log.Debug("openfeature: remote config: successfully applied configuration %q with %d flags", path, len(config.Flags))
+	if log.DebugEnabled() {
+		// sdk_env is the environment the Remote Config client reports to the
+		// Agent; config_env is the one the delivered configuration names.
+		logOnboarding("remote_config configuration %q applied successfully (%d flag(s), %d rejected, sdk_env=%s, config_env=%s, created_at=%s)",
+			path, len(config.Flags), len(config.invalidFlags),
+			cmp.Or(remoteconfig.ActiveEnv(), "unset"), cmp.Or(config.Environment.Name, "unset"),
+			formatCreatedAt(config.CreatedAt))
+		logRejectedFlags(fmt.Sprintf("remote_config configuration %q", path), &config)
+	}
 
 	return rc.ApplyStatus{
 		State: rc.ApplyStateAcknowledged,
@@ -99,7 +116,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 // validateConfiguration performs basic validation on a serverConfiguration.
 func validateConfiguration(config *universalFlagsConfiguration) error {
 	if config == nil {
-		return fmt.Errorf("configuration is nil")
+		return errors.New("configuration is nil")
 	}
 
 	if config.Format != "SERVER" {
@@ -152,10 +169,23 @@ func validateFlag(flagKey string, flag *flag) error {
 			}
 
 			for _, shard := range split.Shards {
-				if shard.TotalShards < 0 {
-					return fmt.Errorf("flag %q allocation %d split %d has shard with non-positive TotalShards %d",
+				if shard.TotalShards <= 0 || uint64(shard.TotalShards) > uint64(^uint32(0)) {
+					return fmt.Errorf("flag %q allocation %d split %d has shard with invalid TotalShards %d",
 						flagKey, i, j, shard.TotalShards)
 				}
+				for _, shardRange := range shard.Ranges {
+					if shardRange == nil {
+						return fmt.Errorf("flag %q allocation %d split %d has nil shard range", flagKey, i, j)
+					}
+					if shardRange.Start < 0 || shardRange.End < 0 {
+						return fmt.Errorf("flag %q allocation %d split %d has shard with negative range bounds",
+							flagKey, i, j)
+					}
+				}
+			}
+
+			if split.Shards == nil {
+				return fmt.Errorf("flag %q allocation %d split %d is missing shards", flagKey, i, j)
 			}
 
 			if _, exists := flag.Variations[split.VariationKey]; !exists {
@@ -174,17 +204,58 @@ func validateFlag(flagKey string, flag *flag) error {
 					return fmt.Errorf("flag %q allocation %d rule has nil condition", flagKey, i)
 				}
 
-				if condition.Operator == operatorMatches || condition.Operator == operatorNotMatches {
+				switch condition.Operator {
+				case operatorLT, operatorLTE, operatorGT, operatorGTE,
+					operatorSemverEQ, operatorSemverNEQ, operatorSemverLT,
+					operatorSemverLTE, operatorSemverGT, operatorSemverGTE,
+					operatorMatches, operatorNotMatches,
+					operatorOneOf, operatorNotOneOf, operatorIsNull:
+				default:
+					return fmt.Errorf("flag %q allocation %d rule has unknown operator %q",
+						flagKey, i, condition.Operator)
+				}
+
+				switch condition.Operator {
+				case operatorLT, operatorLTE, operatorGT, operatorGTE:
+					if _, ok := internal.ToFloat64(condition.Value); !ok {
+						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires numeric value",
+							flagKey, i, condition.Operator)
+					}
+				case operatorMatches, operatorNotMatches:
 					regex, ok := condition.Value.(string)
 					if !ok {
 						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires string value",
 							flagKey, i, condition.Operator)
 					}
-
 					if _, err := loadRegex(regex); err != nil {
 						return fmt.Errorf("flag %q allocation %d rule has condition with invalid regex %q: %v",
 							flagKey, i, regex, err)
 					}
+				case operatorOneOf, operatorNotOneOf:
+					if _, ok := condition.Value.([]any); !ok {
+						if _, ok := condition.Value.([]string); !ok {
+							return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires array value",
+								flagKey, i, condition.Operator)
+						}
+					}
+				case operatorIsNull:
+					if _, ok := condition.Value.(bool); !ok {
+						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires boolean value",
+							flagKey, i, condition.Operator)
+					}
+				case operatorSemverEQ, operatorSemverNEQ, operatorSemverLT,
+					operatorSemverLTE, operatorSemverGT, operatorSemverGTE:
+					comparand, ok := condition.Value.(string)
+					if !ok {
+						return fmt.Errorf("%w: flag %q allocation %d rule has condition with operator %q that requires string value",
+							errInvalidSemverComparand, flagKey, i, condition.Operator)
+					}
+					parsedComparand, ok := parseSemver(comparand)
+					if !ok {
+						return fmt.Errorf("%w: flag %q allocation %d rule has condition with operator %q and invalid semantic version %q",
+							errInvalidSemverComparand, flagKey, i, condition.Operator, comparand)
+					}
+					condition.semverComparand = &parsedComparand
 				}
 			}
 		}

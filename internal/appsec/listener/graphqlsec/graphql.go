@@ -17,7 +17,7 @@ import (
 type Feature struct{}
 
 func (*Feature) String() string {
-	return "GraphQL Security"
+	return listener.FeatureGraphQL
 }
 
 func (*Feature) Stop() {}

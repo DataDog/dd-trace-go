@@ -82,3 +82,17 @@ func TestReportDefaultDoesNotIncrementSeqID(t *testing.T) {
 	assert.Equal(t, seqAfterReport+1, seqAfterSecondReport,
 		"ReportDefault must not increment the shared sequence ID counter")
 }
+
+func TestSensitiveKeysAreNotReported(t *testing.T) {
+	rec := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(rec)()
+
+	// DD_API_KEY and DD_APP_KEY are seeded as sensitive in supported_configurations.json.
+	Report("DD_API_KEY", "secret-value", telemetry.OriginEnvVar)
+	ReportWithID("DD_API_KEY", "secret-value", telemetry.OriginLocalStableConfig, "cfg-123")
+	Report("DD_APP_KEY", "secret-value", telemetry.OriginEnvVar)
+	ReportWithID("DD_APP_KEY", "secret-value", telemetry.OriginLocalStableConfig, "cfg-123")
+
+	assert.Empty(t, rec.Configuration,
+		"Report and ReportWithID must not emit telemetry for sensitive keys")
+}

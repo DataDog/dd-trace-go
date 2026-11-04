@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -55,6 +56,15 @@ const (
 	// AWS API Gateway, and provides the stage (e.g., dev, prod, etc.)
 	// in which the request is being processed.
 	ProxyHeaderStage = "X-Dd-Proxy-Stage"
+
+	// PubsubHeaderSubscriptionName is the header gcp Pub/Sub sets on push deliveries when
+	// write metadata is enabled. The value is the full subscription resource name
+	// (projects/{project_id}/subscriptions/{subscription_id}).
+	PubsubHeaderSubscriptionName = "X-Goog-Pubsub-Subscription-Name"
+
+	// PubsubHeaderMessageID is the header gcp Pub/Sub sets on push deliveries when write
+	// metadata is enabled. The value is the unique ID of the delivered message.
+	PubsubHeaderMessageID = "X-Goog-Pubsub-Message-Id"
 )
 
 type proxyDetails struct {
@@ -69,6 +79,13 @@ type proxyContext struct {
 	stage           string
 	domainName      string
 	proxySystemName string
+}
+
+type pubsubContext struct {
+	subscriptionName string
+	projectID        string
+	subscriptionID   string
+	messageID        string
 }
 
 var (
@@ -112,16 +129,21 @@ func extractInferredProxyContext(headers http.Header) (*proxyContext, error) {
 	return &pc, nil
 }
 
-func startInferredProxySpan(requestProxyContext *proxyContext, parent *tracer.SpanContext, opts ...tracer.StartSpanOption) *tracer.Span {
+func startInferredProxySpan(requestProxyContext *proxyContext, request *http.Request, ipTags map[string]string, parent *tracer.SpanContext, otelSemanticsEnabled bool, opts ...tracer.StartSpanOption) *tracer.Span {
 	proxySpanInfo := supportedProxies[requestProxyContext.proxySystemName]
 	log.Debug(`Successfully extracted inferred span info ${proxyContext} for proxy: ${proxyContext.proxySystemName}`)
 
 	startTime := requestProxyContext.startTime
 
-	configService := requestProxyContext.domainName
+	// A domain name cannot contain '?': remove a query string from the domain header.
+	domainName, _, _ := strings.Cut(requestProxyContext.domainName, "?")
+	configService := domainName
 	if configService == "" {
 		configService = globalconfig.ServiceName()
 	}
+
+	// The route and the resource name do not contain the query string.
+	path, _, _ := strings.Cut(requestProxyContext.path, "?")
 
 	optsLocal := make([]tracer.StartSpanOption, len(opts), len(opts)+1)
 	copy(optsLocal, opts)
@@ -138,16 +160,171 @@ func startInferredProxySpan(requestProxyContext *proxyContext, parent *tracer.Sp
 			cfg.Tags[ext.SpanType] = ext.SpanTypeWeb
 			cfg.Tags[ext.ServiceName] = configService
 			cfg.Tags[ext.Component] = proxySpanInfo.component
-			cfg.Tags[ext.HTTPMethod] = requestProxyContext.method
-			cfg.Tags[ext.HTTPURL] = requestProxyContext.domainName + requestProxyContext.path
-			cfg.Tags[ext.HTTPRoute] = requestProxyContext.path
-			cfg.Tags[ext.ResourceName] = fmt.Sprintf("%s %s", requestProxyContext.method, requestProxyContext.path)
+			if otelSemanticsEnabled {
+				setOTelServerRequestTags(cfg.Tags, request, ipTags)
+				method, _, originalMethod := NormalizeHTTPMethod(requestProxyContext.method)
+				cfg.Tags[ext.HTTPRequestMethod] = method
+				delete(cfg.Tags, ext.HTTPRequestMethodOriginal)
+				if originalMethod != "" {
+					cfg.Tags[ext.HTTPRequestMethodOriginal] = originalMethod
+				}
+				cfg.Tags[ext.ResourceName] = ServerSpanName(requestProxyContext.method, path)
+				if _, ok := cfg.Tags[ext.URLPath]; !ok {
+					urlPath := path
+					if urlPath == "" {
+						urlPath = "/"
+					}
+					cfg.Tags[ext.URLPath] = urlPath
+				}
+				delete(cfg.Tags, ext.ServerPort)
+				if domainName != "" {
+					cfg.Tags[ext.ServerAddress] = domainName
+				}
+				if path != "" {
+					cfg.Tags[ext.HTTPRoute] = path
+				}
+			} else {
+				cfg.Tags[ext.HTTPMethod] = requestProxyContext.method
+				cfg.Tags[ext.HTTPURL] = inferredProxyURL(domainName, requestProxyContext.path)
+				cfg.Tags[ext.HTTPRoute] = path
+				cfg.Tags[ext.ResourceName] = fmt.Sprintf("%s %s", requestProxyContext.method, path)
+			}
 			cfg.Tags["_dd.inferred_span"] = 1
 			cfg.Tags["stage"] = requestProxyContext.stage
 		},
 	)
 
 	span := tracer.StartSpan(proxySpanInfo.spanName, optsLocal...)
+
+	return span
+}
+
+// inferredProxyURL returns the http.url tag of an inferred proxy span. The
+// domain and the path come from request headers. Like for the URL of the
+// request, the query string of the path is obfuscated, or removed when it must
+// not be reported. A domain name cannot contain '?': a query string in the
+// domain header is removed.
+func inferredProxyURL(domainName, path string) string {
+	domainName, _, _ = strings.Cut(domainName, "?")
+	path, rawQuery, ok := strings.Cut(path, "?")
+	url := domainName + path
+	if !ok {
+		return url
+	}
+	if query := ObfuscateQueryString(rawQuery); query != "" {
+		return url + "?" + query
+	}
+	return url
+}
+
+func startInferredSpanFromRequest(request *http.Request, ipTags map[string]string, otelSemanticsEnabled bool) *tracer.Span {
+	headers := request.Header
+	var inferredStartSpanOpts []tracer.StartSpanOption
+	spanParentCtx, _ := tracer.Extract(tracer.HTTPHeadersCarrier(headers))
+	if spanParentCtx != nil && spanParentCtx.SpanLinks() != nil {
+		inferredStartSpanOpts = append(inferredStartSpanOpts, tracer.WithSpanLinks(spanParentCtx.SpanLinks()))
+	}
+
+	requestProxyContext, err := extractInferredProxyContext(headers)
+	if err == nil {
+		return startInferredProxySpan(requestProxyContext, request, ipTags, spanParentCtx, otelSemanticsEnabled, inferredStartSpanOpts...)
+	} else {
+		log.Debug("unable to start inferred proxy span: %s\n", err.Error())
+	}
+
+	pubsubCtx := extractInferredPubsubContext(headers)
+	if pubsubCtx != nil {
+		if cfg.pubsubPropagationAsSpanLinks && spanParentCtx != nil {
+			// DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT=restart zeroes IDs on the stub (links already appended above);
+			// only derive a link when real trace/span IDs are present.
+			if spanParentCtx.TraceIDLower() != 0 || spanParentCtx.TraceIDUpper() != 0 || spanParentCtx.SpanID() != 0 {
+				// Record the producer span as a span link, keeping producer and consumer traces separate.
+				link := tracer.SpanLink{
+					TraceID:     spanParentCtx.TraceIDLower(),
+					TraceIDHigh: spanParentCtx.TraceIDUpper(),
+					SpanID:      spanParentCtx.SpanID(),
+				}
+				inferredStartSpanOpts = append(inferredStartSpanOpts, tracer.WithSpanLinks([]tracer.SpanLink{link}))
+			}
+			return startInferredPubsubPushSubscriptionSpan(pubsubCtx, nil, inferredStartSpanOpts...)
+		}
+		return startInferredPubsubPushSubscriptionSpan(pubsubCtx, spanParentCtx, inferredStartSpanOpts...)
+	} else {
+		log.Debug("Unable to create inferred pubsub span. Skipping")
+	}
+
+	return nil
+}
+
+// extractInferredPubsubContext reads Pub/Sub push metadata headers and returns a
+// fully populated pubsubContext, or an error if headers are missing or invalid.
+func extractInferredPubsubContext(headers http.Header) *pubsubContext {
+	subscriptionName := headers.Get(PubsubHeaderSubscriptionName)
+	if subscriptionName == "" {
+		return nil
+	}
+
+	parts := strings.Split(subscriptionName, "/")
+
+	// check that subscriptionName matches format projects/{project_id}/subscriptions/{subscription_id}.
+	if len(parts) != 4 || // must have 4 segments
+		parts[0] != "projects" || parts[2] != "subscriptions" || // must match 'projects' and 'subscriptions'
+		parts[1] == "" || parts[3] == "" { // project and subscription IDs can't be empty
+		return nil
+	}
+
+	projectID := parts[1]
+	subscriptionID := parts[3]
+
+	messageID := headers.Get(PubsubHeaderMessageID)
+	if messageID == "" {
+		return nil
+	}
+	return &pubsubContext{
+		subscriptionName: subscriptionName,
+		projectID:        projectID,
+		subscriptionID:   subscriptionID,
+		messageID:        messageID,
+	}
+}
+
+// startInferredPubsubPushSubscriptionSpan starts an inferred pubsub.receive consumer span
+// for HTTP handlers that process gcp Pub/Sub push deliveries. The span is tagged like
+// library-instrumented subscribe/receive paths so push-based workloads show the same
+// messaging layer in the trace as pull/subscribe flows.
+//
+// See: https://cloud.google.com/pubsub/docs/push
+func startInferredPubsubPushSubscriptionSpan(pubsubContex *pubsubContext, parent *tracer.SpanContext, opts ...tracer.StartSpanOption) *tracer.Span {
+	configService := globalconfig.ServiceName()
+	spanName := "pubsub.receive"
+	component := "net/http"
+	optsLocal := make([]tracer.StartSpanOption, len(opts), len(opts)+1)
+	copy(optsLocal, opts)
+
+	optsLocal = append(optsLocal,
+		func(cfg *tracer.StartSpanConfig) {
+			if cfg.Tags == nil {
+				cfg.Tags = make(map[string]any)
+			}
+
+			cfg.Parent = parent
+			cfg.Tags[ext.SpanType] = ext.SpanTypeMessageConsumer
+			cfg.Tags[ext.SpanName] = spanName
+			cfg.Tags[ext.ServiceName] = configService
+			cfg.Tags[ext.Component] = component
+			cfg.Tags[ext.ResourceName] = pubsubContex.subscriptionName
+			cfg.Tags[ext.SpanKind] = ext.SpanKindConsumer
+			cfg.Tags[ext.MessagingDestinationName] = pubsubContex.subscriptionID
+			cfg.Tags[ext.MessagingOperationName] = "receive"
+			cfg.Tags[ext.MessagingMessageID] = pubsubContex.messageID
+			cfg.Tags[ext.PubsubMessageID] = pubsubContex.messageID // duplicate to align with existing pubsub tags for pull subscriptions
+			cfg.Tags[ext.GCPProjectID] = pubsubContex.projectID
+			cfg.Tags[ext.MessagingSystem] = ext.MessagingSystemGCPPubsub
+			cfg.Tags["_dd.inferred_span"] = 1
+		},
+	)
+
+	span := tracer.StartSpan(spanName, optsLocal...)
 
 	return span
 }

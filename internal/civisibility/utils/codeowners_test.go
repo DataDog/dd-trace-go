@@ -68,19 +68,28 @@ func TestNewCodeOwners(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestNilCodeOwnersDoesNotMatch(t *testing.T) {
+	var codeOwners *CodeOwners
+	match, ok := codeOwners.Match("/source.go")
+	assert.Nil(t, match)
+	assert.False(t, ok)
+}
+
 func TestGetCodeOwnersCachesMissingDiscovery(t *testing.T) {
 	workspaceDir := t.TempDir()
 	workingDir := t.TempDir()
 	t.Chdir(workingDir)
 	resetCodeOwnersTestState(t, workspaceDir)
 
-	assert.Nil(t, GetCodeOwners())
+	codeOwners, complete := GetCodeOwnersWithStatus()
+	assert.Nil(t, codeOwners)
+	assert.True(t, complete)
 
 	writeCodeOwnersFile(t, filepath.Join(workspaceDir, "CODEOWNERS"), "/cached/miss @owner\n")
 	assert.Nil(t, GetCodeOwners())
 
 	ResetCodeOwnersForTesting()
-	codeOwners := GetCodeOwners()
+	codeOwners = GetCodeOwners()
 	require.NotNil(t, codeOwners)
 
 	match, ok := codeOwners.Match("/cached/miss")
@@ -119,11 +128,14 @@ func TestGetCodeOwnersDoesNotCacheMalformedFileAsMissing(t *testing.T) {
 
 	codeOwnersPath := filepath.Join(workspaceDir, "CODEOWNERS")
 	writeCodeOwnersFile(t, codeOwnersPath, strings.Repeat("x", 70*1024))
-	assert.Nil(t, GetCodeOwners())
+	codeOwners, complete := GetCodeOwnersWithStatus()
+	assert.Nil(t, codeOwners)
+	assert.False(t, complete)
 
 	writeCodeOwnersFile(t, codeOwnersPath, "/fixed @owner\n")
-	codeOwners := GetCodeOwners()
+	codeOwners, complete = GetCodeOwnersWithStatus()
 	require.NotNil(t, codeOwners)
+	require.True(t, complete)
 
 	match, ok := codeOwners.Match("/fixed")
 	require.True(t, ok)
@@ -182,6 +194,65 @@ func TestMatch(t *testing.T) {
 	// Test no match
 	entry, ok = codeOwners.Match("/no/match")
 	assert.False(t, ok)
+}
+
+func TestMatchAnchoredFilenamePrefix(t *testing.T) {
+	for _, tc := range []struct {
+		pattern string
+		path    string
+		matches bool
+	}{
+		{"/src/ci_*", "/src/ci_new.go", true},
+		{"/src/ci_*", "/src/ci_new_test.go", true},
+		{"/src/ci_*", "/src/ci_", true},
+		{"/src/ci_*", "/src/ci_group/nested.go", true},
+		{"/ci_*", "/ci_root.go", true},
+		{"/src/ci_*", "/src/app.go", false},
+		{"/src/ci_*", "/src/ci.go", false},
+		{"/src/ci_*", "/src/CI_new.go", false},
+		{"/src/ci_*", "/src/nested/ci_new.go", false},
+		{"/src/ci_*", "/other/src/ci_new.go", false},
+		{"/src/ci_*", "/other/ci_new.go", false},
+		{"/src/*", "/src/direct.go", true},
+		{"/src/*", "/src/nested/direct.go", false},
+		{"/src/", "/src/nested/direct.go", true},
+		{"*test.go", "/src/nested/direct_test.go", true},
+		{"ci_*", "/src/ci_new.go", false},
+		{"/src/ci_**", "/src/ci_new.go", false},
+		{"/src/ci_?*", "/src/ci_new.go", false},
+		{"/src/ci_*.go", "/src/ci_new.go", false},
+	} {
+		t.Run(tc.pattern+":"+tc.path, func(t *testing.T) {
+			owners := &CodeOwners{Sections: []*Section{{Entries: []Entry{{Pattern: tc.pattern, Owners: []string{"@owner"}}}}}}
+			entry, ok := owners.Match(tc.path)
+			assert.Equal(t, tc.matches, ok)
+			if tc.matches {
+				require.NotNil(t, entry)
+				assert.Equal(t, []string{"@owner"}, entry.Owners)
+			}
+		})
+	}
+}
+
+func TestMatchAnchoredFilenamePrefixPrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		content string
+		owner   string
+	}{
+		{"/src/ @directory\n/src/ci_* @prefix\n/src/ci_exact.go @exact\n", "@exact"},
+		{"/src/ @directory\n/src/ci_exact.go @exact\n/src/ci_* @prefix\n", "@prefix"},
+		{"/src/ci_* @prefix\n/src/ @directory\n", "@directory"},
+	} {
+		t.Run(tc.owner, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "CODEOWNERS")
+			writeCodeOwnersFile(t, path, tc.content)
+			owners, err := NewCodeOwners(path)
+			require.NoError(t, err)
+			entry, ok := owners.Match("/src/ci_exact.go")
+			require.True(t, ok)
+			assert.Equal(t, []string{tc.owner}, entry.Owners)
+		})
+	}
 }
 
 func TestGetOwnersString(t *testing.T) {

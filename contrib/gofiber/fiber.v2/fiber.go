@@ -11,6 +11,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -29,12 +30,31 @@ func init() {
 }
 
 // Middleware returns middleware that will trace incoming requests.
+// With AppSec enabled, pending blocks take priority over the error handler.
+// Other returned errors are rendered through the application's error handler
+// before the WAF inspects the response. Handled errors are not returned to
+// earlier middleware. The original error is recorded on the span unless the
+// response is blocked; then the block is reported instead.
+//
+// Register panic-recovery middleware immediately after this middleware, before
+// other middleware and routes, so it runs inside the monitored handler chain.
+// Recovery outside it happens too late for
+// AppSec to inspect the rendered error response or preserve a pending block.
+// This middleware does not recover panics itself.
+//
+// Use [Wrap] for whole-app instrumentation. A global Middleware runs before
+// Fiber matches the endpoint and can only check its path parameters afterward;
+// it cannot prevent handler side effects from a path-parameter attack.
 func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
 		fn.apply(cfg)
 	}
+	return middleware(cfg)
+}
+
+func middleware(cfg *config) fiber.Handler {
 	instr.Logger().Debug("gofiber/fiber.v2: Middleware: %#v", cfg)
 	return func(c *fiber.Ctx) error {
 		if cfg.ignoreRequest(c) {
@@ -44,7 +64,9 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		opts := []tracer.StartSpanOption{
 			tracer.SpanType(ext.SpanTypeWeb),
 			instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
-			tracer.Tag(ext.HTTPMethod, c.Method()),
+			// c.Method() aliases fasthttp's connection buffer (zero-copy); clone it so the
+			// tag remains valid after fasthttp reuses the buffer for a later request.
+			tracer.Tag(ext.HTTPMethod, strings.Clone(c.Method())),
 			tracer.Tag(ext.HTTPURL, string(c.Request().URI().PathOriginal())),
 			tracer.Measured(),
 		}
@@ -54,11 +76,15 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		// Create a http.Header object so that a parent trace can be extracted. Fiber uses a non-standard header carrier
 		h := http.Header{}
 		for k, headers := range c.GetReqHeaders() {
+			// GetReqHeaders returns keys and values that alias fasthttp's connection buffer
+			// (zero-copy); clone them since h may be used to populate span tags, and the
+			// buffer can be reused by fasthttp for a later request before spans are flushed.
+			k = strings.Clone(k)
 			for _, v := range headers {
 				// GetReqHeaders returns a list of headers associated with the given key.
 				// http.Header.Add supports appending multiple values, so the previous
 				// value will not be overwritten.
-				h.Add(k, v)
+				h.Add(k, strings.Clone(v))
 			}
 		}
 		if spanctx, err := tracer.Extract(tracer.HTTPHeadersCarrier(h)); err == nil {
@@ -82,7 +108,13 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		c.SetUserContext(ctx)
 
 		// pass the execution down the line
-		err := c.Next()
+		var err error
+		var handledResponse bool
+		if instr.AppSecEnabled() {
+			err, handledResponse = useAppSec(c, span, c.Next)
+		} else {
+			err = c.Next()
+		}
 
 		span.SetTag(ext.ResourceName, cfg.resourceNamer(c))
 		span.SetTag(ext.HTTPRoute, c.Route().Path)
@@ -101,6 +133,9 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		} else if cfg.isStatusError(status) {
 			// mark 5xx server error
 			span.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%d: %s", status, http.StatusText(status)))
+		}
+		if handledResponse {
+			return nil
 		}
 		return err
 	}

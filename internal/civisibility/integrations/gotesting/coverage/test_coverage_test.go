@@ -6,7 +6,7 @@
 package coverage
 
 import (
-	"fmt"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -422,11 +422,17 @@ func TestCollectCoverageAfterTestExecution(t *testing.T) {
 		f.WriteString("mode: count\n")
 		return "", nil
 	}
-	covWriter = newCoverageWriter()
-	covWriter.client = &MockClient{SendCoveragePayloadFunc: func(_ io.Reader) error {
-		return fmt.Errorf("mock error")
+	writer := newCoverageWriter()
+	writer.client = &MockClient{SendCoveragePayloadFunc: func(_ io.Reader) error {
+		return errors.New("mock error")
 	},
 	}
+	oldWriter := covWriter
+	covWriter = writer
+	t.Cleanup(func() {
+		writer.stop()
+		covWriter = oldWriter
+	})
 
 	mode = "count"
 	coverageUploadEnabled = true
@@ -479,7 +485,7 @@ github.com/example/project/app/app.go:4.1,4.10 1 0
 	mode = "count"
 	modulePath = "github.com/example/project"
 	tearDown = func(_, _ string) (string, error) {
-		return "", fmt.Errorf("tearDown should not run when coverprofile exists")
+		return "", errors.New("tearDown should not run when coverprofile exists")
 	}
 	runtimeSnapshot = &runtimeCoverageSnapshot{path: profilePath}
 	ConfigureBackfill(BackfillInput{

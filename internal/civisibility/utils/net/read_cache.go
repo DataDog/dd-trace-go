@@ -18,6 +18,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,7 +35,7 @@ const (
 	readCacheEndpointVersion = 1
 	// readCacheEndpointSkippableTestsVersion is bumped independently because skippable-tests
 	// cache entries include backend coverage metadata and safety state.
-	readCacheEndpointSkippableTestsVersion = 2
+	readCacheEndpointSkippableTestsVersion = 3
 
 	// readCacheScopeLocal scopes unidentified local runs by parent process.
 	readCacheScopeLocal = "local"
@@ -228,7 +229,7 @@ func newReadCacheScopeIdentity(ciTags map[string]string) readCacheScopeIdentity 
 		return newReadCacheScopeIdentityFromValues(readCacheScopeCIWeak, 5*time.Minute, values)
 	}
 
-	values := []readCacheIdentityValue{{Name: "parent_pid", Value: fmt.Sprint(readCacheParentPID())}}
+	values := []readCacheIdentityValue{{Name: "parent_pid", Value: strconv.Itoa(readCacheParentPID())}}
 	return newReadCacheScopeIdentityFromValues(readCacheScopeLocal, time.Minute, values)
 }
 

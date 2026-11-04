@@ -31,6 +31,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 )
 
@@ -431,6 +432,190 @@ func TestSpanTree(t *testing.T) {
 	})
 }
 
+// TestStreamPeerFromContext checks that callers can read the transport peer
+// and the stream call span from the context of a traced client stream.
+// Unary calls use the grpc.Peer call option; stream callers depend on
+// peer.FromContext(stream.Context()). This guards the fix for
+// https://github.com/DataDog/dd-trace-go/issues/5469.
+func TestStreamPeerFromContext(t *testing.T) {
+	roundTrip := func(t *testing.T, stream fixturepb.Fixture_StreamPingClient) {
+		require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: "pass"}))
+		require.NoError(t, stream.CloseSend())
+		_, err := stream.Recv()
+		require.NoError(t, err)
+	}
+	assertPeer := func(t *testing.T, sctx context.Context, wantPort string) {
+		p, ok := peer.FromContext(sctx)
+		require.True(t, ok, "the stream context must carry the transport peer")
+		require.NotNil(t, p.Addr)
+		_, port, err := net.SplitHostPort(p.Addr.String())
+		require.NoError(t, err)
+		assert.Equal(t, wantPort, port)
+	}
+
+	t.Run("no client interceptor", func(t *testing.T) {
+		rig, err := newRig(false)
+		require.NoError(t, err, "error setting up rig")
+		defer func() { require.NoError(t, rig.Close()) }()
+
+		stream, err := rig.client.StreamPing(context.Background())
+		require.NoError(t, err)
+		roundTrip(t, stream)
+		assertPeer(t, stream.Context(), rig.port)
+	})
+
+	t.Run("traced client stream", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rig, err := newRig(true)
+		require.NoError(t, err, "error setting up rig")
+		defer func() { require.NoError(t, rig.Close()) }()
+
+		root, ctx := tracer.StartSpanFromContext(context.Background(), "root")
+		defer root.Finish()
+
+		stream, err := rig.client.StreamPing(ctx)
+		require.NoError(t, err)
+		roundTrip(t, stream)
+		assertPeer(t, stream.Context(), rig.port)
+
+		// The stream context must also carry the stream call span so that code
+		// which wraps the stream parents new spans to the grpc.client span
+		// instead of starting a new trace.
+		span, ok := tracer.SpanFromContext(stream.Context())
+		require.True(t, ok, "the stream context must carry the stream call span")
+		var found bool
+		for _, s := range mt.OpenSpans() {
+			if s.OperationName() == "grpc.client" && s.SpanID() == span.Context().SpanID() {
+				found = true
+			}
+		}
+		require.True(t, found, "the stream context must carry the grpc.client span, got span id %d", span.Context().SpanID())
+	})
+}
+
+// TestStreamMessagePeerTags checks that client grpc.message spans carry the
+// peer host and port tags. The rig runs without the server interceptor so
+// every grpc.message span comes from the client stream wrapper.
+func TestStreamMessagePeerTags(t *testing.T) {
+	t.Run("traced calls", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rig, err := newRigWithInterceptors(nil, []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithStreamInterceptor(StreamClientInterceptor()),
+		})
+		require.NoError(t, err, "error setting up rig")
+		defer func() { require.NoError(t, rig.Close()) }()
+
+		stream, err := rig.client.StreamPing(context.Background())
+		require.NoError(t, err)
+		require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: "pass"}))
+		require.NoError(t, stream.CloseSend())
+		_, err = stream.Recv()
+		require.NoError(t, err)
+
+		var msgSpans []*mocktracer.Span
+		for _, s := range mt.FinishedSpans() {
+			if s.OperationName() == "grpc.message" {
+				msgSpans = append(msgSpans, s)
+			}
+		}
+		require.NotEmpty(t, msgSpans)
+		for _, s := range msgSpans {
+			assert.Equal(t, "127.0.0.1", s.Tag(ext.TargetHost), "grpc.message span must carry the peer host tag")
+			assert.Equal(t, rig.port, s.Tag(ext.TargetPort), "grpc.message span must carry the peer port tag")
+		}
+	})
+
+	// With call tracing disabled, the interceptor never reads the transport
+	// context at stream creation, so transparent retries stay enabled until
+	// the first receive returns. Message spans must respect that window: the
+	// span of the first send carries no peer tags, every later span does.
+	t.Run("messages only", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rig, err := newRigWithInterceptors(nil, []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithStreamInterceptor(StreamClientInterceptor(WithStreamCalls(false))),
+		})
+		require.NoError(t, err, "error setting up rig")
+		defer func() { require.NoError(t, rig.Close()) }()
+
+		stream, err := rig.client.StreamPing(context.Background())
+		require.NoError(t, err)
+		require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: "pass"}))
+		_, err = stream.Recv()
+		require.NoError(t, err)
+		require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: "pass"}))
+		_, err = stream.Recv()
+		require.NoError(t, err)
+
+		var msgSpans []*mocktracer.Span
+		for _, s := range mt.FinishedSpans() {
+			if s.OperationName() == "grpc.message" {
+				msgSpans = append(msgSpans, s)
+			}
+		}
+		// The spans finish in order: send, receive, send, receive.
+		require.Len(t, msgSpans, 4)
+		assert.Nil(t, msgSpans[0].Tag(ext.TargetHost), "the first send must not read the transport context before any receive returned")
+		assert.Nil(t, msgSpans[0].Tag(ext.TargetPort))
+		for _, s := range msgSpans[1:] {
+			assert.Equal(t, "127.0.0.1", s.Tag(ext.TargetHost), "grpc.message span must carry the peer host tag")
+			assert.Equal(t, rig.port, s.Tag(ext.TargetPort), "grpc.message span must carry the peer port tag")
+		}
+	})
+
+	// Context and Header commits the stream attempt as well. A caller that
+	// calls either method closes the retry window itself, so message spans
+	// after that point may read the transport context.
+	t.Run("messages only after Context and Header", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		rig, err := newRigWithInterceptors(nil, []grpc.DialOption{
+			grpc.WithTransportCredentials(insecure.NewCredentials()),
+			grpc.WithStreamInterceptor(StreamClientInterceptor(WithStreamCalls(false))),
+		})
+		require.NoError(t, err, "error setting up rig")
+		defer func() { require.NoError(t, rig.Close()) }()
+
+		stream, err := rig.client.StreamPing(context.Background())
+		require.NoError(t, err)
+		// The caller closes the retry window through Context before the first
+		// send, so the send span may already read the transport context.
+		_ = stream.Context()
+		require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: "pass"}))
+		_, err = stream.Recv()
+		require.NoError(t, err)
+		// The headers arrived with the first reply, so Header returns at once.
+		// The call commits the attempt, so the send span after it may read the
+		// transport context as well.
+		_, err = stream.Header()
+		require.NoError(t, err)
+		require.NoError(t, stream.Send(&fixturepb.FixtureRequest{Name: "pass"}))
+		_, err = stream.Recv()
+		require.NoError(t, err)
+
+		var msgSpans []*mocktracer.Span
+		for _, s := range mt.FinishedSpans() {
+			if s.OperationName() == "grpc.message" {
+				msgSpans = append(msgSpans, s)
+			}
+		}
+		// The spans finish in order: send, receive, send, receive.
+		require.Len(t, msgSpans, 4)
+		for _, s := range msgSpans {
+			assert.Equal(t, "127.0.0.1", s.Tag(ext.TargetHost), "grpc.message span must carry the peer host tag")
+			assert.Equal(t, rig.port, s.Tag(ext.TargetPort), "grpc.message span must carry the peer port tag")
+		}
+	})
+}
+
 func TestPass(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()
@@ -605,6 +790,188 @@ func waitForSpans(mt mocktracer.Tracer, sz int) {
 	for len(mt.FinishedSpans()) < sz {
 		time.Sleep(time.Millisecond * 100)
 	}
+}
+
+func TestWithErrorCheck(t *testing.T) {
+	t.Run("unary", func(t *testing.T) {
+		for name, tt := range map[string]struct {
+			errCheck    func(method string, err error) bool
+			message     string
+			withError   bool
+			wantCode    string
+			wantMessage string
+		}{
+			"Invalid_with_no_error": {
+				message: "invalid",
+				errCheck: func(method string, err error) bool {
+					// Treat InvalidArgument on this method as a non-error.
+					if status.Code(err) == codes.InvalidArgument && method == "/grpc.Fixture/Ping" {
+						return false
+					}
+					return true
+				},
+				withError:   false,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
+			},
+			"Invalid_with_error": {
+				message: "invalid",
+				errCheck: func(method string, err error) bool {
+					// Only InvalidArgument on this (non-matching) method would be a non-error.
+					if status.Code(err) == codes.InvalidArgument && method == "/some/endpoint" {
+						return false
+					}
+					return true
+				},
+				withError:   true,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
+			},
+			"Invalid_with_error_without_errCheck": {
+				message:     "invalid",
+				errCheck:    nil,
+				withError:   true,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
+			},
+		} {
+			t.Run(name, func(t *testing.T) {
+				mt := mocktracer.Start()
+				defer mt.Stop()
+
+				var ops []Option
+				if tt.errCheck != nil {
+					ops = append(ops, WithErrorCheck(tt.errCheck))
+				}
+				rig, err := newRig(true, ops...)
+				if err != nil {
+					t.Fatalf("error setting up rig: %s", err)
+				}
+
+				client := rig.client
+				_, err = client.Ping(context.Background(), &fixturepb.FixtureRequest{Name: tt.message})
+				assert.Error(t, err)
+				assert.Equal(t, tt.wantCode, status.Code(err).String())
+				assert.Equal(t, tt.wantMessage, status.Convert(err).Message())
+
+				spans := mt.FinishedSpans()
+				assert.Len(t, spans, 2)
+
+				var serverSpan, clientSpan *mocktracer.Span
+
+				for _, s := range spans {
+					// order of traces in buffer is not guaranteed
+					switch s.OperationName() {
+					case "grpc.server":
+						serverSpan = s
+					case "grpc.client":
+						clientSpan = s
+					}
+				}
+
+				if tt.withError {
+					assert.NotNil(t, clientSpan.Tag(ext.ErrorMsg))
+					assert.NotNil(t, serverSpan.Tag(ext.ErrorMsg))
+				} else {
+					assert.Nil(t, clientSpan.Tag(ext.ErrorMsg))
+					assert.Nil(t, serverSpan.Tag(ext.ErrorMsg))
+				}
+
+				rig.Close()
+				mt.Reset()
+			})
+		}
+	})
+
+	t.Run("stream", func(t *testing.T) {
+		for name, tt := range map[string]struct {
+			errCheck    func(method string, err error) bool
+			message     string
+			withError   bool
+			wantCode    string
+			wantMessage string
+		}{
+			"Invalid_with_no_error": {
+				message: "invalid",
+				errCheck: func(method string, err error) bool {
+					// Treat InvalidArgument on this method as a non-error.
+					if status.Code(err) == codes.InvalidArgument && method == "/grpc.Fixture/StreamPing" {
+						return false
+					}
+					return true
+				},
+				withError:   false,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
+			},
+			"Invalid_with_error": {
+				message: "invalid",
+				errCheck: func(method string, err error) bool {
+					// Only InvalidArgument on this (non-matching) method would be a non-error.
+					if status.Code(err) == codes.InvalidArgument && method == "/some/endpoint" {
+						return false
+					}
+					return true
+				},
+				withError:   true,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
+			},
+			"Invalid_with_error_without_errCheck": {
+				message:     "invalid",
+				errCheck:    nil,
+				withError:   true,
+				wantCode:    codes.InvalidArgument.String(),
+				wantMessage: "invalid",
+			},
+		} {
+			t.Run(name, func(t *testing.T) {
+				mt := mocktracer.Start()
+				defer mt.Stop()
+				var opts []Option
+				if tt.errCheck != nil {
+					opts = append(opts, WithErrorCheck(tt.errCheck))
+				}
+				rig, err := newRig(true, opts...)
+				if err != nil {
+					t.Fatalf("error setting up rig: %s", err)
+				}
+
+				ctx, done := context.WithCancel(context.Background())
+				client := rig.client
+				stream, err := client.StreamPing(ctx)
+				assert.NoError(t, err)
+
+				err = stream.Send(&fixturepb.FixtureRequest{Name: tt.message})
+				assert.NoError(t, err)
+
+				_, err = stream.Recv()
+				assert.Error(t, err)
+				assert.Equal(t, tt.wantCode, status.Code(err).String())
+				assert.Equal(t, tt.wantMessage, status.Convert(err).Message())
+
+				assert.NoError(t, stream.CloseSend())
+				done() // close stream from client side
+				rig.Close()
+
+				waitForSpans(mt, 5)
+
+				spans := mt.FinishedSpans()
+				assert.Len(t, spans, 5)
+
+				var hasErrorTag bool
+				for _, s := range spans {
+					if s.Tag(ext.ErrorMsg) != nil {
+						hasErrorTag = true
+						break
+					}
+				}
+				assert.Equal(t, tt.withError, hasErrorTag)
+
+				mt.Reset()
+			})
+		}
+	})
 }
 
 func TestAnalyticsSettings(t *testing.T) {
@@ -1178,4 +1545,96 @@ func TestIssue2050(t *testing.T) {
 	case <-spansFound:
 		return
 	}
+}
+
+// hasControlByte reports whether s contains a raw CR, LF, or NUL byte -- the
+// bytes an attacker needs to smuggle extra header lines into a carrier that
+// writes header values without validation.
+func hasControlByte(s string) bool {
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\r', '\n', 0x00:
+			return true
+		}
+	}
+	return false
+}
+
+// otBaggageEntries returns the subset of md whose keys carry the legacy
+// OpenTracing baggage prefix. gRPC metadata keys are already lowercased by
+// MDCarrier.Set, matching the (also lowercase) DefaultBaggageHeaderPrefix.
+func otBaggageEntries(md metadata.MD) metadata.MD {
+	out := metadata.MD{}
+	for k, vals := range md {
+		if strings.HasPrefix(k, tracer.DefaultBaggageHeaderPrefix) {
+			out[k] = vals
+		}
+	}
+	return out
+}
+
+// TestBaggageControlCharsNotInjectedOverGRPC reproduces the outbound impact
+// of a poisoned baggage value over gRPC: "v\r\nX-Evil:1" is exactly what an
+// upstream "baggage: k=v%0D%0AX-Evil:1" header decodes to. gRPC metadata
+// values may legally contain arbitrary bytes, so the secure behavior here is
+// that the tracer itself never re-emits a raw control byte under the legacy
+// ot-baggage-* prefix, regardless of what the transport would otherwise allow.
+func TestBaggageControlCharsNotInjectedOverGRPC(t *testing.T) {
+	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext,baggage")
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rig, err := newRig(true)
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, rig.Close()) }()
+
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "x")
+	span.SetBaggageItem("k", "v\r\nX-Evil:1")
+	_, err = rig.client.Ping(ctx, &fixturepb.FixtureRequest{Name: "pass"})
+	span.Finish()
+	require.NoError(t, err, "the RPC must not fail because of a poisoned ot-baggage-* metadata value")
+
+	md := rig.fixtureServer.LastRequestMetadata.Load().(metadata.MD)
+	baggage := otBaggageEntries(md)
+	for k, vals := range baggage {
+		for _, v := range vals {
+			assert.False(t, hasControlByte(v), "%s must not carry a raw control byte, got %q", k, v)
+		}
+	}
+	assert.NotEmpty(t, baggage, "expected an ot-baggage-* metadata entry on the outbound request")
+}
+
+// TestOTBaggageEnforcesLimitsOverGRPC covers the ot-baggage-* prefix path
+// over the gRPC client interceptor: unlike the W3C "baggage" header, this
+// path currently has no item-count or byte-size cap, so an attacker-sized
+// baggage set is fully delivered as outbound gRPC metadata.
+func TestOTBaggageEnforcesLimitsOverGRPC(t *testing.T) {
+	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext,baggage")
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rig, err := newRig(true)
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, rig.Close()) }()
+
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "x")
+	for i := range 100 {
+		span.SetBaggageItem(fmt.Sprintf("k%d", i), "x")
+	}
+	_, err = rig.client.Ping(ctx, &fixturepb.FixtureRequest{Name: "pass"})
+	span.Finish()
+	require.NoError(t, err)
+
+	md := rig.fixtureServer.LastRequestMetadata.Load().(metadata.MD)
+	count, totalBytes := 0, 0
+	for k, vals := range otBaggageEntries(md) {
+		for _, v := range vals {
+			count++
+			totalBytes += len(k) + len(v)
+		}
+	}
+	assert.LessOrEqual(t, count, 64)
+	assert.LessOrEqual(t, totalBytes, 8192)
 }

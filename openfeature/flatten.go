@@ -10,8 +10,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
@@ -148,11 +146,15 @@ func flattenRecursiveDepth(prefix string, value any, result map[string]any, seen
 	case []byte:
 		result[prefix] = string(v)
 	case fmt.Stringer:
+		// A typed nil pointer may have a value-receiver String method that panics.
+		if rv := reflect.ValueOf(v); rv.Kind() == reflect.Pointer && rv.IsNil() {
+			return
+		}
 		result[prefix] = v.String()
 	case string, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, bool:
 		result[prefix] = value
 	default:
-		log.Debug("openfeature: skipping unsupported attribute type for key %q: %T", prefix, value)
+		logOnboarding("skipping unsupported attribute type for key %q: %T", prefix, value)
 	}
 }
 

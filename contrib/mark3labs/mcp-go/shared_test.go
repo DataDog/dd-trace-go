@@ -9,27 +9,27 @@ import (
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils/testtracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/llmobstest"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
 )
 
-// testTracer creates a testtracer with LLMObs enabled for integration tests
-func testTracer(t *testing.T, opts ...testtracer.Option) *testtracer.TestTracer {
-	defaultOpts := []testtracer.Option{
-		testtracer.WithTracerStartOpts(
-			tracer.WithLLMObsEnabled(true),
-			tracer.WithLLMObsMLApp("test-mcp-app"),
-			tracer.WithLogStartup(false),
-		),
-		testtracer.WithAgentInfoResponse(testtracer.AgentInfo{
-			Endpoints: []string{"/evp_proxy/v2/"},
-		}),
-	}
-	allOpts := append(defaultOpts, opts...)
-	tt := testtracer.Start(t, allOpts...)
-	t.Cleanup(tt.Stop)
-	return tt
+// testTracer creates a tracer with LLMObs enabled for integration tests.
+// It uses Bootstrap so the global tracer is set, allowing tracer.Flush() to work.
+func testTracer(t *testing.T, opts ...tracer.StartOption) *llmobstest.Collector {
+	t.Helper()
+	coll := llmobstest.New(t)
+	o := append([]tracer.StartOption{
+		tracer.WithLLMObsEnabled(true),
+		tracer.WithLLMObsMLApp("test-mcp-app"),
+		tracer.WithLogStartup(false),
+		coll.TracerOption(),
+	}, opts...)
+	_, _, err := tracertest.Bootstrap(t, o...)
+	require.NoError(t, err)
+	return coll
 }
 
 // mockSession is a simple mock implementation of server.ClientSession for testing

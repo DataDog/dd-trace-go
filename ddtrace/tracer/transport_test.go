@@ -8,7 +8,7 @@ package tracer
 import (
 	"bufio"
 	"context"
-	"fmt"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -56,10 +56,10 @@ func getTestSpan() *Span {
 // getTestTrace returns a list of traces that is composed by “traceN“ number
 // of traces, each one composed by “size“ number of spans.
 func getTestTrace(traceN, size int) [][]*Span {
-	var traces [][]*Span
+	traces := make([][]*Span, 0, traceN)
 
 	for range traceN {
-		trace := []*Span{}
+		trace := make([]*Span, 0, size)
 		for range size {
 			trace = append(trace, getTestSpan())
 		}
@@ -94,12 +94,14 @@ func TestTracesAgentIntegration(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		transport := newHTTPTransport(defaultURL+tracesAPIPath, defaultURL+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
+		transport := newHTTPTransport(defaultURL, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		body, err := transport.send(p)
 		assert.NoError(err)
-		defer body.Close()
+		_, _ = io.Copy(io.Discard, body)
+		body.Close()
+		transport.client.CloseIdleConnections()
 	}
 }
 
@@ -110,8 +112,8 @@ func TestResolveAgentAddr(t *testing.T) {
 		out              *url.URL
 	}{
 		{nil, "", "", &url.URL{Scheme: "http", Host: defaultAddress}},
-		{nil, "ip.local", "", &url.URL{Scheme: "http", Host: fmt.Sprintf("ip.local:%s", defaultPort)}},
-		{nil, "", "1234", &url.URL{Scheme: "http", Host: fmt.Sprintf("%s:1234", defaultHostname)}},
+		{nil, "ip.local", "", &url.URL{Scheme: "http", Host: "ip.local:" + defaultPort}},
+		{nil, "", "1234", &url.URL{Scheme: "http", Host: defaultHostname + ":1234"}},
 		{nil, "ip.local", "1234", &url.URL{Scheme: "http", Host: "ip.local:1234"}},
 		{WithAgentAddr("host:1243"), "", "", &url.URL{Scheme: "http", Host: "host:1243"}},
 		{WithAgentAddr("ip.other:9876"), "ip.local", "", &url.URL{Scheme: "http", Host: "ip.other:9876"}},
@@ -161,7 +163,7 @@ func TestTransportResponse(t *testing.T) {
 		"bad": {
 			status: http.StatusBadRequest,
 			body:   strings.Repeat("X", 1002),
-			err:    fmt.Sprintf("%s (Status: Bad Request)", strings.Repeat("X", 1000)),
+			err:    strings.Repeat("X", 1000) + " (Status: Bad Request)",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -171,7 +173,7 @@ func TestTransportResponse(t *testing.T) {
 				w.Write([]byte(tt.body))
 			}))
 			defer srv.Close()
-			transport := newHTTPTransport(srv.URL+tracesAPIPath, srv.URL+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
+			transport := newHTTPTransport(srv.URL, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
 			rc, err := transport.send(newPayload(traceProtocolV04))
 			if tt.err != "" {
 				assert.Equal(tt.err, err.Error())
@@ -184,6 +186,26 @@ func TestTransportResponse(t *testing.T) {
 			assert.Equal(tt.body, string(slurp))
 		})
 	}
+}
+
+// TestTransportSendDistinguishesV1RejectionFrom404 pins that a 404 on
+// /v1.0/traces surfaces as errV1TracesNotSupported (so agentTraceWriter can
+// fall back to v0.4 — see downgradeAfterRejectedSend), while the same status
+// on /v0.4/traces surfaces as a generic error: v0.4 is universally accepted,
+// so a 404 there is never evidence of a missing protocol, just a failure.
+func TestTransportSendDistinguishesV1RejectionFrom404(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	transport := newHTTPTransport(srv.URL, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
+
+	_, err := transport.send(newPayload(traceProtocolV1))
+	assert.ErrorIs(t, err, errV1TracesNotSupported)
+
+	_, err = transport.send(newPayload(traceProtocolV04))
+	assert.NotErrorIs(t, err, errV1TracesNotSupported)
+	assert.Error(t, err)
 }
 
 func TestFetchAgentFeaturesContainerTagsHash(t *testing.T) {
@@ -204,6 +226,56 @@ func TestFetchAgentFeaturesContainerTagsHash(t *testing.T) {
 
 	assert.True(t, features.Stats)
 	assert.Equal(t, "info-container-hash", processtags.ContainerTagsHash())
+}
+
+// TestFetchAgentFeaturesBodyReadFailureIsNotDecodeError pins the fix for
+// reporting body-read failures to Error Tracking: a 200 response whose body
+// is interrupted (connection reset mid-stream) is a transport failure, not a
+// malformed agent response, so fetchAgentFeatures must not classify it as
+// agentFeaturesDecodeError — only a JSON-parse failure on the fully read
+// body may be reported.
+func TestFetchAgentFeaturesBodyReadFailureIsNotDecodeError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		// Partial JSON, then drop the connection mid-body.
+		w.Write([]byte(`{"endpoints":["/v0.6/st`))
+		panic(http.ErrAbortHandler)
+	}))
+	defer srv.Close()
+
+	agentURL, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+
+	_, err = fetchAgentFeatures(context.Background(), agentURL, srv.Client())
+	require.Error(t, err)
+	var decodeErr *agentFeaturesDecodeError
+	assert.False(t, errors.As(err, &decodeErr),
+		"an interrupted body read is a transport failure and must not be reported as a decode error")
+}
+
+func TestFetchAgentFeaturesCancellationIsNotDecodeError(t *testing.T) {
+	headersSent := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		close(headersSent)
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	agentURL, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-headersSent
+		cancel()
+	}()
+
+	_, err = fetchAgentFeatures(ctx, agentURL, srv.Client())
+	require.ErrorIs(t, err, context.Canceled)
+	var decodeErr *agentFeaturesDecodeError
+	assert.False(t, errors.As(err, &decodeErr))
 }
 
 func TestTraceCountHeader(t *testing.T) {
@@ -231,7 +303,7 @@ func TestTraceCountHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 	for _, tc := range testCases {
-		transport := newHTTPTransport(srv.URL+tracesAPIPath, srv.URL+statsAPIPath, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
+		transport := newHTTPTransport(srv.URL, internal.DefaultHTTPClient(defaultHTTPTimeout, false), datadogHeaders())
 		p, err := encode(tc.payload)
 		assert.NoError(err)
 		_, err = transport.send(p)
@@ -273,7 +345,7 @@ func TestCustomTransport(t *testing.T) {
 
 	c := &http.Client{}
 	crt := wrapRecordingRoundTripper(c)
-	transport := newHTTPTransport(srv.URL+tracesAPIPath, srv.URL+statsAPIPath, c, datadogHeaders())
+	transport := newHTTPTransport(srv.URL, c, datadogHeaders())
 	p, err := encode(getTestTrace(1, 1))
 	assert.NoError(err)
 	_, err = transport.send(p)
@@ -287,7 +359,7 @@ func TestCustomTransport(t *testing.T) {
 type ErrTransport struct{}
 
 func (t *ErrTransport) RoundTrip(_ *http.Request) (*http.Response, error) {
-	return nil, fmt.Errorf("error in RoundTripper")
+	return nil, errors.New("error in RoundTripper")
 }
 
 type ErrResponseTransport struct{}
@@ -538,8 +610,7 @@ func TestUDSTransportRecoversFromStaleIdleConn(t *testing.T) {
 	}()
 
 	transport := newHTTPTransport(
-		"http://localhost"+tracesAPIPath,
-		"http://localhost"+statsAPIPath,
+		"http://localhost",
 		internal.UDSClient(socketPath, 5*time.Second),
 		datadogHeaders(),
 	)
@@ -784,7 +855,7 @@ func TestClientComputedStatsHeader(t *testing.T) {
 
 	t.Run("header-set-when-both-conditions-met", func(t *testing.T) {
 		// When both conditions are met (stats endpoint + client_drop_p0s),
-		// the Datadog-Client-Computed-Stats header should be set to "t"
+		// the Datadog-Client-Computed-Stats header should be set to "yes".
 		assert := assert.New(t)
 		var headerValue string
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -807,7 +878,7 @@ func TestClientComputedStatsHeader(t *testing.T) {
 		assert.NoError(err)
 		_, err = trc.config.ddTransport.send(p)
 		assert.NoError(err)
-		assert.Equal("t", headerValue, "Datadog-Client-Computed-Stats header should be set to 't' when both conditions are met")
+		assert.Equal("yes", headerValue, "Datadog-Client-Computed-Stats header should be set to 'yes' when both conditions are met")
 	})
 }
 
@@ -841,7 +912,7 @@ func TestConcurrentTraceFlushOverUDS(t *testing.T) {
 
 	udsURL := internal.UnixDataSocketURL(socketPath).String()
 	client := internal.UDSClient(socketPath, 5*time.Second)
-	transport := newHTTPTransport(udsURL+tracesAPIPath, udsURL+statsAPIPath, client, datadogHeaders())
+	transport := newHTTPTransport(udsURL, client, datadogHeaders())
 
 	const numGoroutines = 20
 
@@ -862,6 +933,7 @@ func TestConcurrentTraceFlushOverUDS(t *testing.T) {
 				errs[i] = sendErr
 				return
 			}
+			io.Copy(io.Discard, body) //nolint:errcheck
 			body.Close()
 		})
 	}

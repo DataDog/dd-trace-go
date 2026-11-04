@@ -26,12 +26,16 @@ type slogHandler struct {
 }
 
 func (h slogHandler) Enabled(_ context.Context, lvl slog.Level) bool {
-	if lvl <= slog.LevelDebug {
+	switch {
+	case lvl <= slog.LevelDebug:
 		return log.DebugEnabled()
+	case lvl <= slog.LevelInfo:
+		return log.Enabled(log.LevelInfo)
+	case lvl <= slog.LevelWarn:
+		return log.Enabled(log.LevelWarn)
+	default:
+		return true
 	}
-	// TODO(fg): Implement generic log level checking in the internal logger.
-	// But we're we're not concerned with slog perf, so this is okay for now.
-	return true
 }
 
 func (h slogHandler) Handle(_ context.Context, r slog.Record) error {
@@ -63,14 +67,15 @@ func (h slogHandler) Handle(_ context.Context, r slog.Record) error {
 	})
 
 	extra := strings.Join(parts, " ")
-	switch r.Level {
-	case slog.LevelDebug:
+	// Match the ranges in Enabled, so custom levels are not dropped.
+	switch {
+	case r.Level <= slog.LevelDebug:
 		log.Debug("%s %s", r.Message, extra)
-	case slog.LevelInfo:
+	case r.Level <= slog.LevelInfo:
 		log.Info("%s %s", r.Message, extra)
-	case slog.LevelWarn:
+	case r.Level <= slog.LevelWarn:
 		log.Warn("%s %s", r.Message, extra)
-	case slog.LevelError:
+	default:
 		log.Error("%s %s", r.Message, extra)
 	}
 	return nil

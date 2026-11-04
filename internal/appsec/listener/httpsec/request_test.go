@@ -10,6 +10,7 @@ import (
 	_ "embed" // For go:embed
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net"
 	"net/http"
 	"net/netip"
@@ -23,9 +24,11 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	tracelib "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	wafemitter "github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/waf"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -382,6 +385,7 @@ func TestTraceTagging(t *testing.T) {
 				RequestRoute: "/fake/:id/uri",
 				Host:         "localhost",
 				RemoteAddr:   "127.0.0.1:4242",
+				ClientIP:     netip.MustParseAddr("127.0.0.1"),
 				Headers:      map[string][]string{"user-agent": {tc.UserAgent}},
 				Cookies:      map[string][]string{},
 				QueryParams:  map[string][]string{},
@@ -392,4 +396,100 @@ func TestTraceTagging(t *testing.T) {
 			require.Subset(t, span.Tags, tc.ExpectedTags)
 		})
 	}
+}
+
+// BenchmarkSecurityTestingHeaderTagValues measures the hot-path cost of
+// scanning for security testing headers on every HTTP request.
+// The "absent" case represents real user traffic (headers never present);
+// the "present" case represents Datadog scan/test traffic.
+func BenchmarkSecurityTestingHeaderTagValues(b *testing.B) {
+	// Realistic ~20-header request without security testing headers.
+	baseHeaders := http.Header{
+		"Accept":            {"text/html,application/xhtml+xml"},
+		"Accept-Encoding":   {"gzip, deflate, br"},
+		"Accept-Language":   {"en-US,en;q=0.9"},
+		"Cache-Control":     {"no-cache"},
+		"Connection":        {"keep-alive"},
+		"Content-Type":      {"application/json"},
+		"Host":              {"example.com"},
+		"Pragma":            {"no-cache"},
+		"Referer":           {"https://example.com/"},
+		"User-Agent":        {"Mozilla/5.0 (compatible; BenchmarkBot/1.0)"},
+		"X-Forwarded-For":   {"1.2.3.4"},
+		"X-Real-Ip":         {"1.2.3.4"},
+		"X-Request-Id":      {"abc-123-def"},
+		"X-Forwarded-Host":  {"example.com"},
+		"X-Forwarded-Port":  {"443"},
+		"X-Forwarded-Proto": {"https"},
+		"X-Amzn-Trace-Id":   {"Root=1-abc-def"},
+		"Cf-Ray":            {"abc123-LAX"},
+		"Cf-Connecting-Ip":  {"1.2.3.4"},
+		"Via":               {"1.1 proxy.example.com"},
+	}
+
+	headersPresent := make(http.Header, len(baseHeaders)+2)
+	maps.Copy(headersPresent, baseHeaders)
+	headersPresent["X-Datadog-Endpoint-Scan"] = []string{"scan-uuid"}
+	headersPresent["X-Datadog-Security-Test"] = []string{"test-uuid"}
+
+	cases := []struct {
+		name    string
+		headers http.Header
+	}{
+		{"absent", baseHeaders},
+		{"present", headersPresent},
+	}
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				SecurityTestingHeaderTagValues(tc.headers)
+			}
+		})
+	}
+}
+
+func TestHeadersRemoveCookies(t *testing.T) {
+	h := http.Header{
+		"Cookie":       []string{"session=secret"},
+		"Set-Cookie":   []string{"session=secret; HttpOnly"},
+		"Content-Type": []string{"application/json"},
+	}
+	out := headersRemoveCookies(h)
+	if _, ok := out["cookie"]; ok {
+		t.Fatalf("request cookie header must be excluded from no_cookies address")
+	}
+	if _, ok := out["set-cookie"]; ok {
+		t.Fatalf("response set-cookie header must be excluded from no_cookies address")
+	}
+	if _, ok := out["content-type"]; !ok {
+		t.Fatalf("non-cookie headers must be preserved")
+	}
+}
+
+// TestSSRFOnStartNilMetricsNoPanic reproduces the nil-metrics dereference in the SSRF listener's
+// OnStart: when the WAF handle is unavailable (no context, no metrics set), an outbound request still
+// reaches the listener, which must not panic.
+func TestSSRFOnStartNilMetricsNoPanic(t *testing.T) {
+	// Context operation with NO metrics instance and NO WAF context (mirrors the handle==nil path,
+	// where listener/waf.onStart returns before SetMetricsInstance).
+	ctxOp, _ := wafemitter.StartContextOperation(context.Background(), tracelib.NoopTagSetter{})
+	t.Cleanup(ctxOp.Finish)
+	require.Nil(t, ctxOp.GetMetricsInstance(), "precondition: metrics must be nil")
+
+	handlerOp := &httpsec.HandlerOperation{
+		Operation:        dyngo.NewOperation(ctxOp),
+		ContextOperation: ctxOp,
+	}
+	rtOp := &httpsec.RoundTripOperation{
+		Operation:           dyngo.NewOperation(handlerOp),
+		SubcontextOperation: handlerOp.NewSubcontextOp(),
+		HandlerOp:           handlerOp,
+	}
+
+	feature := &DownwardRequestFeature{}
+	require.NotPanics(t, func() {
+		feature.OnStart(rtOp, httpsec.RoundTripOperationArgs{URL: "http://example.com", Method: "GET"})
+	})
 }

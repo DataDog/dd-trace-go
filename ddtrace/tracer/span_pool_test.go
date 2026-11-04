@@ -114,7 +114,7 @@ func TestSpanPoolRecycledSpanNoStaleData(t *testing.T) {
 		Tag("keyA", "valA"),
 		Tag("metricA", 1.0),
 	)
-	spanA.SetTag(ext.Error, fmt.Errorf("span A error"))
+	spanA.SetTag(ext.Error, errors.New("span A error"))
 	spanA.Finish()
 	flush(1)
 	transport.Traces() // drain
@@ -239,7 +239,7 @@ func TestSpanPoolSpanTypeAndErrorReset(t *testing.T) {
 		Tag(ext.ManualKeep, true),
 		SpanType("web"),
 	)
-	spanA.SetTag(ext.Error, fmt.Errorf("A error"))
+	spanA.SetTag(ext.Error, errors.New("A error"))
 	spanA.Finish()
 	flush(1)
 	transport.Traces() // drain
@@ -264,7 +264,7 @@ func TestSpanPoolSpanTypeAndErrorReset(t *testing.T) {
 		Tag(ext.ManualKeep, true),
 		SpanType("cache"),
 	)
-	spanC.SetTag(ext.Error, fmt.Errorf("C error"))
+	spanC.SetTag(ext.Error, errors.New("C error"))
 	spanC.Finish()
 	flush(1)
 
@@ -448,7 +448,7 @@ func requireProtocolRequests(t *testing.T, requests []string, protocol testTrace
 func runStrictSpanPoolAgentScenario(t *testing.T, protocol testTraceProtocol, poolEnabled bool) ([]observedAgentSpan, []string) {
 	t.Helper()
 	agent := startTestAgent(t)
-	tr := newAgentTracerTest(t, agent, protocol, WithSpanPool(poolEnabled))
+	tr := newAgentTracerTest(t, agent, protocol, WithSpanPool(poolEnabled), WithSendRetries(3))
 	defer stopTracerTest(tr)
 
 	base := time.Unix(1_700_000_000, 0)
@@ -682,7 +682,7 @@ func runPartialFlushReuseAgentScenario(t *testing.T, protocol testTraceProtocol,
 	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "2")
 
 	agent := startTestAgent(t)
-	tr := newAgentTracerTest(t, agent, protocol, WithSpanPool(poolEnabled))
+	tr := newAgentTracerTest(t, agent, protocol, WithSpanPool(poolEnabled), WithSendRetries(3))
 	defer stopTracerTest(tr)
 
 	base := time.Unix(1_700_000_100, 0)
@@ -810,6 +810,7 @@ func runSingleSpanSamplingAgentScenario(t *testing.T, protocol testTraceProtocol
 		WithSpanPool(poolEnabled),
 		WithSamplerRate(0),
 		WithSamplingRules(SpanSamplingRules(Rule{NameGlob: "sampling.keep", Rate: 1.0})),
+		WithSendRetries(3),
 	)
 	defer stopTracerTest(tr)
 
@@ -961,7 +962,7 @@ func BenchmarkSpanPoolEndToEnd(b *testing.B) {
 		b.Run(pm.name+"/errored", func(b *testing.B) {
 			agent := startTestAgent(b)
 			tr := newTracerTest(b, agent, WithSpanPool(pm.enabled))
-			benchErr := fmt.Errorf("benchmark error")
+			benchErr := errors.New("benchmark error")
 
 			b.ResetTimer()
 			for range b.N {
@@ -979,7 +980,7 @@ func BenchmarkSpanPoolEndToEnd(b *testing.B) {
 		// concurrent measures pool throughput under goroutine contention.
 		// delivery% is expected to be well below 100% because pushChunk
 		// (tracer.go) drops trace chunks when the tracer.out channel
-		// (capacity payloadQueueSize=1000) is full. Under RunParallel,
+		// (default capacity 1000) is full. Under RunParallel,
 		// goroutines produce spans far faster than the single worker can
 		// drain the channel, so most chunks are silently dropped. This is
 		// intentional production back-pressure behaviour; the metric
@@ -1006,14 +1007,19 @@ func BenchmarkSpanPoolEndToEnd(b *testing.B) {
 
 // TestSpanPoolEndToEndConcurrentCorrectness verifies that spans created from
 // multiple goroutines are delivered without corruption or duplication. The total
-// span count (500) is kept well below payloadQueueSize (1000) so that pushChunk
+// span count (500) is kept well below the payload queue capacity (1000) so that pushChunk
 // never drops chunks and we can assert exact delivery.
 func TestSpanPoolEndToEndConcurrentCorrectness(t *testing.T) {
 	const numGoroutines = 10
-	const spansPerGoroutine = 50 // 500 total, well within payloadQueueSize
+	const spansPerGoroutine = 50 // 500 total, well within the payload queue capacity
 
 	agent := startTestAgent(t)
-	tr := newTracerTest(t, agent, WithSpanPool(true))
+	// The send loop drops a payload after one failed attempt when send retries
+	// are unset (the default). A transient loopback failure on a loaded CI
+	// runner, such as windows-latest, then fails the exact-count assertion
+	// below with a shortfall equal to one payload. Retry sends so this test
+	// measures span delivery, not transport luck.
+	tr := newTracerTest(t, agent, WithSpanPool(true), WithSendRetries(3))
 
 	var wg sync.WaitGroup
 	for g := range numGoroutines {
@@ -1057,12 +1063,15 @@ func TestSpanPoolEndToEndConcurrentCorrectness(t *testing.T) {
 // TestSpanPoolEndToEndParentChild verifies that parent-child span relationships
 // survive pooling: traceIDs match, parentIDs are set, and pair tags don't leak
 // across unrelated trace trees. Like the concurrent test, the total span count
-// (400) stays below payloadQueueSize to guarantee full delivery.
+// (400) stays below the payload queue capacity to guarantee full delivery.
 func TestSpanPoolEndToEndParentChild(t *testing.T) {
 	const numPairs = 200
 
 	agent := startTestAgent(t)
-	tr := newTracerTest(t, agent, WithSpanPool(true))
+	// Like TestSpanPoolEndToEndConcurrentCorrectness, this test asserts exact
+	// delivery. Retry sends so a transient loopback failure on a loaded CI
+	// runner does not drop a payload and fail the exact-count assertion.
+	tr := newTracerTest(t, agent, WithSpanPool(true), WithSendRetries(3))
 
 	for i := range numPairs {
 		parent := tr.StartSpan("parent.op",
@@ -1129,7 +1138,10 @@ func TestSpanPoolEndToEndCorrectness(t *testing.T) {
 	const numSpans = 500
 
 	agent := startTestAgent(t)
-	tr := newTracerTest(t, agent, WithSpanPool(true))
+	// Like TestSpanPoolEndToEndConcurrentCorrectness, this test asserts exact
+	// delivery. Retry sends so a transient loopback failure on a loaded CI
+	// runner does not drop a payload and fail the exact-count assertion.
+	tr := newTracerTest(t, agent, WithSpanPool(true), WithSendRetries(3))
 
 	for i := range numSpans {
 		span := tr.StartSpan("pool.test",

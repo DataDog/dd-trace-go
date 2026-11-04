@@ -22,6 +22,7 @@ import (
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
@@ -33,6 +34,13 @@ type testOTLPServer struct {
 	*httptest.Server
 	mu       sync.Mutex
 	payloads [][]byte
+	// discard makes the handler drain request bodies without retaining them, for
+	// tests that never inspect the payloads. Retaining them keeps one
+	// ~payloadSizeLimit-sized buffer alive per flush for the whole test, so peak
+	// RSS scales with the number of flushes rather than with the writer's
+	// in-flight window.
+	discard   atomic.Bool
+	discarded atomic.Int32
 	// failCount controls how many requests return 500 before succeeding.
 	failCount int32
 }
@@ -42,6 +50,12 @@ func newTestOTLPServer() *testOTLPServer {
 	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if remaining := atomic.AddInt32(&s.failCount, -1); remaining >= 0 {
 			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if s.discard.Load() {
+			_, _ = io.Copy(io.Discard, r.Body)
+			s.discarded.Add(1)
+			w.WriteHeader(http.StatusOK)
 			return
 		}
 		body, _ := io.ReadAll(r.Body)
@@ -135,7 +149,6 @@ func TestOTLPWriterFlushEmpty(t *testing.T) {
 	w := newTestOTLPWriter(t, srv)
 
 	w.flush()
-	w.wg.Wait()
 
 	assert.Equal(t, 0, srv.requestCount())
 }
@@ -150,7 +163,7 @@ func TestOTLPWriterFlush(t *testing.T) {
 		newSpan("op2", "svc", "res", 2, 1, 0),
 	})
 	w.flush()
-	w.wg.Wait()
+	w.wait()
 
 	payloads := srv.getPayloads()
 	require.Equal(t, 1, len(payloads))
@@ -171,6 +184,80 @@ func TestOTLPWriterFlush(t *testing.T) {
 	assert.Equal(t, 2, len(rs[0].ScopeSpans[0].Spans))
 }
 
+func TestOTLPExportGlobalTagsOnResource(t *testing.T) {
+	srv := newTestOTLPServer()
+	defer srv.Close()
+
+	trc, err := newTracer(
+		WithGlobalTag("team", "core"),
+		WithGlobalTag("region", "us1"),
+		func(c *config) {
+			c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode)
+			c.ddTransport = newDummyTransport()
+		},
+	)
+	require.NoError(t, err)
+	w := trc.traceWriter.(*otlpTraceWriter)
+	w.transport = newOTLPTransport(srv.Client(), srv.URL, nil)
+	setGlobalTracer(trc)
+	t.Cleanup(func() { setGlobalTracer(&NoopTracer{}) })
+
+	trc.StartSpan("global").Finish()
+	override := trc.StartSpan("override")
+	override.SetTag("region", "eu1")
+	override.Finish()
+	// Stop drains t.out, flushes the writer, and waits for in-flight sends.
+	trc.Stop()
+
+	payloads := srv.getPayloads()
+	require.Len(t, payloads, 1)
+	var td otlptrace.TracesData
+	require.NoError(t, proto.Unmarshal(payloads[0], &td))
+	require.Len(t, td.ResourceSpans, 1)
+
+	resource := keyValuesToMap(td.ResourceSpans[0].Resource.Attributes)
+	assert.Equal(t, "core", resource["team"])
+	assert.Equal(t, "us1", resource["region"])
+	assert.NotEmpty(t, resource[ext.RuntimeID])
+
+	spans := make(map[string]map[string]any)
+	for _, s := range td.ResourceSpans[0].ScopeSpans[0].Spans {
+		attrs := keyValuesToMap(s.Attributes)
+		spans[attrs["operation.name"].(string)] = attrs
+	}
+	require.Len(t, spans, 2)
+	for name, attrs := range spans {
+		assert.NotContains(t, attrs, "team", name)
+		assert.NotContains(t, attrs, ext.RuntimeID, name)
+	}
+	assert.NotContains(t, spans["global"], "region")
+	assert.Equal(t, "eu1", spans["override"]["region"])
+}
+
+func TestOTLPWriterSignalHeadersReplaceGeneric(t *testing.T) {
+	var gotHeaders http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeaders = r.Header.Clone()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", srv.URL)
+	t.Setenv("OTEL_EXPORTER_OTLP_HEADERS", "x-generic=old,authorization=generic")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "authorization=signal")
+
+	cfg, err := newTestConfig(func(c *config) {
+		c.ddTransport = &simpleTransport{}
+	})
+	require.NoError(t, err)
+	w := newOTLPTraceWriter(cfg)
+	w.add([]*Span{newSpan("op", "svc", "res", 1, 1, 0)})
+	w.flush()
+	w.wait()
+
+	assert.Equal(t, "signal", gotHeaders.Get("Authorization"))
+	assert.Empty(t, gotHeaders.Values("X-Generic"))
+}
+
 func TestOTLPWriterFlushClearsSpans(t *testing.T) {
 	srv := newTestOTLPServer()
 	defer srv.Close()
@@ -178,15 +265,15 @@ func TestOTLPWriterFlushClearsSpans(t *testing.T) {
 
 	w.add([]*Span{newSpan("op1", "svc", "res", 1, 1, 0)})
 	w.flush()
-	w.wg.Wait()
 
 	w.mu.Lock()
 	assert.Equal(t, 0, len(w.spans))
 	w.mu.Unlock()
+	w.wait()
 
 	// Second flush should be a no-op
 	w.flush()
-	w.wg.Wait()
+	w.wait()
 	assert.Equal(t, 1, srv.requestCount())
 }
 
@@ -199,7 +286,7 @@ func TestOTLPWriterFlushOnSize(t *testing.T) {
 		bigSpan := newSpan("op", "svc", "res", 1, 1, 0)
 		bigSpan.meta.Set("big", strings.Repeat("X", payloadSizeLimit+1))
 		w.add([]*Span{bigSpan})
-		w.wg.Wait()
+		w.wait()
 
 		assert.GreaterOrEqual(t, srv.requestCount(), 1)
 		w.mu.Lock()
@@ -220,7 +307,7 @@ func TestOTLPWriterFlushOnSize(t *testing.T) {
 			s.meta.Set("data", strings.Repeat("X", spanSize))
 			w.add([]*Span{s})
 		}
-		w.wg.Wait()
+		w.wait()
 
 		assert.GreaterOrEqual(t, srv.requestCount(), 1)
 	})
@@ -262,14 +349,14 @@ func TestOTLPWriterFlushRetries(t *testing.T) {
 	for _, tc := range testcases {
 		name := fmt.Sprintf("retries=%d/fails=%d", tc.configRetries, tc.failCount)
 		t.Run(name, func(t *testing.T) {
-			var totalRequests int32
+			var totalRequests atomic.Int32
 			srv := newTestOTLPServer()
 			atomic.StoreInt32(&srv.failCount, int32(tc.failCount))
 			defer srv.Close()
 
 			mux := http.NewServeMux()
 			mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-				atomic.AddInt32(&totalRequests, 1)
+				totalRequests.Add(1)
 				srv.Server.Config.Handler.ServeHTTP(w, r)
 			})
 			countingSrv := httptest.NewServer(mux)
@@ -283,9 +370,9 @@ func TestOTLPWriterFlushRetries(t *testing.T) {
 
 			w.add([]*Span{newSpan("op", "svc", "res", 1, 1, 0)})
 			w.flush()
-			w.wg.Wait()
+			w.wait()
 
-			assert.Equal(t, int32(tc.expAttempts), atomic.LoadInt32(&totalRequests))
+			assert.Equal(t, int32(tc.expAttempts), totalRequests.Load())
 			assert.Equal(t, tc.tracesSent, len(srv.getPayloads()) > 0)
 		})
 	}
@@ -314,14 +401,14 @@ func TestOTLPWriterConcurrency(t *testing.T) {
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 
-	var spansAdded int32
+	var spansAdded atomic.Int32
 
 	for range numAdders {
 		wg.Go(func() {
 			<-start
 			for range spansPerAdder {
 				w.add([]*Span{newSpan("op", "svc", "res", randUint64(), randUint64(), 0)})
-				atomic.AddInt32(&spansAdded, 1)
+				spansAdded.Add(1)
 			}
 		})
 	}
@@ -340,7 +427,7 @@ func TestOTLPWriterConcurrency(t *testing.T) {
 
 	w.stop()
 
-	assert.Equal(t, int32(numAdders*spansPerAdder), atomic.LoadInt32(&spansAdded))
+	assert.Equal(t, int32(numAdders*spansPerAdder), spansAdded.Load())
 
 	// Verify all sent payloads are valid protobuf
 	totalSpans := 0
@@ -355,6 +442,51 @@ func TestOTLPWriterConcurrency(t *testing.T) {
 		}
 	}
 	assert.Equal(t, numAdders*spansPerAdder, totalSpans)
+}
+
+// TestOTLPWriterConcurrentAddAndWait regression-tests the specific hazard that
+// motivated removing async dispatch from flush() in the first place: add()'s
+// size-triggered flush() call runs wg.Add on one goroutine while wait()/stop()
+// runs wg.Wait() on another. Without wgMu serializing the two, sync.WaitGroup
+// panics with "Add called concurrently with Wait" once a Wait call observes a
+// zero counter at the same instant a new flush starts one.
+func TestOTLPWriterConcurrentAddAndWait(t *testing.T) {
+	// This test was a memory bomb under -tags=deadlock: peak RSS ranged from
+	// 0.50GB to 13.70GB across identical runs. Retaining every payload, allowing
+	// 100 in-flight sends, and letting adders run until the waits finished made
+	// the amount of work depend on how slowly the test ran.
+	srv := newTestOTLPServer()
+	srv.discard.Store(true)
+	defer srv.Close()
+	w := newTestOTLPWriter(t, srv)
+	w.climit = make(chan struct{}, 4)
+
+	const numAdders = 20
+	// Reuse the source string; each flush still serializes a full-sized payload.
+	bigData := strings.Repeat("X", payloadSizeLimit/4)
+	jobs := make(chan struct{})
+	var adders sync.WaitGroup
+	for range numAdders {
+		adders.Go(func() {
+			for range jobs {
+				bigSpan := newSpan("op", "svc", "res", randUint64(), randUint64(), 0)
+				bigSpan.meta.Set("big", bigData)
+				w.add([]*Span{bigSpan})
+			}
+		})
+	}
+
+	// Pace bounded work through the waits, rather than letting adders exhaust
+	// their iteration budget before the first wait starts.
+	for range 200 {
+		jobs <- struct{}{}
+		w.wait()
+	}
+	sentDuringWaits := srv.discarded.Load()
+	close(jobs)
+	adders.Wait()
+	w.stop()
+	require.Positive(t, sentDuringWaits, "no payloads were sent during the wait loop")
 }
 
 func TestOTLPWriterBuffSizeTracking(t *testing.T) {
@@ -383,11 +515,11 @@ func TestOTLPWriterBuffSizeTracking(t *testing.T) {
 
 	t.Run("flush resets buffSize to baseSize", func(t *testing.T) {
 		w.flush()
-		w.wg.Wait()
 
 		w.mu.Lock()
 		assert.Equal(t, w.baseSize, w.buffSize)
 		w.mu.Unlock()
+		w.wait()
 	})
 
 	t.Run("buffSize approximates actual marshal size", func(t *testing.T) {
@@ -420,7 +552,7 @@ func TestOTLPWriterBuffSizeTracking(t *testing.T) {
 			"estimated %d should be within 5%% of actual %d", estimated, actual)
 
 		w.flush()
-		w.wg.Wait()
+		w.wait()
 	})
 }
 

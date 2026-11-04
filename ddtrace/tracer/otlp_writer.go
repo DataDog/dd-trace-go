@@ -31,9 +31,23 @@ type otlpTraceWriter struct {
 	scope     *otlpcommon.InstrumentationScope
 	spans     []*otlptrace.Span // +checklocks:mu
 	buffSize  int               // +checklocks:mu
-	baseSize  int
-	climit    chan struct{}
-	wg        sync.WaitGroup
+	baseSize  int               // +checklocks:mu
+
+	// resourceAttrs are the resource's string attributes, which convertSpan
+	// does not repeat on spans. Like the resource, they are fixed at startup:
+	// global tags changed later (e.g. through Remote Config) no longer match
+	// and are written on spans.
+	resourceAttrs map[string]string
+
+	// climit bounds the number of concurrent outgoing sends dispatched by flush.
+	climit chan struct{}
+
+	// wgMu serializes wg.Add with wg.Wait. flush() (Add) and wait()/stop() (Wait)
+	// run on different goroutines, and sync.WaitGroup panics with "Add called
+	// concurrently with Wait" if an Add that starts the counter from zero races
+	// a Wait. Holding wgMu around both calls makes that impossible.
+	wgMu locking.Mutex
+	wg   sync.WaitGroup
 }
 
 func newOTLPTraceWriter(c *config) *otlpTraceWriter {
@@ -48,14 +62,15 @@ func newOTLPTraceWriter(c *config) *otlpTraceWriter {
 		}},
 	})
 	return &otlpTraceWriter{
-		config:    c,
-		transport: newOTLPTransport(internal.DefaultHTTPClient(c.internalConfig.AgentTimeout(), false), c.internalConfig.OTLPTraceURL(), c.internalConfig.OTLPHeaders()),
-		resource:  resource,
-		scope:     scope,
-		spans:     make([]*otlptrace.Span, 0),
-		buffSize:  baseSize,
-		baseSize:  baseSize,
-		climit:    make(chan struct{}, concurrentConnectionLimit),
+		config:        c,
+		transport:     newOTLPTransport(internal.DefaultHTTPClient(c.internalConfig.AgentTimeout(), false), c.internalConfig.OTLPTraceURL(), c.internalConfig.OTLPTraceHeaders()),
+		resource:      resource,
+		scope:         scope,
+		spans:         make([]*otlptrace.Span, 0),
+		buffSize:      baseSize,
+		baseSize:      baseSize,
+		resourceAttrs: resourceStringAttrs(resource),
+		climit:        make(chan struct{}, concurrentConnectionLimit),
 	}
 }
 
@@ -71,10 +86,12 @@ func (w *otlpTraceWriter) reset() []*otlptrace.Span {
 
 func (w *otlpTraceWriter) add(spanList []*Span) {
 	defaultServiceName := w.config.internalConfig.ServiceName()
+	otelSemantics := w.config.internalConfig.OTelSemanticsEnabled()
+	resourceAttrs := w.resourceAttrs
 	w.mu.Lock()
 	w.spans = slices.Grow(w.spans, len(spanList))
 	for _, span := range spanList {
-		if otlpSpan := convertSpan(span, defaultServiceName); otlpSpan != nil {
+		if otlpSpan := convertSpan(span, defaultServiceName, otelSemantics, resourceAttrs); otlpSpan != nil {
 			w.spans = append(w.spans, otlpSpan)
 			w.buffSize += proto.Size(otlpSpan)
 		}
@@ -86,6 +103,11 @@ func (w *otlpTraceWriter) add(spanList []*Span) {
 	}
 }
 
+// flush marshals and sends the current span buffer in the background, so
+// that the size-triggered flush inside add() does not block its caller on
+// the network round trip. Callers that need the payload to have actually
+// reached the collector before proceeding must follow up with wait() (or
+// stop(), which does so itself).
 func (w *otlpTraceWriter) flush() {
 	w.mu.Lock()
 	if len(w.spans) == 0 {
@@ -96,7 +118,9 @@ func (w *otlpTraceWriter) flush() {
 	w.mu.Unlock()
 
 	w.climit <- struct{}{}
+	w.wgMu.Lock()
 	w.wg.Add(1)
+	w.wgMu.Unlock()
 	go func() {
 		defer func() {
 			<-w.climit
@@ -130,19 +154,30 @@ func (w *otlpTraceWriter) flush() {
 		retryInterval := w.config.internalConfig.RetryInterval()
 		for attempt := 0; attempt <= sendRetries; attempt++ {
 			log.Debug("OTLP: attempt %d to send payload: %d bytes, %d spans", attempt+1, len(b), spanCount)
-			sendErr = w.transport.send(b)
+			sendErr = w.transport.send(b, otlpContentTypeProto)
 			if sendErr == nil {
 				log.Debug("OTLP: sent traces after %d attempts", attempt+1)
 				return
 			}
-			log.Error("OTLP: failure sending traces (attempt %d of %d): %v", attempt+1, sendRetries+1, sendErr.Error())
+			log.Error("OTLP: failure sending traces (attempt %d of %d): %v", attempt+1, sendRetries+1, sendErr.Error()) //errtrack:ignore exporter or network failure
 			time.Sleep(retryInterval)
 		}
-		log.Error("OTLP: lost %d spans: %v", spanCount, sendErr.Error())
+		log.Error("OTLP: lost %d spans: %v", spanCount, sendErr.Error()) //errtrack:ignore exporter or network failure already reported as a count
 	}()
 }
 
+// stop flushes any buffered spans and blocks until every in-flight send
+// (including this one) completes.
 func (w *otlpTraceWriter) stop() {
 	w.flush()
+	w.wgMu.Lock()
+	defer w.wgMu.Unlock()
+	w.wg.Wait()
+}
+
+// wait blocks until all sends dispatched by flush so far have completed.
+func (w *otlpTraceWriter) wait() {
+	w.wgMu.Lock()
+	defer w.wgMu.Unlock()
 	w.wg.Wait()
 }

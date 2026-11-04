@@ -93,14 +93,16 @@ func TestSession(providerName string) {
 
 // EventCreated the number of events created by CI Visibility
 func EventCreated(testingFramework string, eventType TestingEventType) {
-	tags := []string{string(getTestingFramework(testingFramework))}
+	tags := make([]string, 0, 1+len(eventType))
+	tags = append(tags, string(getTestingFramework(testingFramework)))
 	tags = append(tags, eventType...)
 	telemetry.Count(telemetry.NamespaceCIVisibility, "event_created", removeEmptyStrings(tags)).Submit(1.0)
 }
 
 // EventFinished the number of events finished by CI Visibility
 func EventFinished(testingFramework string, eventType TestingEventType) {
-	tags := []string{string(getTestingFramework(testingFramework))}
+	tags := make([]string, 0, 1+len(eventType))
+	tags = append(tags, string(getTestingFramework(testingFramework)))
 	tags = append(tags, eventType...)
 	telemetry.Count(telemetry.NamespaceCIVisibility, "event_finished", removeEmptyStrings(tags)).Submit(1.0)
 }
@@ -136,7 +138,8 @@ func EndpointPayloadRequests(endpointType EndpointType, requestCompressedType Re
 
 // EndpointPayloadRequestsErrors the number of requests sent to the endpoint that errored, tagget by the error type and endpoint type and status code
 func EndpointPayloadRequestsErrors(endpointType EndpointType, errorType ErrorType) {
-	tags := []string{string(endpointType)}
+	tags := make([]string, 0, 1+len(errorType))
+	tags = append(tags, string(endpointType))
 	tags = append(tags, errorType...)
 	telemetry.Count(telemetry.NamespaceCIVisibility, "endpoint_payload.requests_errors", removeEmptyStrings(tags)).Submit(1.0)
 }
@@ -297,4 +300,14 @@ func ImpactedTestsRequestErrors(errorType ErrorType) {
 // ImpactedTestsModified the number of impacted tests that were modified by CI Visibility.
 func ImpactedTestsModified() {
 	telemetry.Count(telemetry.NamespaceCIVisibility, "impacted_tests_detection.is_modified", nil).Submit(1.0)
+}
+
+// DynamicATRRetriesEnabled the number of sessions that use duration-based automatic test retries, tagged when
+// DD_CIVISIBILITY_DYNAMIC_ATR_BUCKETS provides the retry counts.
+func DynamicATRRetriesEnabled(hasCustomBuckets bool) {
+	var tags []string
+	if hasCustomBuckets {
+		tags = []string{"has_custom_buckets:true"}
+	}
+	telemetry.Count(telemetry.NamespaceCIVisibility, "dynamic_atr_retries.enabled", tags).Submit(1.0)
 }

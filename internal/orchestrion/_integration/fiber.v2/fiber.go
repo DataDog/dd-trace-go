@@ -7,7 +7,6 @@ package fiber
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -28,9 +27,10 @@ type TestCase struct {
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	tc.App = fiber.New(fiber.Config{DisableStartupMessage: true})
 	tc.App.Get("/ping", func(c *fiber.Ctx) error { return c.JSON(map[string]any{"message": "pong"}) })
-	tc.addr = fmt.Sprintf("127.0.0.1:%d", net.FreePort(t))
+	ln := net.FreeListener(t)
+	tc.addr = ln.Addr().String()
 
-	go func() { assert.NoError(t, tc.App.Listen(tc.addr)) }()
+	go func() { assert.NoError(t, tc.App.Listener(ln)) }()
 	t.Cleanup(func() {
 		assert.NoError(t, tc.App.ShutdownWithTimeout(10*time.Second))
 	})
@@ -41,6 +41,12 @@ func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// ExpectedSpanCount pins the client span and a single Fiber server span, so a
+// second server span from fasthttp or a repeated wrap fails the test.
+func (*TestCase) ExpectedSpanCount() int {
+	return 2
 }
 
 func (tc *TestCase) ExpectedTraces() trace.Traces {
@@ -62,6 +68,10 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 			},
 			Children: trace.Traces{
 				{
+					// Single Fiber server span. The intermediate valyala/fasthttp span is
+					// suppressed by the gofiber orchestrion.yml aspect, which marks
+					// app.Server().DD_Instrumented at construction so the FastHTTP Serve
+					// aspect skips wrapping Fiber's internal fasthttp server.
 					Tags: map[string]any{
 						"name":     "http.request",
 						"resource": "GET /ping",

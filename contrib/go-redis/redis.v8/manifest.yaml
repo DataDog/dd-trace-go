@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/go-redis/redis/v8
+display_name: go-redis v8
+description: Instruments Redis commands and pipelines through go-redis v8 clients, recording command details, database and
+  endpoint metadata, and errors.
+packages:
+- name: github.com/go-redis/redis/v8
+category:
+- db.client
+systems:
+- redis
+creation_date: '2020-10-05'

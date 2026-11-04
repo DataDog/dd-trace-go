@@ -8,7 +8,6 @@ package utils
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,11 +62,19 @@ var (
 //
 //	A pointer to a CodeOwners struct containing the parsed CODEOWNERS data, or nil if not found.
 func GetCodeOwners() *CodeOwners {
+	codeOwners, _ := GetCodeOwnersWithStatus()
+	return codeOwners
+}
+
+// GetCodeOwnersWithStatus retrieves CODEOWNERS and reports whether discovery
+// reached a cacheable result. A false completion status means a non-missing
+// read or parse error occurred and a later call should retry discovery.
+func GetCodeOwnersWithStatus() (*CodeOwners, bool) {
 	codeownersMutex.Lock()
 	defer codeownersMutex.Unlock()
 
 	if codeownersLookupDone {
-		return codeowners
+		return codeowners, true
 	}
 
 	hasNonMissingError := false
@@ -83,7 +90,7 @@ func GetCodeOwners() *CodeOwners {
 			if cow, err := parseCodeOwners(path); err == nil {
 				codeowners = cow
 				codeownersLookupDone = true
-				return codeowners
+				return codeowners, true
 			} else if !os.IsNotExist(err) {
 				hasNonMissingError = true
 			}
@@ -95,7 +102,7 @@ func GetCodeOwners() *CodeOwners {
 		if cow, err := parseCodeOwners(path); err == nil {
 			codeowners = cow
 			codeownersLookupDone = true
-			return codeowners
+			return codeowners, true
 		} else if !os.IsNotExist(err) {
 			hasNonMissingError = true
 		}
@@ -104,7 +111,7 @@ func GetCodeOwners() *CodeOwners {
 	if !hasNonMissingError {
 		codeownersLookupDone = true
 	}
-	return nil
+	return nil, codeownersLookupDone
 }
 
 // ResetCodeOwnersForTesting clears the process-local CODEOWNERS discovery cache.
@@ -136,7 +143,7 @@ func parseCodeOwners(filePath string) (*CodeOwners, error) {
 // It returns an error if the file cannot be read or parsed properly.
 func NewCodeOwners(filePath string) (*CodeOwners, error) {
 	if filePath == "" {
-		return nil, fmt.Errorf("filePath cannot be empty")
+		return nil, errors.New("filePath cannot be empty")
 	}
 
 	file, err := os.Open(filePath)
@@ -146,7 +153,7 @@ func NewCodeOwners(filePath string) (*CodeOwners, error) {
 	defer func() {
 		err = file.Close()
 		if err != nil && !errors.Is(os.ErrClosed, err) {
-			logger.Warn("Error closing codeowners file: %s", err.Error())
+			logger.Warn("Error closing codeowners file: %s", err.Error()) //errtrack:ignore filesystem close failure
 		}
 	}()
 
@@ -256,6 +263,9 @@ func (co *CodeOwners) GetSection(section string) *Section {
 // Match finds the first entry in the CodeOwners that matches the given value.
 // It returns a pointer to the matched entry, or nil if no match is found.
 func (co *CodeOwners) Match(value string) (*Entry, bool) {
+	if co == nil {
+		return nil, false
+	}
 	var matchedEntries []Entry
 
 	for _, section := range co.Sections {
@@ -277,6 +287,9 @@ func (co *CodeOwners) Match(value string) (*Entry, bool) {
 			if strings.HasSuffix(pattern, "/") {
 				includeAnythingAfter = true
 			} else if strings.HasSuffix(pattern, "/*") {
+				includeAnythingAfter = true
+				finalPattern = finalPattern[:len(finalPattern)-1]
+			} else if strings.HasPrefix(pattern, "/") && strings.HasSuffix(pattern, "*") && !strings.ContainsAny(pattern[:len(pattern)-1], "*?[]\\") {
 				includeAnythingAfter = true
 				finalPattern = finalPattern[:len(finalPattern)-1]
 			} else {

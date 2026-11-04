@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/hashicorp/consul/api
+display_name: Consul
+description: Instruments Consul KV client reads, writes, listing, conditional updates and deletions, and lock acquisition
+  and release with operation spans and error tracking.
+packages:
+- name: github.com/hashicorp/consul/api
+category:
+- db.client
+systems:
+- consul
+creation_date: '2019-09-17'

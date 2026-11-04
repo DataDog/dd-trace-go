@@ -44,7 +44,7 @@ const (
 // This function always returns nil when appsec is disabled.
 func MonitorParsedHTTPBody(ctx context.Context, body any) error {
 	if !appsec.Enabled() {
-		appsecDisabledLog.Do(func() { log.Warn("appsec: not enabled. Body blocking checks won't be performed.") })
+		appsecDisabledLog.Do(func() { log.Warn("appsec: not enabled. Body blocking checks won't be performed.") }) //errtrack:ignore caller used the AppSec API while disabled
 		return nil
 	}
 	return httpsec.MonitorParsedBody(ctx, body)
@@ -58,7 +58,7 @@ func MonitorParsedHTTPBody(ctx context.Context, body any) error {
 // are ignored if AppSec is disabled or the provided context is incorrect.
 func MonitorHTTPResponseBody(ctx context.Context, body any) error {
 	if !appsec.Enabled() {
-		appsecDisabledLog.Do(func() { log.Warn("appsec: not enabled. Body blocking checks won't be performed.") })
+		appsecDisabledLog.Do(func() { log.Warn("appsec: not enabled. Body blocking checks won't be performed.") }) //errtrack:ignore caller used the AppSec API while disabled
 		return nil
 	}
 	return httpsec.MonitorResponseBody(ctx, body)
@@ -89,7 +89,7 @@ func setUser(ctx context.Context, id string, userEventType usersec.UserEventType
 	s.Root().SetTag("_dd.appsec.user.collection_mode", collectionMode)
 
 	if !appsec.Enabled() {
-		appsecDisabledLog.Do(func() { log.Warn("appsec: not enabled. User blocking checks won't be performed.") })
+		appsecDisabledLog.Do(func() { log.Warn("appsec: not enabled. User blocking checks won't be performed.") }) //errtrack:ignore caller used the AppSec API while disabled
 		// Not returning here, as we still want to record the relevant span tags (just no WAF call).
 	}
 
@@ -197,7 +197,7 @@ func TrackCustomEvent(ctx context.Context, name string, md map[string]string) {
 func getRootSpan(ctx context.Context) *tracer.Span {
 	span, _ := tracer.SpanFromContext(ctx)
 	if span == nil {
-		log.Warn("appsec: user event monitoring SDK: could not find a span in the provided context.Context")
+		log.Warn("appsec: user event monitoring SDK: could not find a span in the provided context.Context") //errtrack:ignore caller provided a context without a span
 		return nil
 	}
 	return span.Root()

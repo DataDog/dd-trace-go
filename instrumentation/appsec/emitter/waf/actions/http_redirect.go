@@ -47,7 +47,7 @@ func (r *redirectActionParams) Decode(p map[string]any) error {
 }
 
 func init() {
-	registerActionHandler("redirect_request", NewRedirectAction)
+	registerActionHandler("redirect_request", withoutConfig(NewRedirectAction))
 }
 
 func redirectParamsFromMap(params map[string]any) (redirectActionParams, error) {

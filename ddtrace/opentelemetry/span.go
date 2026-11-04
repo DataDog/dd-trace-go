@@ -8,6 +8,8 @@ package opentelemetry
 import (
 	"encoding/binary"
 	"errors"
+	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	otelcodes "go.opentelemetry.io/otel/codes"
 	oteltrace "go.opentelemetry.io/otel/trace"
@@ -36,13 +39,29 @@ type span struct {
 	statusInfo
 	*oteltracer
 	events []spanEvent
+	// otelSemanticsEnabled is copied from the tracer when the span starts so span
+	// methods read it directly instead of reaching back into the tracer.
+	otelSemanticsEnabled bool
 }
 
-func (s *span) TracerProvider() oteltrace.TracerProvider { return s.oteltracer.provider }
+func (s *span) TracerProvider() oteltrace.TracerProvider {
+	if s.oteltracer.provider.bridge {
+		// The application can set its own TracerProvider after this span started.
+		return otel.GetTracerProvider()
+	}
+	return s.oteltracer.provider
+}
 
 func (s *span) SetName(name string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.otelSemanticsEnabled {
+		// OTel semantics: the span name maps to the Datadog resource (the OTLP span-name
+		// field), not the DD-only operation name. Changing the default would shift RED
+		// metrics, so it is gated behind the flag.
+		s.attributes[ext.ResourceName] = name
+		return
+	}
 	s.attributes[ext.SpanName] = strings.ToLower(name)
 }
 
@@ -59,20 +78,25 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 		return
 	}
 	s.finished = true
-	for k, v := range s.attributes {
-		//	if we find operation.name,
-		if k == "operation.name" || k == ext.SpanName {
-			//	set it and keep track that it was set to ignore everything else
-			if name, ok := v.(string); ok {
-				s.attributes[ext.SpanName] = strings.ToLower(name)
+	if !s.otelSemanticsEnabled {
+		// Datadog operation-name handling. Under OTel semantics the span name maps to
+		// the resource (the OTLP span-name field) and operation.name is suppressed on
+		// export, so we skip this entirely and let the attributes pass through.
+		for k, v := range s.attributes {
+			//	if we find operation.name,
+			if k == "operation.name" || k == ext.SpanName {
+				//	set it and keep track that it was set to ignore everything else
+				if name, ok := v.(string); ok {
+					s.attributes[ext.SpanName] = strings.ToLower(name)
+				}
 			}
 		}
-	}
 
-	// if no operation name was explicitly set,
-	// operation name has to be calculated from the attributes
-	if op, ok := s.attributes[ext.SpanName]; !ok || op == "" {
-		s.DD.SetTag(ext.SpanName, strings.ToLower(s.createOperationName()))
+		// if no operation name was explicitly set,
+		// operation name has to be calculated from the attributes
+		if op, ok := s.attributes[ext.SpanName]; !ok || op == "" {
+			s.DD.SetTag(ext.SpanName, strings.ToLower(s.createOperationName()))
+		}
 	}
 	for k, v := range s.attributes {
 		s.DD.SetTag(k, v)
@@ -83,8 +107,24 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 	var finishCfg = oteltrace.NewSpanEndConfig(options...)
 	var opts []tracer.FinishOption
 	if s.statusInfo.code == otelcodes.Error {
-		s.DD.SetTag(ext.ErrorMsg, s.statusInfo.description)
-		opts = append(opts, tracer.WithError(errors.New(s.statusInfo.description)))
+		_, hasErrorMsg := s.attributes[ext.ErrorMsg]
+		_, hasErrorType := s.attributes[ext.ErrorType]
+		_, hasErrorStack := s.attributes[ext.ErrorStack]
+		// With the DD_TRACE_OTEL_SEMANTICS_ENABLED config, error.message only feeds the
+		// OTLP status message, so it always takes the status description. Otherwise it
+		// is a regular tag, so a user-set value is kept.
+		if s.otelSemanticsEnabled || !hasErrorMsg {
+			s.DD.SetTag(ext.ErrorMsg, s.statusInfo.description)
+		}
+		if s.otelSemanticsEnabled || hasErrorMsg || hasErrorType || hasErrorStack {
+			// Mark the span as errored directly. WithError would overwrite already
+			// populated attributes, such as error.type. Applies to all export formats:
+			// APM spans keep error=1 and error.message, without error.handling_stack.
+			// See https://github.com/DataDog/dd-trace-go/issues/3708.
+			s.DD.SetTag(ext.Error, true)
+		} else {
+			opts = append(opts, tracer.WithError(errors.New(s.statusInfo.description)))
+		}
 	}
 	if len(s.finishOpts) != 0 {
 		opts = append(opts, s.finishOpts...)
@@ -118,7 +158,12 @@ func EndOptions(sp oteltrace.Span, options ...tracer.FinishOption) {
 
 // SpanContext returns implementation of the oteltrace.SpanContext.
 func (s *span) SpanContext() oteltrace.SpanContext {
-	ctx := s.DD.Context()
+	return ddSpanContext(s.DD)
+}
+
+// ddSpanContext converts the context of a Datadog span to an OpenTelemetry span context.
+func ddSpanContext(ddSpan *tracer.Span) oteltrace.SpanContext {
+	ctx := ddSpan.Context()
 	var traceID oteltrace.TraceID
 	var spanID oteltrace.SpanID
 	traceID = ctx.TraceIDBytes()
@@ -127,13 +172,22 @@ func (s *span) SpanContext() oteltrace.SpanContext {
 		TraceID: traceID,
 		SpanID:  spanID,
 	}
-	s.extractTraceData(&config)
+	extractTraceData(ddSpan, &config)
 	return oteltrace.NewSpanContext(config)
 }
 
-func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
+const (
+	// traceparentMinLen is the shortest trimmed traceparent that still carries the flags.
+	traceparentMinLen = 3
+	// otelFlagLen is the length of the flags in the traceparent: 2 hex-encoded digits.
+	otelFlagLen = 2
+	hexBase     = 16
+	flagBits    = 8
+)
+
+func extractTraceData(ddSpan *tracer.Span, c *oteltrace.SpanContextConfig) {
 	headers := tracer.TextMapCarrier{}
-	if err := tracer.Inject(s.DD.Context(), headers); err != nil {
+	if err := tracer.Inject(ddSpan.Context(), headers); err != nil {
 		return
 	}
 	state, err := oteltrace.ParseTraceState(headers["tracestate"])
@@ -143,12 +197,11 @@ func (s *span) extractTraceData(c *oteltrace.SpanContextConfig) {
 	}
 	c.TraceState = state
 	parent := strings.Trim(headers["traceparent"], " \t-")
-	if len(parent) > 3 {
+	if len(parent) > traceparentMinLen {
 		// checking the length to avoid panic when parsing
 		// The format of the traceparent is `-` separated string,
 		// where flags represents the propagated flags in the format of 2 hex-encoded digits at the end of the traceparent.
-		otelFlagLen := 2
-		if f, err := strconv.ParseUint(parent[len(parent)-otelFlagLen:], 16, 8); err != nil {
+		if f, err := strconv.ParseUint(parent[len(parent)-otelFlagLen:], hexBase, flagBits); err != nil {
 			log.Debug("Couldn't parse traceparent: %s", err.Error())
 		} else {
 			c.TraceFlags = oteltrace.TraceFlags(f)
@@ -188,22 +241,68 @@ func (s *span) SetStatus(code otelcodes.Code, description string) {
 
 // AddEvent adds a span event onto the span with the provided name and EventOptions
 func (s *span) AddEvent(name string, opts ...oteltrace.EventOption) {
-	if !s.IsRecording() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// s.events is read under s.mu by End; guard the append so a concurrent
+	// AddEvent/RecordError can't race the flush.
+	if s.finished {
 		return
 	}
+	s.events = append(s.events, newSpanEvent(name, opts...))
+}
+
+// newSpanEvent converts an OpenTelemetry event to the Datadog span event options.
+func newSpanEvent(name string, opts ...oteltrace.EventOption) spanEvent {
 	c := oteltrace.NewEventConfig(opts...)
 	attrs := make(map[string]any)
 	for _, a := range c.Attributes() {
 		attrs[string(a.Key)] = a.Value.AsInterface()
 	}
-	e := spanEvent{
+	return spanEvent{
 		name: name,
 		options: []tracer.SpanEventOption{
 			tracer.WithSpanEventTimestamp(c.Timestamp()),
 			tracer.WithSpanEventAttributes(attrs),
 		},
 	}
-	s.events = append(s.events, e)
+}
+
+// RecordError records err as an OpenTelemetry "exception" span event (with a stack
+// trace when WithStackTrace is set). Like the OTel SDK, it does not set the status.
+// See https://github.com/open-telemetry/opentelemetry-go/blob/v1.44.0/sdk/trace/span.go#L631
+func (s *span) RecordError(err error, opts ...oteltrace.EventOption) {
+	if err == nil || !s.IsRecording() {
+		return
+	}
+	s.AddEvent("exception", exceptionEventOptions(err, opts)...)
+}
+
+// exceptionEventOptions returns the options of the OpenTelemetry "exception" event for err.
+func exceptionEventOptions(err error, opts []oteltrace.EventOption) []oteltrace.EventOption {
+	cfg := oteltrace.NewEventConfig(opts...)
+	attrs := []attribute.KeyValue{
+		attribute.String("exception.type", errorTypeName(err)),
+		attribute.String("exception.message", err.Error()),
+	}
+	if cfg.StackTrace() {
+		attrs = append(attrs, attribute.String("exception.stacktrace", recordStackTrace()))
+	}
+	return append(opts, oteltrace.WithAttributes(attrs...))
+}
+
+// errorTypeName formats err's type like the OTel SDK's exception.type.
+func errorTypeName(err error) string {
+	t := reflect.TypeOf(err)
+	if t.PkgPath() == "" && t.Name() == "" {
+		return t.String() // builtin or pointer type, e.g. *errors.errorString
+	}
+	return t.PkgPath() + "." + t.Name()
+}
+
+func recordStackTrace() string {
+	buf := make([]byte, 2048)
+	n := runtime.Stack(buf, false)
+	return string(buf[:n])
 }
 
 // SetAttributes sets the key-value pairs as tags on the span.
@@ -219,10 +318,11 @@ func (s *span) AddEvent(name string, opts ...oteltrace.EventOption) {
 // The list of reserved tags might be extended in the future.
 // Any other non-reserved tags will be set as provided.
 func (s *span) SetAttributes(kv ...attribute.KeyValue) {
+	otelSemantics := s.otelSemanticsEnabled
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, kv := range kv {
-		if k, v := toReservedAttributes(string(kv.Key), kv.Value); k != "" {
+		if k, v := toReservedAttributes(string(kv.Key), kv.Value, otelSemantics); k != "" {
 			s.attributes[k] = v
 		}
 	}
@@ -230,7 +330,11 @@ func (s *span) SetAttributes(kv ...attribute.KeyValue) {
 
 // toReservedAttributes recognizes a set of span attributes that have a special meaning.
 // These tags should supersede other values.
-func toReservedAttributes(k string, v attribute.Value) (string, any) {
+func toReservedAttributes(k string, v attribute.Value, otelSemantics bool) (string, any) {
+	if otelSemantics {
+		// Under OTel semantics, set every attribute as-is (no DD reserved-tag remapping).
+		return k, v.AsInterface()
+	}
 	switch k {
 	case "operation.name":
 		if ops := strings.ToLower(v.AsString()); ops != "" {

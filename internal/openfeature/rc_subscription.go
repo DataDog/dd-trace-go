@@ -110,7 +110,7 @@ func AttachCallback(cb Callback) bool {
 	}
 
 	if rcState.callback != nil {
-		log.Warn("openfeature: callback already attached, multiple providers are not supported")
+		log.Warn("openfeature: callback already attached, multiple providers are not supported") //errtrack:ignore caller initialized multiple providers
 		return false
 	}
 

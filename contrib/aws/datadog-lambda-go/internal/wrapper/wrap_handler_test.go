@@ -31,14 +31,49 @@ type (
 	}
 )
 
-func (mhl *mockHandlerListener) HandlerStarted(ctx context.Context, msg json.RawMessage) context.Context {
+type mutatingHandlerListener struct {
+	inputMSG json.RawMessage
+	output   json.RawMessage
+}
+
+func (mhl *mockHandlerListener) HandlerStarted(ctx context.Context, msg json.RawMessage) (context.Context, json.RawMessage) {
 	mhl.inputCTX = ctx
 	mhl.inputMSG = msg
-	return ctx
+	return ctx, msg
 }
 
 func (mhl *mockHandlerListener) HandlerFinished(ctx context.Context, err error) {
 	mhl.outputCTX = ctx
+}
+
+func (mhl *mutatingHandlerListener) HandlerStarted(ctx context.Context, msg json.RawMessage) (context.Context, json.RawMessage) {
+	mhl.inputMSG = msg
+	return ctx, mhl.output
+}
+
+func (mhl *mutatingHandlerListener) HandlerFinished(ctx context.Context, err error) {}
+
+// TestWrapHandlerWithListeners_msgFlowsThroughListenersInOrder verifies that listeners
+// run in registration order and each one receives the message produced by the previous
+// listener, while the handler receives the final listener's output. The payload strip
+// listener depends on this ordering guarantee to run after the trace listener.
+func TestWrapHandlerWithListeners_msgFlowsThroughListenersInOrder(t *testing.T) {
+	first := &mockHandlerListener{}
+	second := &mutatingHandlerListener{output: json.RawMessage(`{"stripped":true}`)}
+	var handlerMSG json.RawMessage
+	handler := func(_ context.Context, event json.RawMessage) (string, error) {
+		handlerMSG = event
+		return "ok", nil
+	}
+	wrapped := WrapHandlerWithListeners(handler, first, second).(func(context.Context, json.RawMessage) (interface{}, error))
+	original := json.RawMessage(`{"original":true}`)
+	_, err := wrapped(context.Background(), original)
+	assert.NoError(t, err)
+	// each listener sees what the previous one produced
+	assert.JSONEq(t, `{"original":true}`, string(first.inputMSG))
+	assert.JSONEq(t, `{"original":true}`, string(second.inputMSG))
+	// the handler receives the last listener's output, not the original payload
+	assert.JSONEq(t, `{"stripped":true}`, string(handlerMSG))
 }
 
 func runHandlerWithJSON(t *testing.T, filename string, handler interface{}) (*mockHandlerListener, interface{}, error) {

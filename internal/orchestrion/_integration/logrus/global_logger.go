@@ -26,7 +26,7 @@ func (tc *TestCaseGlobalLogger) Setup(context.Context, *testing.T) {
 }
 
 func (tc *TestCaseGlobalLogger) Run(ctx context.Context, t *testing.T) {
-	runTest(ctx, t, tc.logs, tc.Log)
+	runTest(ctx, t, tc.logs, tc.Log, true)
 }
 
 func (*TestCaseGlobalLogger) ExpectedTraces() trace.Traces {

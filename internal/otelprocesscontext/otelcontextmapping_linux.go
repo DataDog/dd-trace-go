@@ -198,6 +198,6 @@ func getMonotonicClockTime() (uint64, error) {
 
 func memoryBarrier() {
 	// On ARM64, atomic add will compile as LDADDAL which will act as a full memory barrier.
-	var fence uint64
-	atomic.AddUint64(&fence, 0)
+	var fence atomic.Uint64
+	fence.Add(0)
 }

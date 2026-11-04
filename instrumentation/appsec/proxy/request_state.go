@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/netip"
 	"path"
 	"sync"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/emitter/waf"
 )
 
 var _ io.Closer = (*RequestState)(nil)
@@ -38,16 +40,32 @@ type RequestState struct {
 
 	// Processing state
 	State MessageType
+	// responseFinalized guards the once-only response analysis and span finalization.
+	responseFinalized bool
+	// ackBodyMessagesUntilEndOfStream is resolved per request, since a gateway can only be
+	// identified from the request headers. See [RequestHeaders.AckBodyMessagesUntilEndOfStream].
+	ackBodyMessagesUntilEndOfStream bool
 }
 
-// newRequestState creates a new request state
-func newRequestState(request *http.Request, bodyLimit int, framework string, options ...tracer.StartSpanOption) (RequestState, bool) {
+// newRequestState creates a new request state. clientIP carries an identity the
+// proxy resolved itself; leaving it invalid defers to the default policy, whose
+// final transport fallback is request.RemoteAddr.
+func newRequestState(request *http.Request, clientIP netip.Addr, bodyLimit int, framework string, blockingUnavailable, ackBodyMessagesUntilEndOfStream bool, blockMessageFunc func(context.Context, BlockActionOptions) error, options ...tracer.StartSpanOption) (RequestState, bool) {
+	if blockingUnavailable {
+		request = request.WithContext(waf.ContextWithBlockingUnavailable(request.Context()))
+	}
+
 	fakeResponseWriter := newFakeResponseWriter()
+	// BeforeHandle can already block on the request headers, which is delivered
+	// on the request-headers message being processed right now.
+	disarm := fakeResponseWriter.armBlockDelivery(request.Context(), blockMessageFunc)
 	wrappedResponseWriter, spanRequest, afterHandle, blocked := httptrace.BeforeHandle(&httptrace.ServeConfig{
 		Framework: framework,
 		Resource:  request.Method + " " + path.Clean(request.URL.Path),
 		SpanOpts:  append(options, tracer.Tag(ext.SpanKind, ext.SpanKindServer)),
+		ClientIP:  clientIP,
 	}, fakeResponseWriter, request)
+	disarm()
 
 	var requestBuffer *bodyBuffer
 	if bodyLimit > 0 {
@@ -60,14 +78,15 @@ func newRequestState(request *http.Request, bodyLimit int, framework string, opt
 	}
 
 	return RequestState{
-		Mu:                    new(sync.Mutex),
-		Context:               spanRequest.Context(),
-		afterHandle:           afterHandle,
-		fakeResponseWriter:    fakeResponseWriter,
-		wrappedResponseWriter: wrappedResponseWriter,
-		requestBuffer:         requestBuffer,
-		responseBuffer:        responseBuffer,
-		State:                 MessageTypeRequestHeaders,
+		Mu:                              new(sync.Mutex),
+		Context:                         spanRequest.Context(),
+		afterHandle:                     afterHandle,
+		fakeResponseWriter:              fakeResponseWriter,
+		wrappedResponseWriter:           wrappedResponseWriter,
+		requestBuffer:                   requestBuffer,
+		responseBuffer:                  responseBuffer,
+		State:                           MessageTypeRequestHeaders,
+		ackBodyMessagesUntilEndOfStream: ackBodyMessagesUntilEndOfStream,
 	}, blocked
 }
 
@@ -86,9 +105,26 @@ func (rs *RequestState) PropagationHeaders() (http.Header, error) {
 	return newHeaders, nil
 }
 
+// armBlockDelivery allows AppSec to deliver a block response on the gateway
+// message currently being processed, and returns the matching disarm function.
+// Callers must hold rs.Mu, because integrations resolve the target message from
+// rs.Context, which is swapped for the duration of each message.
+func (rs *RequestState) armBlockDelivery(send func(context.Context, BlockActionOptions) error) func() {
+	if rs.fakeResponseWriter == nil {
+		return func() {}
+	}
+	return rs.fakeResponseWriter.armBlockDelivery(rs.Context, send)
+}
+
 // BlockAction marks the request as blocked and completes it.
 func (rs *RequestState) BlockAction() BlockActionOptions {
-	rs.Close()
+	rs.Mu.Lock()
+	defer rs.Mu.Unlock()
+	return rs.blockActionLocked()
+}
+
+func (rs *RequestState) blockActionLocked() BlockActionOptions {
+	_ = rs.closeLocked()
 	if rs.fakeResponseWriter.status == 0 {
 		panic("cannot block request without a status code")
 	}
@@ -110,6 +146,8 @@ func (rs *RequestState) CloseBeforeResponse() {
 	// but that still add appsec data if any
 	op, ok := dyngo.FindOperation[httpsec.HandlerOperation](rs.Context)
 	if ok {
+		// There is no in-flight message left to carry a block response, so any
+		// action Finish produces here is reported as a failed block.
 		op.Finish(httpsec.HandlerOperationRes{})
 	}
 
@@ -119,6 +157,9 @@ func (rs *RequestState) CloseBeforeResponse() {
 		span.Finish()
 	}
 
+	// CloseBeforeResponse deliberately skips deferred response analysis. Mark
+	// it finalized so a later Close cannot run afterHandle after metric submission.
+	rs.responseFinalized = true
 	if rs.State.Ongoing() {
 		rs.State = MessageTypeFinished
 	}
@@ -126,18 +167,28 @@ func (rs *RequestState) CloseBeforeResponse() {
 
 // Close finalizes the request processing.
 func (rs *RequestState) Close() error {
-	// Allows us to be called multiple times without deadlocking
-	if rs.Mu.TryLock() {
-		defer rs.Mu.Unlock()
-	}
+	rs.Mu.Lock()
+	defer rs.Mu.Unlock()
+	return rs.closeLocked()
+}
 
-	rs.afterHandle()
+func (rs *RequestState) closeLocked() error {
+	rs.finalizeResponse()
 
 	if rs.State.Ongoing() {
 		rs.State = MessageTypeFinished
 	}
 
 	return nil
+}
+
+// finalizeResponse runs deferred response analysis exactly once. The caller must hold rs.Mu.
+func (rs *RequestState) finalizeResponse() {
+	if rs.responseFinalized {
+		return
+	}
+	rs.afterHandle()
+	rs.responseFinalized = true
 }
 
 func (rs *RequestState) Span() (*tracer.Span, bool) {

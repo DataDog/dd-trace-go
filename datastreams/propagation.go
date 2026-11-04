@@ -49,9 +49,27 @@ type TextMapReader interface {
 	ForeachKey(handler func(key, val string) error) error
 }
 
+// TextMapReaderByKey is an optional interface a carrier can implement to return a
+// single key directly. Extraction only needs the pathway key (PropagationKeyBase64),
+// but the generic ForeachKey contract forces the carrier to produce a string value
+// for every entry it holds. Carriers backed by many/large entries (e.g. Kafka message
+// headers) should implement this to avoid converting every entry's value to a string
+// on the consume hot path when only the pathway key is used.
+type TextMapReaderByKey interface {
+	// Get returns the value for key, and whether it was present.
+	Get(key string) (val string, ok bool)
+}
+
 // ExtractFromBase64Carrier extracts the pathway context from a carrier to a context object
 func ExtractFromBase64Carrier(ctx context.Context, carrier TextMapReader) (outCtx context.Context) {
 	outCtx = ctx
+	// Fast path: read the single pathway key directly if the carrier supports it.
+	if byKey, ok := carrier.(TextMapReaderByKey); ok {
+		if val, found := byKey.Get(datastreams.PropagationKeyBase64); found {
+			_, outCtx, _ = datastreams.DecodeBase64(ctx, val)
+		}
+		return outCtx
+	}
 	carrier.ForeachKey(func(key, val string) error {
 		if key == datastreams.PropagationKeyBase64 {
 			_, outCtx, _ = datastreams.DecodeBase64(ctx, val)

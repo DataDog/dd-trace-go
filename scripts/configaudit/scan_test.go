@@ -44,9 +44,31 @@ func TestScan_Fixture(t *testing.T) {
 	if len(got["DD_SITE"]) != 1 {
 		t.Errorf("DD_SITE call-site count = %d, want 1", len(got["DD_SITE"]))
 	}
-	// DD_ENV is suppressed with //nolint:configaudit and must not appear.
+	// DD_ENV is suppressed with //configaudit:ignore and must not appear.
 	if len(got["DD_ENV"]) != 0 {
 		t.Errorf("DD_ENV should be suppressed, got %d call sites", len(got["DD_ENV"]))
+	}
+}
+
+func TestHasIgnoreDirective(t *testing.T) {
+	cases := []struct {
+		name string
+		text string
+		want bool
+	}{
+		{"bare", "//configaudit:ignore", true},
+		{"with reason", "//configaudit:ignore — intentional direct read", true},
+		{"spaced", "// configaudit:ignore", true},
+		{"nolint form is not recognized", "//nolint:configaudit", false},
+		{"unrelated directive", "//nolint:errcheck", false},
+		{"plain comment", "// just a comment", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hasIgnoreDirective(tc.text); got != tc.want {
+				t.Errorf("hasIgnoreDirective(%q) = %v, want %v", tc.text, got, tc.want)
+			}
+		})
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -19,6 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 )
 
 // Configuration environment variables
@@ -48,6 +50,12 @@ const (
 	EnvRules = "DD_APPSEC_RULES"
 	// EnvRASPEnabled is the env var used to enable/disable RASP functionalities for ASM
 	EnvRASPEnabled = "DD_APPSEC_RASP_ENABLED"
+	// EnvStackTraceEnabled is the env var used to enable AppSec stack traces.
+	EnvStackTraceEnabled = "DD_APPSEC_STACK_TRACE_ENABLED"
+	// EnvMaxStackTraceDepth is the env var used to configure the maximum AppSec stack trace depth.
+	EnvMaxStackTraceDepth = "DD_APPSEC_MAX_STACK_TRACE_DEPTH"
+	// EnvDisableFeatures is the env var used to disable AppSec features, as a comma-separated list of feature names.
+	EnvDisableFeatures = "DD_APPSEC_DISABLE_FEATURES"
 
 	// envAPISecSampleDelay is the env var used to set the delay for the API Security sampler in system tests.
 	// It is not indended to be set by users.
@@ -76,6 +84,10 @@ const (
 	DefaultWAFTimeout = 2 * time.Millisecond
 	// DefaultTraceRate is the default limit (trace/sec) past which ASM traces are sampled out
 	DefaultTraceRate = 100 // up to 100 appsec traces/s
+	// DefaultStackTraceEnabled is the default AppSec stack trace enablement.
+	DefaultStackTraceEnabled = true
+	// DefaultMaxStackTraceDepth is the default maximum AppSec stack trace depth.
+	DefaultMaxStackTraceDepth = 32
 )
 
 // APISecConfig holds the configuration for API Security schemas reporting.
@@ -90,6 +102,26 @@ type APISecConfig struct {
 	DownstreamRequestBodyAnalysisSampleRate float64
 	// MaxDownstreamRequestBodyAnalysis is the maximum size in bytes of downstream request body to be analyzed.
 	MaxDownstreamRequestBodyAnalysis int
+}
+
+// StackTraceConfig holds the AppSec stack trace configuration. Its zero value
+// enables stack traces with the collector's default depth.
+type StackTraceConfig struct {
+	Disabled bool
+	MaxDepth int
+}
+
+// NewStackTraceConfig creates an AppSec stack trace configuration from the environment.
+func NewStackTraceConfig() StackTraceConfig {
+	cfg := StackTraceConfig{
+		Disabled: !internal.BoolEnv(EnvStackTraceEnabled, DefaultStackTraceEnabled),
+		MaxDepth: internal.IntEnv(EnvMaxStackTraceDepth, DefaultMaxStackTraceDepth),
+	}
+	if cfg.MaxDepth <= 0 {
+		logUnexpectedEnvVarValue(EnvMaxStackTraceDepth, cfg.MaxDepth, "expecting a strictly positive integer", DefaultMaxStackTraceDepth)
+		cfg.MaxDepth = DefaultMaxStackTraceDepth
+	}
+	return cfg
 }
 
 // ObfuscatorConfig wraps the key and value regexp to be passed to the WAF to perform obfuscation.
@@ -172,6 +204,24 @@ func WithProxy() APISecOption {
 // is not set
 func RASPEnabled() bool {
 	return internal.BoolEnv(EnvRASPEnabled, true)
+}
+
+// DisabledFeaturesFromEnv returns the set of feature names listed in [EnvDisableFeatures]. Names are trimmed and
+// lowercased, and empty entries are ignored. It returns nil when no feature is listed.
+func DisabledFeaturesFromEnv() map[string]struct{} {
+	value, _ := stableconfig.String(EnvDisableFeatures, "")
+	var disabled map[string]struct{}
+	for name := range strings.SplitSeq(value, ",") {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name == "" {
+			continue
+		}
+		if disabled == nil {
+			disabled = make(map[string]struct{})
+		}
+		disabled[name] = struct{}{}
+	}
+	return disabled
 }
 
 // NewObfuscatorConfig creates and returns a new WAF obfuscator configuration by reading the env

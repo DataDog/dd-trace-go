@@ -5,7 +5,11 @@
 
 package openfeature
 
-import "time"
+import (
+	"encoding/json"
+	"sync/atomic"
+	"time"
+)
 
 // universalFlagsConfiguration represents the universal feature flags configuration structure.
 // of the openfeature standard for server-side flag configurations.
@@ -16,8 +20,67 @@ type universalFlagsConfiguration struct {
 	Format string `json:"format"`
 	// Environment contains information about the environment this configuration applies to
 	Environment environment `json:"environment"`
+	// ObserveFullEvaluationData reports whether this environment consents to emitting the raw
+	// targeting key and evaluation context. Environment-scoped in origin but lives at the UFC
+	// root, as a sibling of Environment. Plain bool (no omitempty, no pointer) so an absent
+	// or malformed value fails closed to false.
+	ObserveFullEvaluationData bool `json:"observeFullEvaluationData"`
 	// Flags is a map of feature flag keys to their configurations
 	Flags map[string]*flag `json:"flags"`
+	// invalidFlags contains errors for flags that could not be parsed or validated.
+	invalidFlags map[string]error
+}
+
+// UnmarshalJSON parses flags independently so one invalid flag does not reject
+// the complete configuration. The shadow struct is the sole populator: any new field on
+// universalFlagsConfiguration must be added and copied here or it reads as zero forever.
+//
+// observeFullEvaluationData is taken as json.RawMessage and then interpreted leniently:
+// null, absent, or a wrong-typed value all fall to false. Rejecting the whole UFC on a
+// malformed consent value would fail closed on availability — agentless swallows the parse
+// error, leaving a fresh pod with no last-known-good UFC and stranding every flag on the
+// SDK default. Fail-closed on privacy must not cascade into fail-closed on availability.
+func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		CreatedAt                 time.Time                  `json:"createdAt"`
+		Format                    string                     `json:"format"`
+		Environment               environment                `json:"environment"`
+		ObserveFullEvaluationData json.RawMessage            `json:"observeFullEvaluationData"`
+		Flags                     map[string]json.RawMessage `json:"flags"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	config.CreatedAt = raw.CreatedAt
+	config.Format = raw.Format
+	config.Environment = raw.Environment
+	config.ObserveFullEvaluationData = parseLenientBool(raw.ObserveFullEvaluationData)
+	config.Flags = make(map[string]*flag, len(raw.Flags))
+	config.invalidFlags = make(map[string]error)
+
+	for flagKey, flagData := range raw.Flags {
+		var parsedFlag flag
+		if err := json.Unmarshal(flagData, &parsedFlag); err != nil {
+			config.invalidFlags[flagKey] = err
+			continue
+		}
+		if err := validateFlag(flagKey, &parsedFlag); err != nil {
+			config.invalidFlags[flagKey] = err
+			continue
+		}
+		// Prepare flag-wide activation validity once, including allocations that
+		// targeting or an earlier match may make unreachable during evaluation.
+		for _, allocation := range parsedFlag.Allocations {
+			if allocation.invalidActivation {
+				parsedFlag.invalidActivation = true
+				break
+			}
+		}
+		config.Flags[flagKey] = &parsedFlag
+	}
+
+	return nil
 }
 
 // environment represents environment information for the configuration.
@@ -57,6 +120,8 @@ type flag struct {
 	// Allocations define targeting and traffic distribution rules
 	// They are evaluated in order, and the first matching allocation wins
 	Allocations []*allocation `json:"allocations"`
+	// invalidActivation is consumed only by opted-out future-mode evaluations.
+	invalidActivation bool
 }
 
 // variant represents a single variation/variation of a feature flag.
@@ -85,10 +150,41 @@ type allocation struct {
 	StartAt *time.Time `json:"startAt,omitempty"`
 	// EndAt is the optional end time for this allocation (RFC 3339)
 	EndAt *time.Time `json:"endAt,omitempty"`
+	// RandomizationActivatedAt identifies when randomization first became active.
+	RandomizationActivatedAt *time.Time `json:"randomizationActivatedAt,omitempty"`
+	// A nil timestamp with invalidActivation=false means missing/null metadata.
+	invalidActivation bool
 	// Splits define how to distribute traffic among variants
 	Splits []*split `json:"splits"`
 	// DoLog indicates whether to log events for this allocation (defaults to true)
 	DoLog *bool `json:"doLog,omitempty"`
+}
+
+// UnmarshalJSON prepares activation independently of the other allocation fields.
+// Invalid activation remains distinct from missing metadata without rejecting
+// evaluations that do not use an activation cutoff. Other decoding errors retain
+// their existing per-flag rejection behavior.
+func (a *allocation) UnmarshalJSON(data []byte) error {
+	type plain allocation
+	var raw struct {
+		*plain
+		RandomizationActivatedAt json.RawMessage `json:"randomizationActivatedAt"`
+	}
+	raw.plain = (*plain)(a)
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	a.RandomizationActivatedAt = nil
+	a.invalidActivation = false
+	if len(raw.RandomizationActivatedAt) > 0 {
+		var activatedAt *time.Time
+		if err := json.Unmarshal(raw.RandomizationActivatedAt, &activatedAt); err != nil {
+			a.invalidActivation = true
+		} else {
+			a.RandomizationActivatedAt = activatedAt
+		}
+	}
+	return nil
 }
 
 // rule represents a targeting rule containing conditions.
@@ -110,6 +206,14 @@ const (
 	operatorGT conditionOperator = "GT"
 	// operatorGTE checks if attribute >= value (value: number)
 	operatorGTE conditionOperator = "GTE"
+
+	// Semantic version operators compare string attributes to string values.
+	operatorSemverEQ  conditionOperator = "SEMVER_EQ"
+	operatorSemverNEQ conditionOperator = "SEMVER_NEQ"
+	operatorSemverLT  conditionOperator = "SEMVER_LT"
+	operatorSemverLTE conditionOperator = "SEMVER_LTE"
+	operatorSemverGT  conditionOperator = "SEMVER_GT"
+	operatorSemverGTE conditionOperator = "SEMVER_GTE"
 
 	// operatorMatches checks if attribute matches regex pattern (value: string regex)
 	operatorMatches conditionOperator = "MATCHES"
@@ -135,10 +239,13 @@ type condition struct {
 	// Value is the value to compare against
 	// Type depends on the operator:
 	// - Numeric operators (LT, LTE, GT, GTE): number (int64 or float64)
+	// - Semantic version operators (SEMVER_EQ, SEMVER_NEQ, SEMVER_LT, SEMVER_LTE, SEMVER_GT, SEMVER_GTE): string
 	// - Regex operators (MATCHES, NOT_MATCHES): string (regex pattern)
 	// - List operators (ONE_OF, NOT_ONE_OF): []any or []string
 	// - Null check (IS_NULL): bool
 	Value any `json:"value"`
+	// semverComparand is the validated, parsed SemVer condition value.
+	semverComparand *parsedSemver
 }
 
 // split defines how traffic should be distributed for a specific variant.
@@ -147,8 +254,10 @@ type split struct {
 	// All shards must match for the split to apply (AND logic)
 	Shards []*shard `json:"shards"`
 	// VariationKey is the key of the variation to return if this split matches
-	VariationKey string  `json:"variationKey"`
-	SerialID     *uint32 `json:"serialId,omitempty"`
+	VariationKey     string        `json:"variationKey"`
+	SerialID         *uint32       `json:"serialId,omitempty"`
+	Features         splitFeatures `json:"features,omitempty"`
+	compiledFeatures atomic.Pointer[compiledSplitFeatures]
 }
 
 // shard defines a portion of traffic using consistent hashing.

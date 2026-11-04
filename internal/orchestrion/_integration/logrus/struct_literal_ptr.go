@@ -36,7 +36,7 @@ func (tc *TestCaseStructLiteralPtr) Setup(context.Context, *testing.T) {
 }
 
 func (tc *TestCaseStructLiteralPtr) Run(ctx context.Context, t *testing.T) {
-	runTest(ctx, t, tc.logs, tc.Log)
+	runTest(ctx, t, tc.logs, tc.Log, true)
 }
 
 func (*TestCaseStructLiteralPtr) ExpectedTraces() trace.Traces {

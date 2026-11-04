@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/puzpuzpuz/xsync/v4"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/knownmetrics"
@@ -75,7 +75,7 @@ type metricHandle interface {
 }
 
 type metrics struct {
-	store         *xsync.MapOf[metricKey, metricHandle]
+	store         *xsync.Map[metricKey, metricHandle]
 	skipAllowlist bool // Debugging feature to skip the allowlist of known metrics
 }
 
@@ -89,15 +89,22 @@ func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, na
 	)
 	switch kind {
 	case transport.CountMetric:
-		handle, loaded = m.store.LoadOrCompute(key, func() metricHandle { return &count{metric: metric{key: key}} })
+		handle, loaded = m.store.LoadOrCompute(key, func() (metricHandle, bool) {
+			return &count{metric: metric{key: key}}, false
+		})
 	case transport.GaugeMetric:
-		handle, loaded = m.store.LoadOrCompute(key, func() metricHandle { return &gauge{metric: metric{key: key}} })
+		handle, loaded = m.store.LoadOrCompute(key, func() (metricHandle, bool) {
+			g := &gauge{metric: metric{key: key}}
+			now := time.Now()
+			g.intervalStart.Store(&now)
+			return g, false
+		})
 	case transport.RateMetric:
-		handle, loaded = m.store.LoadOrCompute(key, func() metricHandle {
+		handle, loaded = m.store.LoadOrCompute(key, func() (metricHandle, bool) {
 			rate := &rate{count: count{metric: metric{key: key}}}
 			now := time.Now()
 			rate.intervalStart.Store(&now)
-			return rate
+			return rate, false
 		})
 	default:
 		log.Warn("telemetry: unknown metric type %q", kind)
@@ -115,12 +122,11 @@ func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, na
 
 func (m *metrics) Payload() transport.Payload {
 	series := make([]transport.MetricData, 0, m.store.Size())
-	m.store.Range(func(_ metricKey, handle metricHandle) bool {
+	for _, handle := range m.store.All() {
 		if payload := handle.Payload(); payload.Type != "" {
 			series = append(series, payload)
 		}
-		return true
-	})
+	}
 
 	if len(series) == 0 {
 		return nil
@@ -197,6 +203,7 @@ func (m *count) Submit(newValue float64) {
 // gauge is a metric that represents a single value at a point in time that is not incremental
 type gauge struct {
 	metric
+	intervalStart atomic.Pointer[time.Time]
 }
 
 func (g *gauge) Submit(value float64) {
@@ -209,6 +216,35 @@ func (g *gauge) Submit(value float64) {
 			return
 		}
 	}
+}
+
+// Payload returns the metric data of the gauge. The generate-metrics schema
+// requires an interval on every gauge series. The interval is the whole seconds
+// elapsed since the previous flush that sent the series. For the first flush,
+// the interval runs from handle creation.
+func (g *gauge) Payload() transport.MetricData {
+	intervalStart := g.intervalStart.Load()
+	if intervalStart == nil {
+		return transport.MetricData{}
+	}
+
+	now := time.Now()
+	intervalSeconds := now.Sub(*intervalStart).Seconds()
+	if int64(intervalSeconds) == 0 {
+		// When less than one whole second elapsed, send no series. A zero
+		// interval reports a wrong measurement period. Keep the interval
+		// start so that the elapsed time accumulates until the next flush.
+		return transport.MetricData{}
+	}
+
+	payload := g.metric.Payload()
+	if payload.Type == "" {
+		return transport.MetricData{}
+	}
+
+	g.intervalStart.Store(&now)
+	payload.Interval = int64(intervalSeconds)
+	return payload
 }
 
 // rate is like a count metric but the value sent is divided by an interval of time that is also sent/
@@ -225,7 +261,9 @@ func (r *rate) Get() float64 {
 	}
 
 	intervalSeconds := time.Since(*intervalStart).Seconds()
-	if int64(intervalSeconds) == 0 { // Interval for rate is too small, we prefer not sending data over sending something wrong
+	if int64(intervalSeconds) == 0 {
+		// When less than one whole second elapsed, return NaN. A sub-second
+		// window reports a wrong rate.
 		return math.NaN()
 	}
 
@@ -233,14 +271,17 @@ func (r *rate) Get() float64 {
 }
 
 func (r *rate) Payload() transport.MetricData {
-	now := time.Now()
-	intervalStart := r.intervalStart.Swap(&now)
+	intervalStart := r.intervalStart.Load()
 	if intervalStart == nil {
 		return transport.MetricData{}
 	}
 
-	intervalSeconds := time.Since(*intervalStart).Seconds()
-	if int64(intervalSeconds) == 0 { // Interval for rate is too small, we prefer not sending data over sending something wrong
+	now := time.Now()
+	intervalSeconds := now.Sub(*intervalStart).Seconds()
+	if int64(intervalSeconds) == 0 {
+		// When less than one whole second elapsed, send no series. A zero
+		// interval reports a wrong measurement period. Keep the interval
+		// start so that the elapsed time accumulates until the next flush.
 		return transport.MetricData{}
 	}
 
@@ -252,5 +293,6 @@ func (r *rate) Payload() transport.MetricData {
 	point.value /= intervalSeconds
 	payload := r.metric.payload(point)
 	payload.Interval = int64(intervalSeconds)
+	r.intervalStart.Store(&now)
 	return payload
 }

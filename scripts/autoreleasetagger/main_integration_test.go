@@ -299,6 +299,116 @@ func TestNonReleaseBranch(t *testing.T) {
 	}
 }
 
+// TestDevVersionOnDevBranch verifies that a -dev version is accepted on the
+// matching dev-vMAJOR.MINOR.x branch.
+func TestDevVersionOnDevBranch(t *testing.T) {
+	t.Parallel()
+	testLogger()
+
+	const (
+		branch  = "dev-v2.9.x"
+		version = "v2.9.0-dev"
+	)
+
+	tmpDir := scaffoldRepo(t, branch)
+
+	if err := run(false, "test-remote", true, tmpDir, version, []string{}, []string{}, []string{}); err != nil {
+		t.Fatalf("autoreleasetagger failed for dev version on dev branch: %v", err)
+	}
+	assertVersionFile(t, tmpDir, version)
+}
+
+// TestDevVersionWithNumberOnDevBranch verifies that a -dev.N version is accepted
+// on the matching dev-vMAJOR.MINOR.x branch.
+func TestDevVersionWithNumberOnDevBranch(t *testing.T) {
+	t.Parallel()
+	testLogger()
+
+	const (
+		branch  = "dev-v2.9.x"
+		version = "v2.9.0-dev.3"
+	)
+
+	tmpDir := scaffoldRepo(t, branch)
+
+	if err := run(false, "test-remote", true, tmpDir, version, []string{}, []string{}, []string{}); err != nil {
+		t.Fatalf("autoreleasetagger failed for dev.N version on dev branch: %v", err)
+	}
+	assertVersionFile(t, tmpDir, version)
+}
+
+// TestDevVersionOnReleaseBranch verifies that a -dev version on a release branch
+// is rejected with an invalid_branch error.
+func TestDevVersionOnReleaseBranch(t *testing.T) {
+	t.Parallel()
+	testLogger()
+
+	tmpDir := scaffoldRepo(t, "release-v2.9.x")
+
+	err := run(false, "test-remote", true, tmpDir, "v2.9.0-dev", []string{}, []string{}, []string{})
+	if err == nil {
+		t.Fatal("expected error for dev version on release branch, got nil")
+	}
+	var se *StructuredError
+	if !errors.As(err, &se) {
+		t.Fatalf("expected *StructuredError, got %T: %v", err, err)
+	}
+	if se.Code != errInvalidBranch {
+		t.Errorf("expected code %q, got %q", errInvalidBranch, se.Code)
+	}
+	if !strings.Contains(err.Error(), "dev branch") {
+		t.Errorf("error should mention dev branch, got: %v", err)
+	}
+}
+
+// TestDevVersionBranchMismatch verifies that a -dev version whose major.minor
+// does not match the dev branch is rejected with an invalid_branch error.
+func TestDevVersionBranchMismatch(t *testing.T) {
+	t.Parallel()
+	testLogger()
+
+	tmpDir := scaffoldRepo(t, "dev-v2.8.x")
+
+	err := run(false, "test-remote", true, tmpDir, "v2.9.0-dev", []string{}, []string{}, []string{})
+	if err == nil {
+		t.Fatal("expected error for dev version/branch mismatch, got nil")
+	}
+	var se *StructuredError
+	if !errors.As(err, &se) {
+		t.Fatalf("expected *StructuredError, got %T: %v", err, err)
+	}
+	if se.Code != errInvalidBranch {
+		t.Errorf("expected code %q, got %q", errInvalidBranch, se.Code)
+	}
+	if !strings.Contains(err.Error(), "mismatch") {
+		t.Errorf("error should mention mismatch, got: %v", err)
+	}
+}
+
+// TestStableVersionOnDevBranch verifies that a stable (non-dev) version on a
+// dev branch is rejected with an invalid_branch error.
+func TestStableVersionOnDevBranch(t *testing.T) {
+	t.Parallel()
+	testLogger()
+
+	tmpDir := scaffoldRepo(t, "dev-v2.9.x")
+
+	err := run(false, "test-remote", true, tmpDir, "v2.9.0", []string{}, []string{}, []string{})
+	if err == nil {
+		t.Fatal("expected error for stable version on dev branch, got nil")
+	}
+	var se *StructuredError
+	if !errors.As(err, &se) {
+		t.Fatalf("expected *StructuredError, got %T: %v", err, err)
+	}
+	if se.Code != errInvalidBranch {
+		t.Errorf("expected code %q, got %q", errInvalidBranch, se.Code)
+	}
+	if !strings.Contains(err.Error(), "release branch") {
+		t.Errorf("error should mention release branch, got: %v", err)
+	}
+}
+
 // TestVersionFileUpdate verifies that internal/version/version.go is updated to
 // the target version as part of the single commit.
 func TestVersionFileUpdate(t *testing.T) {
@@ -1292,6 +1402,52 @@ func TestExcludeModulesSkipsTagCreation(t *testing.T) {
 		if !found {
 			t.Errorf("expected tag %q in buildTagList output; got: %v", want, tags)
 		}
+	}
+}
+
+// TestNestedCheckoutIgnored verifies that a directory containing a .git entry
+// below the root (a nested git worktree checkout or a submodule) is skipped
+// entirely, so its go.mod is never discovered or rewritten.
+func TestNestedCheckoutIgnored(t *testing.T) {
+	t.Parallel()
+	testLogger()
+
+	const (
+		branch  = "release-v2.9.x"
+		version = "v2.9.9-rc.1"
+	)
+
+	tmpDir := scaffoldRepo(t, branch)
+
+	// Simulate a nested git worktree/submodule checkout containing its own
+	// module, with no replace directive back to root — the shape that made the
+	// real failure loud (go mod tidy tries to resolve the release tag from the
+	// proxy) rather than silent.
+	nestedDir := filepath.Join(tmpDir, "nested-checkout")
+	if err := os.MkdirAll(nestedDir, 0o755); err != nil {
+		t.Fatalf("failed to create nested checkout dir: %v", err)
+	}
+	nestedGoMod := "module example.com/nested/v2\n\ngo 1.26.0\n\nrequire example.com/root/v2 v2.0.0\n"
+	nestedGoModPath := filepath.Join(nestedDir, "go.mod")
+	if err := os.WriteFile(nestedGoModPath, []byte(nestedGoMod), 0o644); err != nil {
+		t.Fatalf("failed to write nested go.mod: %v", err)
+	}
+	// A .git file (not directory) marks this as a separate checkout, matching
+	// the gitlink shape of a real linked git worktree.
+	if err := os.WriteFile(filepath.Join(nestedDir, ".git"), []byte("gitdir: /elsewhere/.git/worktrees/nested\n"), 0o644); err != nil {
+		t.Fatalf("failed to write nested .git file: %v", err)
+	}
+
+	if err := run(false, "test-remote", true, tmpDir, version, []string{}, []string{}, []string{}); err != nil {
+		t.Fatalf("autoreleasetagger failed: %v", err)
+	}
+
+	got, err := os.ReadFile(nestedGoModPath)
+	if err != nil {
+		t.Fatalf("failed to read nested go.mod after run: %v", err)
+	}
+	if string(got) != nestedGoMod {
+		t.Errorf("nested go.mod was modified:\ngot:\n%s\nwant:\n%s", got, nestedGoMod)
 	}
 }
 

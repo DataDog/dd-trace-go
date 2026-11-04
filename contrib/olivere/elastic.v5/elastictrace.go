@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -78,8 +79,7 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	span, _ := tracer.StartSpanFromContext(req.Context(), t.config.spanName, opts...)
 	defer span.Finish()
 
-	contentEncoding := req.Header.Get("Content-Encoding")
-	snip, rc, err := peek(req.Body, contentEncoding, int(req.ContentLength), bodyCutoff)
+	snip, rc, err := peek(req.Body, req.Header.Get("Content-Encoding"), int(req.ContentLength), bodyCutoff)
 	if err == nil {
 		span.SetTag("elasticsearch.body", snip)
 	}
@@ -91,7 +91,7 @@ func (t *httpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		span.SetTag(ext.Error, err)
 	} else if res.StatusCode < 200 || res.StatusCode > 299 {
 		// HTTP error
-		snip, rc, err := peek(res.Body, contentEncoding, int(res.ContentLength), bodyCutoff)
+		snip, rc, err := peek(res.Body, res.Header.Get("Content-Encoding"), int(res.ContentLength), bodyCutoff)
 		if err != nil {
 			snip = http.StatusText(res.StatusCode)
 		}
@@ -129,6 +129,9 @@ func peek(rc io.ReadCloser, encoding string, max, n int) (string, io.ReadCloser,
 	if rc == nil {
 		return "", rc, errors.New("empty stream")
 	}
+	// A gzip stream can inflate ~1000x, so the decompressed snippet is bounded by
+	// the caller's limit rather than by however few compressed bytes n is lowered to.
+	cutoff := n
 	if max > 0 && max < n {
 		n = max
 	}
@@ -147,7 +150,7 @@ func peek(rc io.ReadCloser, encoding string, max, n int) (string, io.ReadCloser,
 	if err != nil {
 		return string(snip), rc2, err
 	}
-	if encoding == "gzip" {
+	if strings.EqualFold(encoding, "gzip") {
 		// unpack the snippet
 		gzr, err2 := gzip.NewReader(bytes.NewReader(snip))
 		if err2 != nil {
@@ -155,7 +158,7 @@ func peek(rc io.ReadCloser, encoding string, max, n int) (string, io.ReadCloser,
 			return string(snip), rc2, nil
 		}
 		defer gzr.Close()
-		snip, err = io.ReadAll(gzr)
+		snip, err = io.ReadAll(io.LimitReader(gzr, int64(cutoff)))
 	}
 	return string(snip), rc2, err
 }

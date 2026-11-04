@@ -14,6 +14,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=.github/workflows/apps/go-retry.sh
+source "${SCRIPT_DIR}/go-retry.sh"
+
 FIXES_FILE=$(mktemp)
 readonly FIXES_FILE
 GITHUB_OUTPUT="${GITHUB_OUTPUT:-/dev/null}"
@@ -42,9 +46,11 @@ parse_findings() {
 
 # ── Scan core packages ─────────────────────────────────────────────────────────
 echo "==> Scanning core packages..."
-govulncheck -json \
-  ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/... \
-  2>/dev/null | parse_findings >> "${FIXES_FILE}" || true
+raw=$(mktemp)
+retry_on_corruption_to_file "${raw}" govulncheck -json \
+  ./ddtrace/... ./appsec/... ./profiler/... ./internal/... ./instrumentation/... || true
+parse_findings < "${raw}" >> "${FIXES_FILE}" || true
+rm -f "${raw}"
 
 # ── Scan contrib modules ───────────────────────────────────────────────────────
 echo "==> Scanning contrib modules..."
@@ -56,7 +62,10 @@ while IFS= read -r -d '' gomod; do
   [[ "${go_files}" -eq 0 ]] && dir=$(realpath "$(find "${dir}" -mindepth 1 -maxdepth 1 -type d | head -1)")
 
   echo "  Checking ${dir}"
-  govulncheck -C "${dir}" -json . 2>/dev/null | parse_findings >> "${FIXES_FILE}" || true
+  raw=$(mktemp)
+  retry_on_corruption_to_file "${raw}" govulncheck -C "${dir}" -json . || true
+  parse_findings < "${raw}" >> "${FIXES_FILE}" || true
+  rm -f "${raw}"
 done < <(find ./contrib -mindepth 2 -type f -name go.mod -print0)
 
 # ── Check for fixes ────────────────────────────────────────────────────────────

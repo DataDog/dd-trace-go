@@ -24,7 +24,7 @@ import (
 func resetGlobalState() {
 	logsMu.Lock()
 	defer logsMu.Unlock()
-	enabled = nil
+	enabledState.Store(logsEnabledUnknown)
 	logsWriterInstance = nil
 	servName = ""
 	host = ""
@@ -43,6 +43,22 @@ func TestIsEnabled_EnvVarTrue(t *testing.T) {
 	t.Cleanup(func() { os.Unsetenv("DD_CIVISIBILITY_LOGS_ENABLED") })
 
 	assert.True(t, IsEnabled(), "IsEnabled should be true when the env var is set to true")
+}
+
+func TestIsEnabledCachesImmutableState(t *testing.T) {
+	resetGlobalState()
+	t.Setenv("DD_CIVISIBILITY_LOGS_ENABLED", "true")
+
+	enabled, cached := cachedEnabled()
+	require.False(t, cached)
+	require.False(t, enabled)
+	require.True(t, IsEnabled())
+
+	enabled, cached = cachedEnabled()
+	require.True(t, cached)
+	require.True(t, enabled)
+	t.Setenv("DD_CIVISIBILITY_LOGS_ENABLED", "false")
+	require.True(t, IsEnabled(), "log enablement is immutable after its first process-local resolution")
 }
 
 func TestInitializeAndStop(t *testing.T) {
@@ -92,36 +108,47 @@ func TestInitializeWriteLogStopConcurrentRace(t *testing.T) {
 	Initialize("race-test-service")
 	logsMu.Lock()
 	require.NotNil(t, logsWriterInstance)
+	sendEntered := make(chan struct{})
 	release := make(chan struct{})
+	var sendEnteredOnce sync.Once
 	logsWriterInstance.client = &MockClient{SendLogsFunc: func(payload io.Reader) error {
+		sendEnteredOnce.Do(func() { close(sendEntered) })
 		<-release
 		return drainLogsPayload(payload)
 	}}
 	logsMu.Unlock()
 
-	var wg sync.WaitGroup
+	WriteLog(1, "module", "suite", "test", "seed", "")
+	stopDone := make(chan struct{})
+	go func() {
+		defer close(stopDone)
+		Stop()
+	}()
+	<-sendEntered
+
+	var writeWG sync.WaitGroup
 	for i := range 128 {
-		wg.Go(func() {
+		writeWG.Go(func() {
 			WriteLog(uint64(i+1), "module", "suite", "test", fmt.Sprintf("message-%d", i), "")
 		})
 	}
-	wg.Go(func() {
-		Stop()
-	})
 
-	time.Sleep(10 * time.Millisecond)
-	close(release)
-
-	done := make(chan struct{})
+	writesDone := make(chan struct{})
 	go func() {
-		defer close(done)
-		wg.Wait()
+		defer close(writesDone)
+		writeWG.Wait()
 	}()
-
 	select {
-	case <-done:
+	case <-writesDone:
 	case <-time.After(time.Second):
-		t.Fatal("concurrent WriteLog and Stop did not complete")
+		t.Fatal("WriteLog calls did not complete while Stop was flushing")
+	}
+
+	close(release)
+	select {
+	case <-stopDone:
+	case <-time.After(time.Second):
+		t.Fatal("Stop did not complete after the upload was released")
 	}
 }
 

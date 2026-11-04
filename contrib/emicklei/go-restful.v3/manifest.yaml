@@ -1,0 +1,11 @@
+_v: 1
+name: github.com/emicklei/go-restful/v3
+display_name: go-restful v3
+description: Instruments go-restful v3 inbound HTTP requests via a tracing filter that creates route-named server spans with
+  distributed context extraction, plus optional inferred API Gateway proxy and Pub/Sub push-delivery spans.
+packages:
+- name: github.com/emicklei/go-restful/v3
+category:
+- http.server
+systems: []
+creation_date: '2023-07-03'

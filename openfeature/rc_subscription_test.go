@@ -128,3 +128,24 @@ func TestStartWithRemoteConfigFastPath(t *testing.T) {
 	require.NotNil(t, cfg, "provider should have config from fast path replay")
 	assert.Contains(t, cfg.Flags, "fast-flag")
 }
+
+func TestStartWithRemoteConfig_ConfiguresAgentEVP(t *testing.T) {
+	t.Setenv(flagEvalCountsEnabledEnvVar, "true")
+	internalffe.ResetForTest()
+	defer internalffe.ResetForTest()
+	internalffe.SetSubscribedForTest(true)
+
+	provider, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+	require.NotNil(t, provider.exposureWriter)
+	require.NotNil(t, provider.flagEvalLoggingWriter)
+	require.Same(t, provider.exposureWriter.evp, provider.flagEvalLoggingWriter.evp)
+
+	evp := provider.exposureWriter.evp
+	assert.True(t, evp.fixedLocalRoute)
+	assert.Equal(t, evpRouteLocal, evp.routeMode)
+	assert.Equal(t, evpProxyV2Path, evp.localBase)
+	assert.Empty(t, evp.apiKey)
+	assert.Nil(t, evp.directURL)
+	assert.Nil(t, evp.directClient)
+}

@@ -562,7 +562,7 @@ func TestJSONEncode_TruncatedInput_AllStringError(t *testing.T) {
 		}
 
 		newInput := input[:len(input)-i]
-		testName := fmt.Sprintf("truncated invalid structure: %s", newInput)
+		testName := "truncated invalid structure: " + newInput
 		t.Run(testName, func(t *testing.T) {
 			tc := testCase{
 				name:                testName,
@@ -634,6 +634,27 @@ func TestJSONEncode_TruncatedInvalidStructure(t *testing.T) {
 			})
 		}
 	})
+}
+
+// TestNewEncodableFromDataDoesNotBorrowParsedJSON checks that building an Encodable leaves parsedJSONPool alone:
+// only Encode returns a borrowed *simdjson.ParsedJson, so an Encodable that is never encoded must not hold one.
+func TestNewEncodableFromDataDoesNotBorrowParsedJSON(t *testing.T) {
+	// Two GC cycles empty the pool, so every Get below falls through to New.
+	runtime.GC()
+	runtime.GC()
+
+	var borrowed int
+	parsedJSONPool.New = func() any {
+		borrowed++
+		return nil
+	}
+	t.Cleanup(func() { parsedJSONPool.New = nil })
+
+	for range 10 {
+		_ = NewEncodableFromData([]byte(`{"key": ["value", 1, 2.5, true, null]}`), false)
+	}
+
+	require.Zero(t, borrowed, "NewEncodableFromData borrowed from parsedJSONPool without a matching Encode")
 }
 
 // newTestMaxJSONEncoderConfig creates a new JSON encoder configuration for testing purposes with all configs set to max

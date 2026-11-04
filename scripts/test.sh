@@ -19,7 +19,6 @@ run() {
 }
 
 contrib=""
-sleeptime=10
 unset INTEGRATION
 unset DD_APPSEC_ENABLED
 unset __DD_TRACE_SQL_TEST
@@ -60,11 +59,6 @@ while [[ $# -gt 0 ]]; do
       export __DD_TRACE_SQL_TEST=true
       shift
       ;;
-    -s | --sleep)
-      sleeptime=$2
-      shift
-      shift
-      ;;
     -h | --help)
       echo "test.sh - Run the tests for dd-trace-go"
       echo "  this script requires gotestsum, goimports, docker and docker-compose."
@@ -72,7 +66,6 @@ while [[ $# -gt 0 ]]; do
       echo "  -i | --integration - Run integration tests. This requires docker and docker-compose. Resource usage is significant when combined with --contrib"
       echo "  -c | --contrib     - Run contrib tests"
       echo "  --all              - Synonym for -l -a -i -c"
-      echo "  -s | --sleep       - The amount of seconds to wait for docker containers to be ready - default: 30 seconds"
       echo "  -t | --tools       - Install gotestsum and goimports"
       echo "  -h | --help        - Print this help message"
       echo ""
@@ -95,11 +88,12 @@ if [[ "${INTEGRATION:-}" != "" ]]; then
   }
   trap finish EXIT
   if [[ "$contrib" != "" ]]; then
-    ## Start these now so they'll be ready by the time we run integration tests.
-    docker compose up -d
+    ## Start these now and block until their healthchecks pass, so they'll be
+    ## ready by the time we run integration tests.
+    docker compose up -d --wait --wait-timeout 600
   else
     ## If we're not testing contrib, we only need the trace agent.
-    docker compose up -d datadog-agent
+    docker compose up -d --wait --wait-timeout 600 datadog-agent
   fi
 fi
 
@@ -111,12 +105,6 @@ nice -n20 gotestsum --junitfile ./gotestsum-report.xml -- "${TAGS_FLAG[@]}" -rac
 if [[ "$contrib" != "" ]]; then
   ## CONTRIB
   message "Testing contrib..."
-
-  if [[ "${INTEGRATION:-}" != "" ]]; then
-    ## wait for all the docker containers to be "ready"
-    message "Waiting for docker for ${sleeptime} seconds"
-    sleep "${sleeptime}"
-  fi
 
   find . -mindepth 2 -type f -name go.mod | while read -r go_mod_path; do
     dir=$(dirname "$go_mod_path")

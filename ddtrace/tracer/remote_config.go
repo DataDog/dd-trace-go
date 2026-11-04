@@ -9,21 +9,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"regexp"
 	"sort"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
-	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
-	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/samplingrules"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 
 	"github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 )
@@ -133,56 +129,12 @@ type rcTag struct {
 
 // Sampling rules provided by the remote config define tags differently other than using a map.
 type rcSamplingRule struct {
-	Service    string     `json:"service"`
-	Provenance provenance `json:"provenance"`
-	Name       string     `json:"name,omitempty"`
-	Resource   string     `json:"resource"`
-	Tags       []rcTag    `json:"tags,omitempty"`
-	SampleRate float64    `json:"sample_rate"`
-}
-
-func convertRemoteSamplingRules(rules *[]rcSamplingRule) *[]SamplingRule {
-	if rules == nil {
-		return nil
-	}
-	var convertedRules []SamplingRule
-	for _, rule := range *rules {
-		if rule.Tags != nil {
-			tags := make(map[string]*regexp.Regexp, len(rule.Tags))
-			tagsStrs := make(map[string]string, len(rule.Tags))
-			for _, tag := range rule.Tags {
-				tags[tag.Key] = globMatch(tag.ValueGlob)
-				tagsStrs[tag.Key] = tag.ValueGlob
-			}
-			x := SamplingRule{
-				Service:    globMatch(rule.Service),
-				Name:       globMatch(rule.Name),
-				Resource:   globMatch(rule.Resource),
-				Rate:       rule.SampleRate,
-				Tags:       tags,
-				Provenance: rule.Provenance,
-				globRule: &jsonRule{
-					Name:     rule.Name,
-					Service:  rule.Service,
-					Resource: rule.Resource,
-					Tags:     tagsStrs,
-				},
-			}
-
-			convertedRules = append(convertedRules, x)
-		} else {
-			x := SamplingRule{
-				Service:    globMatch(rule.Service),
-				Name:       globMatch(rule.Name),
-				Resource:   globMatch(rule.Resource),
-				Rate:       rule.SampleRate,
-				Provenance: rule.Provenance,
-				globRule:   &jsonRule{Name: rule.Name, Service: rule.Service, Resource: rule.Resource},
-			}
-			convertedRules = append(convertedRules, x)
-		}
-	}
-	return &convertedRules
+	Service    string                   `json:"service"`
+	Provenance samplingrules.Provenance `json:"provenance"`
+	Name       string                   `json:"name,omitempty"`
+	Resource   string                   `json:"resource"`
+	Tags       []rcTag                  `json:"tags,omitempty"`
+	SampleRate float64                  `json:"sample_rate"`
 }
 
 type headerTags []headerTag
@@ -273,29 +225,40 @@ func (t *tracer) onRemoteConfigUpdate(u remoteconfig.ProductUpdate) map[string]s
 	if updated {
 		t.rulesSampling.traces.setGlobalSampleRate(sampleRateCfg.Get())
 	}
-	updated = t.config.traceSampleRules.handleRC(convertRemoteSamplingRules(merged.TraceSamplingRules))
+	traceSampleRulesCfg := t.config.internalConfig.TraceSamplingRulesConfig()
+	updated = traceSampleRulesCfg.HandleRC(convertRemoteSamplingRules(merged.TraceSamplingRules))
 	if updated {
-		telemConfigs = append(telemConfigs, t.config.traceSampleRules.toTelemetry())
+		t.rulesSampling.traces.setTraceSampleRules(traceSampleRulesCfg.Get())
 	}
 	t.config.internalConfig.HeaderAsTagsConfig().HandleRC(merged.HeaderTags.toSlice())
 	t.config.internalConfig.GlobalTagsConfig().HandleRC(newRCTagsMap(merged.Tags))
 
 	t.handleDynamicInstrumentationEnabledRC(merged.LiveDebuggingEnabled)
 
-	if merged.Enabled != nil {
-		if t.config.enabled.get() && !*merged.Enabled {
-			log.Debug("Disabled APM Tracing through RC. Restart the service to enable it.")
-			t.config.enabled.handleRC(merged.Enabled)
-			telemConfigs = append(telemConfigs, t.config.enabled.toTelemetry())
-		} else if !t.config.enabled.get() && *merged.Enabled {
-			log.Debug("APM Tracing is disabled. Restart the service to enable it.")
-		}
-	}
+	t.handleTracingEnabledRC(merged.Enabled)
 	if len(telemConfigs) > 0 {
 		log.Debug("Reporting %d configuration changes to telemetry", len(telemConfigs))
 		telemetry.RegisterAppConfigs(telemConfigs...)
 	}
 	return statuses
+}
+
+// handleTracingEnabledRC applies a tracing-enabled update from RC.
+// RC can only disable tracing; it cannot re-enable it once a local source has
+// set it to false.
+func (t *tracer) handleTracingEnabledRC(val *bool) {
+	if val == nil {
+		return
+	}
+	cfg := t.config.internalConfig.TracingEnabledConfig()
+	if !cfg.Get() && *val {
+		log.Debug("APM Tracing is disabled. Restart the service to enable it.")
+		return
+	}
+	if cfg.Get() && !*val {
+		log.Debug("Disabled APM Tracing through RC. Restart the service to enable it.")
+		cfg.HandleRC(val)
+	}
 }
 
 // Handle enabling or disabling of Dynamic Instrumentation / Live Debugger.
@@ -318,49 +281,22 @@ func (t *tracer) handleDynamicInstrumentationEnabledRC(val *bool) {
 	if cfg.Get() {
 		log.Info("Dynamic Instrumentation starting through Remote Config update")
 		if err := t.startDynamicInstrumentationRCSubscriptions(); err != nil {
-			log.Error("failed to start Dynamic Instrumentation subscriptions: %s", err)
+			telemetrylog.LogAndReportError("failed to start Dynamic Instrumentation subscriptions", err)
 		}
 	} else {
 		log.Info("Dynamic Instrumentation stopping through Remote Config update")
 		if err := t.stopDynamicInstrumentationRCSubscriptions(); err != nil {
-			log.Error("failed to stop Dynamic Instrumentation subscriptions: %s", err)
+			telemetrylog.LogAndReportError("failed to stop Dynamic Instrumentation subscriptions", err)
 		}
 	}
 }
 
-type dynamicInstrumentationRCProbeConfig struct {
-	configPath    string
-	configContent string
-}
-
-type dynamicInstrumentationRCState struct {
-	mu    locking.Mutex
-	state map[string]dynamicInstrumentationRCProbeConfig // +checklocks:mu
-
-	// symdbExport is a flag that indicates that this tracer is resposible
-	// for uploading symbols to the symbol database. The tracer will learn
-	// about this fact through the callbacks like the other dynamic
-	// instrumentation RC callbacks.
-	//
-	// The system is designed such that only a single tracer at a time is
-	// responsible for uploading symbols to the symbol database. This is
-	// communicated through a single RC key with a constant value. In order to
-	// simplify the internal state of the tracer an avoid risks of excess memory
-	// usage, we use a single boolean flag to track this state as opposed to
-	// tracking the actual RC key and value.
-	symdbExport bool // +checklocks:mu
-}
-
-var (
-	diRCState   dynamicInstrumentationRCState
-	initalizeRC sync.Once
-)
-
+// dynamicInstrumentationRCUpdate reports the apply status for a Dynamic
+// Instrumentation Remote Config update. The tracer does not apply probe
+// configurations, so it reports Unknown for a live config and Acknowledged
+// for a deletion.
 func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) map[string]state.ApplyStatus {
 	applyStatus := make(map[string]state.ApplyStatus, len(u))
-
-	diRCState.mu.Lock()
-	defer diRCState.mu.Unlock()
 	for k, v := range u {
 		deleted := len(v) == 0
 		deletedMsg := ""
@@ -369,110 +305,17 @@ func (t *tracer) dynamicInstrumentationRCUpdate(u remoteconfig.ProductUpdate) ma
 		}
 		log.Debug("Received dynamic instrumentation RC configuration for %s%s\n", k, deletedMsg)
 		if deleted {
-			delete(diRCState.state, k)
 			applyStatus[k] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
 		} else {
-			diRCState.state[k] = dynamicInstrumentationRCProbeConfig{
-				configPath:    k,
-				configContent: string(v),
-			}
 			applyStatus[k] = state.ApplyStatus{State: state.ApplyStateUnknown}
 		}
 	}
 	return applyStatus
-}
-
-func (t *tracer) dynamicInstrumentationSymDBRCUpdate(
-	u remoteconfig.ProductUpdate,
-) map[string]state.ApplyStatus {
-	applyStatus := make(map[string]state.ApplyStatus, len(u))
-	diRCState.mu.Lock()
-	defer diRCState.mu.Unlock()
-	symDBEnabled := false
-	for k, v := range u {
-		if len(v) == 0 {
-			applyStatus[k] = state.ApplyStatus{State: state.ApplyStateAcknowledged}
-		} else {
-			applyStatus[k] = state.ApplyStatus{State: state.ApplyStateUnknown}
-			symDBEnabled = true
-		}
-	}
-	diRCState.symdbExport = symDBEnabled
-	return applyStatus
-}
-
-// passProbeConfiguration is used as a stable interface to find the
-// configuration in via bpf. Go-DI attaches a bpf program to this function and
-// extracts the raw bytes accordingly.
-//
-//nolint:all
-//go:noinline
-func passProbeConfiguration(runtimeID, configPath, configContent string) {}
-
-// passAllProbeConfigurationsComplete is used to signal to the bpf program that
-// all probe configurations have been passed.
-//
-//nolint:all
-//go:noinline
-func passAllProbeConfigurationsComplete(runtimeID string) {}
-
-// passSymDBState is used as a stable interface to find the symbol database
-// state via bpf. Go-DI attaches a bpf program to this function and extracts
-// the arguments accordingly.
-//
-//nolint:all
-//go:noinline
-func passSymDBState(runtimeID string, enabled bool) {}
-
-// passAllProbeConfigurations is used to pass all probe configurations to the
-// bpf program.
-//
-//go:noinline
-func passAllProbeConfigurations(runtimeID string) {
-	defer passAllProbeConfigurationsComplete(runtimeID)
-	diRCState.mu.Lock()
-	defer diRCState.mu.Unlock()
-	for _, v := range diRCState.state {
-		accessStringsToMitigatePageFault(runtimeID, v.configPath, v.configContent)
-		passProbeConfiguration(runtimeID, v.configPath, v.configContent)
-	}
-	passSymDBState(runtimeID, diRCState.symdbExport)
-}
-
-func initalizeDynamicInstrumentationRemoteConfigState() {
-	diRCState.mu.Lock()
-	defer diRCState.mu.Unlock()
-	diRCState.state = map[string]dynamicInstrumentationRCProbeConfig{}
-	diRCState.symdbExport = false
-
-	go func() {
-		for {
-			time.Sleep(time.Second * 5)
-			passAllProbeConfigurations(globalconfig.RuntimeID())
-		}
-	}()
-}
-
-// accessStringsToMitigatePageFault iterates over each string to trigger a page fault,
-// ensuring it is loaded into RAM or listed in the translation lookaside buffer.
-// This is done by writing the string to io.Discard.
-//
-// This function addresses an issue with the bpf program that hooks the
-// `passProbeConfiguration()` function from system-probe. The bpf program fails
-// to read strings if a page fault occurs because the `bpf_probe_read()` helper
-// disables paging (uprobe bpf programs can't sleep). Consequently, page faults
-// cause `bpf_probe_read()` to return an error and not read any data.
-// By preloading the strings, we mitigate this issue, enhancing the reliability
-// of the Go Dynamic Instrumentation product.
-func accessStringsToMitigatePageFault(strs ...string) {
-	for i := range strs {
-		io.WriteString(io.Discard, strs[i])
-	}
 }
 
 // startRemoteConfig starts the remote config client. It registers the
 // APM_TRACING product unconditionally and it registers the LIVE_DEBUGGING and
-// LIVE_DEBUGGING_SYMBOL_DB with their respective callbacks if the tracer is
+// LIVE_DEBUGGING_SYMBOL_DB products with a shared callback if the tracer is
 // configured to use the dynamic instrumentation product.
 func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 	err := remoteconfig.Start(rcConfig)
@@ -486,8 +329,6 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 		dynamicInstrumentationError = t.startDynamicInstrumentationRCSubscriptions()
 	}
 
-	initalizeRC.Do(initalizeDynamicInstrumentationRemoteConfigState)
-
 	_, apmTracingError = remoteconfig.Subscribe(
 		state.ProductAPMTracing,
 		t.onRemoteConfigUpdate,
@@ -500,9 +341,9 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 		remoteconfig.APMTracingEnableLiveDebugging,
 	)
 
-	if internal.BoolEnv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", false) {
+	if internalffe.RemoteConfigSourceSelected(t.config.internalConfig) {
 		if err := internalffe.SubscribeRC(); err != nil {
-			log.Warn("openfeature: failed to subscribe to Remote Config: %v", err.Error())
+			reportOpenFeatureSubscriptionError(err)
 		}
 	}
 
@@ -517,6 +358,15 @@ func (t *tracer) startRemoteConfig(rcConfig remoteconfig.ClientConfig) error {
 	return nil
 }
 
+func reportOpenFeatureSubscriptionError(err error) {
+	log.Warn("openfeature: failed to subscribe to Remote Config: %v", err.Error())
+	if errors.Is(err, remoteconfig.ErrClientNotStarted) {
+		// Remote Config was explicitly disabled, so this subscription was never expected to start.
+		return
+	}
+	telemetrylog.ReportError("openfeature: failed to subscribe to Remote Config", err)
+}
+
 func (t *tracer) startDynamicInstrumentationRCSubscriptions() error {
 	t.dynInstSubscriptions.mu.Lock()
 	defer t.dynInstSubscriptions.mu.Unlock()
@@ -529,7 +379,7 @@ func (t *tracer) startDynamicInstrumentationRCSubscriptions() error {
 		"LIVE_DEBUGGING", t.dynamicInstrumentationRCUpdate,
 	)
 	symDBTok, liveDebuggingSymDBError := remoteconfig.Subscribe(
-		"LIVE_DEBUGGING_SYMBOL_DB", t.dynamicInstrumentationSymDBRCUpdate,
+		"LIVE_DEBUGGING_SYMBOL_DB", t.dynamicInstrumentationRCUpdate,
 	)
 	t.dynInstSubscriptions.ldSubscriptionToken = ldTok
 	t.dynInstSubscriptions.symDBSubscriptionToken = symDBTok

@@ -36,11 +36,12 @@ func fastHTTPHandler(ctx *fasthttp.RequestCtx) {
 
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	tc.Server = &fasthttp.Server{Handler: fastHTTPHandler}
-	tc.Addr = fmt.Sprintf("127.0.0.1:%d", net.FreePort(t))
+	ln := net.FreeListener(t)
+	tc.Addr = ln.Addr().String()
 
-	// Note: fasthttp.Server.ListenAndServe returns nil on graceful shutdown,
+	// Note: fasthttp.Server.Serve returns nil on graceful shutdown,
 	// not http.ErrServerClosed like net/http does.
-	go func() { _ = tc.Server.ListenAndServe(tc.Addr) }()
+	go func() { _ = tc.Server.Serve(ln) }()
 	t.Cleanup(func() {
 		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -54,6 +55,11 @@ func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// ExpectedSpanCount pins the client span and a single fasthttp server span.
+func (*TestCase) ExpectedSpanCount() int {
+	return 2
 }
 
 func (tc *TestCase) ExpectedTraces() trace.Traces {

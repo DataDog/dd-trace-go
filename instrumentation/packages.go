@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"maps"
 	"strings"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 )
@@ -24,8 +25,10 @@ const (
 	PackageBradfitzGoMemcache   Package = "bradfitz/gomemcache"
 	PackageGCPPubsub            Package = "cloud.google.com/go/pubsub.v1"
 	PackageGCPPubsubV2          Package = "cloud.google.com/go/pubsub.v2"
+	PackageCloudEventsSDKGoV2   Package = "cloudevents/sdk-go.v2"
 	PackageConfluentKafkaGo     Package = "confluentinc/confluent-kafka-go/kafka"
 	PackageConfluentKafkaGoV2   Package = "confluentinc/confluent-kafka-go/kafka.v2"
+	PackageConnectRPC           Package = "connectrpc.com/connect"
 	PackageDatabaseSQL          Package = "database/sql"
 	PackageDimfeldHTTPTreeMuxV5 Package = "dimfeld/httptreemux.v5"
 	PackageGoElasticSearchV6    Package = "elastic/go-elasticsearch.v6"
@@ -34,6 +37,7 @@ const (
 	PackageGlobalsignMgo        Package = "globalsign/mgo"
 	PackageMongoDriver          Package = "go.mongodb.org/mongo-driver"
 	PackageMongoDriverV2        Package = "go.mongodb.org/mongo-driver.v2"
+	PackageGoUberOrgZap         Package = "go.uber.org/zap"
 	PackageChi                  Package = "go-chi/chi"
 	PackageChiV5                Package = "go-chi/chi.v5"
 	PackageGoPGV10              Package = "go-pg/pg.v10"
@@ -49,36 +53,37 @@ const (
 	PackageNetHTTP   Package = "net/http"
 	PackageIBMSarama Package = "IBM/sarama"
 
-	PackageValyalaFastHTTP           Package = "valyala/fasthttp"
-	PackageUrfaveNegroni             Package = "urfave/negroni"
-	PackageTwitchTVTwirp             Package = "twitchtv/twirp"
-	PackageTidwallBuntDB             Package = "tidwall/buntdb"
-	PackageSyndtrGoLevelDB           Package = "syndtr/goleveldb"
-	PackageSirupsenLogrus            Package = "sirupsen/logrus"
-	PackageRsZerolog                 Package = "rs/zerolog"
-	PackageShopifySarama             Package = "Shopify/sarama"
-	PackageSegmentioKafkaGo          Package = "segmentio/kafka-go"
-	PackageTwmbFranzGo               Package = "twmb/franz-go"
-	PackageRedisGoRedisV9            Package = "redis/go-redis.v9"
-	PackageOlivereElasticV5          Package = "olivere/elastic.v5"
-	PackageMiekgDNS                  Package = "miekg/dns"
-	PackageLabstackEchoV4            Package = "labstack/echo.v4"
-	PackageLabstackEchoV5            Package = "labstack/echo.v5"
-	PackageK8SClientGo               Package = "k8s.io/client-go"
-	PackageK8SGatewayAPI             Package = "k8s.io/gateway-api"
-	PackageJulienschmidtHTTPRouter   Package = "julienschmidt/httprouter"
-	PackageMark3LabsMCPGo            Package = "mark3labs/mcp-go"
-	PackageJmoironSQLx               Package = "jmoiron/sqlx"
-	PackageJackcPGXV5                Package = "jackc/pgx.v5"
-	PackageHashicorpConsulAPI        Package = "hashicorp/consul"
-	PackageHashicorpVaultAPI         Package = "hashicorp/vault"
-	PackageGraphQLGoGraphQL          Package = "graphql-go/graphql"
-	PackageGraphGophersGraphQLGo     Package = "graph-gophers/graphql-go"
-	PackageGormIOGormV1              Package = "gorm.io/gorm.v1"
-	PackageGorillaMux                Package = "gorilla/mux"
-	PackageUptraceBun                Package = "uptrace/bun"
-	PackageLogSlog                   Package = "log/slog"
-	PackageModelContextProtocolGoSDK Package = "modelcontextprotocol/go-sdk"
+	PackageValyalaFastHTTP                 Package = "valyala/fasthttp"
+	PackageUrfaveNegroni                   Package = "urfave/negroni"
+	PackageTwitchTVTwirp                   Package = "twitchtv/twirp"
+	PackageTidwallBuntDB                   Package = "tidwall/buntdb"
+	PackageSyndtrGoLevelDB                 Package = "syndtr/goleveldb"
+	PackageSirupsenLogrus                  Package = "sirupsen/logrus"
+	PackageRsZerolog                       Package = "rs/zerolog"
+	PackageShopifySarama                   Package = "Shopify/sarama"
+	PackageSegmentioKafkaGo                Package = "segmentio/kafka-go"
+	PackageTwmbFranzGo                     Package = "twmb/franz-go"
+	PackageRedisGoRedisV9                  Package = "redis/go-redis.v9"
+	PackageOlivereElasticV5                Package = "olivere/elastic.v5"
+	PackageOpenSearchProjectOpenSearchGoV4 Package = "opensearch-project/opensearch-go.v4"
+	PackageMiekgDNS                        Package = "miekg/dns"
+	PackageLabstackEchoV4                  Package = "labstack/echo.v4"
+	PackageLabstackEchoV5                  Package = "labstack/echo.v5"
+	PackageK8SClientGo                     Package = "k8s.io/client-go"
+	PackageK8SGatewayAPI                   Package = "k8s.io/gateway-api"
+	PackageJulienschmidtHTTPRouter         Package = "julienschmidt/httprouter"
+	PackageMark3LabsMCPGo                  Package = "mark3labs/mcp-go"
+	PackageJmoironSQLx                     Package = "jmoiron/sqlx"
+	PackageJackcPGXV5                      Package = "jackc/pgx.v5"
+	PackageHashicorpConsulAPI              Package = "hashicorp/consul"
+	PackageHashicorpVaultAPI               Package = "hashicorp/vault"
+	PackageGraphQLGoGraphQL                Package = "graphql-go/graphql"
+	PackageGraphGophersGraphQLGo           Package = "graph-gophers/graphql-go"
+	PackageGormIOGormV1                    Package = "gorm.io/gorm.v1"
+	PackageGorillaMux                      Package = "gorilla/mux"
+	PackageUptraceBun                      Package = "uptrace/bun"
+	PackageLogSlog                         Package = "log/slog"
+	PackageModelContextProtocolGoSDK       Package = "modelcontextprotocol/go-sdk"
 
 	PackageValkeyIoValkeyGo               Package = "valkey-io/valkey-go"
 	PackageAzureAPIMCallout               Package = "azure/apim-callout"
@@ -108,6 +113,9 @@ const (
 	ComponentConsumer
 )
 
+// componentNames holds the legacy per-component service and operation name builders for the
+// naming-schema feature (DD_TRACE_SPAN_ATTRIBUTE_SCHEMA). New integrations should not use these; see
+// the naming field on PackageInfo.
 type componentNames struct {
 	useDDServiceV0     bool
 	buildServiceNameV0 func(opCtx OperationContext) string
@@ -122,9 +130,13 @@ type PackageInfo struct {
 	IsStdLib      bool
 	EnvVarPrefix  string
 
+	// naming is the legacy naming-schema table (DD_TRACE_SPAN_ATTRIBUTE_SCHEMA). New integrations
+	// should leave it unset: ServiceName then returns the global DD_SERVICE, and operation names
+	// should be hardcoded string literals. See contrib/INTEGRATIONS.md.
 	naming map[Component]componentNames
 }
 
+var packagesMu sync.RWMutex
 var packages = map[Package]PackageInfo{
 	Package99DesignsGQLGen: {
 		TracedPackage: "github.com/99designs/gqlgen",
@@ -229,6 +241,12 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV0:      staticName("pubsub.publish"),
 				buildOpNameV1:      staticName("gcp.pubsub.send"),
 			},
+			ComponentClient: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName(""),
+				buildOpNameV0:      staticName("gcp.pubsub.request"),
+				buildOpNameV1:      staticName("gcp.pubsub.request"),
+			},
 		},
 	},
 	PackageGCPPubsubV2: {
@@ -247,7 +265,17 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV0:      staticName("pubsub.publish"),
 				buildOpNameV1:      staticName("gcp.pubsub.send"),
 			},
+			ComponentClient: {
+				useDDServiceV0:     false,
+				buildServiceNameV0: staticName(""),
+				buildOpNameV0:      staticName("gcp.pubsub.request"),
+				buildOpNameV1:      staticName("gcp.pubsub.request"),
+			},
 		},
+	},
+	PackageCloudEventsSDKGoV2: {
+		TracedPackage: "github.com/cloudevents/sdk-go/v2",
+		EnvVarPrefix:  "CLOUDEVENTS",
 	},
 	PackageConfluentKafkaGo: {
 		TracedPackage: "github.com/confluentinc/confluent-kafka-go",
@@ -285,6 +313,10 @@ var packages = map[Package]PackageInfo{
 			},
 		},
 	},
+	PackageConnectRPC: {
+		TracedPackage: "connectrpc.com/connect",
+		EnvVarPrefix:  "CONNECT",
+	},
 	PackageDatabaseSQL: {
 		TracedPackage: "database/sql",
 		IsStdLib:      true,
@@ -296,13 +328,13 @@ var packages = map[Package]PackageInfo{
 					if svc := opCtx["registerService"]; svc != "" {
 						return svc
 					}
-					return fmt.Sprintf("%s.db", opCtx["driverName"])
+					return opCtx["driverName"] + ".db"
 				},
 				buildOpNameV0: func(opCtx OperationContext) string {
-					return fmt.Sprintf("%s.query", opCtx["driverName"])
+					return opCtx["driverName"] + ".query"
 				},
 				buildOpNameV1: func(opCtx OperationContext) string {
-					return fmt.Sprintf("%s.query", opCtx[ext.DBSystem])
+					return opCtx[ext.DBSystem] + ".query"
 				},
 			},
 		},
@@ -584,7 +616,7 @@ var packages = map[Package]PackageInfo{
 					if rpcService == "" || !ok {
 						return "twirp.service"
 					}
-					return fmt.Sprintf("twirp.%s", rpcService)
+					return "twirp." + rpcService
 				},
 				buildOpNameV1: staticName("twirp.server.request"),
 			},
@@ -627,6 +659,10 @@ var packages = map[Package]PackageInfo{
 	PackageRsZerolog: {
 		TracedPackage: "github.com/rs/zerolog",
 		EnvVarPrefix:  "ZEROLOG",
+	},
+	PackageGoUberOrgZap: {
+		TracedPackage: "go.uber.org/zap",
+		EnvVarPrefix:  "ZAP",
 	},
 	PackageShopifySarama: {
 		TracedPackage: "github.com/Shopify/sarama",
@@ -717,6 +753,10 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV1:      staticName("elasticsearch.query"),
 			},
 		},
+	},
+	PackageOpenSearchProjectOpenSearchGoV4: {
+		TracedPackage: "github.com/opensearch-project/opensearch-go/v4",
+		EnvVarPrefix:  "OPENSEARCH",
 	},
 	PackageMiekgDNS: {
 		TracedPackage: "github.com/miekg/dns",
@@ -1018,6 +1058,9 @@ func isAWSMessagingSendOp(awsService, awsOperation string) bool {
 
 // GetPackages returns a map of Package to the corresponding instrumented module.
 func GetPackages() map[Package]PackageInfo {
+	packagesMu.RLock()
+	defer packagesMu.RUnlock()
+
 	cp := make(map[Package]PackageInfo)
 	maps.Copy(cp, packages)
 	return cp

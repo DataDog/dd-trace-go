@@ -35,7 +35,7 @@ func StartMongoDBTestContainer(t testing.TB) (*mongodb.MongoDBContainer, string)
 		}),
 	}
 	container, err := mongodb.Run(ctx,
-		"mongo:8",
+		Image("mongo"),
 		opts...,
 	)
 	AssertTestContainersError(t, err)

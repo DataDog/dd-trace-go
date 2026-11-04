@@ -18,6 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/appsec/listener"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
@@ -220,4 +222,55 @@ func TestAPISecuritySchemaCollection(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestStopClosesWAFManager checks that stopping AppSec closes its WAF manager instead of leaving it to the GC cleanup,
+// which reports a "WAFManager was leaked" warning log.
+func TestStopClosesWAFManager(t *testing.T) {
+	if usable, err := libddwaf.Usable(); !usable {
+		t.Skipf("AppSec is not supported on this platform: %v", err)
+	}
+
+	Start(config.WithEnablementMode(config.ForcedOn))
+	defer Stop()
+	require.True(t, Enabled())
+	mgr := activeAppSec.Load().cfg.WAFManager
+	require.NotEmpty(t, mgr.ConfigPaths(""))
+
+	Stop()
+	// A closed WAF manager no longer holds any configuration.
+	require.Empty(t, mgr.ConfigPaths(""))
+}
+
+func TestDisableFeatures(t *testing.T) {
+	if usable, err := libddwaf.Usable(); !usable {
+		t.Skipf("AppSec is not supported on this platform: %v", err)
+	}
+
+	// Required features (waf) and unknown names are ignored.
+	t.Setenv(config.EnvDisableFeatures, "grpc, HTTP,waf,unknown")
+	Start(config.WithEnablementMode(config.ForcedOn))
+	defer Stop()
+	require.True(t, Enabled())
+
+	a := activeAppSec.Load()
+	a.featuresMu.Lock()
+	names := make([]string, 0, len(a.features))
+	for _, f := range a.features {
+		names = append(names, f.String())
+	}
+	a.featuresMu.Unlock()
+
+	require.NotContains(t, names, listener.FeatureHTTP)
+	require.NotContains(t, names, listener.FeatureGRPC)
+	require.Contains(t, names, listener.FeatureTrace)
+	require.Contains(t, names, listener.FeatureWAF)
+	require.Contains(t, names, listener.FeatureGraphQL)
+
+	// The addresses of the disabled features must not be evaluated by the WAF, as some of them (e.g. HTTP body, gRPC
+	// messages) reach the WAF context without going through the feature listener.
+	require.NotContains(t, a.cfg.SupportedAddresses, addresses.ServerRequestBodyAddr)
+	require.NotContains(t, a.cfg.SupportedAddresses, addresses.GRPCServerRequestMessageAddr)
+	// The client IP address is shared by HTTP and gRPC and stays supported.
+	require.Contains(t, a.cfg.SupportedAddresses, addresses.ClientIPAddr)
 }

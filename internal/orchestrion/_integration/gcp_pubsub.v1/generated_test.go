@@ -18,3 +18,15 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestAdminClient(t *testing.T) {
+	harness.Run(t, new(TestCaseAdminClient))
+}
+
+func TestAdminGAPIC(t *testing.T) {
+	harness.Run(t, new(TestCaseAdminGAPIC))
+}
+
+func TestAdminSchema(t *testing.T) {
+	harness.Run(t, new(TestCaseAdminSchema))
+}

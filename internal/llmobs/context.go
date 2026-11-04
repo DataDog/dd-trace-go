@@ -5,7 +5,10 @@
 
 package llmobs
 
-import "context"
+import (
+	"context"
+	"sync/atomic"
+)
 
 type (
 	ctxKeyActiveLLMSpan     struct{}
@@ -20,6 +23,14 @@ type PropagatedLLMSpan struct {
 	TraceID string
 	// SpanID is the span ID.
 	SpanID string
+	// SessionID is the session ID.
+	SessionID string
+	// ParentAgentName is the name of the nearest agent ancestor, propagated across
+	// process boundaries. Empty when the upstream hop sent an id-only attribution.
+	ParentAgentName string
+	// ParentAgentSpanID is the span ID of the nearest agent ancestor, propagated
+	// across process boundaries. Empty when there is no agent ancestor.
+	ParentAgentSpanID string
 }
 
 // PropagatedLLMSpanFromContext retrieves a PropagatedLLMSpan from the context.
@@ -39,12 +50,45 @@ func ContextWithPropagatedLLMSpan(ctx context.Context, span *PropagatedLLMSpan) 
 // ActiveLLMSpanFromContext retrieves the active LLMObs span from the context.
 // Returns the span and true if found, nil and false otherwise.
 func ActiveLLMSpanFromContext(ctx context.Context) (*Span, bool) {
+	// Skip the context.Value walk, which is costly on deep context chains,
+	// until an active LLM span is stored in a context for the first time.
+	if !activeLLMSpanUsed.Load() {
+		return nil, false
+	}
 	if span, ok := ctx.Value(ctxKeyActiveLLMSpan{}).(*Span); ok {
 		return span, true
 	}
 	return nil, false
 }
 
+// activeLLMSpanUsed reports whether contextWithActiveLLMSpan was ever called.
+var activeLLMSpanUsed atomic.Bool
+
 func contextWithActiveLLMSpan(ctx context.Context, span *Span) context.Context {
+	activeLLMSpanUsed.Store(true)
 	return context.WithValue(ctx, ctxKeyActiveLLMSpan{}, span)
+}
+
+// AgentNameWireSafe reports whether name can safely be written as a propagating-tag value.
+//
+//   - reject any byte outside the printable ASCII range [0x20, 0x7E]
+//   - reject comma (x-datadog-tags entry delimiter)
+//   - reject semicolon and tilde (W3C tracestate characters that composeTracestate sanitizes
+//     to "_", which would corrupt the attribution name seen by the downstream service)
+//
+// Note: dd-trace-js does not reject semicolons or tildes — it relies on the x-datadog-tags
+// encoder alone. Go applies the stricter rule because names may also travel via W3C tracestate.
+//
+// The length check is delegated to callers.
+func AgentNameWireSafe(name string) bool {
+	for i := 0; i < len(name); i++ {
+		b := name[i]
+		if b < 0x20 || b > 0x7E {
+			return false
+		}
+		if b == ',' || b == ';' || b == '~' {
+			return false
+		}
+	}
+	return true
 }

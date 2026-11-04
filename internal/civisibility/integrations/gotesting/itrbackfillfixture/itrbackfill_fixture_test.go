@@ -8,6 +8,7 @@ package itrbackfillfixture
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -15,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/internal/orchtool"
 )
 
 func TestITRCoverageBackfillManualFixture(t *testing.T) {
@@ -24,6 +27,7 @@ func TestITRCoverageBackfillManualFixture(t *testing.T) {
 		name              string
 		extraEnv          []string
 		skipProfileAssert bool
+		expectFailure     bool
 	}{
 		{name: "manual-count"},
 		{name: "manual-codecoverage-disabled", extraEnv: []string{"DD_ITR_BACKFILL_CODE_COVERAGE=false"}},
@@ -31,13 +35,17 @@ func TestITRCoverageBackfillManualFixture(t *testing.T) {
 		{name: "manual-coverage-report-disabled", extraEnv: []string{"DD_CIVISIBILITY_CODE_COVERAGE_REPORT_UPLOAD_ENABLED=false"}},
 		{name: "manual-partial-coverage", extraEnv: []string{"DD_ITR_BACKFILL_PARTIAL_COVERAGE=true"}, skipProfileAssert: true},
 		{name: "manual-producer-bitmap-upload", skipProfileAssert: true},
+		{name: "manual-process-coverage-merge-failure", skipProfileAssert: true, expectFailure: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			profile := filepath.Join(t.TempDir(), test.name+".out")
-			runFixtureCommand(t, fixtureDir, test.name, profile, goCache, test.extraEnv,
+			output := runFixtureCommand(t, fixtureDir, test.name, profile, goCache, test.extraEnv, test.expectFailure,
 				"go", "test", "-mod=readonly", "./...",
 				"-cover", "-covermode=count", "-coverpkg", "./...",
 				"-count=1", "-coverprofile", profile)
+			if test.expectFailure && !strings.Contains(output, "process coverage merge failure publication suppressed") {
+				t.Fatalf("fixture did not verify failed-merge publication behavior:\n%s", output)
+			}
 			if !test.skipProfileAssert {
 				assertProfileContainsPositiveCounts(t, profile, "fixtures/itrbackfill/manual/lib/lib.go")
 			}
@@ -46,9 +54,19 @@ func TestITRCoverageBackfillManualFixture(t *testing.T) {
 }
 
 func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
+	if goTipCommand(os.Getenv("GO_CMD")) {
+		t.Skip("waiting for an Orchestrion release with support for Go tip's -exportfd compiler flag: https://github.com/DataDog/orchestrion/pull/899")
+	}
+
 	fixtureDir := filepath.Join("..", "fixtures", "itrbackfill", "orchestrion")
 	assertOrchestrionFixtureDoesNotUseManualRunM(t, fixtureDir)
 	goCache := sharedFixtureGoCache(t)
+	orchestrionPath := orchtool.Locate()
+	if orchestrionPath == "" {
+		t.Logf("%s is unset; using the go run fallback", orchtool.OrchestrionBinEnv)
+	} else {
+		t.Logf("using the exported orchestrion binary %s", orchestrionPath)
+	}
 
 	for _, test := range []struct {
 		name              string
@@ -81,11 +99,11 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 		{name: "narrowing-run", coverMode: "count", withProfile: true, extraTestArgs: []string{"-run", "TestCoversLib"}, skipProfileAssert: true},
 		{name: "backfill-disabled-for-set-covermode", coverMode: "set", withProfile: true, skipProfileAssert: true},
 		{name: "no-skippable", coverMode: "count", withProfile: true},
+		{name: "production-helper-subtest-module", coverMode: "count", withProfile: true, extraTestArgs: []string{"-run", "^TestProductionHelperSubtestModule$"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var profile string
 			args := []string{
-				"go", "run", "-mod=readonly", "github.com/DataDog/orchestrion",
 				"go", "test", "-mod=readonly", "./...",
 				"-cover", "-covermode=" + test.coverMode, "-coverpkg", "./...",
 				"-count=1",
@@ -95,13 +113,43 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 				args = append(args, "-coverprofile", profile)
 			}
 			args = append(args, test.extraTestArgs...)
-			runFixtureCommand(t, fixtureDir, test.name, profile, goCache, test.extraEnv, args...)
+			executable, orchestrionArgs := orchtool.Command(orchestrionPath, "go", args...)
+			runFixtureCommand(t, fixtureDir, test.name, profile, goCache, test.extraEnv, false, executable, orchestrionArgs...)
 			if test.withProfile && !test.skipProfileAssert {
 				profilePaths := test.profilePaths
 				if len(profilePaths) == 0 {
 					profilePaths = []string{"fixtures/itrbackfill/orchestrion/lib/lib.go"}
 				}
 				assertProfileContainsPositiveCounts(t, profile, profilePaths...)
+			}
+		})
+	}
+}
+
+// goTipCommand reports whether the Go command runs a Go tip toolchain. The
+// sibling fuzzexamplefixture detects gotip the same way, so a path form such
+// as /usr/local/bin/gotip does not slip past the guard.
+func goTipCommand(command string) bool {
+	base := filepath.Base(command)
+	return base == "gotip" || base == "gotip.exe"
+}
+
+func TestGoTipCommand(t *testing.T) {
+	for _, test := range []struct {
+		command string
+		want    bool
+	}{
+		{command: "", want: false},
+		{command: "go", want: false},
+		{command: "gotip", want: true},
+		{command: filepath.Join("custom", "gotip"), want: true},
+		{command: "gotip.exe", want: true},
+		{command: filepath.Join("custom toolchain", "go"), want: false},
+	} {
+		t.Run(test.command, func(t *testing.T) {
+			t.Setenv("GO_CMD", test.command)
+			if got := goTipCommand(os.Getenv("GO_CMD")); got != test.want {
+				t.Fatalf("Go tip detection for %q = %v, want %v", test.command, got, test.want)
 			}
 		})
 	}
@@ -117,10 +165,10 @@ func sharedFixtureGoCache(t *testing.T) string {
 	return goCache
 }
 
-func runFixtureCommand(t *testing.T, fixtureDir, scenario, profile, goCache string, extraEnv []string, args ...string) {
+func runFixtureCommand(t *testing.T, fixtureDir, scenario, profile, goCache string, extraEnv []string, expectFailure bool, executable string, args ...string) string {
 	t.Helper()
 
-	cmd := exec.Command(args[0], args[1:]...)
+	cmd := exec.Command(executable, args...)
 	cmd.Dir = fixtureDir
 	cmd.Env = isolatedFixtureEnv(t, scenario, goCache)
 	cmd.Env = append(cmd.Env, extraEnv...)
@@ -128,7 +176,13 @@ func runFixtureCommand(t *testing.T, fixtureDir, scenario, profile, goCache stri
 	var output bytes.Buffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if expectFailure {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+			t.Fatalf("fixture command exit = %v, want 1\n%s", err, output.String())
+		}
+	} else if err != nil {
 		t.Fatalf("fixture command failed: %v\n%s", err, output.String())
 	}
 	if profile != "" {
@@ -136,6 +190,7 @@ func runFixtureCommand(t *testing.T, fixtureDir, scenario, profile, goCache stri
 			t.Fatalf("expected coverprofile %s: %v\n%s", profile, err, output.String())
 		}
 	}
+	return output.String()
 }
 
 func isolatedFixtureEnv(t *testing.T, scenario, goCache string) []string {

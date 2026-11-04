@@ -67,7 +67,7 @@ func (w *ciVisibilityTraceWriter) add(trace []*Span) {
 		cvEvent := getCiVisibilityEvent(s)
 		size, err := w.payload.push(cvEvent)
 		if err != nil {
-			log.Error("ciVisibilityTraceWriter: Error encoding msgpack: %s", err.Error())
+			log.Error("ciVisibilityTraceWriter: Error encoding msgpack: %s", err.Error()) //errtrack:ignore per-event serialization path
 		}
 		if size > agentlessPayloadSizeLimit {
 			w.flush()
@@ -79,7 +79,12 @@ func (w *ciVisibilityTraceWriter) add(trace []*Span) {
 func (w *ciVisibilityTraceWriter) stop() {
 	w.flush()
 	w.wg.Wait()
+	if transport, ok := w.config.ddTransport.(*ciVisibilityTransport); ok {
+		transport.httpClient.CloseIdleConnections()
+	}
 }
+
+func (w *ciVisibilityTraceWriter) wait() { w.wg.Wait() }
 
 // flush sends the current payload to the transport. It ensures that the payload is reset
 // and the resources are freed after the flush operation is completed.
@@ -129,11 +134,11 @@ func (w *ciVisibilityTraceWriter) flush() {
 				log.Debug("ciVisibilityTraceWriter: sent events after %d attempts", attempt+1)
 				return
 			}
-			log.Error("ciVisibilityTraceWriter: failure sending events (attempt %d of %d): %v", attempt+1, sendRetries+1, err.Error())
+			log.Error("ciVisibilityTraceWriter: failure sending events (attempt %d of %d): %v", attempt+1, sendRetries+1, err.Error()) //errtrack:ignore agent or network failure
 			p.reset()
 			time.Sleep(retryInterval)
 		}
-		log.Error("ciVisibilityTraceWriter: lost %d events: %v", count, err.Error())
+		log.Error("ciVisibilityTraceWriter: lost %d events: %v", count, err.Error()) //errtrack:ignore agent or network failure already reported as a count
 		telemetry.EndpointPayloadDropped(telemetry.TestCycleEndpointType)
 	}(oldp)
 }

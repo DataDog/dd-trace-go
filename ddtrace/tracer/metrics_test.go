@@ -87,6 +87,23 @@ func TestEnqueuedTracesHealthMetric(t *testing.T) {
 	assert.Equal(uint32(0), atomic.LoadUint32(&w.tracesQueued))
 }
 
+// TestQueueLengthMetric confirms that the tracer's internal payload queue
+// backlog (len(t.out)) is reported as a gauge on every scheduled flush tick.
+func TestQueueLengthMetric(t *testing.T) {
+	assert := assert.New(t)
+	var tg statsdtest.TestStatsdClient
+	tracer, _, flush, stop, err := startTestTracer(t, withStatsdClient(&tg))
+	assert.Nil(err)
+	defer stop()
+
+	tracer.StartSpan("operation").Finish()
+	flush(1)
+
+	assert.Eventually(func() bool {
+		return len(tg.GetCallsByName("datadog.tracer.queue.length")) >= 1
+	}, 5*time.Second, 10*time.Millisecond)
+}
+
 func TestSpansStartedTags(t *testing.T) {
 	var tg statsdtest.TestStatsdClient
 

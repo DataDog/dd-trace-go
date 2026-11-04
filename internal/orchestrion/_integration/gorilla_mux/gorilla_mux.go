@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -18,6 +19,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
@@ -35,12 +38,13 @@ func (tc *TestCaseSubrouter) Setup(_ context.Context, t *testing.T) {
 	})
 	router = sub
 
+	ln := net.FreeListener(t)
 	tc.Server = &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", net.FreePort(t)),
+		Addr:    ln.Addr().String(),
 		Handler: router,
 	}
 
-	go func() { assert.ErrorIs(t, tc.Server.ListenAndServe(), http.ErrServerClosed) }()
+	go func() { assert.ErrorIs(t, tc.Server.Serve(ln), http.ErrServerClosed) }()
 	t.Cleanup(func() {
 		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -80,12 +84,13 @@ func (tc *TestCaseRouterParallel) Setup(_ context.Context, t *testing.T) {
 		_, _ = w.Write([]byte("ok"))
 	})
 
+	ln := net.FreeListener(t)
 	tc.Server = &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", net.FreePort(t)),
+		Addr:    ln.Addr().String(),
 		Handler: router,
 	}
 
-	go func() { assert.ErrorIs(t, tc.Server.ListenAndServe(), http.ErrServerClosed) }()
+	go func() { assert.ErrorIs(t, tc.Server.Serve(ln), http.ErrServerClosed) }()
 	t.Cleanup(func() {
 		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -152,14 +157,87 @@ func (tc *TestCaseRouterParallel) ExpectedTraces() trace.Traces {
 	return traces
 }
 
+type TestCaseOTelSemantics struct {
+	router *mux.Router
+}
+
+func (tc *TestCaseOTelSemantics) Setup(_ context.Context, t *testing.T) {
+	internalconfig.Get().SetOTelSemanticsEnabled(true, internalconfig.OriginCode)
+	httptrace.ResetCfg()
+	t.Cleanup(func() {
+		internalconfig.Get().SetOTelSemanticsEnabled(false, internalconfig.OriginCode)
+		httptrace.ResetCfg()
+	})
+
+	tc.router = mux.NewRouter()
+	tc.router.HandleFunc("/users/{id}", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+}
+
+func (tc *TestCaseOTelSemantics) Run(_ context.Context, t *testing.T) {
+	for i, tt := range []struct {
+		method string
+		path   string
+		status int
+	}{
+		{method: "gEt", path: "/users/123", status: http.StatusOK},
+		{method: "PROPFIND", path: "/missing", status: http.StatusNotFound},
+	} {
+		recorder := httptest.NewRecorder()
+		tc.router.ServeHTTP(recorder, httptest.NewRequest(tt.method, tt.path, nil))
+		require.Equal(t, tt.status, recorder.Code)
+		if i == 0 {
+			// The first request initializes the router configuration. Later global
+			// changes must not alter the mode captured by that configuration.
+			internalconfig.Get().SetOTelSemanticsEnabled(false, internalconfig.OriginCode)
+		}
+	}
+}
+
+func (*TestCaseOTelSemantics) ExpectedTraces() trace.Traces {
+	return trace.Traces{
+		{
+			Tags: map[string]any{
+				"name":     "http.request",
+				"resource": "GET /users/{id}",
+				"type":     "web",
+				"service":  "mux.router",
+			},
+			Meta: map[string]string{
+				"component":                    "gorilla/mux",
+				"span.kind":                    "server",
+				"http.request.method":          "GET",
+				"http.request.method_original": "gEt",
+				"http.route":                   "/users/{id}",
+			},
+		},
+		{
+			Tags: map[string]any{
+				"name":     "http.request",
+				"resource": "HTTP",
+				"type":     "web",
+				"service":  "mux.router",
+			},
+			Meta: map[string]string{
+				"component":                    "gorilla/mux",
+				"span.kind":                    "server",
+				"http.request.method":          "_OTHER",
+				"http.request.method_original": "PROPFIND",
+			},
+		},
+	}
+}
+
 type TestCase struct {
 	*http.Server
 }
 
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	router := mux.NewRouter()
+	ln := net.FreeListener(t)
 	tc.Server = &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", net.FreePort(t)),
+		Addr:    ln.Addr().String(),
 		Handler: router,
 	}
 	router.HandleFunc("/ping", func(w http.ResponseWriter, _ *http.Request) {
@@ -169,7 +247,7 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 		assert.NoError(t, err)
 	}).Methods("GET")
 
-	go func() { assert.ErrorIs(t, tc.Server.ListenAndServe(), http.ErrServerClosed) }()
+	go func() { assert.ErrorIs(t, tc.Server.Serve(ln), http.ErrServerClosed) }()
 	t.Cleanup(func() {
 		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

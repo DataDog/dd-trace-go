@@ -357,7 +357,7 @@ func TestReportAbandonedSpans(t *testing.T) {
 			assertProcessedSpans(assert, tracer, 1, 0, tickerInterval/10)
 			stop()
 			assert.NotContains(tp.Logs(), msg)
-			assert.Contains(tp.Logs(), fmt.Sprintf("%sToo many abandoned spans. Truncating message.", warnPrefix))
+			assert.Contains(tp.Logs(), warnPrefix+"Too many abandoned spans. Truncating message.")
 		})
 	})
 }

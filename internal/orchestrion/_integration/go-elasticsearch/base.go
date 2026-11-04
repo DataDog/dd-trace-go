@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -37,14 +36,8 @@ type base struct {
 	client    esClient
 }
 
-func (b *base) Setup(ctx context.Context, t *testing.T, image string, newClient func(addr string, caCert []byte) (esClient, error)) {
+func (b *base) Setup(ctx context.Context, t *testing.T, containerName, image string, newClient func(addr string, caCert []byte) (esClient, error)) {
 	containers.SkipIfProviderIsNotHealthy(t)
-
-	parts := strings.Split(image, ":")
-	require.Len(t, parts, 2)
-	version := parts[1]
-	major := strings.Split(version, ".")[0]
-	containerName := "elasticsearch" + major
 
 	var err error
 	b.container, err = testelasticsearch.Run(ctx,

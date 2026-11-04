@@ -170,6 +170,7 @@ func newOtelParentBasedAlwaysOnSampler() *otelParentBasedAlwaysOnSampler {
 func (s *otelParentBasedAlwaysOnSampler) apply(spn *Span) {
 	spn.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Default)
 	spn.SetTag(keySamplingPriorityRate, 1.0)
+	spn.context.trace.setOtelProbability(spn.traceID, 1.0)
 }
 
 // prioritySampler holds a set of per-service sampling rates and applies
@@ -312,5 +313,11 @@ func (ps *prioritySampler) apply(spn *Span) {
 	// as _dd.p.ksr to stay consistent with other tracers.
 	if fromAgent {
 		spn.SetTag(keyKnuthSamplingRate, formatKnuthSamplingRate(rate))
+		// Emit the OTel (rv, th) pair for this genuine probability decision.
+		// Gated on fromAgent for the same reason as _dd.p.ksr: the default
+		// fallback rate is not an agent-configured probability.
+		if spn.context != nil && spn.context.trace != nil {
+			spn.context.trace.setOtelProbability(spn.traceID, rate)
+		}
 	}
 }

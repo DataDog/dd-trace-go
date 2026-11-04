@@ -7,6 +7,7 @@ package openfeature
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strconv"
 	"testing"
@@ -74,6 +75,41 @@ func BenchmarkBooleanEvaluation(b *testing.B) {
 		"targetingKey": "user-123",
 		"country":      "US",
 	}
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		_ = provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
+	}
+}
+
+func BenchmarkBooleanEvaluationOptOut(b *testing.B) {
+	provider := newDatadogProvider(ProviderConfig{
+		ExperimentationOptOutMode: ExperimentationOptOutImmediate,
+	})
+	config := createTestConfig()
+	f := config.Flags["bool-flag"]
+	f.Allocations[0].DoLog = new(true)
+	f.Allocations[0].Splits[0].VariationKey = "off"
+	f.Allocations = append(f.Allocations, &allocation{
+		Key:    "ordinary",
+		DoLog:  new(false),
+		Splits: []*split{{VariationKey: "on"}},
+	})
+	provider.updateConfiguration(config)
+
+	ctx := context.Background()
+	flatCtx := openfeature.FlattenedContext{
+		"targetingKey":                   "user-123",
+		"country":                        "US",
+		experimentationOptOutAtAttribute: experimentOptOutTestTime,
+	}
+
+	result := provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
+	require.Equal(b, openfeature.ResolutionError{}, result.ResolutionError)
+	require.True(b, result.Value)
+	require.Equal(b, "ordinary", result.FlagMetadata[metadataAllocationKey])
 
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -546,6 +582,119 @@ func BenchmarkFlagEvaluationOTelPlusEVPParallel(b *testing.B) {
 			evalCtx := openfeature.NewEvaluationContext("bench-user-"+strconv.Itoa(i%p.numUsers), attrs)
 			_ = client.Boolean(ctx, flagKeys[i%len(flagKeys)], false, evalCtx)
 			i++
+		}
+	})
+}
+
+// BenchmarkFlattenAndPruneContext measures the synchronous evaluation-thread cost of the
+// consent-on context copy (copyPrunedContext, the Go mirror of Java's
+// DDEvaluator.copyPrunedContext). The sub-benchmarks span the common case and the adversarial
+// inputs the inline caps exist to bound: a 10k-element list, a 10k-property structure, a
+// 100-deep chain, and a cyclic structure. The adversarial sub-benchmarks demonstrate that the
+// per-evaluation cost is bounded by the KEPT set (≤256 fields × ≤256 width × depth 4) and is
+// NOT proportional to what the caller supplied: over-cap maps are omitted entirely (O(1) len()
+// check) rather than sorted and trimmed, and over-cap lists stop at maxListElements.
+//
+// Run command:
+//
+//	GOFLAGS=-mod=readonly go test ./openfeature -run='^$' \
+//	  -bench='^BenchmarkFlattenAndPruneContext$' -benchmem -count=3
+func BenchmarkFlattenAndPruneContext(b *testing.B) {
+	b.Run("flat_small", func(b *testing.B) {
+		attrs := map[string]any{
+			"role": "admin", "team": "platform", "env": "staging",
+			"version": "1.2.3", "region": "us", "tenant": "acme",
+			"feature": "beta", "quota": 42, "paid": true,
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			_, _ = flattenAndPruneContext(attrs)
+		}
+	})
+
+	b.Run("flat_at_cap_256", func(b *testing.B) {
+		attrs := make(map[string]any, maxContextFields)
+		for i := range maxContextFields {
+			attrs[fmt.Sprintf("k%04d", i)] = fmt.Sprintf("v%d", i)
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			_, _ = flattenAndPruneContext(attrs)
+		}
+	})
+
+	b.Run("flat_over_cap_5000", func(b *testing.B) {
+		attrs := make(map[string]any, 5000)
+		for i := range 5000 {
+			attrs[fmt.Sprintf("k%05d", i)] = fmt.Sprintf("v%d", i)
+		}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			_, _ = flattenAndPruneContext(attrs)
+		}
+	})
+
+	b.Run("wide_list_10000", func(b *testing.B) {
+		elems := make([]any, 10_000)
+		for i := range elems {
+			elems[i] = i
+		}
+		attrs := map[string]any{"tags": elems}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			_, _ = flattenAndPruneContext(attrs)
+		}
+	})
+
+	b.Run("wide_structure_10000", func(b *testing.B) {
+		nested := make(map[string]any, 10_000)
+		for i := range 10_000 {
+			nested[fmt.Sprintf("p%05d", i)] = i
+		}
+		attrs := map[string]any{"obj": nested}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			_, _ = flattenAndPruneContext(attrs)
+		}
+	})
+
+	b.Run("deep_chain_100", func(b *testing.B) {
+		var node any = map[string]any{"val": "bottom"}
+		for i := range 100 {
+			node = map[string]any{"val": fmt.Sprintf("L%d", i), "n": node}
+		}
+		attrs := map[string]any{"root": node}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			_, _ = flattenAndPruneContext(attrs)
+		}
+	})
+
+	b.Run("cyclic", func(b *testing.B) {
+		cyclic := map[string]any{"name": "x", "role": "admin"}
+		cyclic["self"] = cyclic
+		attrs := map[string]any{"ctx": cyclic}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			_, _ = flattenAndPruneContext(attrs)
+		}
+	})
+
+	// An oversized []byte value must be dropped WITHOUT copying it: the length is checked
+	// before the string(v) conversion, so the cost is O(1) rather than O(len(blob)).
+	b.Run("oversized_byteslice_1MB", func(b *testing.B) {
+		attrs := map[string]any{"role": "admin", "blob": make([]byte, 1<<20)}
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			_, _ = flattenAndPruneContext(attrs)
 		}
 	})
 }

@@ -16,15 +16,45 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+//go:noinline
+func captureRawForTest(skip int) RawStackTrace {
+	return CaptureRaw(skip)
+}
+
+//go:noinline
+func captureInternalFramesForTest(depth, skip int) StackTrace {
+	return SkipAndCaptureWithInternalFrames(depth, skip)
+}
+
+func TestCaptureSkipsStacktraceMachinery(t *testing.T) {
+	raw := captureRawForTest(0)
+	require.NotEmpty(t, raw.PCs)
+	frame, _ := runtime.CallersFrames(raw.PCs).Next()
+	require.Contains(t, frame.Function, "captureRawForTest")
+
+	raw.PCs = raw.PCs[:1]
+	stack := raw.SymbolicateWithRedaction()
+	require.Len(t, stack, 1)
+	require.Contains(t, stack[0].Function, "captureRawForTest")
+
+	stack = captureInternalFramesForTest(4, 0)
+	require.NotEmpty(t, stack)
+	require.Contains(t, stack[0].Function, "captureInternalFramesForTest")
+
+	stack = captureInternalFramesForTest(1, 0)
+	require.Len(t, stack, 1)
+	require.Contains(t, stack[0].Function, "captureInternalFramesForTest")
+}
+
 func TestNewStackTrace(t *testing.T) {
-	stack := CaptureWithRedaction(defaultCallerSkip)
+	stack := CaptureWithRedaction(0)
 	if len(stack) == 0 {
 		t.Error("stacktrace should not be empty")
 	}
 }
 
 func TestStackTraceCurrentFrame(t *testing.T) {
-	stack := CaptureWithRedaction(defaultCallerSkip)
+	stack := CaptureWithRedaction(0)
 	require.Greater(t, len(stack), 0)
 
 	frame := stack[0]
@@ -37,7 +67,25 @@ func TestStackTraceCurrentFrame(t *testing.T) {
 type Test struct{}
 
 func (t *Test) Method() StackTrace {
-	return CaptureWithRedaction(defaultCallerSkip)
+	return CaptureWithRedaction(0)
+}
+
+type valueReceiver struct{}
+
+//go:noinline
+func (valueReceiver) captureStack() StackTrace {
+	return CaptureWithRedaction(0)
+}
+
+func TestStackValueReceiver(t *testing.T) {
+	stack := valueReceiver{}.captureStack()
+	require.NotEmpty(t, stack)
+
+	frame := stack[0]
+	require.Equal(t, "github.com/DataDog/dd-trace-go/v2/internal/stacktrace", frame.Namespace)
+	require.Equal(t, "valueReceiver", frame.ClassName)
+	require.Equal(t, "captureStack", frame.Function)
+	require.Contains(t, Format(stack[:1]), "github.com/DataDog/dd-trace-go/v2/internal/stacktrace.valueReceiver.captureStack\n")
 }
 
 func TestStackMethodReceiver(t *testing.T) {
@@ -54,7 +102,7 @@ func TestStackMethodReceiver(t *testing.T) {
 
 func recursive(i int) StackTrace {
 	if i == 0 {
-		return CaptureWithRedaction(defaultCallerSkip)
+		return CaptureWithRedaction(0)
 	}
 
 	return recursive(i - 1)
@@ -170,10 +218,25 @@ func TestParseSymbol(t *testing.T) {
 			"*Test",
 			"Method",
 		}},
-		{"method-receiver", "github.com/DataDog/dd-trace-go/v2/internal/stacktrace.(Test).Method", symbol{
+		{"method-receiver-parenthesized", "github.com/DataDog/dd-trace-go/v2/internal/stacktrace.(Test).Method", symbol{
 			"github.com/DataDog/dd-trace-go/v2/internal/stacktrace",
 			"Test",
 			"Method",
+		}},
+		{"method-receiver", "crypto.Hash.New", symbol{
+			"crypto",
+			"Hash",
+			"New",
+		}},
+		{"generic-method-receiver", "example.com/pkg.Value[...].Method", symbol{
+			"example.com/pkg",
+			"Value[...]",
+			"Method",
+		}},
+		{"generic-function", "example.com/pkg.Function[...]", symbol{
+			"example.com/pkg",
+			"",
+			"Function[...]",
 		}},
 		{"sample", "github.com/DataDog/dd-trace-go/v2/internal/stacktrace.TestGetPackageFromSymbol", symbol{
 			"github.com/DataDog/dd-trace-go/v2/internal/stacktrace",
@@ -184,6 +247,31 @@ func TestParseSymbol(t *testing.T) {
 			"github.com/DataDog/dd-trace-go/v2/internal/stacktrace",
 			"",
 			"TestGetPackageFromSymbol.func1",
+		}},
+		{"generated-wrapper", "github.com/DataDog/dd-trace-go/v2/internal/stacktrace.TestGetPackageFromSymbol.gowrap1", symbol{
+			"github.com/DataDog/dd-trace-go/v2/internal/stacktrace",
+			"",
+			"TestGetPackageFromSymbol.gowrap1",
+		}},
+		{"inlined-closure", "example.com/pkg.Outer.Inlined.func1", symbol{
+			"example.com/pkg",
+			"",
+			"Outer.Inlined.func1",
+		}},
+		{"global-closure", "example.com/pkg.glob..func1", symbol{
+			"example.com/pkg",
+			"",
+			"glob..func1",
+		}},
+		{"package-init", "github.com/DataDog/dd-trace-go/v2/internal/stacktrace.init.0", symbol{
+			"github.com/DataDog/dd-trace-go/v2/internal/stacktrace",
+			"",
+			"init.0",
+		}},
+		{"malformed-receiver", "example.com/pkg.(Value)", symbol{
+			"example.com/pkg",
+			"",
+			"(Value)",
 		}},
 		{"stdlib-sample", "os/exec.NewCmd", symbol{
 			"os/exec",
@@ -230,8 +318,7 @@ func TestParseSymbol(t *testing.T) {
 func BenchmarkCaptureStackTrace(b *testing.B) {
 	// b.Loop() makes this benchmark to fail with "B.Loop called with timer stopped" error.
 	for _, depth := range []int{10, 20, 50, 100, 200} {
-		b.Run(fmt.Sprintf("%v", depth), func(b *testing.B) {
-			defaultMaxDepth = depth * 2 // Making sure we are capturing the full stack
+		b.Run(strconv.Itoa(depth), func(b *testing.B) {
 			for range b.N {
 				runtime.KeepAlive(recursiveBench(depth, depth, b))
 			}
@@ -242,13 +329,9 @@ func BenchmarkCaptureStackTrace(b *testing.B) {
 func BenchmarkCaptureWithRedaction(b *testing.B) {
 	for _, depth := range []int{10, 20, 50, 100, 200} {
 		b.Run(fmt.Sprintf("depth_%d", depth), func(b *testing.B) {
-			originalMaxDepth := defaultMaxDepth
-			defaultMaxDepth = depth * 2 // Ensure we capture the full stack
-			b.Cleanup(func() { defaultMaxDepth = originalMaxDepth })
-
 			b.ResetTimer()
 			for b.Loop() {
-				stack := recursiveBenchRedaction(depth, b)
+				stack := recursiveBenchRedaction(depth, depth*2, b)
 				runtime.KeepAlive(stack)
 			}
 		})
@@ -257,14 +340,11 @@ func BenchmarkCaptureWithRedaction(b *testing.B) {
 
 func BenchmarkStacktraceComparison(b *testing.B) {
 	const depth = 50
-	originalMaxDepth := defaultMaxDepth
-	defaultMaxDepth = depth * 2
-	b.Cleanup(func() { defaultMaxDepth = originalMaxDepth })
 
 	b.Run("SkipAndCapture", func(b *testing.B) {
 		b.ResetTimer()
 		for b.Loop() {
-			stack := recursiveBenchSkip(depth, b)
+			stack := recursiveBenchSkip(depth, depth*2, b)
 			runtime.KeepAlive(stack)
 		}
 	})
@@ -272,7 +352,7 @@ func BenchmarkStacktraceComparison(b *testing.B) {
 	b.Run("CaptureWithRedaction", func(b *testing.B) {
 		b.ResetTimer()
 		for b.Loop() {
-			stack := recursiveBenchRedaction(depth, b)
+			stack := recursiveBenchRedaction(depth, depth*2, b)
 			runtime.KeepAlive(stack)
 		}
 	})
@@ -281,7 +361,7 @@ func BenchmarkStacktraceComparison(b *testing.B) {
 func recursiveBench(i int, depth int, b *testing.B) StackTrace {
 	if i == 0 {
 		b.StartTimer()
-		stack := iterator(defaultCallerSkip, depth*2, frameOptions{
+		stack := iterator(0, depth*2, frameOptions{
 			skipInternalFrames:      true,
 			redactCustomerFrames:    false,
 			internalPackagePrefixes: nil,
@@ -292,18 +372,24 @@ func recursiveBench(i int, depth int, b *testing.B) StackTrace {
 	return recursiveBench(i-1, depth, b)
 }
 
-func recursiveBenchRedaction(i int, b *testing.B) StackTrace {
+// recursiveBenchRedaction mirrors CaptureWithRedaction with an explicit depth
+// so the benchmark can cover stacks deeper than the production default.
+func recursiveBenchRedaction(i, depth int, b *testing.B) StackTrace {
 	if i == 0 {
-		return CaptureWithRedaction(defaultCallerSkip)
+		return iterator(0, depth, frameOptions{
+			skipInternalFrames:      false,
+			redactCustomerFrames:    true,
+			internalPackagePrefixes: internalSymbolPrefixes,
+		}).capture()
 	}
-	return recursiveBenchRedaction(i-1, b)
+	return recursiveBenchRedaction(i-1, depth, b)
 }
 
-func recursiveBenchSkip(i int, b *testing.B) StackTrace {
+func recursiveBenchSkip(i, depth int, b *testing.B) StackTrace {
 	if i == 0 {
-		return SkipAndCapture(defaultCallerSkip)
+		return SkipAndCaptureWithDepth(depth, 0)
 	}
-	return recursiveBenchSkip(i-1, b)
+	return recursiveBenchSkip(i-1, depth, b)
 }
 
 func TestShouldRedactSymbol_DatadogFrames(t *testing.T) {
@@ -535,7 +621,7 @@ func TestCaptureWithOptions(t *testing.T) {
 	require.Greater(t, n, 0, "Should capture at least one PC")
 
 	t.Run("default options", func(t *testing.T) {
-		stack := CaptureWithRedaction(1)
+		stack := CaptureWithRedaction(0)
 		require.NotEmpty(t, stack, "Should return non-empty stack")
 
 		// Default should include redaction
@@ -544,7 +630,7 @@ func TestCaptureWithOptions(t *testing.T) {
 	})
 
 	t.Run("with redaction disabled", func(t *testing.T) {
-		stack := SkipAndCapture(1) // Use SkipAndCapture without redaction
+		stack := SkipAndCapture(0) // Use SkipAndCapture without redaction
 		require.NotEmpty(t, stack, "Should return non-empty stack")
 
 		// Without redaction, all frames should have their original info
@@ -556,7 +642,7 @@ func TestCaptureWithOptions(t *testing.T) {
 
 	t.Run("with custom max depth", func(t *testing.T) {
 		maxDepth := 5
-		stack := SkipAndCapture(1) // Note: max depth test simplified
+		stack := SkipAndCapture(0) // Note: max depth test simplified
 		t.Logf("Requested maxDepth: %d, got stack length: %d", maxDepth, len(stack))
 		for i, frame := range stack {
 			t.Logf("Frame %d: %s.%s at %s:%d", i, frame.Namespace, frame.Function, frame.File, frame.Line)
@@ -566,8 +652,8 @@ func TestCaptureWithOptions(t *testing.T) {
 
 	t.Run("with skip frames", func(t *testing.T) {
 		skipFrames := 2
-		stackNoSkip := SkipAndCapture(1)
-		stackWithSkip := SkipAndCapture(1 + skipFrames)
+		stackNoSkip := SkipAndCapture(0)
+		stackWithSkip := SkipAndCapture(skipFrames)
 
 		require.NotEmpty(t, stackNoSkip, "Base stack should not be empty")
 		require.NotEmpty(t, stackWithSkip, "Stack with skip should not be empty")
@@ -576,7 +662,7 @@ func TestCaptureWithOptions(t *testing.T) {
 	})
 
 	t.Run("with internal frames disabled", func(t *testing.T) {
-		stack := SkipAndCapture(1) // Note: internal frames test simplified
+		stack := SkipAndCapture(0) // Note: internal frames test simplified
 		require.NotEmpty(t, stack, "Should return non-empty stack")
 
 		// Check that no internal DD frames are present
@@ -612,7 +698,7 @@ func TestFormat(t *testing.T) {
 		require.Equal(t, expected, result)
 	})
 
-	t.Run("frame with class", func(t *testing.T) {
+	t.Run("frame with pointer receiver", func(t *testing.T) {
 		stack := StackTrace{
 			{
 				Function:  "Method",
@@ -625,6 +711,22 @@ func TestFormat(t *testing.T) {
 
 		result := Format(stack)
 		expected := "github.com/example/pkg.(*MyStruct).Method\n\t/path/to/file.go:100"
+		require.Equal(t, expected, result)
+	})
+
+	t.Run("frame with value receiver", func(t *testing.T) {
+		stack := StackTrace{
+			{
+				Function:  "Method",
+				File:      "/path/to/file.go",
+				Line:      100,
+				Namespace: "github.com/example/pkg",
+				ClassName: "MyStruct",
+			},
+		}
+
+		result := Format(stack)
+		expected := "github.com/example/pkg.MyStruct.Method\n\t/path/to/file.go:100"
 		require.Equal(t, expected, result)
 	})
 
@@ -648,7 +750,7 @@ func TestFormat(t *testing.T) {
 // Capture both stack traces from the exact same line to ensure identical line numbers.
 func stackTrace() ([]uintptr, int, RawStackTrace) {
 	pcs := make([]uintptr, 10)
-	return pcs, runtime.Callers(1, pcs), CaptureRaw(2)
+	return pcs, runtime.Callers(1, pcs), CaptureRaw(0)
 }
 
 // TestFormatMatchesRuntime ensures Format() output matches Go's standard runtime.CallersFrames format
@@ -708,7 +810,7 @@ func TestFormatMatchesRuntime(t *testing.T) {
 // TestStackTraceCapture provides regression testing for stacktrace capture behavior
 func TestStackTraceCapture(t *testing.T) {
 	t.Run("SkipAndCapture basic functionality", func(t *testing.T) {
-		stack := SkipAndCapture(1) // Skip this function
+		stack := SkipAndCapture(0)
 		require.NotEmpty(t, stack, "Should capture stack frames")
 
 		// Verify frame structure
@@ -726,7 +828,7 @@ func TestStackTraceCapture(t *testing.T) {
 	})
 
 	t.Run("CaptureWithRedaction basic functionality", func(t *testing.T) {
-		stack := CaptureWithRedaction(1) // Skip this function
+		stack := CaptureWithRedaction(0)
 		require.NotEmpty(t, stack, "Should capture stack frames with redaction")
 
 		// Verify frame structure
@@ -747,8 +849,8 @@ func TestStackTraceCapture(t *testing.T) {
 	})
 
 	t.Run("frame filtering comparison", func(t *testing.T) {
-		skipStack := SkipAndCapture(1)            // Filters internal frames
-		redactionStack := CaptureWithRedaction(1) // Keeps internal frames
+		skipStack := SkipAndCapture(0)            // Filters internal frames
+		redactionStack := CaptureWithRedaction(0) // Keeps internal frames
 
 		require.NotEmpty(t, skipStack, "SkipAndCapture should return frames")
 		require.NotEmpty(t, redactionStack, "CaptureWithRedaction should return frames")
@@ -860,8 +962,7 @@ func TestStackTraceRealCapture(t *testing.T) {
 	t.Run("verify telemetry integration stack trace", func(t *testing.T) {
 		// Test the actual usage pattern from telemetry backend
 		telemetryStack := func() StackTrace {
-			// Simulate the call from telemetry backend
-			return CaptureWithRedaction(4) // Skip: CaptureWithRedaction, capture, loggerBackend.add, loggerBackend.Add
+			return CaptureWithRedaction(1)
 		}
 
 		stack := telemetryStack()

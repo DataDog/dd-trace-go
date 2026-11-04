@@ -32,8 +32,23 @@ func NewServeMux(opts ...internal.Option) *ServeMux {
 	cfg.SpanOpts = append(cfg.SpanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	cfg.SpanOpts = append(cfg.SpanOpts, tracer.Tag(ext.Component, internal.ComponentName))
 	instr.Logger().Debug("contrib/net/http: Configuring ServeMux: %#v", cfg)
+
+	// wrap the provided ServeMux, if any, otherwise create a new one
+	mux := cfg.Mux
+	if mux == nil {
+		mux = http.NewServeMux()
+	} else if internal.Instrumentation.AppSecEnabled() {
+		// Routes registered directly on a caller-provided *http.ServeMux (e.g. before it
+		// was passed to WithServeMux) never go through this package's Handle/HandleFunc,
+		// so they never call httpsec.RouteMatched: the WAF never sees the resolved path
+		// parameters for those routes, and can't block on rules that key off of them.
+		instr.Logger().Warn("contrib/net/http: WithServeMux was used while AppSec is enabled; " +
+			"path-parameter WAF rules only apply to routes registered via ServeMux.Handle or " +
+			"ServeMux.HandleFunc, not to routes already registered on the wrapped *http.ServeMux")
+	}
+
 	return &ServeMux{
-		ServeMux: http.NewServeMux(),
+		ServeMux: mux,
 		cfg:      cfg,
 	}
 }
@@ -74,21 +89,27 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// get the resource associated to this request
 	_, pttrn := mux.Handler(r)
-	route := pattern.Route(pttrn)
+	var route string
+	if mux.cfg.OTelSemanticsEnabled {
+		route = pattern.Path(pttrn)
+	} else {
+		route = pattern.Route(pttrn)
+	}
 	resource := mux.cfg.ResourceNamer(r)
-	if resource == "" {
+	if resource == "" && !mux.cfg.OTelSemanticsEnabled {
 		resource = r.Method + " " + route
 	}
 	so := make([]tracer.StartSpanOption, len(mux.cfg.SpanOpts), len(mux.cfg.SpanOpts)+1)
 	copy(so, mux.cfg.SpanOpts)
 	so = append(so, httptrace.HeaderTagsFromRequest(r, mux.cfg.HeaderTags))
 	TraceAndServe(mux.ServeMux, w, r, &httptrace.ServeConfig{
-		Service:       mux.cfg.ServiceName,
-		ServiceSource: mux.cfg.ServiceSource,
-		Framework:     "net/http",
-		Resource:      resource,
-		SpanOpts:      so,
-		Route:         route,
-		IsStatusError: mux.cfg.IsStatusError,
+		Service:              mux.cfg.ServiceName,
+		ServiceSource:        mux.cfg.ServiceSource,
+		Framework:            "net/http",
+		Resource:             resource,
+		SpanOpts:             so,
+		Route:                route,
+		OTelSemanticsEnabled: &mux.cfg.OTelSemanticsEnabled,
+		IsStatusError:        mux.cfg.IsStatusError,
 	})
 }

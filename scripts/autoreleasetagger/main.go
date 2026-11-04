@@ -91,9 +91,17 @@ var (
 	defaultUntaggedModules = []string{
 		"github.com/DataDog/dd-trace-go/instrumentation/internal/namingschematest/v2",
 	}
-	defaultExcludedModules = []string{}
-	defaultExcludedDirs    = []string{
+	// defaultExcludedModules lists modules skipped entirely: no go.mod update and
+	// no tag. Unlike defaultUntaggedModules, these are not dd-trace-go modules.
+	defaultExcludedModules = []string{
+		// Build fixture. It requires the root module, and tags are derived from
+		// the directory rather than the module path, so without this it would be
+		// tagged internal/apps/otelc-external-app on every release.
+		"example.com/otelcexternalapp",
+	}
+	defaultExcludedDirs = []string{
 		"_tools",
+		".claude",
 		".github",
 		"tools",
 	}
@@ -104,11 +112,14 @@ var (
 	// versionTagRe matches the var Tag line in version.go.
 	versionTagRe = regexp.MustCompile(`^(var Tag = )".+"$`)
 
-	// semverRe matches a valid release version: vMAJOR.MINOR.PATCH(-rc.N)?
-	semverRe = regexp.MustCompile(`^v(\d+)\.(\d+)\.(\d+)(-rc\.\d+)?$`)
+	// semverRe matches a valid release version: vMAJOR.MINOR.PATCH(-rc.N|-dev(.N)?)?
+	semverRe = regexp.MustCompile(`^v(\d+)\.(\d+)\.(\d+)(-rc\.\d+|-dev(\.\d+)?)?$`)
 
 	// releaseBranchRe matches a release branch name: release-vMAJOR.MINOR.x
 	releaseBranchRe = regexp.MustCompile(`^release-v(\d+)\.(\d+)\.x$`)
+
+	// devBranchRe matches a dev branch name: dev-vMAJOR.MINOR.x
+	devBranchRe = regexp.MustCompile(`^dev-v(\d+)\.(\d+)\.x$`)
 )
 
 type (
@@ -424,14 +435,21 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 	return nil
 }
 
+// isDevVersion reports whether version carries a -dev or -dev.N pre-release suffix.
+func isDevVersion(version string) bool {
+	return strings.Contains(version, "-dev")
+}
+
 // validateVersionAndBranch ensures the version matches the expected pattern and is
-// consistent with the current release branch (release-vMAJOR.MINOR.x).
+// consistent with the current branch:
+//   - stable/rc versions require a release-vMAJOR.MINOR.x branch
+//   - dev versions (-dev / -dev.N) require a dev-vMAJOR.MINOR.x branch
 func validateVersionAndBranch(root, version string) error {
 	vm := semverRe.FindStringSubmatch(version)
 	if vm == nil {
 		return newStructuredError(
 			errInvalidVersion,
-			fmt.Sprintf("invalid version %q: must match v<MAJOR>.<MINOR>.<PATCH>(-rc.<N>)?", version),
+			fmt.Sprintf("invalid version %q: must match v<MAJOR>.<MINOR>.<PATCH>(-rc.<N>|-dev(.<N>)?)?", version),
 			map[string]any{"version": version},
 		)
 	}
@@ -442,15 +460,28 @@ func validateVersionAndBranch(root, version string) error {
 		return fmt.Errorf("failed to determine current branch: %w", err)
 	}
 
-	bm := releaseBranchRe.FindStringSubmatch(branch)
-	if bm == nil {
-		return newStructuredError(
-			errInvalidBranch,
-			fmt.Sprintf("current branch %q is not a release branch (expected release-v<MAJOR>.<MINOR>.x)", branch),
-			map[string]any{"branch": branch},
-		)
+	var branchMajor, branchMinor string
+	if isDevVersion(version) {
+		bm := devBranchRe.FindStringSubmatch(branch)
+		if bm == nil {
+			return newStructuredError(
+				errInvalidBranch,
+				fmt.Sprintf("current branch %q is not a dev branch (expected dev-v<MAJOR>.<MINOR>.x)", branch),
+				map[string]any{"branch": branch},
+			)
+		}
+		branchMajor, branchMinor = bm[1], bm[2]
+	} else {
+		bm := releaseBranchRe.FindStringSubmatch(branch)
+		if bm == nil {
+			return newStructuredError(
+				errInvalidBranch,
+				fmt.Sprintf("current branch %q is not a release branch (expected release-v<MAJOR>.<MINOR>.x)", branch),
+				map[string]any{"branch": branch},
+			)
+		}
+		branchMajor, branchMinor = bm[1], bm[2]
 	}
-	branchMajor, branchMinor := bm[1], bm[2]
 
 	if verMajor != branchMajor || verMinor != branchMinor {
 		return newStructuredError(
@@ -966,6 +997,16 @@ func findModules(root string, excludedDirs []string) (map[string]GoMod, error) {
 		if entry.IsDir() && (containsPath(excludedDirs, path) || entry.Name() == ".git") {
 			slog.Debug("Skipping directory", "path", path)
 			return filepath.SkipDir
+		}
+
+		// A .git entry below the root marks a separate checkout — a nested git
+		// worktree (gitlink file) or a submodule. Its modules are not part of this
+		// release, and rewriting their go.mod mutates someone else's branch.
+		if entry.IsDir() && path != root {
+			if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
+				slog.Debug("Skipping nested checkout", "path", path)
+				return filepath.SkipDir
+			}
 		}
 
 		if entry.Name() == "go.mod" {

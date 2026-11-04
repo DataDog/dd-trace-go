@@ -59,6 +59,41 @@ func TestAPISecConfig(t *testing.T) {
 	}
 }
 
+func TestStackTraceConfig(t *testing.T) {
+	t.Run("unset", func(t *testing.T) {
+		for _, name := range []string{EnvStackTraceEnabled, EnvMaxStackTraceDepth, "DD_APPSEC_STACK_TRACE_ENABLE"} {
+			t.Setenv(name, "")
+			require.NoError(t, os.Unsetenv(name))
+		}
+		require.Equal(t, StackTraceConfig{
+			MaxDepth: DefaultMaxStackTraceDepth,
+		}, NewStackTraceConfig())
+	})
+
+	for _, tc := range []struct {
+		name         string
+		enabled      string
+		depth        string
+		wantDisabled bool
+		wantMaxDepth int
+	}{
+		{name: "defaults", enabled: "true", depth: "32", wantMaxDepth: DefaultMaxStackTraceDepth},
+		{name: "configured", enabled: "false", depth: "64", wantDisabled: true, wantMaxDepth: 64},
+		{name: "invalid", enabled: "invalid", depth: "invalid", wantMaxDepth: DefaultMaxStackTraceDepth},
+		{name: "zero depth", enabled: "true", depth: "0", wantMaxDepth: DefaultMaxStackTraceDepth},
+		{name: "negative depth", enabled: "true", depth: "-1", wantMaxDepth: DefaultMaxStackTraceDepth},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(EnvStackTraceEnabled, tc.enabled)
+			t.Setenv(EnvMaxStackTraceDepth, tc.depth)
+			require.Equal(t, StackTraceConfig{
+				Disabled: tc.wantDisabled,
+				MaxDepth: tc.wantMaxDepth,
+			}, NewStackTraceConfig())
+		})
+	}
+}
+
 func TestObfuscatorConfig(t *testing.T) {
 	defaultConfig := ObfuscatorConfig{
 		KeyRegex:   DefaultObfuscatorKeyRegex,

@@ -570,6 +570,7 @@ func extractBuildkite() map[string]string {
 	tags[constants.GitTag] = env.Get("BUILDKITE_TAG")
 	tags[constants.CIPipelineID] = env.Get("BUILDKITE_BUILD_ID")
 	tags[constants.CIPipelineName] = env.Get("BUILDKITE_PIPELINE_SLUG")
+	tags[constants.CIPipelineDisplayName] = env.Get("BUILDKITE_PIPELINE_NAME")
 	tags[constants.CIPipelineNumber] = env.Get("BUILDKITE_BUILD_NUMBER")
 	tags[constants.CIPipelineURL] = env.Get("BUILDKITE_BUILD_URL")
 	tags[constants.CIJobID] = env.Get("BUILDKITE_JOB_ID")
@@ -625,7 +626,7 @@ func extractCircleCI() map[string]string {
 	tags[constants.CIPipelineID] = env.Get("CIRCLE_WORKFLOW_ID")
 	tags[constants.CIPipelineName] = env.Get("CIRCLE_PROJECT_REPONAME")
 	tags[constants.CIPipelineNumber] = env.Get("CIRCLE_BUILD_NUM")
-	tags[constants.CIPipelineURL] = fmt.Sprintf("https://app.circleci.com/pipelines/workflows/%s", env.Get("CIRCLE_WORKFLOW_ID"))
+	tags[constants.CIPipelineURL] = "https://app.circleci.com/pipelines/workflows/" + env.Get("CIRCLE_WORKFLOW_ID")
 	tags[constants.CIJobName] = env.Get("CIRCLE_JOB")
 	tags[constants.CIJobID] = env.Get("CIRCLE_BUILD_NUM")
 	tags[constants.CIJobURL] = env.Get("CIRCLE_BUILD_URL")
@@ -726,7 +727,7 @@ func extractGithubActions() map[string]string {
 				tags[constants.GitHeadCommit] = eventJSON.PullRequest.Head.Sha
 				tags[constants.GitPrBaseHeadCommit] = eventJSON.PullRequest.Base.Sha
 				tags[constants.GitPrBaseBranch] = eventJSON.PullRequest.Base.Ref
-				tags[constants.PrNumber] = fmt.Sprintf("%d", eventJSON.Number)
+				tags[constants.PrNumber] = strconv.Itoa(eventJSON.Number)
 			}
 		}
 	}
@@ -800,7 +801,7 @@ func extractJenkins() map[string]string {
 	} else {
 		tags[constants.GitBranch] = branchOrTag
 		// remove branch for job name
-		removeBranch := regexp.MustCompile(fmt.Sprintf("/%s", normalizeRef(branchOrTag)))
+		removeBranch := regexp.MustCompile("/" + normalizeRef(branchOrTag))
 		name = string(removeBranch.ReplaceAll([]byte(name), empty))
 	}
 

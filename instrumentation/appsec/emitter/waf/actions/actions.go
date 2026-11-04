@@ -19,9 +19,24 @@ type (
 	Action interface {
 		EmitData(op dyngo.Operation)
 	}
+
+	// Config contains configuration needed while constructing WAF actions. Its
+	// zero value enables stack-trace actions with the default capture depth.
+	Config struct {
+		// StackTraceDisabled prevents stack-trace action creation.
+		StackTraceDisabled bool
+		// StackTraceDepth is the maximum number of frames captured by a stack-trace
+		// action. A non-positive value uses the default depth.
+		StackTraceDepth int
+		// ReportBlockOutcome marks the HTTP block that a block_request action
+		// creates as the block whose outcome the waf.requests metric reports.
+		// Set it only for WAF-scope runs that can block the request. It has no
+		// effect on other action types.
+		ReportBlockOutcome bool
+	}
 )
 
-type actionHandler func(map[string]any) []Action
+type actionHandler func(map[string]any, Config) []Action
 
 // actionHandlers is a map of action types to their respective handler functions
 // It is populated by the init functions of the actions packages
@@ -35,11 +50,23 @@ func registerActionHandler(aType string, handler actionHandler) {
 	actionHandlers[aType] = handler
 }
 
+func withoutConfig(handler func(map[string]any) []Action) actionHandler {
+	return func(params map[string]any, _ Config) []Action {
+		return handler(params)
+	}
+}
+
 // SendActionEvents sends the relevant actions to the operation's data listener.
+// The first optional config controls action construction.
 // It returns true if at least one of those actions require interrupting the request handler
 // When SDKError is not nil, this error is sent to the op with EmitData so that the invoked SDK can return it
 // returns whenever the request should be interrupted
-func SendActionEvents(op dyngo.Operation, actions map[string]any) bool {
+func SendActionEvents(op dyngo.Operation, actions map[string]any, configs ...Config) bool {
+	var cfg Config
+	if len(configs) > 0 {
+		cfg = configs[0]
+	}
+
 	var blocked bool
 	for aType, params := range actions {
 		log.Debug("appsec: processing %q action with params %v", aType, params) //nolint:gocritic
@@ -49,15 +76,16 @@ func SendActionEvents(op dyngo.Operation, actions map[string]any) bool {
 			continue
 		}
 
-		blocked = blocked || aType == "block_request"
-
 		actionHandler, ok := actionHandlers[aType]
 		if !ok {
 			telemetrylog.Error("appsec: unknown action type", slog.String("action_type", aType))
 			continue
 		}
 
-		for _, a := range actionHandler(params) {
+		emitted := actionHandler(params, cfg)
+		// Only a block action that could actually be built interrupts the handler.
+		blocked = blocked || (aType == "block_request" && len(emitted) > 0)
+		for _, a := range emitted {
 			a.EmitData(op)
 		}
 	}

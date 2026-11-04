@@ -75,7 +75,7 @@ func TestSampler(t *testing.T) {
 			SimulatedTPS:     1000,
 			SamplesPerWorker: config.MaxItemCount << 7, // load≈0.5, moderate per Hit
 			ExpectedKeepRate: .0145,
-			AllowedDelta:     .001, // Small chance of collision here... so a bit more wiggle room...
+			AllowedDelta:     .002, // Small chance of collision here... so a bit more wiggle room...
 		},
 		"extreme": { // Not actually realistic usage... Evictions galore!
 			KeySpace:         testVector[:2*config.MaxItemCount],

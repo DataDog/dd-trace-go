@@ -122,7 +122,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 						"service":  "redis.conn",
 					},
 					Meta: map[string]string{
-						"redis.raw_command": fmt.Sprintf("GET %s", tc.key),
+						"redis.raw_command": "GET " + tc.key,
 						"db.system":         "redis",
 						"component":         "gomodule/redigo",
 						"out.network":       "tcp",

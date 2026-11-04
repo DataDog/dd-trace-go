@@ -6,7 +6,7 @@
 package mocktracer
 
 import (
-	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -157,6 +157,31 @@ func TestTracerStartSpan(t *testing.T) {
 	})
 }
 
+func TestTracerSpanTopLevel(t *testing.T) {
+	mt := newMockTracer()
+	defer mt.Stop()
+	parent := newSpan("http.request", &tracer.StartSpanConfig{Tags: map[string]any{ext.ServiceName: "root-service"}})
+	ownService := mt.StartSpan("db.query",
+		tracer.ServiceName("other-service"),
+		tracer.Measured(),
+		tracer.ChildOf(parent.Context()),
+	)
+	inherit := mt.StartSpan("db.query", tracer.ChildOf(parent.Context()))
+	ownService.Finish()
+	inherit.Finish()
+	parent.Finish()
+
+	assert := assert.New(t)
+	ownSvc := MockSpan(ownService)
+	inherited := MockSpan(inherit)
+	// A child span in a different service is the local root (top-level) span
+	// of that service. It is always measured, so _dd.measured is redundant.
+	assert.Equal(1.0, ownSvc.Tag("_dd.top_level"))
+	assert.NotContains(ownSvc.Tags(), "_dd.measured")
+	// A child span in the same service as its parent is not top-level.
+	assert.NotContains(inherited.Tags(), "_dd.top_level")
+}
+
 func TestTracerFinishedSpans(t *testing.T) {
 	mt := Start()
 	t.Cleanup(func() {
@@ -283,7 +308,7 @@ func TestTracerInject(t *testing.T) {
 		err := (&mocktracer{}).Inject(sp.Context(), tracer.TextMapCarrier(carrier))
 
 		assert.Nil(err)
-		assert.Equal(fmt.Sprintf("%d", sp.Context().TraceIDLower()), carrier[traceHeader])
+		assert.Equal(strconv.FormatUint(sp.Context().TraceIDLower(), 10), carrier[traceHeader])
 		assert.Equal("2", carrier[spanHeader])
 		assert.Equal("-1", carrier[priorityHeader])
 		assert.Equal("B", carrier[baggagePrefix+"A"])

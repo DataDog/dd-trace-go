@@ -42,6 +42,10 @@ const (
 	// This constant is used to tag traces with the reason why the test was skipped.
 	TestSkipReason = "test.skip_reason"
 
+	// TestSessionEmptyReason indicates why a test session ran no tests.
+	// This constant is used to tag test sessions that are expected to be empty.
+	TestSessionEmptyReason = "test.session.empty_reason"
+
 	// TestSourceFile indicates the source file where the test is located.
 	// This constant is used to tag traces with the file path of the test source code.
 	TestSourceFile = "test.source.file"
@@ -84,6 +88,9 @@ const (
 
 	// TestRetryReason indicates the reason for retrying the test
 	TestRetryReason = "test.retry_reason"
+
+	// TestRetryExecutionMode indicates how a retry attempt was executed.
+	TestRetryExecutionMode = "test.retry.execution_mode"
 
 	// TestEarlyFlakeDetectionRetryAborted indicates a retry abort reason by the early flake detection feature
 	TestEarlyFlakeDetectionRetryAborted = "test.early_flake.abort_reason"
@@ -181,4 +188,10 @@ const (
 const (
 	// TestDisabledSkipReason indicates the skip reason for a test that is disabled.
 	TestDisabledSkipReason = "Flaky test is disabled by Datadog"
+
+	// TestSessionEmptySkipReason indicates the skip reason for a test session that ran no tests.
+	TestSessionEmptySkipReason = "No tests were executed"
+
+	// TestSessionEmptyReasonZeroTests indicates that a test session is empty because it ran no tests.
+	TestSessionEmptyReasonZeroTests = "zero_tests"
 )

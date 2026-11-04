@@ -34,7 +34,7 @@ func StartKafkaTestContainer(t testing.TB, topics []string) (*kafka.KafkaContain
 	}
 
 	container, err := kafka.Run(ctx,
-		"confluentinc/confluent-local:7.5.0", // Change the docker pull stage in .github/workflows/orchestrion.yml if you update this
+		Image("kafka"),
 		kafka.WithClusterID("test-cluster"),
 		WithTestLogConsumer(t),
 		testcontainers.WithWaitStrategy(wait.ForAll(waitStrategies...)),

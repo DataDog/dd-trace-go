@@ -59,6 +59,18 @@
 //	export DD_TRACE_SAMPLING_RULES='[{"name": "web.request", "sample_rate": 1.0}]'
 //	export DD_SPAN_SAMPLING_RULES='[{"service":"test.?","name": "web.*", "sample_rate": 1.0, "max_per_second":100}]'
 //
+// When the tracer makes a probability-based sampling decision (the agent rate,
+// a global rate, or a sampling rule), it additionally expresses that decision as
+// an OpenTelemetry consistent-probability-sampling pair (ot.th/ot.rv, per OTEP 235)
+// on the W3C tracestate header, as the ot= list-member. This lets OpenTelemetry-native
+// downstream services make and verify the same keep/drop decision and extrapolate
+// span counts across a mixed Datadog/OpenTelemetry trace. An inbound ot= is honored
+// and forwarded unchanged; non-probability decisions (manual keep, AppSec, or a
+// rate-limiter drop) omit the threshold. This is automatic, requires no configuration,
+// and leaves the existing Datadog propagation unchanged. When spans are exported over
+// OTLP, the same ot= member is carried on the span's trace_state and the W3C sampled
+// trace-flag is set, so the export matches what wire propagation would emit.
+//
 // To create spans, use the functions StartSpan and StartSpanFromContext. Both accept
 // StartSpanOptions that can be used to configure the span. A span that is started
 // with no parent will begin a new trace. See the function documentation for details
@@ -107,4 +119,198 @@
 // Some libraries and frameworks are supported out-of-the-box by using one
 // of our integrations. You can see a list of supported integrations here:
 // https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/contrib
-package tracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+//
+// # Client-Side Stats Cardinality Controls
+//
+// When client-side stats computation is enabled (WithStatsComputation or
+// DD_TRACE_STATS_COMPUTATION_ENABLED), the tracer aggregates span metrics
+// locally before sending them to the agent. High-cardinality services can
+// produce an unbounded number of unique aggregation keys, which increases
+// memory usage and backend cost. Six limits cap the number of distinct values
+// per aggregation dimension before collapsing excess values to a placeholder:
+//
+//   - DD_TRACE_STATS_CARDINALITY_LIMIT / WithStatsCardinalityLimit
+//     Whole-key limit: caps the total number of unique aggregation keys per
+//     flush bucket across all dimensions combined. Default: 2048.
+//
+//   - DD_TRACE_STATS_RESOURCE_CARDINALITY_LIMIT / WithStatsResourceCardinalityLimit
+//     Per-resource limit: caps distinct resource values within a service+name
+//     combination. Default: 1024.
+//
+//   - DD_TRACE_STATS_HTTP_ENDPOINT_CARDINALITY_LIMIT / WithStatsHTTPEndpointCardinalityLimit
+//     Per-http_endpoint limit. Default: 512.
+//
+//   - DD_TRACE_STATS_PEER_TAGS_CARDINALITY_LIMIT / WithStatsPeerTagsCardinalityLimit
+//     Per-peer-tags combination limit. Default: 512.
+//
+//   - DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT / WithStatsOriginCardinalityLimit
+//     Per-origin limit. Default: 20.
+//
+//   - DD_TRACE_STATS_ADDITIONAL_TAGS_CARDINALITY_LIMIT
+//     Per-additional-metric-tags combination limit (see below). Default: 100.
+//
+// When a limit is reached, excess spans are still counted but their grouping
+// dimension is replaced with a sentinel value. The tracer emits a
+// datadog.tracer.stats.collapsed_spans statsd metric tagged with the dimension
+// that was capped (e.g. collapsed:resource) so the event is observable.
+//
+// # Additional Metric Tags
+//
+// By default, client-side stats group spans by service, resource, name, type,
+// HTTP method, HTTP endpoint, peer tags, and origin. Additional span tag keys
+// can be included as extra grouping dimensions using:
+//
+//	tracer.Start(tracer.WithStatsAdditionalTags([]string{"region", "tenant_id"}))
+//
+// or the environment variable DD_TRACE_STATS_ADDITIONAL_TAGS (comma-separated).
+// This feature requires DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED=true.
+//
+// # Payload Queue Size
+//
+// Finished traces wait in an in-process queue before being encoded and sent to
+// the agent. When the queue is full, new traces are dropped and reported through
+// the datadog.tracer.traces_dropped metric with the reason:queue_full tag. The
+// queue's buffer size defaults to 1000 and can be changed with
+// tracer.WithPayloadQueueSize or the DD_TRACE_PAYLOAD_QUEUE_SIZE environment
+// variable. Values outside the range 1 to 10000 are rejected (the default
+// is kept): a value below 1 would leave the queue unbuffered and drop almost
+// every trace, and each slot above that retains a whole trace chunk until the
+// worker drains it, so a larger queue can retain large amounts of memory
+// while the worker is stalled.
+//
+// # Data Streams Monitoring Intake Buffer Size
+//
+// The Data Streams Monitoring processor holds incoming checkpoints and Kafka
+// offsets in a fixed-size ring buffer. When the buffer is full, new entries
+// overwrite the oldest unread ones, and the drop count is reported on the
+// datadog.datastreams.processor.dropped_payloads metric, split by cause into
+// dropped_payloads_agent_stall and dropped_payloads_poll_stall. Raise the
+// buffer size to trade memory for tolerance to bursts or a slow agent:
+//
+//	tracer.Start(tracer.WithDataStreamsIntakeBufferSize(20000))
+//
+// or the environment variable DD_DATA_STREAMS_INTAKE_BUFFER_SIZE. The default
+// is 10000 slots.
+//
+// # OpenTelemetry API with Orchestrion
+//
+// DD_TRACE_OTEL_ENABLED=true links the OpenTelemetry trace API to the tracer in
+// applications that are built with Orchestrion, through the aspects in
+// ddtrace/opentelemetry/orchestrion.yml. trace.SpanFromContext then returns the
+// span that a Datadog integration started. While the Datadog tracer records, the
+// OpenTelemetry global tracer creates Datadog spans until the application calls
+// otel.SetTracerProvider. A call to End on a span from trace.SpanFromContext
+// finishes the Datadog span. The variable is false by default. Without
+// Orchestrion, it does not change the OpenTelemetry API. trace.SpanFromContext
+// returns only spans that a context carries through ContextWithSpan, which
+// StartSpanFromContext also uses. The fasthttp integration stores its span in
+// another way, so trace.SpanFromContext does not return it. If the context also
+// holds a span of another OpenTelemetry SDK, trace.SpanFromContext returns that
+// span, but spans that the global tracer starts take the Datadog span as parent.
+// With the span pool on, a span that trace.SpanFromContext returned does not go
+// back to the pool.
+//
+// # OpenTelemetry Semantic Conventions
+//
+// DD_TRACE_OTEL_SEMANTICS_ENABLED=true enables OpenTelemetry semantic
+// conventions, forces trace export through OTLP, and overrides
+// DD_TRACE_SPAN_ATTRIBUTE_SCHEMA to v0 and DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED
+// to false.
+//
+// # OTLP Trace Export
+//
+// When traces are exported over OTLP (OTEL_TRACES_EXPORTER=otlp), string global
+// tags (DD_TAGS, OTEL_RESOURCE_ATTRIBUTES, WithGlobalTag) are written once per
+// payload as resource attributes. The service, env and version tags are carried
+// as service.name, deployment.environment.name and service.version instead. A
+// span tag with the same key and value as a resource attribute is not repeated
+// as a span attribute; span values that differ from the resource are kept. The
+// resource is built at startup, so global tags changed later through Remote
+// Config are written on spans instead.
+//
+// # Disabling the OpenTelemetry SDK
+//
+// OTEL_SDK_DISABLED=true disables tracing, unless DD_TRACE_ENABLED is set
+// explicitly, and takes precedence over OTEL_TRACES_EXPORTER. It also disables
+// OTel logs and metrics, even when DD_LOGS_OTEL_ENABLED or
+// DD_METRICS_OTEL_ENABLED is set to true.
+//
+// # Diagnostic Log Level
+//
+// The tracer, the profiler, and other components of this module share one
+// diagnostic logger. The tracer prints its own diagnostics at the info level
+// and above by default. OTEL_LOG_LEVEL sets that threshold to debug, info, warn
+// or error (case-insensitive, and surrounding whitespace is ignored), and
+// lower-severity messages are not printed. Invalid values are ignored with a
+// warning. DD_TRACE_DEBUG=true or WithDebugMode(true) enables debug logs
+// regardless of OTEL_LOG_LEVEL, and DD_TRACE_DEBUG=false disables
+// OTEL_LOG_LEVEL=debug. The tracer applies the level each time it starts, and
+// the threshold filters every component that logs through the shared logger.
+// At the error threshold, the profiler still prints its errors and hides its
+// info and warning messages.
+//
+// # Trace Protocol
+//
+// Client-side stats computation is independent of the Datadog trace protocol
+// version (DD_TRACE_AGENT_PROTOCOL_VERSION). Disabling stats computation does
+// not change the wire format used to send traces, and selecting a protocol
+// version does not enable or disable stats computation. The protocol falls
+// back from 1.0 to 0.4 only when the Datadog Agent does not advertise the
+// /v1.0/traces endpoint.
+//
+// Agent capabilities are re-checked periodically, so this fallback is applied
+// at runtime and not only at startup: if a running Agent stops advertising
+// /v1.0/traces (for example after a rollback), the tracer switches to 0.4
+// without needing a restart. A live send that the Agent rejects outright
+// triggers the same switch immediately, without waiting for the next check.
+//
+// Either way, the downgrade is permanent for the life of the process: once
+// the tracer has conclusive evidence 1.0 is unavailable, it never
+// re-upgrades on its own, even if a later check reports 1.0 support again.
+// This is deliberate: in a load-balanced fleet, a capability check and a
+// trace send are independent requests that can land on different backends,
+// so no number of healthy checks proves anything about where the next send
+// goes. Re-upgrading to 1.0 requires restarting the process.
+//
+// A downgrade can cost already-buffered traces: a payload built while 1.0 was
+// still in effect keeps going to /v1.0/traces, since it was already
+// committed to that wire format, and may be rejected there; a payload the
+// Agent rejects outright is dropped rather than re-encoded and redelivered on
+// 0.4. Under concurrent flush traffic this is not limited to a single
+// payload: several payloads can be in flight (or queued waiting for a
+// connection slot) at once, so a real Agent-side rollback can cost up to the
+// tracer's concurrent-connection limit worth of payloads already committed to
+// 1.0 at the moment the rejection is discovered, not just the one that
+// discovers it.
+//
+// One exception: on the 1.0 protocol, a trace-agent identifying as version
+// 7.77.x, 7.78.x, or an unreleased 7.79.0 pre-release predating 7.79.0-rc.6,
+// has a defect where its own stats aggregation for that protocol loses the
+// span's language dimension. (The same defect exists in versions 7.73.0
+// through 7.76.x, but those don't advertise /v1.0/traces by default, so the
+// protocol guard above already excludes them in practice.) The tracer
+// detects this from the agent's reported version and enables client-side
+// stats computation regardless of DD_TRACE_STATS_COMPUTATION_ENABLED /
+// WithStatsComputation(false), so that the tracer computes the affected
+// stats itself instead of relying on the agent. This also enables P0 trace
+// dropping, since the two capabilities are not independently controllable
+// (see WithStatsComputation). To opt out, either upgrade the trace-agent to
+// 7.79.0 or later, or set DD_TRACE_AGENT_PROTOCOL_VERSION=0.4. Two cases are
+// explicitly excluded from this override: the Datadog Lambda extension,
+// which already computes trace stats server-side (contrib/aws/datadog-lambda-go
+// starts the tracer with WithStatsComputation(false) on purpose), and CI
+// Visibility, whose transport never sends stats through this path regardless.
+// Other trace-agent implementations that do not follow this versioning
+// scheme (for example, an OpenTelemetry Collector exporter acting as a
+// Datadog trace-agent) are never affected by this override.
+// # Feature Flags Remote Config subscription
+//
+// The tracer eagerly subscribes to the FFE_FLAGS Remote Config product during Start, but only when
+// the resolved Feature Flags delivery source is remote_config. By default, and whenever
+// DD_FEATURE_FLAGS_CONFIGURATION_SOURCE is agentless (the default) or Feature Flags are disabled,
+// this subscription is skipped: Feature Flags configuration is instead polled directly from Datadog
+// over HTTPS by the openfeature package's provider, once the application creates it, with no Agent
+// dependency and no Remote Config capability advertised. See the openfeature package's
+// documentation for the full set of DD_FEATURE_FLAGS_* environment variables and the source
+// selection rules.
+package tracer

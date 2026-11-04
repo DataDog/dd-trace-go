@@ -23,7 +23,7 @@ func TestPathway(t *testing.T) {
 		processor := Processor{
 			hashCache:  newHashCache(),
 			stopped:    1,
-			in:         newFastQueue(),
+			in:         newFastQueue(defaultQueueSize),
 			service:    "service-1",
 			env:        "env",
 			timeSource: func() time.Time { return start },
@@ -76,7 +76,7 @@ func TestPathway(t *testing.T) {
 		processor := Processor{
 			hashCache:  newHashCache(),
 			stopped:    1,
-			in:         newFastQueue(),
+			in:         newFastQueue(defaultQueueSize),
 			service:    "service-1",
 			env:        "env",
 			timeSource: time.Now,
@@ -102,7 +102,7 @@ func TestPathway(t *testing.T) {
 		assert.Equal(t, hash2, statsPointWith1EdgeTag.hash)
 		assert.Equal(t, []string{"type:internal"}, statsPointWith1EdgeTag.edgeTags)
 		assert.Equal(t, hash3, statsPointWith2EdgeTags.hash)
-		assert.Equal(t, []string{"some_other_key:some_other_val", "type:internal"}, statsPointWith2EdgeTags.edgeTags)
+		assert.Equal(t, []string{"type:internal", "some_other_key:some_other_val"}, statsPointWith2EdgeTags.edgeTags)
 	})
 
 	t.Run("test nodeHash", func(t *testing.T) {
@@ -162,7 +162,7 @@ func TestPathway(t *testing.T) {
 	// byte sequence. This unit test asserts that assumption.
 	t.Run("test hashWriterIsomorphism", func(t *testing.T) {
 		h := fnv.New64()
-		var b []byte
+		b := make([]byte, 0, 9)
 		b = append(b, "dog"...)
 		b = append(b, "cat"...)
 		b = append(b, "pig"...)

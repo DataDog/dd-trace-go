@@ -7,15 +7,13 @@
 package fasthttp // import "github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2"
 
 import (
-	"fmt"
-	"strconv"
-
 	"github.com/valyala/fasthttp"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	appsechttpsec "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/httpsec"
+	instrhttptrace "github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
 var instr *instrumentation.Instrumentation
@@ -24,7 +22,9 @@ func init() {
 	instr = instrumentation.Load(instrumentation.PackageValyalaFastHTTP)
 }
 
-// WrapHandler wraps a fasthttp.RequestHandler with tracing middleware
+// WrapHandler wraps a fasthttp.RequestHandler with tracing and AppSec middleware.
+// For timeouts, use this package's TimeoutHandler or TimeoutWithCodeHandler.
+// They support both wrapper orders and coordinate cleanup with the worker.
 func WrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHandler {
 	return wrapHandler(h, opts...)
 }
@@ -47,29 +47,21 @@ func wrapHandler(h fasthttp.RequestHandler, opts ...Option) fasthttp.RequestHand
 			h(fctx)
 			return
 		}
-		spanOpts := []tracer.StartSpanOption{
-			instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
+		if layer, ok := fctx.UserValue(timeoutContextKey{}).(*timeoutLayer); ok {
+			layer.wrapHandler(fctx, h, cfg)
+			return
 		}
-		spanOpts = append(spanOpts, defaultSpanOptions(fctx)...)
-		fcc := &HTTPHeadersCarrier{
-			ReqHeader: &fctx.Request.Header,
+		scope := startHandlerScope(fctx, cfg)
+		// Do not recover the panic: the caller must get it without change.
+		returned := false
+		defer func() {
+			scope.panicked = !returned
+			scope.finish()
+		}()
+		if !scope.handled {
+			h(fctx)
 		}
-		if sctx, err := tracer.Extract(fcc); err == nil {
-			// If there are span links as a result of context extraction, add them as a StartSpanOption
-			if sctx != nil && sctx.SpanLinks() != nil {
-				spanOpts = append(spanOpts, tracer.WithSpanLinks(sctx.SpanLinks()))
-			}
-			spanOpts = append(spanOpts, tracer.ChildOf(sctx))
-		}
-		span := StartSpanFromContext(fctx, "http.request", spanOpts...)
-		defer span.Finish()
-		h(fctx)
-		span.SetTag(ext.ResourceName, cfg.resourceNamer(fctx))
-		status := fctx.Response.StatusCode()
-		if cfg.isStatusError(status) {
-			span.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%d: %s", status, string(fctx.Response.Body())))
-		}
-		span.SetTag(ext.HTTPCode, strconv.Itoa(status))
+		returned = true
 	}
 }
 
@@ -79,7 +71,7 @@ func defaultSpanOptions(fctx *fasthttp.RequestCtx) []tracer.StartSpanOption {
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer),
 		tracer.SpanType(ext.SpanTypeWeb),
 		tracer.Tag(ext.HTTPMethod, string(fctx.Method())),
-		tracer.Tag(ext.HTTPURL, string(fctx.URI().FullURI())),
+		tracer.Tag(ext.HTTPURL, httpURLTag(fctx)),
 		tracer.Tag(ext.HTTPUserAgent, string(fctx.UserAgent())),
 		tracer.Measured(),
 	}
@@ -88,4 +80,15 @@ func defaultSpanOptions(fctx *fasthttp.RequestCtx) []tracer.StartSpanOption {
 	}
 	opts = appsechttpsec.AppendSecurityTestingHeaderTagsFromBytes(opts, fctx.Request.Header.VisitAll)
 	return opts
+}
+
+// httpURLTag builds the http.url span tag. It obfuscates the query string because
+// fctx.URI().FullURI() returns it verbatim.
+func httpURLTag(fctx *fasthttp.RequestCtx) string {
+	uri := fctx.URI()
+	url := string(uri.Scheme()) + "://" + string(uri.Host()) + string(uri.PathOriginal())
+	if query := instrhttptrace.ObfuscateQueryString(string(uri.QueryString())); query != "" {
+		url += "?" + query
+	}
+	return url
 }

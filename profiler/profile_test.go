@@ -7,7 +7,9 @@ package profiler
 
 import (
 	"bytes"
+	"go/version"
 	"io"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -220,14 +222,26 @@ func protobufToText(pprofData []byte) string {
 // without adding it to enabledProfileTypes as well.
 func TestProfileTypeSoundness(t *testing.T) {
 	t.Run("enabledProfileTypes", func(t *testing.T) {
-		var allProfileTypes []ProfileType
+		allProfileTypes := make([]ProfileType, 0, len(profileTypes))
 		for pt := range profileTypes {
+			if version.Compare(runtime.Version(), "go1.27") < 0 && pt == GoroutineLeakProfile {
+				// We don't accept GoroutineLeakProfile for Go
+				// 1.26 unless the experiment is enabled, and
+				// we're not going to test for that here.
+				continue
+			}
 			allProfileTypes = append(allProfileTypes, pt)
 		}
 		p, err := newProfiler(WithProfileTypes(allProfileTypes...))
 		require.NoError(t, err)
 		types := p.enabledProfileTypes()
 		require.ElementsMatch(t, types, allProfileTypes)
+
+		for _, pt := range allProfileTypes {
+			// This will panic if we didn't register a legacy
+			// compression configuration for the profile type.
+			legacyOutputCompression(pt, false)
+		}
 	})
 
 	t.Run("profileTypes", func(t *testing.T) {

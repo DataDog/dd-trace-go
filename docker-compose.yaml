@@ -1,59 +1,113 @@
 services:
   aerospike:
-    image: aerospike:ce-7.2.0.6@sha256:79c30951edab8878b14b650f32db416106a21d458be994344e488756fe8b651f
+    image: aerospike:ce-8.2.0.1_1@sha256:e2d7f7fd7a06ff1e9fd074ff2fb6ce447c401f2a9ee1d914e2c49fabe9205082
+    healthcheck:
+      test: ["CMD", "asinfo", "-v", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
     ports:
       - "3000:3000"
   cassandra:
-    image: cassandra:5@sha256:5d5f627eb21e20bce6606c808808a123f3296aaea9ebe70d8d703be771880c5c
+    image: cassandra:5@sha256:ae4cc2e4b62a5b2a2dd1645ba827cb50c589cc7531bcffe8b8b60ac3b1adc79d
     environment:
       JVM_OPTS: "-Xms750m -Xmx750m"
       CASSANDRA_CLUSTER_NAME: "dd-trace-go-test-cluster"
       CASSANDRA_DC: "dd-trace-go-test-datacenter"
       CASSANDRA_ENDPOINT_SNITCH: "GossipingPropertyFileSnitch"
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe keyspaces'"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 90s
     ports:
       - "9042:9042"
   mysql:
-    image: mysql:8@sha256:c36050afdca850f23cef85703f84c7531a5ae155a11b5ee1c60acb09937c4084
+    image: mysql:26@sha256:7b16ec7caa94ca7e92f4c5ec287de69d2e8738db056ceb629022951a6f6d910b
     environment:
       MYSQL_ROOT_PASSWORD: admin
       MYSQL_PASSWORD: test
       MYSQL_USER: test
       MYSQL_DATABASE: test
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
     ports:
       - "3306:3306"
   postgres:
-    image: postgres:16@sha256:4b7183ac05f8ef417db21fd72d71047a4238340c261d3cc3ddb6d579ab5071ae
+    image: postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
       POSTGRES_DB: postgres
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-h", "127.0.0.1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
     ports:
       - "5432:5432"
   mssql:
-    image: mcr.microsoft.com/mssql/server:2019-latest@sha256:c39c9406e9bbab626076e742cbfcde8c6c7daedb27d79c1fa119bf57cf034e5c
+    image: mcr.microsoft.com/mssql/server:2025-latest@sha256:245f6b1c8903edae52cb20fa31419cefcde1a49938bb8c3447099011fc871ca3
     environment:
       SA_PASSWORD: myPassw0rd
       ACCEPT_EULA: Y
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P $$SA_PASSWORD -Q 'SELECT 1' -C -l 5"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
     ports:
       - "1433:1433"
   consul:
     image: consul:1.15@sha256:10084bbbed746968b0b9f8edab2f8552e44f117e35b88153a5e0a3ad1e15aa1a
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
     ports:
       - "8500:8500"
   redis:
-    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    image: redis:8-alpine@sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
     ports:
       - "6379:6379"
   valkey:
-    image: valkey/valkey:8@sha256:c6d4637d757379a2ff040148b95c85936d85a06c129eafa5fbe582f9e720e12f
+    image: valkey/valkey:9@sha256:3add1a336a920ea54770a001ab6feb3da5fceea96a40373a3a2cd469b815f0b7
     environment:
       VALKEY_EXTRA_FLAGS: "--port 6380 --requirepass password-for-default"
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli --no-auth-warning -a password-for-default -p 6380 ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
     ports:
       - "6380:6380"
   elasticsearch2:
-    image: elasticsearch:2@sha256:41ed3a1a16b63de740767944d5405843db00e55058626c22838f23b413aa4a39
+    image: elasticsearch:5@sha256:d0e119779df7ddf9d476102691d9d0b8783c13434e00d77f01327019c1297839
     environment:
       ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/9200'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
     ports:
       - "9200:9200"
     ulimits:
@@ -64,6 +118,12 @@ services:
     image: elasticsearch:5@sha256:d0e119779df7ddf9d476102691d9d0b8783c13434e00d77f01327019c1297839
     environment:
       ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/9200'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
     ports:
       - "9201:9200"
     ulimits:
@@ -71,11 +131,17 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch6:
-    image: elasticsearch:6.8.23@sha256:deda76957c8cacc5dbf0d535fd14fe365f37d839813099bc32f26390a5e232dc
+    image: elasticsearch:9.5.5@sha256:52ffd9f66c98b7826a25da2ef7cac6186ecec158d8fb371bff325ad00b6eca93
     environment:
       http.port: 9202-9300
       discovery.type: single-node
       ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/9202'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
     ports:
       - "9202:9202"
     ulimits:
@@ -83,11 +149,17 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch7:
-    image: elasticsearch:7.17.28@sha256:a06b03a2db8db2be43d3c3851e7bcebdd4fff79f4db08c7da6bad7a8776d3e15
+    image: elasticsearch:9.5.5@sha256:52ffd9f66c98b7826a25da2ef7cac6186ecec158d8fb371bff325ad00b6eca93
     environment:
       http.port: 9203-9300
       discovery.type: single-node
       ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/9203'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
     ports:
       - "9203:9203"
     ulimits:
@@ -95,12 +167,18 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch8:
-    image: elasticsearch:8.18.1@sha256:5823091e62c231e68301ff68d9643e023e82e749d343737c1fc26457505dca1c
+    image: elasticsearch:9.5.5@sha256:52ffd9f66c98b7826a25da2ef7cac6186ecec158d8fb371bff325ad00b6eca93
     environment:
       http.port: 9204-9300
       discovery.type: single-node
       xpack.security.enabled: "false"
       ES_JAVA_OPTS: "-Xms750m -Xmx750m" # https://github.com/10up/wp-local-docker/issues/6
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/9204'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
     ports:
       - "9204:9204"
     ulimits:
@@ -108,15 +186,23 @@ services:
         soft: 65536
         hard: 65536
   datadog-agent:
-    image: registry.datadoghq.com/agent:latest
+    image: datadog/agent:latest@sha256:2c296582b259c8e5f924fceb613b7da56892b4f7de6b415dc1c6028970a7840a
     environment:
       DD_APM_ENABLED: "true"
       DD_BIND_HOST: "0.0.0.0"
       DD_API_KEY: invalid_key_but_this_is_fine
+    healthcheck:
+      # Readiness == the trace-agent HTTP port is bound. Matches the proven
+      # pattern in .github/testservices/docker-compose.yaml.
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/8126'"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
     ports:
       - "8126:8126"
   testagent:
-    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.61.1@sha256:0b428281c1ba33f4af9f81efe79330a7577c8810609a7bcd1cecf8c7de82abec
+    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.69.1@sha256:af1d11e2826341ea0ba09a5cc9e7a2ff6b466bfeaa1f53b1e5ead9bdc7047461
     environment:
       LOG_LEVEL: DEBUG
       TRACE_LANGUAGE: golang
@@ -125,22 +211,48 @@ services:
       DD_SUPPRESS_TRACE_PARSE_ERRORS: "true"
       DD_POOL_TRACE_CHECK_FAILURES: "true"
       DD_DISABLE_ERROR_RESPONSES: "true"
+    healthcheck:
+      # Readiness == the test-agent HTTP port is bound. Matches the proven
+      # pattern in .github/testservices/docker-compose.yaml.
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/9126'"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
     ports:
       - "127.0.0.1:9126:9126"
   mongodb3:
-    image: mongo:3@sha256:146c1fd999a660e697aac40bc6da842b005c7868232eb0b7d8996c8f3545b05d
+    image: mongo:9@sha256:452bdaf2127b8ff851e31410a267809b9829eded219979f2210e7c7efb85a058
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     ports:
       - "27018:27017"
   mongodb:
-    image: mongo:8@sha256:a706cb4e493bcd0262f345b3b0c78732ca0e54301f0d7bbe2b66f26313ce7ccb
+    image: mongo:9@sha256:452bdaf2127b8ff851e31410a267809b9829eded219979f2210e7c7efb85a058
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     ports:
       - "27017:27017"
   memcached:
-    image: memcached:1.6-alpine@sha256:43a2e7f74aebfff0c9921f4d367299ced9eacaeaccdc8bb4bc122a4fba2cd909
+    image: memcached:1.6-alpine@sha256:6a089e37cbb8acd75c80c6c0667fe57ec54db68782fb1b3afb1d0eb265e50070
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 11211"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
     ports:
       - "11211:11211"
   kafka:
-    image: confluentinc/confluent-local:7.5.0@sha256:8e391de42cfcd3498e7317dcf159790f1f1cc3f3ffce900b30d7da23888687fd
+    image: confluentinc/confluent-local:8.4.0@sha256:fc5e5415670e05f3125c4226388c17eb1488858804aca699492b0e6159158209
     container_name: kafka
     environment:
       KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094"
@@ -158,10 +270,18 @@ services:
       KAFKA_NODE_ID: "1"
       KAFKA_PROCESS_ROLES: "broker,controller"
       KAFKA_CONTROLLER_LISTENER_NAMES: "CONTROLLER"
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
     ports:
       - "9092:9092"
       - "9093:9093"
   localstack:
     image: localstack/localstack:4.14.0@sha256:3ebc37595918b8accb852f8048fef2aff047d465167edd655528065b07bc364a
+    # No explicit healthcheck needed: this image ships one
+    # (`localstack status services --format=json`), which `--wait` honors.
     ports:
       - "4566:4566"

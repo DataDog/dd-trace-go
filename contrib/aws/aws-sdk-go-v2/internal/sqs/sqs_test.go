@@ -139,7 +139,7 @@ func TestEnrichOperation(t *testing.T) {
 			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
 			span, spanCtx := tracer.StartSpanFromContext(ctx, "test-span")
 
-			EnrichOperation(spanCtx, span, tt.input, tt.operation)
+			NewEnricher(true).EnrichOperation(spanCtx, span, tt.input, tt.operation)
 
 			if tt.check != nil {
 				tt.check(t, tt.input, span, spanCtx)
@@ -230,4 +230,26 @@ func assertInjectedPathway(t *testing.T, raw string, expected datastreams.Pathwa
 	pathway, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), carrier))
 	require.True(t, ok)
 	assert.Equal(t, expected.GetHash(), pathway.GetHash())
+}
+
+// BenchmarkEnrichOperation measures one SendMessage enrichment with the injection on and off.
+func BenchmarkEnrichOperation(b *testing.B) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "bench")
+	defer span.Finish()
+
+	for _, tc := range []struct {
+		name   string
+		inject bool
+	}{{"on", true}, {"off", false}} {
+		b.Run(tc.name, func(b *testing.B) {
+			e := NewEnricher(tc.inject)
+			b.ReportAllocs()
+			for b.Loop() {
+				in := middleware.InitializeInput{Parameters: &sqs.SendMessageInput{QueueUrl: aws.String("https://sqs.eu-west-1.amazonaws.com/123456789012/bench-queue"), MessageBody: aws.String(`{"message":"hello"}`)}}
+				e.EnrichOperation(ctx, span, in, "SendMessage")
+			}
+		})
+	}
 }

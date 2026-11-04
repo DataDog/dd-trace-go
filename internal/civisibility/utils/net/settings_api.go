@@ -7,6 +7,7 @@ package net
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -38,6 +39,7 @@ type (
 		RepositoryURL  string             `json:"repository_url,omitempty"`
 		Branch         string             `json:"branch,omitempty"`
 		Sha            string             `json:"sha,omitempty"`
+		TestLevel      string             `json:"test_level,omitempty"`
 		Configurations testConfigurations `json:"configurations"`
 	}
 
@@ -60,7 +62,7 @@ type (
 				FiveM   int `json:"5m"`
 				FiveS   int `json:"5s"`
 			} `json:"slow_test_retries"`
-			FaultySessionThreshold int `json:"faulty_session_threshold"`
+			FaultySessionThreshold *int `json:"faulty_session_threshold"`
 		} `json:"early_flake_detection"`
 		FlakyTestRetriesEnabled bool `json:"flaky_test_retries_enabled"`
 		ItrEnabled              bool `json:"itr_enabled"`
@@ -88,7 +90,7 @@ func (c *client) GetSettings() (*SettingsResponseData, error) {
 	}
 
 	if c.repositoryURL == "" || c.commitSha == "" {
-		return nil, fmt.Errorf("civisibility.GetSettings: repository URL and commit SHA are required")
+		return nil, errors.New("civisibility.GetSettings: repository URL and commit SHA are required")
 	}
 
 	body := settingsRequest{
@@ -101,6 +103,7 @@ func (c *client) GetSettings() (*SettingsResponseData, error) {
 				RepositoryURL:  c.repositoryURL,
 				Branch:         c.branchName,
 				Sha:            c.commitSha,
+				TestLevel:      "test",
 				Configurations: c.testConfigurations,
 			},
 		},
