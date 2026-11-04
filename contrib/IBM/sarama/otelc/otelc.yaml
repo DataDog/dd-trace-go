@@ -70,9 +70,6 @@ sarama_new_sync_producer:
     - wrap_call:
         replace: |-
           (func(__dd_addrs []string, __dd_cfg *sarama.Config) (sarama.SyncProducer, error) {
-            if false {
-              return {{ . }}
-            }
             __dd_p, __dd_err := sarama.NewSyncProducer(__dd_addrs, __dd_cfg)
             if __dd_p != nil {
               __dd_p = saramatrace.WrapSyncProducer(__dd_cfg, __dd_p)
@@ -95,9 +92,6 @@ sarama_new_sync_producer_from_client:
     - wrap_call:
         replace: |-
           (func(__dd_client sarama.Client) (sarama.SyncProducer, error) {
-            if false {
-              return {{ . }}
-            }
             __dd_p, __dd_err := sarama.NewSyncProducerFromClient(__dd_client)
             if __dd_p != nil {
               __dd_p = saramatrace.WrapSyncProducer(__dd_client.Config(), __dd_p)
@@ -120,9 +114,6 @@ sarama_new_async_producer:
     - wrap_call:
         replace: |-
           (func(__dd_addrs []string, __dd_cfg *sarama.Config) (sarama.AsyncProducer, error) {
-            if false {
-              return {{ . }}
-            }
             __dd_p, __dd_err := sarama.NewAsyncProducer(__dd_addrs, __dd_cfg)
             if __dd_p != nil {
               __dd_p = saramatrace.WrapAsyncProducer(__dd_cfg, __dd_p)
@@ -145,9 +136,6 @@ sarama_new_async_producer_from_client:
     - wrap_call:
         replace: |-
           (func(__dd_client sarama.Client) (sarama.AsyncProducer, error) {
-            if false {
-              return {{ . }}
-            }
             __dd_p, __dd_err := sarama.NewAsyncProducerFromClient(__dd_client)
             if __dd_p != nil {
               __dd_p = saramatrace.WrapAsyncProducer(__dd_client.Config(), __dd_p)
