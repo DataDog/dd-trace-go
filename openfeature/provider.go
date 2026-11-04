@@ -1043,20 +1043,13 @@ func (p *DatadogProvider) recordDependencyEvaluation(
 		}
 	}
 
-	targetingKey, _ := flatCtx[openfeature.TargetingKey].(string)
-	attributes := make(map[string]any, len(flatCtx))
-	for key, value := range flatCtx {
-		if key != openfeature.TargetingKey {
-			attributes[key] = value
-		}
-	}
 	hookContext := openfeature.NewHookContext(
 		flagKey,
 		openFeatureType(flagType),
 		defaultValue,
 		openfeature.ClientMetadata{},
 		p.metadata,
-		openfeature.NewEvaluationContext(targetingKey, attributes),
+		p.dependencyEvaluationContext(flatCtx, result),
 	)
 	details := openfeature.InterfaceEvaluationDetails{
 		Value: result.Value,
@@ -1080,6 +1073,24 @@ func (p *DatadogProvider) recordDependencyEvaluation(
 	if p.flagEvalLoggingWriter != nil {
 		p.flagEvalLoggingWriter.record(hookContext, details)
 	}
+}
+
+func (p *DatadogProvider) dependencyEvaluationContext(
+	flatCtx openfeature.FlattenedContext,
+	result evaluationResult,
+) openfeature.EvaluationContext {
+	targetingKey, _ := flatCtx[openfeature.TargetingKey].(string)
+	consented, _ := result.Metadata[metadataObserveFullEvaluationDataKey].(bool)
+	if p.flagEvalLoggingWriter == nil || !consented {
+		return openfeature.NewEvaluationContext(targetingKey, nil)
+	}
+	attributes := make(map[string]any, len(flatCtx))
+	for key, value := range flatCtx {
+		if key != openfeature.TargetingKey {
+			attributes[key] = value
+		}
+	}
+	return openfeature.NewEvaluationContext(targetingKey, attributes)
 }
 
 func openFeatureType(flagType valueType) openfeature.Type {

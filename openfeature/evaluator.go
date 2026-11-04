@@ -8,6 +8,7 @@ package openfeature
 import (
 	"crypto/md5"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"regexp"
@@ -76,6 +77,18 @@ type dependencyEvaluationRecord struct {
 type dependencyExposureCandidate struct {
 	FlagKey string
 	Result  evaluationResult
+}
+
+// dependencyExposureSnapshot is the scalar-safe representation carried across
+// the public OpenFeature FlagMetadata boundary. The evaluator keeps the richer
+// candidates private and exposes only the encoded JSON string.
+type dependencyExposureSnapshot struct {
+	FlagKey       string  `json:"flagKey"`
+	VariantKey    string  `json:"variantKey"`
+	AllocationKey string  `json:"allocationKey,omitempty"`
+	DoLog         bool    `json:"doLog"`
+	SerialID      *uint32 `json:"serialId,omitempty"`
+	FeaturesKey   string  `json:"featuresKey,omitempty"`
 }
 
 type dependencyGraphError struct {
@@ -241,7 +254,7 @@ func evaluateConfiguredFlag(
 		if result.Metadata == nil {
 			result.Metadata = make(map[string]any, 1)
 		}
-		result.Metadata[metadataDependencyExposuresKey] = resolver.session.exposures
+		result.Metadata[metadataDependencyExposuresKey] = encodeDependencyExposureCandidates(resolver.session.exposures)
 	}
 	return result
 }
@@ -822,8 +835,80 @@ func cloneDependencyEvaluationRecords(records []dependencyEvaluationRecord) []de
 func cloneEvaluationResult(result evaluationResult) evaluationResult {
 	result.Value = cloneTelemetryValue(result.Value)
 	result.Metadata = cloneTelemetryMap(result.Metadata)
+	result.Error = cloneDependencyError(result.Error)
 	result.DependencyEvaluations = nil
 	return result
+}
+
+func cloneDependencyError(err error) error {
+	graphErr, ok := err.(*dependencyGraphError)
+	if !ok || graphErr == nil {
+		return err
+	}
+	return &dependencyGraphError{
+		flagKey: graphErr.flagKey,
+		code:    graphErr.code,
+		message: graphErr.message,
+		cause:   cloneDependencyError(graphErr.cause),
+	}
+}
+
+func encodeDependencyExposureCandidates(candidates []dependencyExposureCandidate) string {
+	snapshots := make([]dependencyExposureSnapshot, 0, len(candidates))
+	for _, candidate := range candidates {
+		metadata := candidate.Result.Metadata
+		allocationKey, _ := metadata[metadataAllocationKey].(string)
+		doLog, _ := metadata[metadataDoLogKey].(bool)
+		serialID, hasSerialID := metadata[metadataSplitSerialIDKey].(uint32)
+		var serialIDPtr *uint32
+		if hasSerialID {
+			serialIDPtr = &serialID
+		}
+		snapshots = append(snapshots, dependencyExposureSnapshot{
+			FlagKey:       candidate.FlagKey,
+			VariantKey:    candidate.Result.VariantKey,
+			AllocationKey: allocationKey,
+			DoLog:         doLog,
+			SerialID:      serialIDPtr,
+			FeaturesKey:   featureValuesKey(metadata, metadataExposureFeaturesKey),
+		})
+	}
+	encoded, err := json.Marshal(snapshots)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
+func decodeDependencyExposureCandidates(encoded string) []dependencyExposureCandidate {
+	if encoded == "" {
+		return nil
+	}
+	var snapshots []dependencyExposureSnapshot
+	if err := json.Unmarshal([]byte(encoded), &snapshots); err != nil {
+		return nil
+	}
+	candidates := make([]dependencyExposureCandidate, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		metadata := map[string]any{
+			metadataAllocationKey: snapshot.AllocationKey,
+			metadataDoLogKey:      snapshot.DoLog,
+		}
+		if snapshot.SerialID != nil {
+			metadata[metadataSplitSerialIDKey] = *snapshot.SerialID
+		}
+		if snapshot.FeaturesKey != "" {
+			metadata[metadataExposureFeaturesKey] = snapshot.FeaturesKey
+		}
+		candidates = append(candidates, dependencyExposureCandidate{
+			FlagKey: snapshot.FlagKey,
+			Result: evaluationResult{
+				VariantKey: snapshot.VariantKey,
+				Metadata:   metadata,
+			},
+		})
+	}
+	return candidates
 }
 
 func cloneTelemetryMap(source map[string]any) map[string]any {

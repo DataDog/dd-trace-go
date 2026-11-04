@@ -119,6 +119,34 @@ func BenchmarkBooleanEvaluationOptOut(b *testing.B) {
 	}
 }
 
+func BenchmarkDependencyEvaluationContext(b *testing.B) {
+	flatCtx := openfeature.FlattenedContext{
+		openfeature.TargetingKey: "user-123",
+		"country":                "CA",
+		"plan":                   "paid",
+		"age":                    42,
+	}
+	tests := []struct {
+		name    string
+		writer  *flagEvalLoggingWriter
+		consent bool
+	}{
+		{name: "writer_disabled", consent: true},
+		{name: "consent_off", writer: &flagEvalLoggingWriter{}},
+		{name: "consent_on", writer: &flagEvalLoggingWriter{}, consent: true},
+	}
+	for _, tt := range tests {
+		b.Run(tt.name, func(b *testing.B) {
+			provider := &DatadogProvider{flagEvalLoggingWriter: tt.writer}
+			result := evaluationResult{Metadata: map[string]any{metadataObserveFullEvaluationDataKey: tt.consent}}
+			b.ReportAllocs()
+			for b.Loop() {
+				_ = provider.dependencyEvaluationContext(flatCtx, result)
+			}
+		})
+	}
+}
+
 // BenchmarkStringEvaluation benchmarks string flag evaluation
 func BenchmarkStringEvaluation(b *testing.B) {
 	provider := newDatadogProvider(ProviderConfig{})

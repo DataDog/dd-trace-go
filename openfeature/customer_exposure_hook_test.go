@@ -605,3 +605,31 @@ func TestDisabledExposureDeliveryDoesNotStartWorker(t *testing.T) {
 	w.stop()
 	w.stop()
 }
+
+func TestDisabledExposureDeliveryDoesNotCacheInvisibleDependencies(t *testing.T) {
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false); internalconfig.CreateNew() })
+	t.Setenv("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", "false")
+	h := newOptOutHarness(t, ProviderConfig{})
+	h.provider.mu.Lock()
+	h.provider.configuration = dependencyTestConfig(
+		dependencyTestFlag("dependency", "dependency-on", nil),
+		dependencyTestFlag("root", "root-on", dependencyCondition("dependency", operatorOneOf, "dependency-on")),
+	)
+	h.provider.mu.Unlock()
+
+	var rows []ExposureEvaluation
+	h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) { rows = append(rows, e) }))
+	evalCtx := of.NewEvaluationContext("subject", nil)
+	_, err := h.client.BooleanValue(context.Background(), "root", false, evalCtx)
+	require.NoError(t, err)
+	_, err = h.client.BooleanValue(context.Background(), "dependency", false, evalCtx)
+	require.NoError(t, err)
+
+	require.Len(t, rows, 2, "customer hooks observe only the directly evaluated root and dependency")
+	assert.Equal(t, "root", rows[0].Details.FlagKey)
+	assert.True(t, rows[0].ShouldSend())
+	assert.Equal(t, "dependency", rows[1].Details.FlagKey)
+	assert.True(t, rows[1].ShouldSend(), "an invisible prerequisite must not consume the customer exposure cache")
+	require.Empty(t, h.provider.exposureWriter.buffer)
+}

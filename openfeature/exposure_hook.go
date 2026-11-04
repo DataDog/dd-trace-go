@@ -139,7 +139,14 @@ func (h *exposureHook) Finally(
 }
 
 func (h *exposureHook) appendDependencyExposures(hookContext of.HookContext, metadata of.FlagMetadata) {
-	candidates, _ := metadata[metadataDependencyExposuresKey].([]dependencyExposureCandidate)
+	// Customer hooks only receive the root evaluation. When Datadog delivery is
+	// disabled, caching these invisible prerequisite exposures would suppress a
+	// later direct customer-visible evaluation of the prerequisite.
+	if !h.writer.datadogLoggingEnabled {
+		return
+	}
+	encoded, _ := metadata[metadataDependencyExposuresKey].(string)
+	candidates := decodeDependencyExposureCandidates(encoded)
 	for _, candidate := range candidates {
 		event, eligible := makeExposureEvent(candidate.FlagKey, candidate.Result.VariantKey,
 			candidate.Result.Metadata, hookContext.EvaluationContext())

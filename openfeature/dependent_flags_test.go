@@ -375,6 +375,29 @@ func TestDependentFlags_ReturnedTelemetryIsDetachedAndPublisherCannotBreakEvalua
 	require.True(t, result.DependencyEvaluations[0].Result.Value.(bool))
 	require.Equal(t, "leaf-allocation", result.DependencyEvaluations[0].Result.Metadata[metadataAllocationKey])
 	require.Equal(t, []string{"leaf", "dependency"}, dependencyExposureKeys(result))
+	_, ok := result.Metadata[metadataDependencyExposuresKey].(string)
+	require.True(t, ok, "private dependency exposures must cross FlagMetadata as a scalar")
+}
+
+func TestDependentFlags_DependencyErrorsAreDetached(t *testing.T) {
+	config := dependencyTestConfig(
+		dependencyTestFlag("parent", "on", dependencyCondition("missing", operatorOneOf, "on")),
+		dependencyTestFlag("root", "on", dependencyCondition("parent", operatorOneOf, "on")),
+	)
+	result := evaluateConfiguredFlag(config, "root", false, nil, time.Now(), experimentationExclusion{})
+	require.Error(t, result.Error)
+	require.Len(t, result.DependencyEvaluations, 2)
+
+	rootErr := result.Error.(*dependencyGraphError)
+	missingErr := result.DependencyEvaluations[0].Result.Error.(*dependencyGraphError)
+	parentErr := result.DependencyEvaluations[1].Result.Error.(*dependencyGraphError)
+	require.NotSame(t, rootErr, parentErr)
+	require.NotSame(t, parentErr.cause, missingErr)
+
+	missingErr.message = "publisher mutation"
+	parentErr.message = "publisher mutation"
+	require.NotEqual(t, "publisher mutation", rootErr.message)
+	require.NotEqual(t, "publisher mutation", parentErr.cause.(*dependencyGraphError).message)
 }
 
 func TestDependentFlags_ParallelRootsKeepReturnedBatchesIndependent(t *testing.T) {
@@ -423,8 +446,9 @@ func TestDependentFlags_WideGraphDeduplicatesTelemetry(t *testing.T) {
 
 	require.NoError(t, result.Error)
 	require.Len(t, result.DependencyEvaluations, dependencyCount)
-	exposures, ok := result.Metadata[metadataDependencyExposuresKey].([]dependencyExposureCandidate)
+	encoded, ok := result.Metadata[metadataDependencyExposuresKey].(string)
 	require.True(t, ok)
+	exposures := decodeDependencyExposureCandidates(encoded)
 	require.Len(t, exposures, dependencyCount)
 	for i := range dependencyCount {
 		key := fmt.Sprintf("dependency-%d", i)
@@ -452,7 +476,7 @@ func BenchmarkDependentFlags_WideGraph(b *testing.B) {
 	b.ResetTimer()
 	for range b.N {
 		result := evaluateConfiguredFlag(config, "root", false, nil, now, experimentationExclusion{})
-		exposures, _ := result.Metadata[metadataDependencyExposuresKey].([]dependencyExposureCandidate)
+		exposures := decodeDependencyExposureCandidates(result.Metadata[metadataDependencyExposuresKey].(string))
 		if result.Error != nil || len(result.DependencyEvaluations) != dependencyCount || len(exposures) != dependencyCount {
 			b.Fatalf("unexpected wide-graph result: error=%v evaluations=%d exposures=%d", result.Error, len(result.DependencyEvaluations), len(exposures))
 		}
@@ -588,6 +612,33 @@ func TestIndependentEvaluationDoesNotAllocateDependencyResolver(t *testing.T) {
 	require.Zero(t, allocations)
 }
 
+func TestDependencyEvaluationContextCopiesAttributesOnlyForConsentedLogging(t *testing.T) {
+	flatCtx := of.FlattenedContext{
+		of.TargetingKey: "subject",
+		"country":       "CA",
+		"plan":          "paid",
+	}
+	tests := []struct {
+		name      string
+		writer    *flagEvalLoggingWriter
+		consent   bool
+		wantAttrs int
+	}{
+		{name: "writer_disabled", consent: true},
+		{name: "consent_off", writer: &flagEvalLoggingWriter{}},
+		{name: "consent_on", writer: &flagEvalLoggingWriter{}, consent: true, wantAttrs: 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			provider := &DatadogProvider{flagEvalLoggingWriter: tt.writer}
+			result := evaluationResult{Metadata: map[string]any{metadataObserveFullEvaluationDataKey: tt.consent}}
+			evalCtx := provider.dependencyEvaluationContext(flatCtx, result)
+			require.Equal(t, "subject", evalCtx.TargetingKey())
+			require.Len(t, evalCtx.Attributes(), tt.wantAttrs)
+		})
+	}
+}
+
 func dependencyTestConfigWithDepth(depth int, flags ...*flag) *universalFlagsConfiguration {
 	config := dependencyTestConfig(flags...)
 	config.EvaluatorParams.MaxDependencyDepth = &depth
@@ -614,7 +665,8 @@ func dependencyCondition(key string, operator conditionOperator, variants ...str
 }
 
 func dependencyExposureKeys(result evaluationResult) []string {
-	candidates, _ := result.Metadata[metadataDependencyExposuresKey].([]dependencyExposureCandidate)
+	encoded, _ := result.Metadata[metadataDependencyExposuresKey].(string)
+	candidates := decodeDependencyExposureCandidates(encoded)
 	keys := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {
 		keys = append(keys, candidate.FlagKey)
