@@ -232,6 +232,16 @@ func TestFlattenKeyBoundary(t *testing.T) {
 			assert.Empty(t, got)
 		}
 	}
+	for _, size := range []int{maxKeyLength - 2, maxKeyLength - 1} {
+		key := strings.Repeat("k", size)
+		got := flattenContext(map[string]any{key: []any{"value"}})
+		if size+2 <= maxKeyLength {
+			assert.Equal(t, map[string]any{key + ".0": "value"}, got)
+		} else {
+			assert.Empty(t, got)
+		}
+	}
+
 	key := strings.Repeat("k", maxKeyLength-2)
 	assert.Equal(t, map[string]any{key + ".x": "keep"}, flattenContext(map[string]any{key: map[string]any{"x": "keep", "xx": "drop"}}))
 	st := &flattenState{seen: make(map[containerID]struct{})}
@@ -292,4 +302,15 @@ func TestExposureHookFlattenBounds(t *testing.T) {
 			assert.Equal(t, tt.want, writer.buffer[0].Subject.Attributes)
 		})
 	}
+}
+
+// Once the budget is exhausted, the array loop must stop constructing keys,
+// not merely rely on the recursive entry guard to discard later elements.
+func TestFlattenArrayBudgetStopsIteration(t *testing.T) {
+	small := make([]any, 2*maxFlattenVisits)
+	large := make([]any, 16*maxFlattenVisits)
+	allocations := func(values []any) float64 {
+		return testing.AllocsPerRun(3, func() { flattenContext(map[string]any{"values": values}) })
+	}
+	assert.LessOrEqual(t, allocations(large), allocations(small)+10)
 }
