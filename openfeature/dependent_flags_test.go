@@ -289,7 +289,10 @@ func TestDependentFlags_DefaultAndZeroDepth(t *testing.T) {
 }
 
 func TestDependentFlags_InvalidConfiguredDepthIsParseError(t *testing.T) {
-	for _, configured := range []string{"null", `"3"`, "1.5", "-1", "256"} {
+	for _, configured := range []string{
+		"null", `"3"`, "1.5", "-1", "256",
+		"254.99999999999999", "255.00000000000001", "1e-400",
+	} {
 		t.Run(configured, func(t *testing.T) {
 			config := dependencyTestConfig(
 				dependencyTestFlag("dependency", "on", nil),
@@ -309,6 +312,23 @@ func TestDependentFlags_InvalidConfiguredDepthIsParseError(t *testing.T) {
 			require.Equal(t, of.ParseErrorCode, errorCodeFor(record.Result.Error))
 			require.ErrorIs(t, record.Result.Error, errParseError)
 			require.Empty(t, dependencyExposureKeys(result))
+		})
+	}
+}
+
+func TestDependentFlags_ExactIntegerDepthForms(t *testing.T) {
+	for configured, want := range map[string]int{
+		"3.0":    3,
+		"1e2":    100,
+		"2.55e2": 255,
+		"-0":     0,
+	} {
+		t.Run(configured, func(t *testing.T) {
+			var params evaluatorParams
+			require.NoError(t, json.Unmarshal([]byte(`{"maxDependencyDepth":`+configured+`}`), &params))
+			require.False(t, params.maxDependencyDepthInvalid)
+			require.NotNil(t, params.MaxDependencyDepth)
+			require.Equal(t, want, *params.MaxDependencyDepth)
 		})
 	}
 }

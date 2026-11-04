@@ -650,24 +650,10 @@ func baseFlagEvalLoggingEvent(flagKey string, e *evaluationEntry, flushTimeMs in
 // full check ever fires. Non-blocking on enqueue; failure paths bump split counters so an
 // undersized cap surfaces as pre-queue overflow rather than getting hidden in a race counter.
 func (w *flagEvalLoggingWriter) record(hookContext of.HookContext, details of.InterfaceEvaluationDetails) {
-	w.enqueueMu.RLock()
-	defer w.enqueueMu.RUnlock()
+	if !w.admitContextSnapshot() {
+		return
+	}
 
-	// Post-stop no-op: after stop() the worker no longer drains w.events, so enqueuing would
-	// silently lose the event. Check the atomic gate lock-free (reading under the aggregator
-	// lock would add hot-path contention) and count the event as a closed drop (distinct from
-	// queue-overflow) so shutdown loss stays observable with its own reason tag.
-	if w.stopped.Load() {
-		w.closedDrop.Add(1)
-		return
-	}
-	if len(w.events) == cap(w.events) {
-		// Queue full at hook time — O(1) drop, no copy work. This is the hot signal for an
-		// undersized cap. Counted separately from the racy send-site loss below so the two
-		// causes stay distinguishable.
-		w.preQueueOverflow.Add(1)
-		return
-	}
 	d := extractEvalDetails(hookContext, details)
 	evaluationTimeMs := d.evalTimeMs
 	if evaluationTimeMs == 0 {
@@ -680,12 +666,48 @@ func (w *flagEvalLoggingWriter) record(hookContext of.HookContext, details of.In
 	if d.observeFullEvaluationData {
 		// Bound the context ON THE EVALUATION THREAD, before the async queue. The worker
 		// then only ever sees the pruned snapshot, and the caller's context reference is
-		// released as soon as record() returns.
+		// released as soon as record() returns. Application String methods run without
+		// enqueueMu held so they can safely re-enter evaluation while stop is pending.
 		attrs, truncReasons := flattenAndPruneContext(hookContext.EvaluationContext().Attributes())
 		ev.contextAttrs = attrs
 		for _, reason := range truncReasons {
 			w.incContextTruncated(reason)
 		}
+	}
+	w.enqueueAfterSnapshot(ev)
+}
+
+// admitContextSnapshot rejects work that is already known to be undeliverable
+// before walking caller context. The lock is released before application String
+// methods can run; enqueueAfterSnapshot performs the stop-safe final admission.
+func (w *flagEvalLoggingWriter) admitContextSnapshot() bool {
+	w.enqueueMu.RLock()
+	defer w.enqueueMu.RUnlock()
+
+	// Post-stop no-op: after stop() the worker no longer drains w.events, so enqueuing would
+	// silently lose the event. Check the atomic gate lock-free (reading under the aggregator
+	// lock would add hot-path contention) and count the event as a closed drop (distinct from
+	// queue-overflow) so shutdown loss stays observable with its own reason tag.
+	if w.stopped.Load() {
+		w.closedDrop.Add(1)
+		return false
+	}
+	if len(w.events) == cap(w.events) {
+		// Queue full at hook time — O(1) drop, no copy work. This is the hot signal for an
+		// undersized cap. Counted separately from the racy send-site loss below so the two
+		// causes stay distinguishable.
+		w.preQueueOverflow.Add(1)
+		return false
+	}
+	return true
+}
+
+func (w *flagEvalLoggingWriter) enqueueAfterSnapshot(ev evalEvent) {
+	w.enqueueMu.RLock()
+	defer w.enqueueMu.RUnlock()
+	if w.stopped.Load() {
+		w.closedDrop.Add(1)
+		return
 	}
 	select {
 	case w.events <- ev:
@@ -703,15 +725,7 @@ func (w *flagEvalLoggingWriter) recordDependency(
 	flagKey string,
 	details of.InterfaceEvaluationDetails,
 ) {
-	w.enqueueMu.RLock()
-	defer w.enqueueMu.RUnlock()
-
-	if w.stopped.Load() {
-		w.closedDrop.Add(1)
-		return
-	}
-	if len(w.events) == cap(w.events) {
-		w.preQueueOverflow.Add(1)
+	if !w.admitContextSnapshot() {
 		return
 	}
 	d := extractEvalDetailsFor(flagKey, batch.targetingKey, details)
@@ -726,11 +740,7 @@ func (w *flagEvalLoggingWriter) recordDependency(
 			w.incContextTruncated(reason)
 		}
 	}
-	select {
-	case w.events <- ev:
-	default:
-		w.enqueueDropped.Add(1)
-	}
+	w.enqueueAfterSnapshot(ev)
 }
 
 // aggregate updates the aggregator. It runs only on the writer's single worker goroutine.

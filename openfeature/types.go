@@ -6,9 +6,10 @@
 package openfeature
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
-	"math"
+	"math/big"
 	"sync/atomic"
 	"time"
 )
@@ -109,17 +110,15 @@ func (params *evaluatorParams) UnmarshalJSON(data []byte) error {
 	if !present {
 		return nil
 	}
-	var decoded any
-	if err := json.Unmarshal(depthJSON, &decoded); err != nil {
+	// Validate the original JSON number lexeme exactly. Decoding through
+	// float64 can round a non-integer such as 254.99999999999999 to 255 and
+	// incorrectly accept it as a valid depth.
+	depth, ok := new(big.Rat).SetString(string(bytes.TrimSpace(depthJSON)))
+	if !ok || !depth.IsInt() || depth.Sign() < 0 || !depth.Num().IsInt64() || depth.Num().Int64() > 255 {
 		params.maxDependencyDepthInvalid = true
 		return nil
 	}
-	depth, ok := decoded.(float64)
-	if !ok || math.IsNaN(depth) || math.IsInf(depth, 0) || math.Trunc(depth) != depth || depth < 0 || depth > 255 {
-		params.maxDependencyDepthInvalid = true
-		return nil
-	}
-	value := int(depth)
+	value := int(depth.Num().Int64())
 	params.MaxDependencyDepth = &value
 	return nil
 }

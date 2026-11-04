@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	jsoniter "github.com/json-iterator/go"
 	of "github.com/open-feature/go-sdk/openfeature"
@@ -339,6 +340,53 @@ func TestExposureSubjectSnapshotDoesNotRunApplicationCodeUnderWriterLock(t *test
 	}
 	if got := writer.buffer[1].Subject.Attributes["reentrant"]; got != "reentrant" {
 		t.Fatalf("root reentrant attribute = %#v, want reentrant", got)
+	}
+}
+
+func TestExposureSnapshotDoesNotBlockWriterStop(t *testing.T) {
+	writer := &exposureWriter{
+		datadogLoggingEnabled: true,
+		buffer:                make([]exposureEvent, 0, 1),
+		cache:                 newExposureLRUCache(defaultExposureCacheCapacity),
+		stopChan:              make(chan struct{}),
+	}
+	event := exposureEvent{
+		Allocation: exposureAllocation{Key: "allocation"},
+		Flag:       exposureFlag{Key: "flag"},
+		Variant:    exposureVariant{Key: "on"},
+		Subject:    exposureSubject{ID: "subject"},
+	}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	appendDone := make(chan struct{})
+	go func() {
+		defer close(appendDone)
+		writer.appendWithAttributes(event, func() map[string]any {
+			close(entered)
+			<-release
+			return map[string]any{"detached": true}
+		})
+	}()
+	<-entered
+
+	stopDone := make(chan struct{})
+	go func() {
+		defer close(stopDone)
+		writer.stop()
+	}()
+	select {
+	case <-stopDone:
+	case <-time.After(time.Second):
+		t.Fatal("writer stop blocked on application String work")
+	}
+	close(release)
+	select {
+	case <-appendDone:
+	case <-time.After(time.Second):
+		t.Fatal("exposure append did not observe stopped writer")
+	}
+	if got := len(writer.buffer); got != 0 {
+		t.Fatalf("buffered exposures after stop = %d, want 0", got)
 	}
 }
 
