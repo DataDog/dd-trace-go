@@ -136,7 +136,7 @@ type SpanContext struct {
 	// atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
 	hasBaggage uint32 // +checkatomic
 	// bridgeState is the state of a borrowed OpenTelemetry view of the span: 0 open, 1 pinned,
-	// 2 released to the span pool. It is in the padding after hasBaggage.
+	// 2 released to the span pool, 3 pinned with Ok status. It is in the padding after hasBaggage.
 	bridgeState atomic.Uint32
 
 	trace *trace // reference to the trace that this span belongs too
