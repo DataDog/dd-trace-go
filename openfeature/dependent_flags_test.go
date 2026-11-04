@@ -379,6 +379,51 @@ func TestDependentFlags_ReturnedTelemetryIsDetachedAndPublisherCannotBreakEvalua
 	require.True(t, ok, "private dependency exposures must cross FlagMetadata as a scalar")
 }
 
+func TestDependentFlags_NestedJSONTelemetryIsDeeplyDetached(t *testing.T) {
+	configuredValue := map[string]any{
+		"nested":  map[string]any{"leaf": "original"},
+		"any":     []any{map[string]any{"leaf": "original"}, []any{"original"}},
+		"strings": []string{"original", "stable"},
+	}
+	expected := cloneTelemetryValue(configuredValue)
+	jsonFlag := func(key string) *flag {
+		flag := dependencyTestFlag(key, "json-on", nil)
+		flag.VariationType = valueTypeJSON
+		flag.Variations["json-on"].Value = configuredValue
+		return flag
+	}
+	config := dependencyTestConfig(
+		jsonFlag("json-a"),
+		jsonFlag("json-b"),
+		dependencyTestFlag("root", "on",
+			dependencyCondition("json-a", operatorOneOf, "json-on"),
+			dependencyCondition("json-b", operatorOneOf, "json-on")),
+	)
+
+	result := evaluateConfiguredFlag(config, "root", false, nil, time.Now(), experimentationExclusion{})
+	require.NoError(t, result.Error)
+	require.Len(t, result.DependencyEvaluations, 2)
+	var secondPublished any
+	publishDependencyEvaluationBatch(result.DependencyEvaluations, func(record dependencyEvaluationRecord) {
+		if record.FlagKey == "json-b" {
+			secondPublished = record.Result.Value
+			return
+		}
+		value := record.Result.Value.(map[string]any)
+		value["nested"].(map[string]any)["leaf"] = "mutated"
+		value["any"].([]any)[0].(map[string]any)["leaf"] = "mutated"
+		value["any"].([]any)[1].([]any)[0] = "mutated"
+		value["strings"].([]string)[0] = "mutated"
+		panic("publisher failure after mutation")
+	})
+
+	require.Equal(t, expected, result.DependencyEvaluations[0].Result.Value)
+	require.Equal(t, expected, result.DependencyEvaluations[1].Result.Value)
+	require.Equal(t, expected, secondPublished)
+	require.Equal(t, expected, config.Flags["json-a"].Variations["json-on"].Value)
+	require.Equal(t, expected, config.Flags["json-b"].Variations["json-on"].Value)
+}
+
 func TestDependentFlags_DependencyErrorsAreDetached(t *testing.T) {
 	config := dependencyTestConfig(
 		dependencyTestFlag("parent", "on", dependencyCondition("missing", operatorOneOf, "on")),

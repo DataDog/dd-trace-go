@@ -96,7 +96,8 @@ func (h *exposureHook) Finally(
 	if flagEvaluationDetails.ErrorCode != "" || flagEvaluationDetails.Reason == of.ErrorReason {
 		return
 	}
-	h.appendDependencyExposures(hookContext, flagEvaluationDetails.FlagMetadata)
+	subject := newExposureSubjectSnapshot(hookContext.EvaluationContext())
+	h.appendDependencyExposures(subject, flagEvaluationDetails.FlagMetadata)
 	// The provider checks cancellation before resolving. Cancellation after a
 	// successful resolution must not discard an exposure for the returned value.
 	evaluation := ExposureEvaluation{Details: flagEvaluationDetails}
@@ -106,14 +107,14 @@ func (h *exposureHook) Finally(
 	}
 
 	event, _ := makeExposureEvent(hookContext.FlagKey(), flagEvaluationDetails.Variant,
-		flagEvaluationDetails.FlagMetadata, hookContext.EvaluationContext())
+		flagEvaluationDetails.FlagMetadata, subject.targetingKey)
 	targetingKey := event.Subject.ID
 	allocationKey := event.Allocation.Key
 
 	// Send to writer for buffering and eventual flushing
 	// Decide once for all destinations. Customer hooks run after provider hooks
 	// and read this stamp without consuming another cache entry.
-	isNew, known := h.writer.appendWithDecision(event)
+	isNew, known := h.writer.appendWithDecisionAndAttributes(event, subject.attributes)
 	if known {
 		flagEvaluationDetails.FlagMetadata[metadataExposureCacheHitKey] = !isNew
 	}
@@ -138,7 +139,7 @@ func (h *exposureHook) Finally(
 	}
 }
 
-func (h *exposureHook) appendDependencyExposures(hookContext of.HookContext, metadata of.FlagMetadata) {
+func (h *exposureHook) appendDependencyExposures(subject *exposureSubjectSnapshot, metadata of.FlagMetadata) {
 	// Customer hooks only receive the root evaluation. When Datadog delivery is
 	// disabled, caching these invisible prerequisite exposures would suppress a
 	// later direct customer-visible evaluation of the prerequisite.
@@ -149,18 +150,40 @@ func (h *exposureHook) appendDependencyExposures(hookContext of.HookContext, met
 	candidates := decodeDependencyExposureCandidates(encoded)
 	for _, candidate := range candidates {
 		event, eligible := makeExposureEvent(candidate.FlagKey, candidate.Result.VariantKey,
-			candidate.Result.Metadata, hookContext.EvaluationContext())
+			candidate.Result.Metadata, subject.targetingKey)
 		if eligible {
-			h.writer.append(event)
+			h.writer.appendWithAttributes(event, subject.attributes)
 		}
 	}
+}
+
+type exposureSubjectSnapshot struct {
+	targetingKey string
+	context      of.EvaluationContext
+	detached     map[string]any
+	ready        bool
+}
+
+func newExposureSubjectSnapshot(context of.EvaluationContext) *exposureSubjectSnapshot {
+	return &exposureSubjectSnapshot{targetingKey: context.TargetingKey(), context: context}
+}
+
+func (s *exposureSubjectSnapshot) attributes() map[string]any {
+	if !s.ready {
+		flatContext := make(map[string]any, len(s.context.Attributes())+1)
+		flatContext[of.TargetingKey] = s.targetingKey
+		maps.Copy(flatContext, s.context.Attributes())
+		s.detached = extractPrimitiveAttributes(flattenContext(flatContext))
+		s.ready = true
+	}
+	return s.detached
 }
 
 func makeExposureEvent(
 	flagKey string,
 	variantKey string,
 	metadata of.FlagMetadata,
-	evalContext of.EvaluationContext,
+	targetingKey string,
 ) (exposureEvent, bool) {
 	allocationKey, hasAllocation := metadata[metadataAllocationKey].(string)
 	doLog, _ := metadata[metadataDoLogKey].(bool)
@@ -171,18 +194,13 @@ func makeExposureEvent(
 	if id, ok := metadata[metadataSplitSerialIDKey].(uint32); ok {
 		serialID = new(id)
 	}
-	targetingKey := evalContext.TargetingKey()
-	flatContext := make(map[string]any, len(evalContext.Attributes())+1)
-	flatContext[of.TargetingKey] = targetingKey
-	maps.Copy(flatContext, evalContext.Attributes())
 	return exposureEvent{
 		Timestamp:  time.Now().UnixMilli(),
 		Allocation: exposureAllocation{Key: allocationKey},
 		Flag:       exposureFlag{Key: flagKey},
 		Variant:    exposureVariant{Key: variantKey},
 		Subject: exposureSubject{
-			ID:         targetingKey,
-			Attributes: extractPrimitiveAttributes(flattenContext(flatContext)),
+			ID: targetingKey,
 		},
 		SerialID:    serialID,
 		featuresKey: featureValuesKey(metadata, metadataExposureFeaturesKey),

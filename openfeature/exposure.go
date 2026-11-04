@@ -250,16 +250,31 @@ func (w *exposureWriter) periodicFlush() {
 
 // append adds an exposure event to the buffer with deduplication
 func (w *exposureWriter) append(event exposureEvent) bool {
-	added, _ := w.appendWithDecision(event)
+	added, _ := w.appendWithDecisionAndAttributes(event, nil)
+	return added
+}
+
+func (w *exposureWriter) appendWithAttributes(event exposureEvent, attributes func() map[string]any) bool {
+	added, _ := w.appendWithDecisionAndAttributes(event, attributes)
 	return added
 }
 
 // appendWithDecision distinguishes a duplicate from an unavailable cache decision.
 func (w *exposureWriter) appendWithDecision(event exposureEvent) (added, known bool) {
+	return w.appendWithDecisionAndAttributes(event, nil)
+}
+
+// appendWithDecisionAndAttributes resolves the cache before building the detached
+// subject attributes. The lazy callback is shared by all events in one root
+// evaluation, so cache hits do no context work and admitted events reuse one map.
+func (w *exposureWriter) appendWithDecisionAndAttributes(
+	event exposureEvent,
+	attributes func() map[string]any,
+) (added, known bool) {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 
 	if w.stopped {
+		w.mu.Unlock()
 		return false, false
 	}
 
@@ -280,15 +295,30 @@ func (w *exposureWriter) appendWithDecision(event exposureEvent) (added, known b
 	// Check deduplication cache - returns true if this is a new or changed entry
 	if !w.cache.add(cacheKey, cacheValue) {
 		// Duplicate exposure - skip
+		w.mu.Unlock()
 		return false, true
 	}
 
-	if w.datadogLoggingEnabled {
-		if event.featuresKey != "" {
-			event.Features = w.featureValues.values(event.featuresKey)
-		}
-		w.buffer = append(w.buffer, event)
+	if !w.datadogLoggingEnabled {
+		w.mu.Unlock()
+		return true, true
 	}
+	if attributes != nil {
+		// Caller attributes can invoke application String methods. Do not run them
+		// under the writer lock: a String method may re-enter flag evaluation.
+		w.mu.Unlock()
+		event.Subject.Attributes = attributes()
+		w.mu.Lock()
+		if w.stopped {
+			w.mu.Unlock()
+			return false, false
+		}
+	}
+	if event.featuresKey != "" {
+		event.Features = w.featureValues.values(event.featuresKey)
+	}
+	w.buffer = append(w.buffer, event)
+	w.mu.Unlock()
 	return true, true
 }
 
