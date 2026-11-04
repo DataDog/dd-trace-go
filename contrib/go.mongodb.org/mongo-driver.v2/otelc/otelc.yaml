@@ -1,0 +1,24 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# A call-site rule, not a hook on options.Client: the rewritten package imports
+# the contrib, so it is initialized before a package-level options.Client(),
+# and the driver's own unqualified Client() calls, such as the one in
+# MergeClientOptions, are left alone. The contrib is excluded because its tests
+# call options.Client().
+#
+# FIXME: a monitor the application sets is lost when its options are merged
+# with a later plain options.Client(), because the last monitor wins.
+mongo_v2_client:
+  target:
+    - "**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/**"
+  where:
+    function_call: go.mongodb.org/mongo-driver/v2/mongo/options.Client
+  do:
+    - wrap_call:
+        replace: "{{ . }}.SetMonitor(mongov2trace.NewMonitor())"
+  imports:
+    mongov2trace: github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2/mongo

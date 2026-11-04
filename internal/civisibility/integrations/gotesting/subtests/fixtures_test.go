@@ -12,9 +12,19 @@ import (
 	gotesting "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
 )
 
+// skipUnlessScenario skips a fixture test unless it runs inside a scenario
+// subprocess.
+func skipUnlessScenario(t *testing.T) {
+	t.Helper()
+	if os.Getenv(subtestScenarioEnv) == "" {
+		t.Skip("fixture runs only inside a subtest matrix scenario subprocess")
+	}
+}
+
 // TestSubtestManagement exercises multiple subtests so the Datadog Go testing
 // instrumentation can attach management directives at different hierarchy levels.
 func TestSubtestManagement(t *testing.T) {
+	skipUnlessScenario(t)
 	gt := gotesting.GetTest(t)
 
 	gt.Run("SubDisabled", func(t *testing.T) {
@@ -40,6 +50,7 @@ func TestSubtestManagement(t *testing.T) {
 // configured by management data. The child subtest should inherit the disabled
 // directive even without an explicit entry.
 func TestParentDisabled(t *testing.T) {
+	skipUnlessScenario(t)
 	gotesting.GetTest(t).Run("Child", func(t *testing.T) {
 		t.Log("child inherits disabled directive from parent")
 	})
