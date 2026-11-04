@@ -264,3 +264,54 @@ func TestPayloadSeedTagsOnSetupGoOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestPayloadSaveModeTags(t *testing.T) {
+	// A seeding run reports save_mode:seed; a restore-only run of the
+	// same seed-set key reports seed_key:true with save_mode:restore_only.
+	seeding := restore(map[string]any{
+		"cache_hit":      "true",
+		"seed_key":       "true",
+		"save":           "true",
+		"restore_source": "exact",
+	})
+	all := runPayload(t, observation("cloudx", seeding), false)
+	got := onlyCount(t, all)
+	if v := got.tag("seed_key:"); v != "true" {
+		t.Errorf("seed_key = %q, want true", v)
+	}
+	if v := got.tag("save_mode:"); v != "seed" {
+		t.Errorf("save_mode = %q, want seed", v)
+	}
+
+	// A malformed value coerces to the canonical tag instead of
+	// splitting the series: seed_key becomes false, save_mode reports
+	// restore_only, and a seed run that emits "TRUE" never reads as one.
+	malformed := restore(map[string]any{
+		"cache_hit":      "true",
+		"seed_key":       "TRUE",
+		"save":           "TRUE",
+		"restore_source": "exact",
+	})
+	got = onlyCount(t, runPayload(t, observation("cloudx", malformed), false))
+	if v := got.tag("seed_key:"); v != "false" {
+		t.Errorf("seed_key = %q, want the canonical false for a malformed value", v)
+	}
+	if v := got.tag("save_mode:"); v != "restore_only" {
+		t.Errorf("save_mode = %q, want restore_only for a malformed value", v)
+	}
+
+	restoreOnly := restore(map[string]any{
+		"cache_hit":         "false",
+		"cache_matched_key": "",
+		"restore_source":    "default",
+		"seed_key":          "true",
+		"save":              "false",
+	})
+	got = onlyCount(t, runPayload(t, observation("cloudx", restoreOnly), false))
+	if v := got.tag("seed_key:"); v != "true" {
+		t.Errorf("seed_key = %q, want true", v)
+	}
+	if v := got.tag("save_mode:"); v != "restore_only" {
+		t.Errorf("save_mode = %q, want restore_only", v)
+	}
+}

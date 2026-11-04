@@ -251,9 +251,18 @@ wrap its call sites with `wrap_call` instead (see "Rules" under "Cautions").
   above the rule, since a hook looks like the more natural choice.
 - A call-site rule that must also reach call sites in dependencies targets `**` and excludes the
   library and its contrib with `not:` entries (`contrib/go-chi/chi/otelc/otelc.yaml`).
-- A `wrap_call` template must not move the call's arguments into a closure body, because `go f(x)`
-  and `defer f(x)` evaluate `x` at the statement. Pass them as parameters of the closure instead
-  (`fasthttp_serve_conn_func` in `contrib/valyala/fasthttp/otelc/otelc.yaml`).
+- In `go f(x)` and `defer f(x)`, Go evaluates `x` at the statement and runs `f` later. A
+  `wrap_call` template replaces `f(x)`, so pick its shape by how callers use the call:
+  - When callers use the result, as with a constructor, pass the result to the wrapper:
+    `echov4trace.Wrap({{ . }})` (`echo_v4_new` in `contrib/labstack/echo.v4/otelc/otelc.yaml`), or
+    a closure that takes `{{ . }}` as its parameter. The original call then runs at the statement,
+    which only matters in a `go` or `defer` statement, where the result is lost anyway.
+  - When callers may run the call with `go` or `defer`, as with `fasthttp.ServeConn`, keep the
+    call in the closure body and pass the call's arguments as the closure's parameters
+    (`fasthttp_serve_conn_func` in `contrib/valyala/fasthttp/otelc/otelc.yaml`). Passing the
+    result instead runs the whole call at the statement and blocks the caller of `go`.
+  - Never move the call's arguments into a closure body. The body runs later, so they are no
+    longer evaluated at the statement.
 - `function_call` and `method_call` only match qualified calls (`pkg.Func()`). Calls inside the
   library itself, and calls through a dot import, are never matched, so a constructor that calls
   another one internally is not wrapped twice.
