@@ -27,9 +27,6 @@ pgx_connect:
     - wrap_call:
         replace: |-
           (func(__dd_ctx context.Context, __dd_connString string) (*pgx.Conn, error) {
-            if false {
-              return {{ . }}
-            }
             return __dd_pgxtrace.Connect(__dd_ctx, __dd_connString)
           })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
   imports:
@@ -49,9 +46,6 @@ pgx_connect_config:
     - wrap_call:
         replace: |-
           (func(__dd_ctx context.Context, __dd_connConfig *pgx.ConnConfig) (*pgx.Conn, error) {
-            if false {
-              return {{ . }}
-            }
             return __dd_pgxtrace.ConnectConfig(__dd_ctx, __dd_connConfig)
           })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
   imports:
@@ -71,9 +65,6 @@ pgxpool_new:
     - wrap_call:
         replace: |-
           (func(__dd_ctx context.Context, __dd_connString string) (*pgxpool.Pool, error) {
-            if false {
-              return {{ . }}
-            }
             return __dd_pgxtrace.NewPool(__dd_ctx, __dd_connString)
           })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
   imports:
@@ -93,9 +84,6 @@ pgxpool_new_with_config:
     - wrap_call:
         replace: |-
           (func(__dd_ctx context.Context, __dd_config *pgxpool.Config) (*pgxpool.Pool, error) {
-            if false {
-              return {{ . }}
-            }
             return __dd_pgxtrace.NewPoolWithConfig(__dd_ctx, __dd_config)
           })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
   imports:
