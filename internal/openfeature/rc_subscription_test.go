@@ -6,6 +6,7 @@
 package openfeature
 
 import (
+	"fmt"
 	"testing"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
@@ -170,4 +171,27 @@ func TestSubscribeRCAfterTracerRestart(t *testing.T) {
 	has, err := remoteconfig.HasProduct(FFEProductName)
 	require.NoError(t, err)
 	assert.True(t, has, "FFE_FLAGS should be subscribed on the new RC client after restart")
+}
+
+func TestSubscriptionsAdvertiseDependentFlags(t *testing.T) {
+	for _, provider := range []bool{false, true} {
+		t.Run(fmt.Sprintf("provider=%t", provider), func(t *testing.T) {
+			ResetForTest()
+			defer ResetForTest()
+			defer remoteconfig.Reset()
+
+			require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+			if provider {
+				_, err := SubscribeProvider(forwardingCallback)
+				require.NoError(t, err)
+			} else {
+				require.NoError(t, SubscribeRC())
+			}
+			for _, capability := range []remoteconfig.Capability{46, 50} {
+				has, err := remoteconfig.HasCapability(capability)
+				require.NoError(t, err)
+				assert.True(t, has, "capability %d must be advertised", capability)
+			}
+		})
+	}
 }
