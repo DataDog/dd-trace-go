@@ -14,6 +14,12 @@ import (
 // DependentFlagVariantKeyV1 identifies prerequisite variant-key evaluation support.
 const DependentFlagVariantKeyV1 = "dependent-flag-variant-key-v1"
 
+// DependentFlagsVariantKeyQueryParameter requests prerequisite variant keys in UFC responses.
+const DependentFlagsVariantKeyQueryParameter = "dependent-flags-variant-key"
+
+// DependentFlagsVariantKeyQueryVersion is the supported query parameter version.
+const DependentFlagsVariantKeyQueryVersion = "v1"
+
 // EvaluatorCapabilities reports features supported by the Go evaluator and exposure hooks.
 // Keep this empty until prerequisite evaluation, error propagation, and exposure
 // reporting are implemented and integration-tested. The tracer needs this report
