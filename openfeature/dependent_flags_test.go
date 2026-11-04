@@ -612,33 +612,6 @@ func TestIndependentEvaluationDoesNotAllocateDependencyResolver(t *testing.T) {
 	require.Zero(t, allocations)
 }
 
-func TestDependencyEvaluationContextCopiesAttributesOnlyForConsentedLogging(t *testing.T) {
-	flatCtx := of.FlattenedContext{
-		of.TargetingKey: "subject",
-		"country":       "CA",
-		"plan":          "paid",
-	}
-	tests := []struct {
-		name      string
-		writer    *flagEvalLoggingWriter
-		consent   bool
-		wantAttrs int
-	}{
-		{name: "writer_disabled", consent: true},
-		{name: "consent_off", writer: &flagEvalLoggingWriter{}},
-		{name: "consent_on", writer: &flagEvalLoggingWriter{}, consent: true, wantAttrs: 2},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			provider := &DatadogProvider{flagEvalLoggingWriter: tt.writer}
-			result := evaluationResult{Metadata: map[string]any{metadataObserveFullEvaluationDataKey: tt.consent}}
-			evalCtx := provider.dependencyEvaluationContext(flatCtx, result)
-			require.Equal(t, "subject", evalCtx.TargetingKey())
-			require.Len(t, evalCtx.Attributes(), tt.wantAttrs)
-		})
-	}
-}
-
 func dependencyTestConfigWithDepth(depth int, flags ...*flag) *universalFlagsConfiguration {
 	config := dependencyTestConfig(flags...)
 	config.EvaluatorParams.MaxDependencyDepth = &depth

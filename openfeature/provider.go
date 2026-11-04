@@ -1008,9 +1008,10 @@ func (p *DatadogProvider) publishDependencyEvaluations(
 	flatCtx openfeature.FlattenedContext,
 	records []dependencyEvaluationRecord,
 ) {
+	loggingBatch := newDependencyEvaluationLoggingBatch(flatCtx)
 	publishDependencyEvaluationBatch(records, func(record dependencyEvaluationRecord) {
 		p.recordDependencyEvaluation(ctx, record.FlagKey, record.FlagType,
-			record.DefaultValue, flatCtx, record.Result)
+			flatCtx, record.Result, &loggingBatch)
 	})
 }
 
@@ -1033,9 +1034,9 @@ func (p *DatadogProvider) recordDependencyEvaluation(
 	ctx context.Context,
 	flagKey string,
 	flagType valueType,
-	defaultValue any,
 	flatCtx openfeature.FlattenedContext,
 	result evaluationResult,
+	loggingBatch *dependencyEvaluationLoggingBatch,
 ) {
 	if p.evaluationTelemetryOptOutEnabled {
 		if optedOut, _ := flatCtx["dd_evaluation_telemetry_opt_out"].(bool); optedOut {
@@ -1043,14 +1044,6 @@ func (p *DatadogProvider) recordDependencyEvaluation(
 		}
 	}
 
-	hookContext := openfeature.NewHookContext(
-		flagKey,
-		openFeatureType(flagType),
-		defaultValue,
-		openfeature.ClientMetadata{},
-		p.metadata,
-		p.dependencyEvaluationContext(flatCtx, result),
-	)
 	details := openfeature.InterfaceEvaluationDetails{
 		Value: result.Value,
 		EvaluationDetails: openfeature.EvaluationDetails{
@@ -1071,26 +1064,8 @@ func (p *DatadogProvider) recordDependencyEvaluation(
 		p.flagEvalMetricsHook.metrics.record(ctx, flagKey, details)
 	}
 	if p.flagEvalLoggingWriter != nil {
-		p.flagEvalLoggingWriter.record(hookContext, details)
+		p.flagEvalLoggingWriter.recordDependency(loggingBatch, flagKey, details)
 	}
-}
-
-func (p *DatadogProvider) dependencyEvaluationContext(
-	flatCtx openfeature.FlattenedContext,
-	result evaluationResult,
-) openfeature.EvaluationContext {
-	targetingKey, _ := flatCtx[openfeature.TargetingKey].(string)
-	consented, _ := result.Metadata[metadataObserveFullEvaluationDataKey].(bool)
-	if p.flagEvalLoggingWriter == nil || !consented {
-		return openfeature.NewEvaluationContext(targetingKey, nil)
-	}
-	attributes := make(map[string]any, len(flatCtx))
-	for key, value := range flatCtx {
-		if key != openfeature.TargetingKey {
-			attributes[key] = value
-		}
-	}
-	return openfeature.NewEvaluationContext(targetingKey, attributes)
 }
 
 func openFeatureType(flagType valueType) openfeature.Type {

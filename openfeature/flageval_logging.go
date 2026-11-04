@@ -354,6 +354,31 @@ type evalDetails struct {
 	observeFullEvaluationData bool
 }
 
+// dependencyEvaluationLoggingBatch holds the caller context only for the
+// synchronous prerequisite-publication loop. Its bounded, detached snapshot is
+// created lazily after the first record passes writer admission and then shared
+// read-only by the admitted records in this root batch.
+type dependencyEvaluationLoggingBatch struct {
+	targetingKey  string
+	flatCtx       of.FlattenedContext
+	contextAttrs  map[string]any
+	truncReasons  []string
+	snapshotReady bool
+}
+
+func newDependencyEvaluationLoggingBatch(flatCtx of.FlattenedContext) dependencyEvaluationLoggingBatch {
+	targetingKey, _ := flatCtx[of.TargetingKey].(string)
+	return dependencyEvaluationLoggingBatch{targetingKey: targetingKey, flatCtx: flatCtx}
+}
+
+func (b *dependencyEvaluationLoggingBatch) snapshot() (map[string]any, []string) {
+	if !b.snapshotReady {
+		b.contextAttrs, b.truncReasons = flattenAndPruneContextExcluding(b.flatCtx, of.TargetingKey)
+		b.snapshotReady = true
+	}
+	return b.contextAttrs, b.truncReasons
+}
+
 // newFlagEvalLoggingWriter creates a new flag evaluation writer.
 func newFlagEvalLoggingWriter(config ProviderConfig) *flagEvalLoggingWriter {
 	return newFlagEvalLoggingWriterWithEVP(config, newEVPClient())
@@ -669,6 +694,45 @@ func (w *flagEvalLoggingWriter) record(hookContext of.HookContext, details of.In
 	}
 }
 
+// recordDependency admits a prerequisite record before touching its caller
+// context. Admitted records share one bounded, detached context snapshot for
+// the root batch; truncation counters still advance once per admitted record,
+// matching record's per-event semantics.
+func (w *flagEvalLoggingWriter) recordDependency(
+	batch *dependencyEvaluationLoggingBatch,
+	flagKey string,
+	details of.InterfaceEvaluationDetails,
+) {
+	w.enqueueMu.RLock()
+	defer w.enqueueMu.RUnlock()
+
+	if w.stopped.Load() {
+		w.closedDrop.Add(1)
+		return
+	}
+	if len(w.events) == cap(w.events) {
+		w.preQueueOverflow.Add(1)
+		return
+	}
+	d := extractEvalDetailsFor(flagKey, batch.targetingKey, details)
+	evaluationTimeMs := d.evalTimeMs
+	if evaluationTimeMs == 0 {
+		evaluationTimeMs = time.Now().UnixMilli()
+	}
+	ev := evalEvent{d: d, evaluationTimeMs: evaluationTimeMs}
+	if d.observeFullEvaluationData {
+		ev.contextAttrs, _ = batch.snapshot()
+		for _, reason := range batch.truncReasons {
+			w.incContextTruncated(reason)
+		}
+	}
+	select {
+	case w.events <- ev:
+	default:
+		w.enqueueDropped.Add(1)
+	}
+}
+
 // aggregate updates the aggregator. It runs only on the writer's single worker goroutine.
 // The caller's context has already been pruned on the evaluation thread (or omitted under
 // consent-off), so nothing else needs to happen to bound the queue's memory footprint here.
@@ -728,21 +792,38 @@ func (w *flagEvalLoggingWriter) incContextTruncated(reason string) {
 // reviewer's recommendation and avoids the O(K log K) sort-then-trim that made the prior
 // implementation proportional to the caller's input.
 func flattenAndPruneContext(attrs map[string]any) (map[string]any, []string) {
+	return flattenAndPruneContextBounded(attrs, "", false)
+}
+
+func flattenAndPruneContextExcluding(attrs map[string]any, excludedKey string) (map[string]any, []string) {
+	return flattenAndPruneContextBounded(attrs, excludedKey, true)
+}
+
+func flattenAndPruneContextBounded(attrs map[string]any, excludedKey string, exclude bool) (map[string]any, []string) {
 	if len(attrs) == 0 {
 		return nil, nil
+	}
+	fieldCount := len(attrs)
+	if exclude {
+		if _, exists := attrs[excludedKey]; exists {
+			fieldCount--
+		}
 	}
 	// Omit the entire context when the top-level map itself exceeds the field cap, so the
 	// evaluation-thread cost is bounded by the cap rather than by the supplied width. Sorting
 	// every key only to keep the first ≤256 would be O(K log K) in K.
-	if len(attrs) > maxContextFields {
+	if fieldCount > maxContextFields {
 		return nil, []string{truncReasonMaxContextFields}
 	}
 	// Sort top-level keys so the field-count cap keeps a deterministic subset. Without this,
 	// Go's randomized map iteration would keep a different 256-field subset each call and
 	// fragment aggregation buckets. The sort is bounded to ≤ maxContextFields keys by the
 	// check above.
-	keys := make([]string, 0, len(attrs))
+	keys := make([]string, 0, fieldCount)
 	for k := range attrs {
+		if exclude && k == excludedKey {
+			continue
+		}
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
@@ -1418,9 +1499,17 @@ func pruneContext(raw map[string]any) map[string]any {
 }
 
 // extractEvalDetails extracts EVP-relevant fields from hook context and evaluation details.
-// This helper is used only by flagEvalLoggingHook — it does NOT replace the extraction in
-// flageval_metrics.go (that file is left untouched to preserve the OTel path).
+// The field-based helper also serves returned prerequisite batches; neither replaces the
+// extraction in flageval_metrics.go (that file is left untouched to preserve the OTel path).
 func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluationDetails) evalDetails {
+	return extractEvalDetailsFor(
+		hookContext.FlagKey(),
+		hookContext.EvaluationContext().TargetingKey(),
+		details,
+	)
+}
+
+func extractEvalDetailsFor(flagKey, targetingKey string, details of.InterfaceEvaluationDetails) evalDetails {
 	allocationKey, _ := details.FlagMetadata[metadataAllocationKey].(string)
 	evalTimeMs, _ := details.FlagMetadata[metadataEvalTimeKey].(int64)
 	// Fail closed: a missing or non-bool consent stamp yields false, so an evaluation that
@@ -1444,10 +1533,10 @@ func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluati
 		errMsg = string(details.ErrorCode)
 	}
 	return evalDetails{
-		flagKey:                   hookContext.FlagKey(),
+		flagKey:                   flagKey,
 		variant:                   details.Variant,
 		allocationKey:             allocationKey,
-		targetingKey:              hookContext.EvaluationContext().TargetingKey(),
+		targetingKey:              targetingKey,
 		errorMessage:              errMsg,
 		runtimeDefault:            isRuntimeDefault(details),
 		evalTimeMs:                evalTimeMs,
