@@ -9,19 +9,9 @@ package otelc
 
 import (
 	"net/http"
-	"sync/atomic"
 
 	elastictrace "github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2"
 )
-
-// ready is set once the contrib is initialized. See [Ready].
-var ready atomic.Bool
-
-func init() { ready.Store(true) }
-
-// Ready reports whether the contrib is initialized. The rules run the original
-// call until then.
-func Ready() bool { return ready.Load() }
 
 // Transport returns the Transport for a client config that sets rt, caCert
 // and fingerprint as its Transport, CACert and CertificateFingerprint, so that

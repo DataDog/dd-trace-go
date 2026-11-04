@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
+//go:build (linux || !githubci) && !windows
+
 package main
 
 // Imported under other names than elasticsearch, which the rules must handle

@@ -22,10 +22,6 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
 
-func TestReady(t *testing.T) {
-	assert.True(t, Ready())
-}
-
 func TestTransport(t *testing.T) {
 	t.Run("nil", func(t *testing.T) {
 		assert.True(t, elastictrace.IsTraced(Transport(nil, nil, "")))

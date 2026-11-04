@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
+//go:build (linux || !githubci) && !windows
+
 // Command mainapp calls the go-elasticsearch client constructors from package
 // main, which the harness suites never build. TestClientsInMain builds and
 // runs it.
