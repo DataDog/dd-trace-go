@@ -120,7 +120,22 @@ func TestExecGitStringDisabledInPayloadFilesMode(t *testing.T) {
 	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "--version")
 	assert.Empty(t, out)
 	assert.Error(t, err)
-	assert.ErrorContains(t, err, "git CLI is disabled in payload-file mode")
+	assert.ErrorContains(t, err, "git CLI is disabled")
+}
+
+func TestExecGitStringDisabledByInternalEnv(t *testing.T) {
+	t.Setenv(bazel.GitCLIDisabledEnv, "true")
+
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	if bazel.IsPayloadFilesModeEnabled() {
+		t.Fatal("expected payload-files mode to stay disabled")
+	}
+	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "--version")
+	assert.Empty(t, out)
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "git CLI is disabled")
 }
 
 func TestGetLocalGitData(t *testing.T) {

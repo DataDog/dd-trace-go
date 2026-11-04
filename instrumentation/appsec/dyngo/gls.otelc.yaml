@@ -8,9 +8,12 @@
 # reasoning behind each injection.
 #
 # dyngo's source is GLS-agnostic (plain context.WithValue / ctx.Value), so a plain
-# build pays nothing. Unlike spans, dyngo operations are always registered and
-# finished on the same goroutine, so there is no liveness cell: the `done`
-# argument to GLSActivate/GLSDeactivate is nil.
+# build pays nothing. It still imports internal/orchestrion in gls.go, so otelc
+# never has to resolve the import these rules add; gls.go says why that matters.
+#
+# Unlike spans, dyngo operations are always registered and finished on the same
+# goroutine, so there is no liveness cell: the `done` argument to
+# GLSActivate/GLSDeactivate is nil.
 #
 # Arguments resolve through the function template variables, so a rename in the
 # dyngo source keeps these rules working.

@@ -88,6 +88,7 @@ func (w *logsWriter) add(entry *logEntry) bool {
 	return true
 }
 
+// stop flushes accepted logs and blocks until every in-flight upload finishes.
 func (w *logsWriter) stop() {
 	log.Debug("logsWriter: stopping writer")
 	w.mu.Lock()
@@ -114,6 +115,8 @@ func (w *logsWriter) stop() {
 	}
 }
 
+// flush schedules an upload of the accepted logs. It does not wait for the
+// upload to finish.
 func (w *logsWriter) flush() {
 	w.mu.Lock()
 	if w.stopped {
@@ -174,7 +177,7 @@ func (w *logsWriter) startUpload(oldp *logsPayload) {
 
 		err := w.client.SendLogs(p)
 		if err != nil {
-			log.Error("logsWriter: failure sending logs data data: %s", err.Error()) //errtrack:ignore remote request failure
+			log.Error("logsWriter: failure sending logs data: %s", err.Error()) //errtrack:ignore remote request failure
 		}
 	}(oldp)
 }
