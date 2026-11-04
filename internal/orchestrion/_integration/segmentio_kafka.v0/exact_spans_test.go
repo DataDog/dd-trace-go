@@ -247,23 +247,35 @@ func newPartitionReader(addr, topic string) *kafka.Reader {
 }
 
 // createTopic creates a topic with a unique name, since the Kafka container
-// may be reused with messages from an earlier run, and waits for its leader.
-// The first write of a subtest then does not fail with UnknownTopicOrPartition
-// and need a retry, which would add spans. kafka.Conn is not traced.
+// may be reused with messages from an earlier run. It waits until
+// kafka.DefaultTransport, which a kafka.Writer with no Transport uses, has the
+// topic's leader in its metadata cache. That cache is shared by the whole
+// process and refreshed only every few seconds, so without the wait the first
+// write of a subtest can fail with UnknownTopicOrPartition and need a retry,
+// which would add spans. kafka.Client is not traced.
+//
+// When the test ends, the cache is dropped. Test creates its topics without
+// the transport, and a cache left from this test would miss them.
 func createTopic(t *testing.T, addr, name string) string {
 	t.Helper()
+	t.Cleanup(kafka.DefaultTransport.(*kafka.Transport).CloseIdleConnections)
 	topic := "segmentio_kafka_" + name + "_" + strconv.FormatInt(time.Now().UnixNano(), 36)
-	conn, err := kafka.Dial("tcp", addr)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	client := &kafka.Client{Addr: kafka.TCP(addr)}
+	// Creating the topic through the transport also refreshes its cache.
+	res, err := client.CreateTopics(ctx, &kafka.CreateTopicsRequest{
+		Topics: []kafka.TopicConfig{{Topic: topic, NumPartitions: 1, ReplicationFactor: 1}},
+	})
 	require.NoError(t, err)
-	defer conn.Close()
-	require.NoError(t, conn.CreateTopics(kafka.TopicConfig{Topic: topic, NumPartitions: 1, ReplicationFactor: 1}))
+	require.NoError(t, res.Errors[topic])
 	require.Eventually(t, func() bool {
-		leader, err := kafka.DialLeader(context.Background(), "tcp", addr, topic, 0)
-		if err != nil {
+		meta, err := client.Metadata(ctx, &kafka.MetadataRequest{Topics: []string{topic}})
+		if err != nil || len(meta.Topics) != 1 || meta.Topics[0].Error != nil {
 			return false
 		}
-		_ = leader.Close()
-		return true
+		partitions := meta.Topics[0].Partitions
+		return len(partitions) == 1 && partitions[0].Error == nil && partitions[0].Leader.Host != ""
 	}, 30*time.Second, 100*time.Millisecond, "topic %s has no leader", topic)
 	return topic
 }
