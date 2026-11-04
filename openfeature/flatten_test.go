@@ -143,14 +143,16 @@ func TestFlattenDepthBoundary(t *testing.T) {
 		for _, depth := range []int{maxContextDepth - 1, maxContextDepth, maxContextDepth + 1} {
 			t.Run(fmt.Sprintf("array=%t/depth=%d", array, depth), func(t *testing.T) {
 				var value any = "leaf"
-				key := "root"
+				suffix := ".n"
+				if array {
+					suffix = ".0"
+				}
+				key := "root" + strings.Repeat(suffix, depth-1)
 				for range depth - 1 {
 					if array {
 						value = []any{value}
-						key += ".0"
 					} else {
 						value = map[string]any{"n": value}
-						key += ".n"
 					}
 				}
 				want := map[string]any{"shallow": "kept"}
