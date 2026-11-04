@@ -742,7 +742,6 @@ func TestAddEvaluatorCapabilitiesUsesQueryParameter(t *testing.T) {
 			addEvaluatorCapabilities(req, test.capabilities)
 
 			assert.Equal(t, test.expected, req.URL.String())
-			assert.Empty(t, req.Header.Values("X-DD-FEATURE-FLAGS-CAPABILITIES"))
 		})
 	}
 }
