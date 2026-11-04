@@ -143,6 +143,7 @@ integration-suites:
     contrib/gorilla/mux: [ gorilla_mux ]
     contrib/gorilla/mux/otelc: [ gorilla_mux ]
     contrib/gorm.io/gorm.v1: [ gorm ]
+    contrib/gorm.io/gorm.v1/otelc: [ gorm ]
     contrib/graph-gophers/graphql-go: [ graph-gophers ]
     contrib/graphql-go/graphql: [ graphql-go ]
     contrib/haproxy/stream-processing-offload: []
@@ -491,6 +492,7 @@ components:
       - contrib/gomodule/redigo/**
       - contrib/google.golang.org/grpc/**
       - contrib/gorilla/mux/**
+      - contrib/gorm.io/gorm.v1/**
       - contrib/julienschmidt/httprouter/**
       - contrib/labstack/echo.v4/**
       - contrib/labstack/echo.v5/**
