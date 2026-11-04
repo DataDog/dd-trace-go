@@ -503,15 +503,58 @@ func loadApplicableFixtureCases(t *testing.T, fixtureDir, platform string) ([]fi
 			selected = append(selected, fixtureCaseFile{name: filepath.Base(file), cases: applicable})
 		}
 	}
+	if err := validateDiscoveredFixtureCases(executed, excluded); err != nil {
+		t.Fatal(err)
+	}
 	return selected, executed, excluded
 }
 
-func fixtureRevision(fixtureDir string) string {
-	out, err := exec.Command("git", "-C", fixtureDir, "rev-parse", "HEAD").Output()
-	if err != nil {
-		return "unknown"
+func validateDiscoveredFixtureCases(executed, excluded int) error {
+	if executed+excluded == 0 {
+		return errors.New("no canonical FFE evaluation cases found")
 	}
-	return strings.TrimSpace(string(out))
+	return nil
+}
+
+func loadApplicableFixtureSuite(t *testing.T, fixtureDir, platform string) ([]fixtureCaseFile, []byte, int, int) {
+	t.Helper()
+	files, executed, excluded := loadApplicableFixtureCases(t, fixtureDir, platform)
+	if executed == 0 {
+		return files, nil, executed, excluded
+	}
+	configData, err := os.ReadFile(filepath.Join(fixtureDir, "ufc-config.json"))
+	if err != nil {
+		t.Fatalf("read canonical FFE fixtures: %v (initialize them with `git submodule update --init --recursive`)", err)
+	}
+	return files, configData, executed, excluded
+}
+
+func fixtureRevision(fixtureDir string) (string, error) {
+	out, err := exec.Command("git", "-C", fixtureDir, "rev-parse", "--show-toplevel", "HEAD").Output()
+	if err != nil {
+		return "", fmt.Errorf("resolve fixture revision: %w", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) != 2 {
+		return "", fmt.Errorf("resolve fixture revision: expected repository root and revision, got %d lines", len(lines))
+	}
+	fixtureInfo, err := os.Stat(fixtureDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve fixture revision: stat fixture directory: %w", err)
+	}
+	repositoryRoot := strings.TrimSpace(lines[0])
+	repositoryInfo, err := os.Stat(repositoryRoot)
+	if err != nil {
+		return "", fmt.Errorf("resolve fixture revision: stat repository root: %w", err)
+	}
+	if !os.SameFile(fixtureInfo, repositoryInfo) {
+		return "", fmt.Errorf("resolve fixture revision: fixture directory %q is not repository root %q", fixtureDir, repositoryRoot)
+	}
+	revision := strings.TrimSpace(lines[1])
+	if revision == "" {
+		return "", errors.New("resolve fixture revision: empty revision")
+	}
+	return revision, nil
 }
 
 func TestFixtureAppliesToPlatform(t *testing.T) {
@@ -525,6 +568,13 @@ func TestFixtureAppliesToPlatform(t *testing.T) {
 		{name: "skipped for another platform", tc: fixtureEvaluationCase{Skip: []fixturePlatform{{Platform: "php"}}}, want: true},
 		{name: "included for golang", tc: fixtureEvaluationCase{Include: []fixturePlatform{{Platform: fixturePlatformGo}}}, want: true},
 		{name: "included for another platform", tc: fixtureEvaluationCase{Include: []fixturePlatform{{Platform: "php"}}}},
+		{
+			name: "skip takes precedence over include",
+			tc: fixtureEvaluationCase{
+				Skip:    []fixturePlatform{{Platform: fixturePlatformGo}},
+				Include: []fixturePlatform{{Platform: fixturePlatformGo}},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -556,17 +606,66 @@ func TestLoadApplicableFixtureCases(t *testing.T) {
 	})
 }
 
+func TestLoadApplicableFixtureSuite_AllExcludedDoesNotLoadConfiguration(t *testing.T) {
+	fixtureDir := t.TempDir()
+	casesDir := filepath.Join(fixtureDir, "evaluation-cases")
+	require.NoError(t, os.Mkdir(casesDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(casesDir, "cases.json"), []byte(`[
+		{"flag":"skip-golang","_skip":[{"platform":"golang"}]},
+		{"flag":"include-php","_include":[{"platform":"php"}]}
+	]`), 0o644))
+
+	files, configData, executed, excluded := loadApplicableFixtureSuite(t, fixtureDir, fixturePlatformGo)
+	assert.Empty(t, files)
+	assert.Nil(t, configData)
+	assert.Zero(t, executed)
+	assert.Equal(t, 2, excluded)
+}
+
+func TestValidateDiscoveredFixtureCases(t *testing.T) {
+	require.Error(t, validateDiscoveredFixtureCases(0, 0))
+	require.NoError(t, validateDiscoveredFixtureCases(1, 0))
+	require.NoError(t, validateDiscoveredFixtureCases(0, 1))
+}
+
+func TestFixtureRevisionRejectsMissingGitMetadata(t *testing.T) {
+	_, err := fixtureRevision(t.TempDir())
+	require.Error(t, err)
+}
+
+func TestFixtureRevisionRejectsParentGitMetadata(t *testing.T) {
+	// The package directory is inside the superproject but is not itself a Git root.
+	_, err := fixtureRevision(".")
+	require.Error(t, err)
+}
+
 func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 	fixtureDir := "ffe-system-test-data"
-	fixtureFiles, executedCases, excludedCases := loadApplicableFixtureCases(t, fixtureDir, fixturePlatformGo)
+	revision, err := fixtureRevision(fixtureDir)
+	require.NoError(t, err)
+	runEvaluateFlagJSONFixtures(t, fixtureDir, revision)
+}
+
+func TestEvaluateFlag_JSONFixtures_AllExcludedStopsBeforeConfiguration(t *testing.T) {
+	fixtureDir := t.TempDir()
+	casesDir := filepath.Join(fixtureDir, "evaluation-cases")
+	require.NoError(t, os.Mkdir(casesDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(casesDir, "cases.json"), []byte(`[
+		{"flag":"skip-golang","_skip":[{"platform":"golang"}]}
+	]`), 0o644))
+
+	runEvaluateFlagJSONFixtures(t, fixtureDir, "synthetic-fixture-revision")
+}
+
+func runEvaluateFlagJSONFixtures(t *testing.T, fixtureDir, revision string) {
+	t.Helper()
+	fixtureFiles, configData, executedCases, excludedCases := loadApplicableFixtureSuite(t, fixtureDir, fixturePlatformGo)
+	t.Logf("canonical FFE fixtures revision=%s executed=%d excluded=%d", revision, executedCases, excludedCases)
 	if executedCases == 0 {
-		t.Fatal("no canonical FFE evaluation cases apply to golang")
+		t.Log("canonical FFE core suite is fully excluded for golang")
+		return
 	}
 
-	configData, err := os.ReadFile(filepath.Join(fixtureDir, "ufc-config.json"))
-	if err != nil {
-		t.Fatalf("read canonical FFE fixtures: %v (initialize them with `git submodule update --init --recursive`)", err)
-	}
 	var cfg universalFlagsConfiguration
 	if err := json.Unmarshal(configData, &cfg); err != nil {
 		t.Fatal(err)
@@ -594,15 +693,15 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 		"experimentationOptOutFutureExperimentsOnly": futureProvider,
 	}
 	capabilityCases := make(map[string]int)
-	// Pin each supported semantic family independently. Counts are computed after
-	// applicability filtering so exclusions do not become false conformance failures.
-	requiredFamilies := map[string][]string{
+	// Pin each supported semantic family independently after applicability filtering.
+	// Update a minimum deliberately when golang applicability changes.
+	requiredFamilies := map[string]map[string]int{
 		"test-case-experimentation-opt-out.json": {
-			"experimentationOptOutImmediate",
-			"experimentationOptOutFutureExperimentsOnly",
+			"experimentationOptOutImmediate":             26,
+			"experimentationOptOutFutureExperimentsOnly": 26,
 		},
 		"test-case-experimentation-opt-out-future.json": {
-			"experimentationOptOutFutureExperimentsOnly",
+			"experimentationOptOutFutureExperimentsOnly": 16,
 		},
 	}
 	familyCases := make(map[string]map[string]int)
@@ -687,20 +786,33 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 			}
 		})
 	}
-	for family, capabilities := range requiredFamilies {
-		for _, capability := range capabilities {
-			if count := familyCases[family][capability]; count == 0 {
-				t.Errorf("canonical fixture family %q has no applicable golang cases for supported capability %q", family, capability)
+	for family, minimums := range requiredFamilies {
+		for capability, minimum := range minimums {
+			if count := familyCases[family][capability]; count < minimum {
+				t.Errorf("canonical fixture family %q has %d applicable golang cases for capability %q; require at least %d", family, count, capability, minimum)
 			}
 		}
 	}
-	for capability := range capabilityProviders {
-		if capabilityCases[capability] == 0 {
-			t.Errorf("no canonical fixture cases found for supported capability %q", capability)
+	for _, capability := range missingSupportedFixtureCapabilities(capabilityProviders, capabilityCases) {
+		t.Errorf("no canonical fixture cases found for supported capability %q", capability)
+	}
+	t.Logf("canonical FFE fixture capabilities=%v", capabilityCases)
+}
+
+func missingSupportedFixtureCapabilities(supported map[string]*DatadogProvider, counts map[string]int) []string {
+	missing := make([]string, 0, len(supported))
+	for capability := range supported {
+		if counts[capability] == 0 {
+			missing = append(missing, capability)
 		}
 	}
-	t.Logf("canonical FFE fixtures revision=%s executed=%d excluded=%d capabilities=%v",
-		fixtureRevision(fixtureDir), executedCases, excludedCases, capabilityCases)
+	return missing
+}
+
+func TestMissingSupportedFixtureCapabilities(t *testing.T) {
+	supported := map[string]*DatadogProvider{"first": nil, "second": nil}
+	assert.ElementsMatch(t, []string{"second"}, missingSupportedFixtureCapabilities(supported, map[string]int{"first": 1}))
+	assert.Empty(t, missingSupportedFixtureCapabilities(supported, map[string]int{"first": 1, "second": 1}))
 }
 
 // assertFixtureFeatures runs every case declaring result.features through the
