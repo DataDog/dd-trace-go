@@ -6,21 +6,19 @@
 package openfeature
 
 import (
+	"context"
+	"fmt"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	of "github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// TestFlattenContext exercises both the normal flattening behavior and the traversal bounds
-// (depth cap, cycle detection, and the total-field safety ceiling) that keep an
-// attacker-influenceable evaluation context from exhausting the stack or memory.
-//
-// Cyclic / self-referential / deeply nested contexts cannot be expressed as map literals, so each
-// case builds its input via a closure and verifies the result via a closure. Exact-output cases
-// assert equality; the safety-bound cases assert the result is bounded (and, critically, that the
-// call returns at all — an unbounded traversal would fatally overflow the Go stack or OOM the
-// process rather than fail an assertion).
+// TestFlattenContext covers ordinary exposure attributes, cycles, and traversal limits.
 func TestFlattenContext(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -98,10 +96,7 @@ func TestFlattenContext(t *testing.T) {
 				return deep
 			},
 			verify: func(t *testing.T, got map[string]any) {
-				for k, v := range got {
-					assert.NotEqual(t, "deep-value", v, "leaf below the depth cap must be dropped")
-					assert.LessOrEqual(t, strings.Count(k, "."), maxContextDepth)
-				}
+				assert.Empty(t, got)
 			},
 		},
 		{
@@ -114,17 +109,15 @@ func TestFlattenContext(t *testing.T) {
 				return map[string]any{"arr": deep}
 			},
 			verify: func(t *testing.T, got map[string]any) {
-				for _, v := range got {
-					assert.NotEqual(t, "leaf-value", v, "leaf below the depth cap must be dropped")
-				}
+				assert.Empty(t, got)
 			},
 		},
 		{
-			name: "shared-subtree fan-out is bounded by the field ceiling",
+			name: "shared-subtree fan-out is bounded by the visit budget",
 			build: func() map[string]any {
 				// Branching-2 nesting reusing the same child at each level would expand to ~2^20
 				// leaves without the ceiling; depth (20) stays under maxContextDepth so the depth
-				// cap alone does not save us here — only maxFlattenFields does.
+				// cap alone does not save us here — only maxFlattenVisits does.
 				var cur any = map[string]any{"x": "v"}
 				for range 20 {
 					cur = map[string]any{"a": cur, "b": cur}
@@ -133,7 +126,7 @@ func TestFlattenContext(t *testing.T) {
 			},
 			verify: func(t *testing.T, got map[string]any) {
 				assert.NotEmpty(t, got)
-				assert.LessOrEqual(t, len(got), maxFlattenFields)
+				assert.LessOrEqual(t, len(got), maxFlattenVisits)
 			},
 		},
 	}
@@ -141,6 +134,162 @@ func TestFlattenContext(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tt.verify(t, flattenContext(tt.build()))
+		})
+	}
+}
+
+func TestFlattenDepthBoundary(t *testing.T) {
+	for _, array := range []bool{false, true} {
+		for _, depth := range []int{maxContextDepth - 1, maxContextDepth, maxContextDepth + 1} {
+			t.Run(fmt.Sprintf("array=%t/depth=%d", array, depth), func(t *testing.T) {
+				var value any = "leaf"
+				key := "root"
+				for range depth - 1 {
+					if array {
+						value = []any{value}
+						key += ".0"
+					} else {
+						value = map[string]any{"n": value}
+						key += ".n"
+					}
+				}
+				want := map[string]any{"shallow": "kept"}
+				if depth <= maxContextDepth {
+					want[key] = "leaf"
+				}
+				assert.Equal(t, want, flattenContext(map[string]any{"root": value, "shallow": "kept"}))
+			})
+		}
+	}
+}
+
+func TestFlattenSliceIdentity(t *testing.T) {
+	self := []any{"a", nil}
+	self[1] = self
+	a := []any{"leaf", nil}
+	b := []any{a}
+	a[1] = b
+	shared := []any{"v"}
+	prefix := []any{"leaf", nil}
+	prefix[1] = prefix[:1]
+	for _, tt := range []struct {
+		name string
+		in   map[string]any
+		want map[string]any
+	}{
+		{"self", map[string]any{"list": self}, map[string]any{"list.0": "a"}},
+		{"indirect", map[string]any{"root": a}, map[string]any{"root.0": "leaf"}},
+		{"diamond", map[string]any{"x": shared, "y": shared}, map[string]any{"x.0": "v", "y.0": "v"}},
+		{"prefix", map[string]any{"arr": prefix}, map[string]any{"arr.0": "leaf", "arr.1.0": "leaf"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) { assert.Equal(t, tt.want, flattenContext(tt.in)) })
+	}
+}
+
+func TestFlattenVisitBudget(t *testing.T) {
+	for _, leaf := range []any{nil, map[string]any{}, []any{}, struct{}{}, "kept"} {
+		t.Run(fmt.Sprintf("%T", leaf), func(t *testing.T) {
+			var cur any = leaf
+			for range 16 {
+				cur = map[string]any{"a": cur, "b": cur}
+			}
+			st := &flattenState{seen: make(map[containerID]struct{})}
+			result := make(map[string]any)
+			flattenRecursiveDepth("", cur, result, st, 0)
+			assert.Equal(t, maxFlattenVisits, st.visits)
+			assert.LessOrEqual(t, len(result), maxFlattenVisits)
+			assert.Empty(t, st.seen)
+		})
+	}
+	for _, size := range []int{2048, 2 * maxFlattenVisits} {
+		t.Run(fmt.Sprintf("wide=%d", size), func(t *testing.T) {
+			in := make(map[string]any, size)
+			for i := range size {
+				in[strconv.Itoa(i)] = i
+			}
+			got := flattenContext(in)
+			if size < maxFlattenVisits {
+				assert.Equal(t, in, got)
+			} else {
+				assert.Len(t, got, maxFlattenVisits-1)
+			}
+		})
+	}
+	t.Run("array", func(t *testing.T) {
+		st := &flattenState{seen: make(map[containerID]struct{})}
+		flattenRecursiveDepth("", make([]any, 2*maxFlattenVisits), make(map[string]any), st, 0)
+		assert.Equal(t, maxFlattenVisits, st.visits)
+	})
+}
+
+func TestFlattenKeyBoundary(t *testing.T) {
+	for _, size := range []int{maxKeyLength - 1, maxKeyLength, maxKeyLength + 1} {
+		key := strings.Repeat("k", size)
+		got := flattenContext(map[string]any{key: "value"})
+		if size <= maxKeyLength {
+			assert.Equal(t, map[string]any{key: "value"}, got)
+		} else {
+			assert.Empty(t, got)
+		}
+	}
+	key := strings.Repeat("k", maxKeyLength-2)
+	assert.Equal(t, map[string]any{key + ".x": "keep"}, flattenContext(map[string]any{key: map[string]any{"x": "keep", "xx": "drop"}}))
+	st := &flattenState{seen: make(map[containerID]struct{})}
+	wide := make(map[string]any, 2*maxFlattenVisits)
+	for i := range 2 * maxFlattenVisits {
+		wide[strings.Repeat("x", maxKeyLength)+strconv.Itoa(i)] = nil
+	}
+	flattenRecursiveDepth("", wide, make(map[string]any), st, 0)
+	assert.Equal(t, maxFlattenVisits, st.visits)
+}
+
+func TestFlattenNilStringer(t *testing.T) {
+	assert.Equal(t, map[string]any{"plan": "pro"}, flattenContext(map[string]any{"lastLogin": (*time.Time)(nil), "plan": "pro"}))
+}
+
+func BenchmarkFlattenExposureContext(b *testing.B) {
+	normal := map[string]any{"user": map[string]any{"id": "123", "plan": "pro"}, "tags": []any{"a", "b"}}
+	var shared any = nil
+	for range 22 {
+		shared = map[string]any{"a": shared, "b": shared}
+	}
+	for _, tt := range []struct {
+		name string
+		in   map[string]any
+	}{{"normal", normal}, {"empty_shared", shared.(map[string]any)}} {
+		b.Run(tt.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				flattenContext(tt.in)
+			}
+		})
+	}
+}
+
+func TestExposureHookFlattenBounds(t *testing.T) {
+	cyclic := map[string]any{"leaf": "kept"}
+	cyclic["self"] = cyclic
+	var emptyDAG any = nil
+	for range 20 {
+		emptyDAG = map[string]any{"a": emptyDAG, "b": emptyDAG}
+	}
+	for _, tt := range []struct {
+		name  string
+		attrs map[string]any
+		want  map[string]any
+	}{
+		{"cycle", map[string]any{"root": cyclic}, map[string]any{"root.leaf": "kept"}},
+		{"empty shared subtree", map[string]any{"root": emptyDAG}, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			writer := &exposureWriter{datadogLoggingEnabled: true, buffer: make([]exposureEvent, 0, 1), cache: newExposureLRUCache(10)}
+			hook := newExposureHook(writer)
+			hc := of.NewHookContext("flag", of.Boolean, false, of.ClientMetadata{}, of.Metadata{Name: datadogProviderName}, of.NewEvaluationContext("subject", tt.attrs))
+			details := of.InterfaceEvaluationDetails{Value: true, EvaluationDetails: of.EvaluationDetails{FlagKey: "flag", FlagType: of.Boolean, ResolutionDetail: of.ResolutionDetail{Variant: "v", FlagMetadata: of.FlagMetadata{metadataAllocationKey: "allocation", metadataDoLogKey: true}}}}
+			hook.Finally(context.Background(), hc, details, of.HookHints{})
+			require.Len(t, writer.buffer, 1)
+			assert.Equal(t, "subject", writer.buffer[0].Subject.ID)
+			assert.Equal(t, tt.want, writer.buffer[0].Subject.Attributes)
 		})
 	}
 }
