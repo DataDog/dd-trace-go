@@ -9,6 +9,7 @@
 package maintest
 
 import (
+	"bytes"
 	"io"
 	"maps"
 	"net/http"
@@ -20,6 +21,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -130,6 +132,71 @@ func Build(t *testing.T, pkg string, withOtelc bool) string {
 	out, err := build.CombinedOutput()
 	require.NoErrorf(t, err, "build failed:\n%s", out)
 	return bin
+}
+
+// BuildWithOrchestrion builds pkg, a path relative to the module root, with
+// orchestrion and returns the binary. The integrations woven in are the ones
+// this module's orchestrion.tool.go enables. buildArgs, such as -tags, are
+// passed to go build.
+func BuildWithOrchestrion(t *testing.T, pkg string, buildArgs ...string) string {
+	t.Helper()
+	gomod, err := exec.Command("go", "env", "GOMOD").Output()
+	require.NoError(t, err)
+	moduleDir := filepath.Dir(strings.TrimSpace(string(gomod)))
+
+	bin := filepath.Join(t.TempDir(), "app")
+	if runtime.GOOS == "windows" {
+		bin += ".exe"
+	}
+	// CI installs an orchestrion binary on PATH, built with -cover when it
+	// collects coverage. go run would build a separate, uninstrumented copy.
+	var build *exec.Cmd
+	args := append(append([]string{"go", "build", "-o", bin}, buildArgs...), pkg)
+	if path, lookErr := exec.LookPath("orchestrion"); lookErr == nil {
+		build = exec.Command(path, args...)
+	} else {
+		build = exec.Command("go", append([]string{"run", "github.com/DataDog/orchestrion"}, args...)...)
+	}
+	build.Dir = moduleDir
+	build.Env = append(os.Environ(), "GOWORK=off")
+	t.Log("building (slow with orchestrion: it recompiles the dependency closure)")
+	out, err := build.CombinedOutput()
+	require.NoErrorf(t, err, "build failed:\n%s", out)
+	return bin
+}
+
+// ExecUntil runs bin with env added to the environment until stop is closed
+// or the program exits, whichever comes first, and returns its stdout and
+// stderr. exited reports whether the program exited on its own; otherwise it
+// was killed. It is for programs that normally never exit, such as an AWS
+// Lambda function. The test fails if neither happens within timeout.
+func ExecUntil(t *testing.T, bin string, env []string, stop <-chan struct{}, timeout time.Duration) (stdout, stderr []byte, exited bool) {
+	t.Helper()
+	var outBuf, errBuf bytes.Buffer
+	cmd := exec.Command(bin)
+	cmd.Env = append(os.Environ(), env...)
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+	require.NoError(t, cmd.Start())
+
+	done := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-stop:
+		_ = cmd.Process.Kill()
+		<-done
+	case <-done:
+		exited = true
+	case <-time.After(timeout):
+		_ = cmd.Process.Kill()
+		<-done
+		t.Fatalf("the app was not stopped within %s:\nstdout:\n%s\nstderr:\n%s", timeout, &outBuf, &errBuf)
+	}
+	return outBuf.Bytes(), errBuf.Bytes(), exited
 }
 
 // Run builds pkg with otelc, runs it, and returns the agent it reported to.
