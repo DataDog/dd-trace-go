@@ -7,7 +7,7 @@ replace github.com/DataDog/dd-trace-go/v2 => ../../../..
 require (
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.13.0-dev.1
 	github.com/stretchr/testify v1.11.1
-	go.opentelemetry.io/otelc/pkg v0.0.0-20261015110818-d3d72efe9f25
+	go.opentelemetry.io/otelc/pkg v0.0.0-20261103103723-318faabcdf7d
 )
 
 require (
