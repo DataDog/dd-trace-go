@@ -10,7 +10,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.13.0-dev
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.11.1
-	go.opentelemetry.io/otelc/pkg v0.0.0-20261015110818-d3d72efe9f25
+	go.opentelemetry.io/otelc/pkg v0.0.0-20261103103723-318faabcdf7d
 )
 
 require (
