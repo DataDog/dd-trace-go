@@ -8,11 +8,6 @@
 # traces the clients it builds itself, and because this module imports it. The
 # rewritten package imports this module, so the contrib is initialized before
 # a client built in a package-level var or init.
-#
-# TODO: wrap_call requires the original call in the template, so it stays in a
-# branch that never runs. Remove the branch once wrap_call can replace a call
-# outright:
-# https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1551
 kafkav2_new_consumer:
   target:
     - "**"
@@ -24,9 +19,6 @@ kafkav2_new_consumer:
     - wrap_call:
         replace: |-
           (func(__dd_conf *kafkav2.ConfigMap) (*kafkav2.Consumer, error) {
-            if false {
-              return {{ . }}
-            }
             __dd_c, __dd_err := kafkav2.NewConsumer(__dd_conf)
             if __dd_c != nil {
               kafkav2otelc.TraceConsumer(__dd_c, __dd_conf)
@@ -48,9 +40,6 @@ kafkav2_new_producer:
     - wrap_call:
         replace: |-
           (func(__dd_conf *kafkav2.ConfigMap) (*kafkav2.Producer, error) {
-            if false {
-              return {{ . }}
-            }
             __dd_p, __dd_err := kafkav2.NewProducer(__dd_conf)
             if __dd_p != nil {
               kafkav2otelc.TraceProducer(__dd_p, __dd_conf)
@@ -61,8 +50,8 @@ kafkav2_new_producer:
     kafkav2: github.com/confluentinc/confluent-kafka-go/v2/kafka
     kafkav2otelc: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2
 
-# A call-site rule cannot reach the receiver of a method call, so the client
-# methods are hooked where they are defined. kafka.Consumer.ReadMessage and
+# The client methods are hooked where they are defined, so calls through an
+# interface or a method value are traced too. kafka.Consumer.ReadMessage and
 # kafka.Consumer.Close call Poll, so ReadMessage needs no rule.
 kafkav2_consumer_poll:
   target: github.com/confluentinc/confluent-kafka-go/v2/kafka
