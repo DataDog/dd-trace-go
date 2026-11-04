@@ -40,10 +40,7 @@ gocql_cluster_create_session:
         before: BeforeCreateSession
         path: github.com/DataDog/dd-trace-go/contrib/gocql/gocql/otelc/v2
 
-# TODO: wrap_call requires the original call in the template, so it stays in a
-# branch that never runs. Remove the branch once wrap_call can replace a call
-# outright:
-# https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1551
+# Calls gocql.NewSession with a copy of the cluster that has the observers set.
 gocql_new_session:
   target:
     - "**"
@@ -55,9 +52,6 @@ gocql_new_session:
     - wrap_call:
         replace: |-
           (func(cluster gocql.ClusterConfig) (*gocql.Session, error) {
-            if false {
-              return {{ . }}
-            }
             gocqlotelc.ObserveCluster(&cluster)
             return gocql.NewSession(cluster)
           })({{ .CallArgument 0 }})

@@ -132,6 +132,7 @@ integration-suites:
     contrib/go.mongodb.org/mongo-driver/otelc: [ mongo ]
     contrib/go.uber.org/zap: [ zap ]
     contrib/gocql/gocql: [ gocql ]
+    contrib/gocql/gocql/otelc: [ gocql ]
     contrib/gofiber/fiber.v2: [ fiber.v2 ]
     contrib/gofiber/fiber.v2/otelc: [ fiber.v2 ]
     contrib/gomodule/redigo: [ redigo ]
@@ -488,6 +489,7 @@ components:
       - contrib/gofiber/fiber.v2/**
       - contrib/go.mongodb.org/mongo-driver/**
       - contrib/go.mongodb.org/mongo-driver.v2/**
+      - contrib/gocql/gocql/**
       - contrib/gomodule/redigo/**
       - contrib/google.golang.org/grpc/**
       - contrib/gorilla/mux/**
