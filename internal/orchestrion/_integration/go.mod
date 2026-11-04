@@ -237,7 +237,7 @@ require (
 	github.com/containerd/platforms v0.2.1 // indirect
 	github.com/cpuguy83/dockercfg v0.3.2 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
-	github.com/dave/dst v0.28.0 // indirect
+	github.com/dave/dst v0.27.4 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/distribution/reference v0.6.0 // indirect
@@ -397,7 +397,7 @@ require (
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/metric v1.46.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0
-	go.opentelemetry.io/otelc/pkg v0.0.0-20261015110818-d3d72efe9f25 // indirect
+	go.opentelemetry.io/otelc/pkg v0.0.0-20261103103723-318faabcdf7d // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
@@ -590,13 +590,7 @@ require example.com/httprouterdep v0.0.0-00010101000000-000000000000
 
 replace example.com/httprouterdep => ./internal/httprouterdep
 
-require (
-	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev.1 // indirect
-	github.com/bmatcuk/doublestar/v4 v4.10.0 // indirect
-	github.com/gofrs/flock v0.13.1 // indirect
-	github.com/urfave/cli/v3 v3.14.0 // indirect
-	go.opentelemetry.io/otelc v1.2.0 // indirect
-)
+require github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev.1 // indirect
 
 replace github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 => ../../../contrib/gorilla/mux/otelc
 
@@ -621,5 +615,3 @@ replace example.com/echodep => ./internal/echodep
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../../contrib/aws/aws-sdk-go/otelc
 
 replace example.com/awsv1dep => ./internal/awsv1dep
-
-tool go.opentelemetry.io/otelc/tool/cmd/otelc
