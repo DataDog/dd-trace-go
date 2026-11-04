@@ -215,7 +215,9 @@ func (r lambdaRun) metrics(name string) []metric {
 
 // runLambda runs bin with LAMBDA_VARIANT=variant against a fake Lambda
 // Runtime API that serves invokes in order. It stops the function once every
-// event has a response or an error, or returns early if the function exits.
+// event has a response or an error and stdout has an aws.lambda span for each,
+// or returns early if the function exits. The span check matters: the tracer
+// can write a finished span after the response is sent.
 func runLambda(t *testing.T, bin, variant string, invokes []invocation) lambdaRun {
 	t.Helper()
 
@@ -239,7 +241,19 @@ func runLambda(t *testing.T, bin, variant string, invokes []invocation) lambdaRu
 		"DD_TRACE_STARTUP_LOGS=false",
 		// Send custom metrics to stdout too, instead of the Datadog API.
 		"DD_FLUSH_TO_LOG=true",
-	}, rt.done, 45*time.Second)
+	}, func(stdout, _ []byte) bool {
+		if len(rt.snapshot()) < len(invokes) {
+			return false
+		}
+		spans, _ := parseOutput(stdout)
+		n := 0
+		for _, s := range spans {
+			if s.Name == "aws.lambda" {
+				n++
+			}
+		}
+		return n >= len(invokes)
+	}, 45*time.Second)
 
 	run := lambdaRun{
 		results:            rt.snapshot(),
@@ -283,7 +297,6 @@ func parseOutput(outputs ...[]byte) ([]span, []metric) {
 type fakeRuntime struct {
 	variant string
 	invokes []invocation
-	done    chan struct{}
 
 	mu      sync.Mutex
 	served  int
@@ -291,7 +304,7 @@ type fakeRuntime struct {
 }
 
 func newFakeRuntime(variant string, invokes []invocation) *fakeRuntime {
-	return &fakeRuntime{variant: variant, invokes: invokes, done: make(chan struct{})}
+	return &fakeRuntime{variant: variant, invokes: invokes}
 }
 
 func (f *fakeRuntime) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -339,9 +352,6 @@ func (f *fakeRuntime) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.results = append(f.results, result{requestID: id, body: body, err: kind == "error"})
-	if len(f.results) == len(f.invokes) {
-		close(f.done)
-	}
 }
 
 func (f *fakeRuntime) snapshot() []result {
