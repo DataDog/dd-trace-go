@@ -20,6 +20,21 @@ outputs:
       Space-separated contrib/instrumentation module directories whose tests are
       needed, the token ALL for every module, or empty for none.
     value: ${{ steps.classify.outputs.contrib-modules }}
+  otelc-suites:
+    description: >-
+      Space-separated internal/orchestrion/_integration suites for the otelc
+      lane, the token ALL for every suite, or NONE for none. GitHub outputs are
+      single-line, hence the tokens and the space separation. A failure in the
+      selector fails this step; only the gates list falls back to ALL.
+    value: ${{ steps.classify.outputs.otelc-suites }}
+  orchestrion-suites:
+    description: >-
+      Space-separated internal/orchestrion/_integration suites for the
+      orchestrion lane, the token ALL for every suite, or NONE for none. GitHub
+      outputs are single-line, hence the tokens and the space separation. A
+      failure in the selector fails this step; only the gates list falls back
+      to ALL.
+    value: ${{ steps.classify.outputs.orchestrion-suites }}
   pull-request-tests:
     description: "Unit, integration and multi-OS tests"
     value: ${{ steps.classify.outputs.pull-request-tests }}
@@ -132,12 +147,31 @@ runs:
       env:
         CHANGED: ${{ steps.diff.outputs.file }}
       run: |
-        set -uo pipefail
-        if go run ./scripts/ciselect -changed-files "${CHANGED}" -github-output > "${RUNNER_TEMP}/gates.txt"; then
+        # -e makes a selector failure abort the step loudly instead of
+        # emitting an empty suite output downstream would have to guess
+        # about; the gates list keeps its own fail-open below. The diff
+        # step above deliberately tolerates failure and keeps its own
+        # options.
+        set -euo pipefail
+        if go run ./scripts/ciselect -changed-files "${CHANGED}" \
+          -github-output > "${RUNNER_TEMP}/gates.txt"; then
           cat "${RUNNER_TEMP}/gates.txt" >> "${GITHUB_OUTPUT}"
-          go run ./scripts/ciselect -changed-files "${CHANGED}" -explain >> "${GITHUB_STEP_SUMMARY}" || true
-          mods="$(go run ./scripts/ciselect -changed-files "${CHANGED}" -contrib-modules | tr '\n' ' ')"
+          go run ./scripts/ciselect -changed-files "${CHANGED}" \
+            -explain >> "${GITHUB_STEP_SUMMARY}" || true
+          # The three selector flags below repeat the same invocation, so
+          # wrap it once; each flag prints one entry per line, or ALL/NONE.
+          ciselect() {
+            go run ./scripts/ciselect -changed-files "${CHANGED}" "$@"
+          }
+          mods="$(ciselect -contrib-modules | tr '\n' ' ')"
           echo "contrib-modules=${mods}" >> "${GITHUB_OUTPUT}"
+          # `xargs` joins the selector lines on single spaces and drops the
+          # trailing space tr would leave, which otelc.yml's exact "ALL"
+          # comparison would otherwise miss.
+          otelc_suites="$(ciselect -otelc-suites | xargs)"
+          echo "otelc-suites=${otelc_suites}" >> "${GITHUB_OUTPUT}"
+          orchestrion_suites="$(ciselect -orchestrion-suites | xargs)"
+          echo "orchestrion-suites=${orchestrion_suites}" >> "${GITHUB_OUTPUT}"
         else
           echo "::warning::ciselect failed; every gate stays enabled."
           # Keep this list in sync with `gates:` in .github/ci-components.yml.
@@ -165,4 +199,6 @@ runs:
           echo "run-all=true" >> "${GITHUB_OUTPUT}"
           echo "static-any=true" >> "${GITHUB_OUTPUT}"
           echo "contrib-modules=ALL" >> "${GITHUB_OUTPUT}"
+          echo "otelc-suites=ALL" >> "${GITHUB_OUTPUT}"
+          echo "orchestrion-suites=ALL" >> "${GITHUB_OUTPUT}"
         fi
