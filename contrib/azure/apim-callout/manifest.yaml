@@ -1,0 +1,10 @@
+_v: 1
+name: azure/apim-callout
+display_name: Azure APIM Callout
+description: Traces Azure APIM and Boomi gateway HTTP requests via callouts, with AppSec WAF inspection, blocking decisions,
+  propagation headers, and optional inferred AWS API Gateway or Pub/Sub push spans.
+packages: []
+category:
+- http.server
+systems: []
+creation_date: '2026-04-07'

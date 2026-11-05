@@ -7,10 +7,12 @@ package metric
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	otelmetricsinstall "github.com/DataDog/dd-trace-go/v2/internal/otelmetricsinstall"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -116,6 +118,38 @@ func TestInstallGlobalKeepsUserProvider(t *testing.T) {
 	assert.False(t, installed)
 	assert.Nil(t, installedProvider)
 	assert.Same(t, userMP, otel.GetMeterProvider())
+}
+
+// TestStartHookKeepsUserProviderRegistrationErrorLocal verifies that a
+// runtime-metrics registration failure against an application-installed
+// MeterProvider is returned unwrapped: the user's view configuration caused
+// the failure, so it must not be classified as an SDK defect via
+// RuntimeRegistrationError, which tracer.Start would report to Error Tracking.
+func TestStartHookKeepsUserProviderRegistrationErrorLocal(t *testing.T) {
+	// Registered before t.Setenv so it runs after the env is restored.
+	t.Cleanup(func() {
+		installedProvider = nil
+		otel.SetMeterProvider(noop.NewMeterProvider())
+		internalconfig.CreateNew()
+	})
+	installedProvider = nil
+	// A view applying AggregationLastValue to go.memory.used conflicts with
+	// that instrument's kind, so creating it on the user's provider fails.
+	userMP := sdkmetric.NewMeterProvider(
+		sdkmetric.WithReader(sdkmetric.NewManualReader()),
+		sdkmetric.WithView(sdkmetric.NewView(
+			sdkmetric.Instrument{Name: "go.memory.used"},
+			sdkmetric.Stream{Aggregation: sdkmetric.AggregationLastValue{}},
+		)),
+	)
+	otel.SetMeterProvider(userMP)
+	setMetricsExportEnv(t)
+
+	installed, err := otelmetricsinstall.StartHook(context.Background())
+	require.Error(t, err)
+	assert.False(t, installed)
+	var regErr *otelmetricsinstall.RuntimeRegistrationError
+	assert.False(t, errors.As(err, &regErr), "application-owned provider error must not be wrapped as an SDK registration defect: %v", err)
 }
 
 // TestNewMeterProviderAlwaysReturnsSDKProvider verifies that NewMeterProvider always

@@ -60,7 +60,8 @@ type StartConfig struct {
 	// IsEnabled is a function that determines whether AppSec is enabled or not. When unset, the
 	// default [IsEnabled] function is used.
 	EnablementMode func() (EnablementMode, telemetry.Origin, error)
-	// MetaStructAvailable is true if meta struct is supported by the trace agent.
+	// MetaStructAvailable is true if the span can carry meta_struct to the backend: the agent
+	// supports it and the tracer does not export over OTLP.
 	MetaStructAvailable bool
 
 	APISecOptions []APISecOption
@@ -172,7 +173,8 @@ type Config struct {
 	DisabledAddresses AddressSet
 	// SupportedAddresses are the addresses that the AppSec listener will bind to.
 	SupportedAddresses AddressSet
-	// MetaStructAvailable is true if meta struct is supported by the trace agent.
+	// MetaStructAvailable is true if the span can carry meta_struct to the backend: the agent
+	// supports it and the tracer does not export over OTLP.
 	MetaStructAvailable bool
 	// BlockingUnavailable is true when the application run in an environment where blocking is not possible
 	BlockingUnavailable bool

@@ -1,0 +1,11 @@
+_v: 1
+name: github.com/valyala/fasthttp
+display_name: fasthttp
+description: Instruments fasthttp server request handlers, manually or via Orchestrion, with server spans, trace-context extraction,
+  timeout-aware wrappers, and optional AppSec WAF protection.
+packages:
+- name: github.com/valyala/fasthttp
+category:
+- http.server
+systems: []
+creation_date: '2023-12-18'

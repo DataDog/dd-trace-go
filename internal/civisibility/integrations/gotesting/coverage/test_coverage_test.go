@@ -422,11 +422,17 @@ func TestCollectCoverageAfterTestExecution(t *testing.T) {
 		f.WriteString("mode: count\n")
 		return "", nil
 	}
-	covWriter = newCoverageWriter()
-	covWriter.client = &MockClient{SendCoveragePayloadFunc: func(_ io.Reader) error {
+	writer := newCoverageWriter()
+	writer.client = &MockClient{SendCoveragePayloadFunc: func(_ io.Reader) error {
 		return errors.New("mock error")
 	},
 	}
+	oldWriter := covWriter
+	covWriter = writer
+	t.Cleanup(func() {
+		writer.stop()
+		covWriter = oldWriter
+	})
 
 	mode = "count"
 	coverageUploadEnabled = true

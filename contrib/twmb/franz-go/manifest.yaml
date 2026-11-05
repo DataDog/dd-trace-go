@@ -1,0 +1,13 @@
+_v: 1
+name: github.com/twmb/franz-go
+display_name: franz-go
+description: Instruments franz-go Kafka message production and consumption with trace context propagation, span links, and
+  optional Data Streams Monitoring checkpoints and consumer offset tracking.
+packages:
+- name: github.com/twmb/franz-go
+category:
+- messaging.consumer
+- messaging.producer
+systems:
+- kafka
+creation_date: '2026-04-23'

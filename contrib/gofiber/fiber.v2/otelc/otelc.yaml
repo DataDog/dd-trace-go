@@ -5,7 +5,8 @@
 ---
 # Wraps fiber.New call sites, in every package of the build, dependencies
 # included, except the fiber contrib, whose own tests wrap their apps
-# themselves.
+# themselves. It also passes the app's fasthttp server to SkipServer, so the
+# fasthttp rules leave it alone and each request gets one span.
 new_app:
   target:
     - "**"
@@ -15,6 +16,11 @@ new_app:
   do:
     - wrap_call:
         replace: |-
-          fibertrace.Wrap({{ . }})
+          func(app *fiber.App) *fiber.App {
+            fasthttpotelc.SkipServer(app.Server())
+            return app
+          }(fibertrace.Wrap({{ . }}))
   imports:
+    fiber: github.com/gofiber/fiber/v2
     fibertrace: github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2
+    fasthttpotelc: github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2

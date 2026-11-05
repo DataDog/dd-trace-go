@@ -1,0 +1,10 @@
+_v: 1
+name: sigs.k8s.io/gateway-api
+display_name: Kubernetes Gateway API
+description: Instruments a request-mirror HTTP handler receiving Gateway API RequestMirror traffic with server spans, monitor-only
+  AppSec WAF analysis of request headers and bodies, and optional inferred proxy-ingress or Pub/Sub-delivery spans.
+packages: []
+category:
+- http.server
+systems: []
+creation_date: '2025-05-09'

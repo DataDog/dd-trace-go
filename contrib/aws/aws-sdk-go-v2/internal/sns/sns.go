@@ -33,16 +33,28 @@ const (
 
 var instr = internal.Instr
 
-func EnrichOperation(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, operation string) {
+// enricher adds the Datadog trace context and the Data Streams checkpoint to SNS requests.
+// The zero value injects the trace context.
+type enricher struct {
+	noInject bool
+}
+
+// NewEnricher returns an enricher that writes the trace context into the request only if inject is true.
+// The span tags and the Data Streams checkpoint are recorded either way.
+func NewEnricher(inject bool) *enricher {
+	return &enricher{noInject: !inject}
+}
+
+func (e *enricher) EnrichOperation(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, operation string) {
 	switch operation {
 	case "Publish":
-		handlePublish(ctx, span, in)
+		e.handlePublish(ctx, span, in)
 	case "PublishBatch":
-		handlePublishBatch(ctx, span, in)
+		e.handlePublishBatch(ctx, span, in)
 	}
 }
 
-func handlePublish(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
+func (e *enricher) handlePublish(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sns.PublishInput)
 	if !ok {
 		instr.Logger().Debug("Unable to read PublishInput params")
@@ -52,6 +64,9 @@ func handlePublish(ctx context.Context, span *tracer.Span, in middleware.Initial
 	traceContext, err := getTraceContext(ctx, span, destinationName(params.TopicArn, params.TargetArn), int64(publishInputSize(params)))
 	if err != nil {
 		instr.Logger().Debug("Unable to get trace context: %s", err.Error())
+		return
+	}
+	if e.noInject {
 		return
 	}
 
@@ -67,7 +82,7 @@ func handlePublish(ctx context.Context, span *tracer.Span, in middleware.Initial
 	injectTraceContext(traceContext, params.MessageAttributes)
 }
 
-func handlePublishBatch(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
+func (e *enricher) handlePublishBatch(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sns.PublishBatchInput)
 	if !ok {
 		instr.Logger().Debug("Unable to read PublishBatch params")
@@ -85,6 +100,9 @@ func handlePublishBatch(ctx context.Context, span *tracer.Span, in middleware.In
 		)
 		if err != nil {
 			instr.Logger().Debug("Unable to get trace context: %s", err.Error())
+			continue
+		}
+		if e.noInject {
 			continue
 		}
 		ctxSize := attributeSize(datadogKey, traceContext)

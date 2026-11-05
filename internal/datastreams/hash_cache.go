@@ -25,9 +25,14 @@ type hashCache struct {
 var maphashSeed = maphash.MakeSeed()
 
 // computeFingerprint returns a fast, allocation-free fingerprint for a cache lookup key.
-func computeFingerprint(edgeTags, processTags []string, containerTagsHash string, parentHash uint64) uint64 {
+// It must cover every input of nodeHash and pathwayHash, or different nodes share a cached hash.
+func computeFingerprint(service, env string, edgeTags, processTags []string, containerTagsHash string, parentHash uint64) uint64 {
 	var h maphash.Hash
 	h.SetSeed(maphashSeed)
+	_, _ = h.WriteString(service)
+	_ = h.WriteByte(0)
+	_, _ = h.WriteString(env)
+	_ = h.WriteByte(0)
 	for _, t := range edgeTags {
 		_, _ = h.WriteString(t)
 	}
@@ -42,7 +47,7 @@ func computeFingerprint(edgeTags, processTags []string, containerTagsHash string
 }
 
 func (c *hashCache) get(service, env string, edgeTags, processTags []string, containerTagsHash string, parentHash uint64) uint64 {
-	fp := computeFingerprint(edgeTags, processTags, containerTagsHash, parentHash)
+	fp := computeFingerprint(service, env, edgeTags, processTags, containerTagsHash, parentHash)
 	if v, ok := c.m.Load(fp); ok {
 		return v.(uint64)
 	}
