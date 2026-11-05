@@ -213,9 +213,10 @@ Steps:
    the branch and open a PR.
 
    Dependabot does not update the base image, so pin the current mirror digest
-   in the `FROM` line every time you rebuild. To get the digest, run:
+   in the `FROM` line every time you rebuild. To get the digest, run this
+   command with the tag from the `FROM` line (for example, `1.27`):
    ```shell
-   docker buildx imagetools inspect registry.ddbuild.io/images/mirror/golang:1.27
+   docker buildx imagetools inspect registry.ddbuild.io/images/mirror/golang:<tag>
    ```
    GitLab CI blocks Docker Hub, so do not use a `docker.io` image. If the mirror
    does not have the Go version you need, add it to `mirror.yaml` in the
