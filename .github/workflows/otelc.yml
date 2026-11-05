@@ -34,7 +34,7 @@ concurrency:
 env:
   # The single place to bump the tested otelc release. Upstream only; do not point
   # this at a fork.
-  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.2.1-0.20261105122205-bdd03c29853c' }}
+  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.2.1-0.20261105130149-a21770c1888e' }}
   # Modules otelc reads, tidied by both jobs next to the application each one
   # builds.
   OTELC_MODULES: >-
