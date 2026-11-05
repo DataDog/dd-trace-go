@@ -90,6 +90,7 @@ type dependencyExposureSnapshot struct {
 	DoLog         bool      `json:"doLog"`
 	SerialID      *uint32   `json:"serialId,omitempty"`
 	FeaturesKey   string    `json:"featuresKey,omitempty"`
+	HookFeatures  string    `json:"hookFeatures,omitempty"`
 	CacheHit      *bool     `json:"cacheHit,omitempty"`
 }
 
@@ -903,6 +904,7 @@ func encodeDependencyExposureCandidates(candidates []dependencyExposureCandidate
 			DoLog:         doLog,
 			SerialID:      serialIDPtr,
 			FeaturesKey:   featureValuesKey(metadata, metadataExposureFeaturesKey),
+			HookFeatures:  encodeFeatureValues(splitFeatureValues(metadata, metadataHookFeaturePrefix)),
 			CacheHit:      cacheHitPtr,
 		})
 	}
@@ -932,6 +934,14 @@ func decodeDependencyExposureCandidates(encoded string) []dependencyExposureCand
 		}
 		if snapshot.FeaturesKey != "" {
 			metadata[metadataExposureFeaturesKey] = snapshot.FeaturesKey
+		}
+		if snapshot.HookFeatures != "" {
+			var features map[string]any
+			if json.Unmarshal([]byte(snapshot.HookFeatures), &features) == nil {
+				for key, value := range features {
+					metadata[metadataHookFeaturePrefix+key] = value
+				}
+			}
 		}
 		if snapshot.CacheHit != nil {
 			metadata[metadataExposureCacheHitKey] = *snapshot.CacheHit

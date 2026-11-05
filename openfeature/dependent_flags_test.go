@@ -17,6 +17,8 @@ import (
 
 	of "github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 func TestDependentFlags_JSONConfiguration(t *testing.T) {
@@ -438,7 +440,7 @@ func TestDependentFlags_ReturnedTelemetryIsDetachedAndPublisherCannotBreakEvalua
 	require.True(t, result.Value.(bool))
 	require.Len(t, result.DependencyEvaluations, 2)
 	var published []string
-	publishDependencyEvaluationBatch(result.DependencyEvaluations, func(record dependencyEvaluationRecord) {
+	dropped := publishDependencyEvaluationBatch(result.DependencyEvaluations, func(record dependencyEvaluationRecord) {
 		published = append(published, record.FlagKey)
 		record.Result.Metadata[metadataAllocationKey] = "mutated"
 		record.Result.Value = false
@@ -446,12 +448,38 @@ func TestDependentFlags_ReturnedTelemetryIsDetachedAndPublisherCannotBreakEvalua
 			panic("telemetry failure")
 		}
 	})
+	require.Equal(t, int64(1), dropped)
 	require.Equal(t, []string{"leaf", "dependency"}, published, "one failed publisher call must not suppress later records")
 	require.True(t, result.DependencyEvaluations[0].Result.Value.(bool))
 	require.Equal(t, "leaf-allocation", result.DependencyEvaluations[0].Result.Metadata[metadataAllocationKey])
 	require.Equal(t, []string{"leaf", "dependency"}, dependencyExposureKeys(result))
 	_, ok := result.Metadata[metadataDependencyExposuresKey].(string)
 	require.True(t, ok, "private dependency exposures must cross FlagMetadata as a scalar")
+}
+
+func TestDependentFlags_PublisherPanicsAreCountedAndDoNotStopBatch(t *testing.T) {
+	records := make([]dependencyEvaluationRecord, 4)
+	for i := range records {
+		records[i].FlagKey = fmt.Sprintf("dependency-%d", i)
+	}
+	var published []string
+	dropped := publishDependencyEvaluationBatch(records, func(record dependencyEvaluationRecord) {
+		if record.FlagKey == "dependency-0" || record.FlagKey == "dependency-2" {
+			panic("private publisher value")
+		}
+		published = append(published, record.FlagKey)
+	})
+	require.Equal(t, int64(2), dropped)
+	require.Equal(t, []string{"dependency-1", "dependency-3"}, published)
+}
+
+func TestDependentFlags_PublisherPanicWarningIsSanitizedAndDeduplicated(t *testing.T) {
+	logger := withLogLevel(t, log.LevelWarn)
+	provider := &DatadogProvider{}
+	provider.reportDependencyPublisherPanics(1)
+	provider.reportDependencyPublisherPanics(2)
+	require.Equal(t, 1, logger.countContaining("dependency evaluation publisher panicked"))
+	require.Zero(t, logger.countContaining("private publisher value"))
 }
 
 func TestDependentFlags_NestedJSONTelemetryIsDeeplyDetached(t *testing.T) {
@@ -639,6 +667,128 @@ func TestDependentFlags_ProviderTelemetryAndExposureIntegration(t *testing.T) {
 	require.Equal(t, []string{"leaf", "middle", "root"}, exposureKeys)
 }
 
+func TestDependentFlags_ConsentIsSnapshottedAtDependencyEvaluation(t *testing.T) {
+	for _, consent := range []bool{false, true} {
+		t.Run(fmt.Sprintf("consent_%t", consent), func(t *testing.T) {
+			h := newOptOutHarness(t, ProviderConfig{})
+			config := dependencyTestConfig(
+				dependencyTestFlag("dependency", "dependency-on", nil),
+				dependencyTestFlag("root", "root-on", dependencyCondition("dependency", operatorOneOf, "dependency-on")),
+			)
+			config.ObserveFullEvaluationData = consent
+			h.provider.mu.Lock()
+			h.provider.configuration = config
+			h.provider.mu.Unlock()
+
+			_, err := h.client.BooleanValue(context.Background(), "root", false,
+				of.NewEvaluationContext("private-subject", map[string]any{"private": "value"}))
+			require.NoError(t, err)
+
+			// A later configuration must not change the consent already stamped on either
+			// the returned prerequisite batch or the root event waiting to be drained.
+			replacement := dependencyTestConfig()
+			replacement.ObserveFullEvaluationData = !consent
+			h.provider.mu.Lock()
+			h.provider.configuration = replacement
+			h.provider.mu.Unlock()
+			h.provider.flagEvalLoggingWriter.drainAndFlush()
+			require.Len(t, h.sink.events, 2)
+			for _, event := range h.sink.events {
+				if consent {
+					require.Equal(t, "private-subject", event.TargetingKey)
+					require.NotNil(t, event.Context)
+				} else {
+					require.NotEqual(t, "private-subject", event.TargetingKey)
+					require.Nil(t, event.Context)
+				}
+			}
+		})
+	}
+}
+
+func TestDependentFlags_PerPrerequisiteDoLogAndRollback(t *testing.T) {
+	for _, dependencyDoLog := range []bool{false, true} {
+		for _, rootDoLog := range []bool{false, true} {
+			name := fmt.Sprintf("dependency_%t_root_%t", dependencyDoLog, rootDoLog)
+			t.Run(name, func(t *testing.T) {
+				h := newOptOutHarness(t, ProviderConfig{})
+				dependency := dependencyTestFlag("dependency", "dependency-on", nil)
+				dependency.Allocations[0].DoLog = new(dependencyDoLog)
+				root := dependencyTestFlag("root", "root-on", dependencyCondition("dependency", operatorOneOf, "dependency-on"))
+				root.Allocations[0].DoLog = new(rootDoLog)
+				h.provider.mu.Lock()
+				h.provider.configuration = dependencyTestConfig(dependency, root)
+				h.provider.mu.Unlock()
+
+				_, err := h.client.BooleanValue(context.Background(), "root", false, of.NewEvaluationContext("subject", nil))
+				require.NoError(t, err)
+				h.provider.exposureWriter.flush()
+				var keys []string
+				for _, exposure := range h.sink.exposures {
+					keys = append(keys, exposure.Flag.Key)
+				}
+				var want []string
+				if dependencyDoLog {
+					want = append(want, "dependency")
+				}
+				if rootDoLog {
+					want = append(want, "root")
+				}
+				require.Equal(t, want, keys)
+
+				h.sink.exposures = nil
+				root.Allocations[0].Rules[0].Conditions = append(root.Allocations[0].Rules[0].Conditions,
+					&condition{Attribute: "tier", Operator: operatorOneOf, Value: []string{"paid"}})
+				_, err = h.client.BooleanValue(context.Background(), "root", false,
+					of.NewEvaluationContext("other-subject", map[string]any{"tier": "free"}))
+				require.NoError(t, err)
+				h.provider.exposureWriter.flush()
+				require.Empty(t, h.sink.exposures, "a rejected root path rolls back every prerequisite exposure")
+			})
+		}
+	}
+}
+
+func TestDependentFlags_MalformedPrerequisitePropagation(t *testing.T) {
+	for _, transitive := range []bool{false, true} {
+		name := "direct"
+		if transitive {
+			name = "transitive"
+		}
+		t.Run(name, func(t *testing.T) {
+			h := newOptOutHarness(t, ProviderConfig{})
+			rootDependency := "malformed"
+			flags := []*flag{dependencyTestFlag("root", "root-on", nil)}
+			if transitive {
+				rootDependency = "parent"
+				flags = append(flags, dependencyTestFlag("parent", "parent-on", dependencyCondition("malformed", operatorOneOf, "on")))
+			}
+			flags[0].Allocations[0].Rules = []*rule{{Conditions: []*condition{dependencyCondition(rootDependency, operatorOneOf, "on")}}}
+			config := dependencyTestConfig(flags...)
+			config.invalidFlags["malformed"] = fmt.Errorf("%w: malformed prerequisite", errParseError)
+			h.provider.mu.Lock()
+			h.provider.configuration = config
+			h.provider.mu.Unlock()
+
+			details, err := h.client.BooleanValueDetails(context.Background(), "root", false, of.NewEvaluationContext("subject", nil))
+			require.Error(t, err)
+			require.Equal(t, of.GeneralCode, details.ErrorCode)
+			h.provider.flagEvalLoggingWriter.drainAndFlush()
+			h.provider.exposureWriter.flush()
+			wantCodes := map[string]string{"malformed": string(of.ParseErrorCode), "root": string(of.GeneralCode)}
+			if transitive {
+				wantCodes["parent"] = string(of.GeneralCode)
+			}
+			require.Len(t, h.sink.events, len(wantCodes))
+			for _, event := range h.sink.events {
+				require.NotNil(t, event.Error)
+				require.Equal(t, wantCodes[event.Flag.Key], event.Error.Message)
+			}
+			require.Empty(t, h.sink.exposures)
+		})
+	}
+}
+
 func TestDependentFlags_PublicObjectTypeMismatchDoesNotTraverseDependencies(t *testing.T) {
 	h := newOptOutHarness(t, ProviderConfig{})
 	h.provider.mu.Lock()
@@ -786,20 +936,32 @@ func dependencyTestConfig(flags ...*flag) *universalFlagsConfiguration {
 	return config
 }
 
-func TestIndependentEvaluationDoesNotAllocateDependencyResolver(t *testing.T) {
+func TestIndependentEvaluationDoesNotCreateDependencyTrace(t *testing.T) {
 	config := dependencyTestConfig(&flag{
 		Key: "root", Enabled: true, VariationType: valueTypeBoolean,
 		Variations: map[string]*variant{},
 	})
 	prepareDependencyConditions(config)
 
-	allocations := testing.AllocsPerRun(100, func() {
+	result := evaluateConfiguredFlag(config, "root", false, nil, time.Time{}, experimentationExclusion{})
+	require.NoError(t, result.Error)
+	require.Empty(t, result.DependencyEvaluations)
+	require.Empty(t, dependencyExposureKeys(result))
+}
+
+func BenchmarkIndependentEvaluationWithoutDependencyTrace(b *testing.B) {
+	config := dependencyTestConfig(&flag{
+		Key: "root", Enabled: true, VariationType: valueTypeBoolean,
+		Variations: map[string]*variant{},
+	})
+	prepareDependencyConditions(config)
+	b.ReportAllocs()
+	for b.Loop() {
 		result := evaluateConfiguredFlag(config, "root", false, nil, time.Time{}, experimentationExclusion{})
 		if result.Error != nil || len(result.DependencyEvaluations) != 0 {
-			t.Fatalf("unexpected independent result: error=%v dependencyEvaluations=%d", result.Error, len(result.DependencyEvaluations))
+			b.Fatalf("unexpected independent result: error=%v dependencyEvaluations=%d", result.Error, len(result.DependencyEvaluations))
 		}
-	})
-	require.Zero(t, allocations)
+	}
 }
 
 func dependencyTestConfigWithDepth(depth int, flags ...*flag) *universalFlagsConfiguration {

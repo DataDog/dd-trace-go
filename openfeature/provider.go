@@ -121,6 +121,8 @@ type DatadogProvider struct {
 	// rawDataWarned records that this provider warned that debug logs include
 	// raw evaluation data. See warnRawDebugData.
 	rawDataWarned *atomic.Bool
+	// dependencyPublisherPanicWarned deduplicates the best-effort telemetry warning.
+	dependencyPublisherPanicWarned atomic.Bool
 
 	// source is fixed at construction. // +checklocks:mu
 	source internalffe.Source
@@ -1035,13 +1037,23 @@ func (p *DatadogProvider) publishDependencyEvaluations(
 	records []dependencyEvaluationRecord,
 ) {
 	loggingBatch := newDependencyEvaluationLoggingBatch(flatCtx)
-	publishDependencyEvaluationBatch(records, func(record dependencyEvaluationRecord) {
+	dropped := publishDependencyEvaluationBatch(records, func(record dependencyEvaluationRecord) {
 		p.recordDependencyEvaluation(ctx, record.FlagKey, record.FlagType,
 			flatCtx, record.Result, &loggingBatch)
 	})
+	p.reportDependencyPublisherPanics(dropped)
 }
 
-func publishDependencyEvaluationBatch(records []dependencyEvaluationRecord, publish func(dependencyEvaluationRecord)) {
+func (p *DatadogProvider) reportDependencyPublisherPanics(dropped int64) {
+	if dropped > 0 {
+		countMetric(metricFlagEvalDropped, dropped, "publisher_panic")
+		if p.dependencyPublisherPanicWarned.CompareAndSwap(false, true) {
+			log.Warn("openfeature: dependency evaluation publisher panicked; dropped %d evaluation(s) (best-effort telemetry)", dropped) //errtrack:ignore recovered telemetry publisher panic
+		}
+	}
+}
+
+func publishDependencyEvaluationBatch(records []dependencyEvaluationRecord, publish func(dependencyEvaluationRecord)) (dropped int64) {
 	for _, record := range records {
 		record := dependencyEvaluationRecord{
 			FlagKey:      record.FlagKey,
@@ -1050,10 +1062,15 @@ func publishDependencyEvaluationBatch(records []dependencyEvaluationRecord, publ
 			Result:       cloneEvaluationResult(record.Result),
 		}
 		func() {
-			defer func() { _ = recover() }()
+			defer func() {
+				if recover() != nil {
+					dropped++
+				}
+			}()
 			publish(record)
 		}()
 	}
+	return dropped
 }
 
 func (p *DatadogProvider) recordDependencyEvaluation(

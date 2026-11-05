@@ -304,19 +304,21 @@ func (h *ExposureHook) Finally(_ context.Context, ctx of.HookContext, details of
 	// TODO(open-feature/go-sdk#623): Remove normalization and marker cleanup when
 	// go.mod requires the fixed release; retain the metadata copy for isolation.
 	details = exposureFinalDetails(ctx, details)
-	encoded, _ := details.FlagMetadata[metadataDependencyExposuresKey].(string)
-	for _, candidate := range decodeDependencyExposureCandidates(encoded) {
-		dependencyDetails := of.InterfaceEvaluationDetails{
-			EvaluationDetails: of.EvaluationDetails{
-				FlagKey: candidate.FlagKey,
-				ResolutionDetail: of.ResolutionDetail{
-					Variant:      candidate.Result.VariantKey,
-					Reason:       candidate.Result.Reason,
-					FlagMetadata: maps.Clone(candidate.Result.Metadata),
+	if details.ErrorCode == "" && details.Reason != of.ErrorReason {
+		encoded, _ := details.FlagMetadata[metadataDependencyExposuresKey].(string)
+		for _, candidate := range decodeDependencyExposureCandidates(encoded) {
+			dependencyDetails := of.InterfaceEvaluationDetails{
+				EvaluationDetails: of.EvaluationDetails{
+					FlagKey: candidate.FlagKey,
+					ResolutionDetail: of.ResolutionDetail{
+						Variant:      candidate.Result.VariantKey,
+						Reason:       candidate.Result.Reason,
+						FlagMetadata: maps.Clone(candidate.Result.Metadata),
+					},
 				},
-			},
+			}
+			h.invoke(ctx.EvaluationContext(), candidate.FlagKey, dependencyDetails)
 		}
-		h.invoke(ctx.EvaluationContext(), candidate.FlagKey, dependencyDetails)
 	}
 
 	// Isolate metadata edits from the other callbacks and returned evaluation.
