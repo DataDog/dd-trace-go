@@ -7,10 +7,10 @@ package actiontest
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -205,8 +205,8 @@ func runRunScript(t *testing.T, otelcMode, failPkg string, shared, serial, noGoF
 		"SERIAL_PACKAGE_NAMES="+strings.Join(serial, " "),
 		"OTELC_STUB_MODE="+otelcMode,
 		"OTELC_STUB_LOG="+calls,
-		fmt.Sprintf("OTELC_STUB_FAIL_PKG=%s", failPkg),
-		fmt.Sprintf("GO_STUB_NO_FILES=%s", strings.Join(noGoFiles, " ")),
+		"OTELC_STUB_FAIL_PKG="+failPkg,
+		"GO_STUB_NO_FILES="+strings.Join(noGoFiles, " "),
 	)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
@@ -236,7 +236,7 @@ func runRunScript(t *testing.T, otelcMode, failPkg string, shared, serial, noGoF
 	}
 
 	var recorded []string
-	for _, line := range strings.Split(readFile(t, calls), "\n") {
+	for line := range strings.SplitSeq(readFile(t, calls), "\n") {
 		if line != "" {
 			recorded = append(recorded, line)
 		}
@@ -328,12 +328,7 @@ func TestOtelcRunScriptTestFailure(t *testing.T) {
 func invokedWith(call, pkg string) bool {
 	fields := strings.Fields(call)
 	// Skip "otelc" and the mode; the rest are the command arguments.
-	for _, field := range fields[2:] {
-		if field == pkg {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(fields[2:], pkg)
 }
 
 // TestOtelcRunScriptSetupFailure covers the setup failure that the review
