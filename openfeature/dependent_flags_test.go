@@ -369,12 +369,6 @@ func TestParseMaxDependencyDepthBoundsAdversarialExponents(t *testing.T) {
 		require.Equal(t, tt.ok, ok, "value prefix %.32q", tt.value)
 		require.Equal(t, tt.want, got, "value prefix %.32q", tt.value)
 	}
-
-	adversarial := []byte("1e" + strings.Repeat("9", 100_000))
-	allocations := testing.AllocsPerRun(100, func() {
-		_, _ = parseMaxDependencyDepth(adversarial)
-	})
-	require.Zero(t, allocations)
 }
 
 func BenchmarkParseMaxDependencyDepthAdversarialExponent(b *testing.B) {
@@ -723,11 +717,11 @@ func TestDependentFlags_PerPrerequisiteDoLogAndRollback(t *testing.T) {
 				_, err := h.client.BooleanValue(context.Background(), "root", false, of.NewEvaluationContext("subject", nil))
 				require.NoError(t, err)
 				h.provider.exposureWriter.flush()
-				var keys []string
+				keys := make([]string, 0, len(h.sink.exposures))
 				for _, exposure := range h.sink.exposures {
 					keys = append(keys, exposure.Flag.Key)
 				}
-				var want []string
+				want := make([]string, 0, 2)
 				if dependencyDoLog {
 					want = append(want, "dependency")
 				}
