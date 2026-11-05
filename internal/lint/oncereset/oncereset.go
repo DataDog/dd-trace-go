@@ -15,6 +15,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -79,8 +80,8 @@ func isSyncOnce(t types.Type) bool {
 }
 
 func enclosingFuncName(stack []ast.Node) string {
-	for i := len(stack) - 1; i >= 0; i-- {
-		if fn, ok := stack[i].(*ast.FuncDecl); ok {
+	for _, n := range slices.Backward(stack) {
+		if fn, ok := n.(*ast.FuncDecl); ok {
 			return fn.Name.Name
 		}
 	}
