@@ -415,12 +415,17 @@ func (m *ContextMetrics) RegisterWafRun(addrs addresses.RunAddressData, timerSta
 // It registers the metrics:
 // - `waf.error`
 // - `rasp.error`
+//
+// A timeout is not a WAF error: [ContextMetrics.RegisterWafRun] counts it, so IncWafError does not
+// record an exception or an error metric for it. Invalid input (unknown RASP rule type or unexpected
+// scope) is still reported as an instrumentation exception, also for a timeout.
 func (m *ContextMetrics) IncWafError(addrs addresses.RunAddressData, in error) {
 	if in == nil {
 		return
 	}
 
-	if !errors.Is(in, waferrors.ErrTimeout) {
+	timeout := errors.Is(in, waferrors.ErrTimeout)
+	if !timeout {
 		switch addrs.TimerKey {
 		case addresses.RASPScope:
 			m.RecordException(ExceptionTypeRASP, in)
@@ -436,9 +441,13 @@ func (m *ContextMetrics) IncWafError(addrs addresses.RunAddressData, in error) {
 			m.RecordException(ExceptionTypeInstrumentation, fmt.Errorf("unknown RASP rule type for addresses %v: %w", addrs, in))
 			return
 		}
-		m.raspError(in, ruleType)
+		if !timeout {
+			m.raspError(in, ruleType)
+		}
 	case addresses.WAFScope, "":
-		m.wafError(in)
+		if !timeout {
+			m.wafError(in)
+		}
 	default:
 		m.RecordException(ExceptionTypeInstrumentation, fmt.Errorf("unexpected WAF error scope %q: %w", addrs.TimerKey, in))
 	}

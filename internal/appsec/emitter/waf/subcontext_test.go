@@ -12,11 +12,13 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/DataDog/go-libddwaf/v5"
 	"github.com/DataDog/go-libddwaf/v5/timer"
+	"github.com/DataDog/go-libddwaf/v5/waferrors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/appsec/events"
@@ -538,4 +540,58 @@ func TestRunWAFMarksReportedBlock(t *testing.T) {
 			require.Equal(t, tc.wantReports, blocks[0].ReportsBlockOutcome())
 		})
 	}
+}
+
+// errRunner is a [libddwaf.Runner] that always fails with err.
+type errRunner struct{ err error }
+
+func (r errRunner) Run(context.Context, libddwaf.RunAddressData) (libddwaf.Result, error) {
+	return libddwaf.Result{}, r.err
+}
+
+func TestRunWAFErrorMetrics(t *testing.T) {
+	// requestsTags returns the tags of the waf.requests metric of a request without block nor event.
+	requestsTags := func(timeout, wafError bool) []string {
+		tags := wafRequestsTags(false, false, false)
+		for i, tag := range tags {
+			switch {
+			case strings.HasPrefix(tag, "waf_timeout:"):
+				tags[i] = "waf_timeout:" + strconv.FormatBool(timeout)
+			case strings.HasPrefix(tag, "waf_error:"):
+				tags[i] = "waf_error:" + strconv.FormatBool(wafError)
+			}
+		}
+		return tags
+	}
+	raspTags := []string{"rule_type:sql_injection", "waf_version:" + libddwaf.Version(), "event_rules_version:test"}
+
+	run := func(t *testing.T, runner libddwaf.Runner, addrs addresses.RunAddressData) (*telemetrytest.RecordClient, *ContextMetrics) {
+		client := new(telemetrytest.RecordClient)
+		t.Cleanup(telemetry.MockClient(client))
+		op, _ := StartContextOperation(context.Background(), tracelib.NoopTagSetter{})
+		t.Cleanup(op.Finish)
+		op.SetLimiter(limiter.NewTokenTicker(100, 100))
+		op.SetSupportedAddresses(config.NewAddressSet([]string{
+			addresses.ServerDBStatementAddr, addresses.ServerDBTypeAddr, addresses.ServerRequestMethodAddr,
+		}))
+		metrics := newTestContextMetrics()
+		op.SetMetricsInstance(metrics)
+		op.runWAF(op, runner, addrs, false)
+		metrics.Submit(libddwaf.Truncations{}, nil)
+		return client, metrics
+	}
+
+	t.Run("waf_timeout", func(t *testing.T) {
+		client, _ := run(t, errRunner{waferrors.ErrTimeout}, addresses.NewAddressesBuilder().WithMethod("GET").Build())
+		require.Equal(t, 1.0, client.Count(telemetry.NamespaceAppSec, "waf.requests", requestsTags(true, false)).Get())
+		requireNoErrorMetric(t, client, "waf.error")
+		requireNoErrorMetric(t, client, "rasp.error")
+	})
+
+	t.Run("rasp_timeout", func(t *testing.T) {
+		client, _ := run(t, errRunner{waferrors.ErrTimeout}, raspSQLiAddresses())
+		require.Equal(t, 1.0, client.Count(telemetry.NamespaceAppSec, "rasp.timeout", raspTags).Get())
+		requireNoErrorMetric(t, client, "waf.error")
+		requireNoErrorMetric(t, client, "rasp.error")
+	})
 }
