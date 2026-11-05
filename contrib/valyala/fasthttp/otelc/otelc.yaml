@@ -37,9 +37,7 @@ fasthttp_server_serve_conn:
 #
 # The arguments are passed as parameters of the closure, so Go evaluates them
 # at the call site, as it does for go fasthttp.ServeConn(...) and defer
-# fasthttp.ServeConn(...). The original call, which otelc requires in the
-# template, evaluates them again, but it only runs before the contrib is
-# initialized.
+# fasthttp.ServeConn(...). Both branches only use the parameters.
 #
 # A call through a function value, such as f := fasthttp.ServeConn, is not a
 # call site this rule matches. It still uses fasthttp's pool, and only the
@@ -58,7 +56,7 @@ fasthttp_serve_conn_func:
             if __dd_fasthttpotelc.Ready() {
               return __dd_fasthttpotelc.ServeConn(c, h)
             }
-            return {{ . }}
+            return __dd_fasthttp.ServeConn(c, h)
           }({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
   imports:
     __dd_net: net
