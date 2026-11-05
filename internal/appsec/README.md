@@ -312,3 +312,40 @@ monitoring) removes the `block_request` and `redirect_request` actions. It
 reports a removed `block_request` as `block:failure` on `rasp.rule.match`. It
 does not count as a requested block on `waf.requests`, so it cannot hide a
 later block of the same request.
+
+### WAF error telemetry
+
+`ContextMetrics.IncWafError` (`emitter/waf/metrics.go`) reports the errors that
+`Context.Run` returns. `runWAF` calls it for each WAF and RASP run.
+
+- A timeout (`waferrors.ErrTimeout`) is not a WAF error. `IncWafError` does not
+  count it in `waf.error` or `rasp.error`, and does not store an error code.
+  `RegisterWafRun` counts it: `waf.requests{waf_timeout:true}`, `rasp.timeout`,
+  and the span tags `_dd.appsec.waf.timeouts` and `_dd.appsec.rasp.timeout`.
+- Invalid input is still an instrumentation exception, also for a timeout. This
+  covers a RASP run with an unknown rule type and a run with an unexpected
+  scope. `IncWafError` calls `RecordException(ExceptionTypeInstrumentation, ...)`
+  for them.
+- The `waf_error` tag of `waf.error` and `rasp.error`, and the span tags
+  `_dd.appsec.waf.error` and `_dd.appsec.rasp.error`, hold the `ddwaf_run`
+  return code (RFC-1012). `wafRunErrorCode` maps the go-libddwaf errors:
+
+  | Error from `Run` | Code |
+  |------------------|------|
+  | `ErrInternal` | `-3` |
+  | `ErrInvalidObject` | `-2` |
+  | `ErrInvalidArgument` | `-1` |
+  | Any other error (`ErrOutOfMemory`, `ErrEmptyRuleAddresses`, `ErrContextClosed`, encoder errors, ...) | `-127` (error from the bindings) |
+
+  The boolean `waf_error` tag of `waf.requests` is not a code. It is `true` when
+  `Run` returned an error that is not a timeout.
+- The span tags hold one code per request: the code closest to zero
+  (the least negative). `updateClosestToZero` keeps it, and ignores a code that
+  is not negative. Zero means no error. The RASP tag is the closest code over
+  all rule types.
+- `AddWAFMonitoringTags` runs once per WAF context, at the end of the request.
+  It sets `_dd.appsec.waf.error` only when `WAFErrorCode` is not zero, and
+  `_dd.appsec.rasp.error` only when one `RASPErrorCodes` entry is not zero. It
+  sets `_dd.appsec.error.type` and `_dd.appsec.error.message` only when
+  `RecordException` ran. Thus, a request with only timeouts on valid input has
+  no error tag.
