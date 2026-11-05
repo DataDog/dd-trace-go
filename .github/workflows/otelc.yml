@@ -10,10 +10,8 @@ on:
   push:
     branches:
       - release-v*
-      # The merge queue is not gated (see CONTRIBUTING.md): a queued commit
-      # re-runs the lanes that trigger on mq-working-branch-** in full, this one
-      # now included, so a narrowed pull request cannot skip this lane here.
-      - mq-working-branch-**
+      # Not on mq-working-branch-**: the merge queue deliberately skips this
+      # lane (see .github/AGENTS.md).
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
@@ -114,6 +112,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       otelc: ${{ steps.detect.outputs.otelc }}
+      otelc-suites: ${{ steps.detect.outputs.otelc-suites }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -154,6 +153,10 @@ jobs:
   integration-test:
     env:
       REPORT: gotestsum-report-otelc.xml
+      # The suites the classifier selected: space-separated names, or the
+      # tokens ALL / NONE. A selector failure fails the classify step
+      # instead of emitting an empty value to guess about.
+      OTELC_SUITES: ${{ needs.changes.outputs.otelc-suites }}
       # Workspace mode resolves modules differently from the module graph otelc
       # analyzes, and it breaks outright when otelc and dd-trace-go disagree on
       # their `go` directive. Same reason the orchestrion lane disables it.
@@ -163,7 +166,8 @@ jobs:
       - go-versions-matrix
     if: >-
       github.event_name != 'pull_request' ||
-      needs.changes.outputs.otelc == 'true'
+      (needs.changes.outputs.otelc == 'true' &&
+      needs.changes.outputs.otelc-suites != 'NONE')
     strategy:
       fail-fast: false
       matrix:
@@ -253,9 +257,22 @@ jobs:
           otelc version
 
           PREFIX=github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration
+          # The classifier names the suites this change exercises. ALL, NONE
+          # and empty keep the full list; the run script below skips suites
+          # this platform cannot build either way.
           PACKAGE_NAMES=""
           SERIAL_PACKAGE_NAMES=""
-          for pkg in ${OTELC_TEST_PACKAGES}; do
+          case "${OTELC_SUITES}" in
+          "" | "NONE" | "ALL")
+            # NONE widens to the full list on purpose: it can only arrive
+            # with the gate off, so this arm is the last resort.
+            SUITES="${OTELC_TEST_PACKAGES}"
+            ;;
+          *)
+            SUITES="${OTELC_SUITES}"
+            ;;
+          esac
+          for pkg in ${SUITES}; do
             case " ${OTELC_SERIAL_TEST_PACKAGES} " in
               *" ${pkg} "*) SERIAL_PACKAGE_NAMES+=" ${PREFIX}/${pkg}" ;;
               *) PACKAGE_NAMES+=" ${PREFIX}/${pkg}" ;;
@@ -473,13 +490,16 @@ jobs:
           || contains(fromJSON('["failure", "cancelled"]'),
           needs.external-app.result)
           || (needs.changes.outputs.otelc == 'true'
-              && (needs.integration-test.result != 'success'
-                  || needs.external-app.result != 'success'))
+              && needs.external-app.result != 'success')
+          || (needs.changes.outputs.otelc == 'true'
+              && needs.changes.outputs.otelc-suites != 'NONE'
+              && needs.integration-test.result != 'success')
         run: echo "Failure!" && exit 1
       - name: Skipped
         if: needs.integration-test.result == 'skipped'
         run: >-
-          echo "No changed path requires otelc tests
-          (see .github/ci-components.yml)."
+          echo "No changed path requires the otelc integration matrix
+          (see .github/ci-components.yml); the external-app build may
+          still have run."
       - name: Success
         run: echo "Success!"

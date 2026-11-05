@@ -17,6 +17,9 @@ on:
   push:
     branches:
       - release-v*
+      # The merge queue is not gated (see CONTRIBUTING.md), so a queued
+      # commit runs the full lane before landing on main.
+      - mq-working-branch-**
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
@@ -49,6 +52,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       orchestrion: ${{ steps.detect.outputs.orchestrion }}
+      orchestrion-suites: ${{ steps.detect.outputs.orchestrion-suites }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -151,6 +155,10 @@ jobs:
       # updates its `go` directive in `go.mod` before `dd-trace-go` does;
       # ESPECIALLY on Windows.
       GOWORK: 'off'
+      # Which internal/orchestrion/_integration suites to run: a
+      # space-separated list, ALL, NONE, or empty when the classifier could
+      # not narrow the change set. See the Run Tests step.
+      SUITES: ${{ needs.changes.outputs.orchestrion-suites }}
     needs:
       - changes
       - go-versions-matrix
@@ -321,26 +329,51 @@ jobs:
           echo "Working directory: ${PWD}"
           orchestrion version
           PACKAGE_NAMES=$(go list ./... | grep -v /civisibility)
+          # The selection script narrows the platform-aware package list and
+          # picks the civisibility target; see the script header for the
+          # rules, including the full-lane fallback when nothing matches.
+          selection="$(printf '%s\n' "${PACKAGE_NAMES}" |
+            bash "${{ github.workspace }}/dd-trace-go/.github/workflows/apps/select-orchestrion-suites.sh")"
+          PACKAGE_NAMES="$(sed -n '1p' <<< "${selection}")"
+          CIVISIBILITY="$(sed -n '2p' <<< "${selection}")"
 
           case "${MODE}" in
           "DRIVER")
             echo "Starting test suite in DRIVER mode"
-            # shellcheck disable=SC2086
-            gotestsum --junitfile "${XML_PATH}" --raw-command -- orchestrion go test -json -shuffle=on $PACKAGE_NAMES
-            orchestrion go test -json -shuffle=on ./civisibility
+            # A civisibility-only selection leaves PACKAGE_NAMES empty, and
+            # go test without arguments would fall back to the current
+            # directory instead.
+            if [[ -n "${PACKAGE_NAMES}" ]]; then
+              # shellcheck disable=SC2086
+              gotestsum --junitfile "${XML_PATH}" --raw-command -- \
+                orchestrion go test -json -shuffle=on $PACKAGE_NAMES
+            fi
+            if [[ -n "${CIVISIBILITY}" ]]; then
+              orchestrion go test -json -shuffle=on "${CIVISIBILITY}"
+            fi
             ;;
           "TOOLEXEC")
             echo "Starting test suite in TOOLEXEC mode"
-            # shellcheck disable=SC2086
-            gotestsum --junitfile "${XML_PATH}" -- -shuffle=on -toolexec='orchestrion toolexec' $PACKAGE_NAMES
-            go test -shuffle=on -toolexec='orchestrion toolexec' ./civisibility
+            if [[ -n "${PACKAGE_NAMES}" ]]; then
+              # shellcheck disable=SC2086
+              gotestsum --junitfile "${XML_PATH}" -- \
+                -shuffle=on -toolexec='orchestrion toolexec' $PACKAGE_NAMES
+            fi
+            if [[ -n "${CIVISIBILITY}" ]]; then
+              go test -shuffle=on \
+                -toolexec='orchestrion toolexec' "${CIVISIBILITY}"
+            fi
             ;;
           "GOFLAGS")
             echo "Starting test suite in GOFLAGS mode"
             export GOFLAGS="${GOFLAGS} '-toolexec=orchestrion toolexec'"
-            # shellcheck disable=SC2086
-            gotestsum --junitfile "${XML_PATH}" -- -shuffle=on $PACKAGE_NAMES
-            go test -shuffle=on ./civisibility
+            if [[ -n "${PACKAGE_NAMES}" ]]; then
+              # shellcheck disable=SC2086
+              gotestsum --junitfile "${XML_PATH}" -- -shuffle=on $PACKAGE_NAMES
+            fi
+            if [[ -n "${CIVISIBILITY}" ]]; then
+              go test -shuffle=on "${CIVISIBILITY}"
+            fi
             ;;
           *)
             echo "Unknown mode: ${MODE}"

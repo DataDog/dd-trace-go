@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/internal/orchtool"
 )
 
 func TestITRCoverageBackfillManualFixture(t *testing.T) {
@@ -52,13 +54,19 @@ func TestITRCoverageBackfillManualFixture(t *testing.T) {
 }
 
 func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
-	if os.Getenv("GO_CMD") == "gotip" {
+	if goTipCommand(os.Getenv("GO_CMD")) {
 		t.Skip("waiting for an Orchestrion release with support for Go tip's -exportfd compiler flag: https://github.com/DataDog/orchestrion/pull/899")
 	}
 
 	fixtureDir := filepath.Join("..", "fixtures", "itrbackfill", "orchestrion")
 	assertOrchestrionFixtureDoesNotUseManualRunM(t, fixtureDir)
 	goCache := sharedFixtureGoCache(t)
+	orchestrionPath := orchtool.Locate()
+	if orchestrionPath == "" {
+		t.Logf("%s is unset; using the go run fallback", orchtool.OrchestrionBinEnv)
+	} else {
+		t.Logf("using the exported orchestrion binary %s", orchestrionPath)
+	}
 
 	for _, test := range []struct {
 		name              string
@@ -96,7 +104,6 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			var profile string
 			args := []string{
-				"go", "run", "-mod=readonly", "github.com/DataDog/orchestrion",
 				"go", "test", "-mod=readonly", "./...",
 				"-cover", "-covermode=" + test.coverMode, "-coverpkg", "./...",
 				"-count=1",
@@ -106,13 +113,43 @@ func TestITRCoverageBackfillOrchestrionFixture(t *testing.T) {
 				args = append(args, "-coverprofile", profile)
 			}
 			args = append(args, test.extraTestArgs...)
-			runFixtureCommand(t, fixtureDir, test.name, profile, goCache, test.extraEnv, false, args...)
+			executable, orchestrionArgs := orchtool.Command(orchestrionPath, "go", args...)
+			runFixtureCommand(t, fixtureDir, test.name, profile, goCache, test.extraEnv, false, executable, orchestrionArgs...)
 			if test.withProfile && !test.skipProfileAssert {
 				profilePaths := test.profilePaths
 				if len(profilePaths) == 0 {
 					profilePaths = []string{"fixtures/itrbackfill/orchestrion/lib/lib.go"}
 				}
 				assertProfileContainsPositiveCounts(t, profile, profilePaths...)
+			}
+		})
+	}
+}
+
+// goTipCommand reports whether the Go command runs a Go tip toolchain. The
+// sibling fuzzexamplefixture detects gotip the same way, so a path form such
+// as /usr/local/bin/gotip does not slip past the guard.
+func goTipCommand(command string) bool {
+	base := filepath.Base(command)
+	return base == "gotip" || base == "gotip.exe"
+}
+
+func TestGoTipCommand(t *testing.T) {
+	for _, test := range []struct {
+		command string
+		want    bool
+	}{
+		{command: "", want: false},
+		{command: "go", want: false},
+		{command: "gotip", want: true},
+		{command: filepath.Join("custom", "gotip"), want: true},
+		{command: "gotip.exe", want: true},
+		{command: filepath.Join("custom toolchain", "go"), want: false},
+	} {
+		t.Run(test.command, func(t *testing.T) {
+			t.Setenv("GO_CMD", test.command)
+			if got := goTipCommand(os.Getenv("GO_CMD")); got != test.want {
+				t.Fatalf("Go tip detection for %q = %v, want %v", test.command, got, test.want)
 			}
 		})
 	}
@@ -128,10 +165,10 @@ func sharedFixtureGoCache(t *testing.T) string {
 	return goCache
 }
 
-func runFixtureCommand(t *testing.T, fixtureDir, scenario, profile, goCache string, extraEnv []string, expectFailure bool, args ...string) string {
+func runFixtureCommand(t *testing.T, fixtureDir, scenario, profile, goCache string, extraEnv []string, expectFailure bool, executable string, args ...string) string {
 	t.Helper()
 
-	cmd := exec.Command(args[0], args[1:]...)
+	cmd := exec.Command(executable, args...)
 	cmd.Dir = fixtureDir
 	cmd.Env = isolatedFixtureEnv(t, scenario, goCache)
 	cmd.Env = append(cmd.Env, extraEnv...)
