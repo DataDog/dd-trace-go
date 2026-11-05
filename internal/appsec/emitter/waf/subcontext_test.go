@@ -594,4 +594,10 @@ func TestRunWAFErrorMetrics(t *testing.T) {
 		requireNoErrorMetric(t, client, "waf.error")
 		requireNoErrorMetric(t, client, "rasp.error")
 	})
+	t.Run("waf_invalid_object", func(t *testing.T) {
+		client, _ := run(t, errRunner{waferrors.ErrInvalidObject}, addresses.NewAddressesBuilder().WithMethod("GET").Build())
+		require.Equal(t, 1.0, client.Count(telemetry.NamespaceAppSec, "waf.requests", requestsTags(false, true)).Get())
+		wafErrTags := []string{"waf_error:-2", "event_rules_version:test", "waf_version:" + libddwaf.Version()}
+		require.Equal(t, 1.0, client.Count(telemetry.NamespaceAppSec, "waf.error", wafErrTags).Get())
+	})
 }

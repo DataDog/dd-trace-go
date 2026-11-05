@@ -185,11 +185,13 @@ type ContextMetrics struct {
 
 	// SumRASPCalls is the sum of all the RASP calls made by the WAF whatever the rasp rule type it is.
 	SumRASPCalls atomic.Uint32
-	// WAFErrorCode is the closest-to-zero (least-negative) ddwaf_run error code seen in the WAF scope.
-	// Zero means no error occurred. See RFC-1012.
+	// WAFErrorCode is the closest-to-zero (least-negative) error code seen in the WAF scope.
+	// A non-zero value is a ddwaf_run code (-1, -2, -3) or -127 for an error from the bindings.
+	// Zero means no error occurred. Timeouts are not included. See RFC-1012.
 	WAFErrorCode atomic.Int32
-	// RASPErrorCodes holds the closest-to-zero ddwaf_run error code per RASP rule type.
-	// Zero means no error occurred for that rule type. See RFC-1012.
+	// RASPErrorCodes holds the closest-to-zero error code per RASP rule type.
+	// A non-zero value is a ddwaf_run code (-1, -2, -3) or -127 for an error from the bindings.
+	// Zero means no error occurred for that rule type. Timeouts are not included. See RFC-1012.
 	RASPErrorCodes [len(addresses.RASPRuleTypes)]atomic.Int32
 
 	// exceptionOnce + exception store the first exception atomically.
@@ -453,13 +455,38 @@ func (m *ContextMetrics) IncWafError(addrs addresses.RunAddressData, in error) {
 	}
 }
 
-// defaultWafErrorCode is the default error code if the error does not implement [libddwaf.RunError]
-// meaning if the error actual come for the bindings and not from the WAF itself
-const defaultWafErrorCode = -127
+// ddwaf_run return codes (RFC-1012). go-libddwaf v5 maps them to positive
+// [waferrors.RunError] values, so dd-trace-go maps them back here.
+const (
+	wafErrorCodeInvalidArgument = -1   // DDWAF_ERR_INVALID_ARGUMENT
+	wafErrorCodeInvalidObject   = -2   // DDWAF_ERR_INVALID_OBJECT
+	wafErrorCodeInternal        = -3   // DDWAF_ERR_INTERNAL
+	wafErrorCodeBinding         = -127 // not a ddwaf_run code: error from the bindings
+)
+
+// wafRunErrorCode returns the ddwaf_run code for err. The result is always negative.
+// It compares with the named [waferrors.RunError] constants, not with their integer values,
+// so a renumbering in go-libddwaf cannot change the result.
+func wafRunErrorCode(err error) int {
+	if runErr, ok := errors.AsType[waferrors.RunError](err); ok {
+		switch runErr {
+		case waferrors.ErrInvalidArgument:
+			return wafErrorCodeInvalidArgument
+		case waferrors.ErrInvalidObject:
+			return wafErrorCodeInvalidObject
+		case waferrors.ErrInternal:
+			return wafErrorCodeInternal
+		}
+	}
+	return wafErrorCodeBinding
+}
 
 // updateClosestToZero atomically sets target to the closer-to-zero of its current
-// value and code. Codes are always ≤ 0; zero is the sentinel "no error".
+// value and code. Codes are always < 0; a code >= 0 is ignored. Zero is the sentinel "no error".
 func updateClosestToZero(target *atomic.Int32, code int32) {
+	if code >= 0 {
+		return
+	}
 	for {
 		current := target.Load()
 		if current != 0 && code <= current {
@@ -516,10 +543,7 @@ func (m *ContextMetrics) ExceptionMsg() string {
 	return ""
 }
 func (m *ContextMetrics) wafError(in error) {
-	errCode := defaultWafErrorCode
-	if code := waferrors.ToWafErrorCode(in); code != 0 {
-		errCode = code
-	}
+	errCode := wafRunErrorCode(in)
 	updateClosestToZero(&m.WAFErrorCode, int32(errCode))
 
 	handle, _ := m.wafErrorCount.LoadOrCompute(errCode, func() (telemetry.MetricHandle, bool) {
@@ -543,10 +567,7 @@ func (m *ContextMetrics) SkipRASPRule(ruleType addresses.RASPRuleType, reason st
 }
 
 func (m *ContextMetrics) raspError(in error, ruleType addresses.RASPRuleType) {
-	errCode := defaultWafErrorCode
-	if code := waferrors.ToWafErrorCode(in); code != 0 {
-		errCode = code
-	}
+	errCode := wafRunErrorCode(in)
 	updateClosestToZero(&m.RASPErrorCodes[ruleType], int32(errCode))
 
 	handle, _ := m.raspErrorCount.LoadOrCompute(raspMetricKey[int]{typ: ruleType, additionalTag: errCode}, func() (telemetry.MetricHandle, bool) {

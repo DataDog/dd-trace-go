@@ -6,6 +6,7 @@
 package waf
 
 import (
+	"errors"
 	"maps"
 	"slices"
 	"sync/atomic"
@@ -173,6 +174,30 @@ func TestWAFErrorCodeSpanTag(t *testing.T) {
 		require.NotContains(t, tags, "_dd.appsec.error.type")
 		require.Equal(t, uint32(1), tags[wafTimeoutTag])
 		require.Equal(t, uint32(1), tags[raspTimeoutTag])
+	})
+
+	t.Run("errors_set_ddwaf_run_code", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			err  error
+			want int32
+		}{
+			{"invalid_object", waferrors.ErrInvalidObject, -2},
+			{"bindings", errors.New("bindings"), -127},
+		} {
+			t.Run("waf/"+tc.name, func(t *testing.T) {
+				metrics := newErrorTestMetrics(t)
+				metrics.IncWafError(addresses.RunAddressData{TimerKey: addresses.WAFScope}, tc.err)
+				require.Equal(t, tc.want, monitoringTags(metrics)[wafErrorTag])
+			})
+		}
+
+		// One error per RASP rule type: the span tag is the least-negative code.
+		metrics := newErrorTestMetrics(t)
+		metrics.IncWafError(sqliAddresses(), waferrors.ErrInternal)                                                            // -3
+		metrics.IncWafError(addresses.NewAddressesBuilder().WithFilePath("/etc/passwd").Build(), waferrors.ErrInvalidArgument) // -1
+		metrics.IncWafError(addresses.NewAddressesBuilder().WithSysExecCmd([]string{"ls"}).Build(), waferrors.ErrOutOfMemory)  // -127
+		require.Equal(t, int32(-1), monitoringTags(metrics)[raspErrorTag])
 	})
 
 	t.Run("timeout_invalid_input_keeps_exception_tags", func(t *testing.T) {
