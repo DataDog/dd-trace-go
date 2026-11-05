@@ -151,7 +151,7 @@ require (
 	go.opentelemetry.io/otel v1.45.0 // indirect
 	go.opentelemetry.io/otel/metric v1.45.0 // indirect
 	go.opentelemetry.io/otel/trace v1.45.0 // indirect
-	go.opentelemetry.io/otelc/pkg v0.0.0-20261103103723-318faabcdf7d // indirect
+	go.opentelemetry.io/otelc/pkg v0.0.0-20261105130149-a21770c1888e // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
