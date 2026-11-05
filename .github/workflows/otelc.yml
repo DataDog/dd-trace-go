@@ -277,6 +277,10 @@ jobs:
             fi
             PACKAGE_NAMES+=" ${PREFIX}/${pkg}"
           done
+          if [[ -z "${PACKAGE_NAMES}" ]]; then
+            echo "No otelc suites to run on this platform"
+            exit 0
+          fi
           echo "Running otelc tests for: ${PACKAGE_NAMES}"
 
           # One invocation for all the suites builds their shared dependency
