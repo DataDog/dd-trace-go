@@ -18,7 +18,7 @@ Files in this directory:
   commit, parallelize benchmarks across CPU cores (cores 4-47, leaving 0-3
   for kernel/background tasks), execute each benchmark `REPETITIONS` times
   with `go test -bench`, and analyze results for `GoBench` framework.
-- **`container/`** — Dockerfile and install scripts for the CI image. Based on official `golang` image plus bp-runner tooling installed via `bp-install`.
+- **`container/`** — Dockerfile and install scripts for the CI image. Based on the internal mirror of the official `golang` image (`registry.ddbuild.io/images/mirror/golang`) plus bp-runner tooling installed via `bp-install`.
 - **`.env.example`** — Template for local-run environment variables (copy to
   `.env`).
 
@@ -211,6 +211,15 @@ Steps:
 
 1. Edit the relevant file(s) under `.gitlab/benchmarks/micro/container/`. Push
    the branch and open a PR.
+
+   Dependabot does not update the base image, so pin the current mirror digest
+   in the `FROM` line every time you rebuild. To get the digest, run:
+   ```shell
+   docker buildx imagetools inspect registry.ddbuild.io/images/mirror/golang:1.27
+   ```
+   GitLab CI blocks Docker Hub, so do not use a `docker.io` image. If the mirror
+   does not have the Go version you need, add it to `mirror.yaml` in the
+   internal images repository first.
 
 2. The pipeline includes
    [`build-ci-images.template.yml`](https://github.com/DataDog/benchmarking-platform-tools/blob/main/images/templates/gitlab/build-ci-images.template.yml),
