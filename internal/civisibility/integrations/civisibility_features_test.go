@@ -7,6 +7,7 @@ package integrations
 
 import (
 	"io"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -30,6 +31,35 @@ func TestAdditionalFeaturesInitializationPublishesLockFreeFastPath(t *testing.T)
 
 	ensureAdditionalFeaturesInitialization("")
 	require.True(t, additionalFeaturesInitialized.Load())
+}
+
+func TestMarkAdditionalFeaturesInitializedForTestingDoesNotRaceWithInitialization(t *testing.T) {
+	resetCIVisibilityStateForTesting()
+	t.Cleanup(resetCIVisibilityStateForTesting)
+
+	newCIVisibilityClientWithServiceNameFunc = func(_ string) civisibilitynet.Client {
+		return nil
+	}
+
+	const goroutines = 8
+	const iterations = 50
+	var wg sync.WaitGroup
+	for range goroutines {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			for range iterations {
+				ensureAdditionalFeaturesInitialization("")
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			for range iterations {
+				markAdditionalFeaturesInitializedForTesting()
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 func TestSearchCommitsResponseMissingCommitsPreservesLocalOrder(t *testing.T) {
