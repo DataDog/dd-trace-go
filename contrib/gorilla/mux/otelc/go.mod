@@ -11,7 +11,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
 	github.com/gorilla/mux v1.8.1
 	github.com/stretchr/testify v1.11.1
-	go.opentelemetry.io/otelc/pkg v0.0.0-20261015110818-d3d72efe9f25
+	go.opentelemetry.io/otelc/pkg v0.0.0-20261105130149-a21770c1888e
 )
 
 require (
