@@ -220,7 +220,12 @@ replace github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 => ../.
 
 replace github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 => ../../../contrib/gofiber/fiber.v2
 
-require github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 v2.13.0-dev.1 // indirect
+require (
+	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 v2.13.0-dev.1 // indirect
+	github.com/sirupsen/logrus v1.9.3 // indirect
+)
 
 replace github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 => ../../../contrib/valyala/fasthttp/otelc
 
@@ -233,6 +238,10 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 => ../../../c
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../../../contrib/labstack/echo.v5/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 => ../../../contrib/labstack/echo.v5
+
+replace github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/otelc/v2 => ../../../contrib/sirupsen/logrus/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 => ../../../contrib/sirupsen/logrus
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../../contrib/aws/aws-sdk-go/otelc
 

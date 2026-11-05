@@ -173,6 +173,7 @@ integration-suites:
     contrib/segmentio/kafka-go: [ segmentio_kafka.v0 ]
     contrib/Shopify/sarama: [ shopify_sarama ]
     contrib/sirupsen/logrus: [ logrus ]
+    contrib/sirupsen/logrus/otelc: [ logrus ]
     contrib/syndtr/goleveldb: []
     contrib/tidwall/buntdb: []
     contrib/twitchtv/twirp: [ twirp ]
@@ -495,6 +496,7 @@ components:
       - contrib/labstack/echo.v4/**
       - contrib/labstack/echo.v5/**
       - contrib/net/http/**
+      - contrib/sirupsen/logrus/**
       - contrib/valyala/fasthttp/**
     module-scoped: true
     dependent-modules: []
