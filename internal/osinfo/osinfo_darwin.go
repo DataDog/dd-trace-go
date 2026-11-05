@@ -5,13 +5,44 @@
 
 package osinfo
 
-import "golang.org/x/sys/unix"
+import (
+	"encoding/xml"
+	"errors"
+	"os"
 
-// productVersion returns the macOS product version, for example "15.1".
-//
-// It reads a sysctl because the package init function calls it in every program
-// that links this package. Running sw_vers there adds a process start to each
-// program start, even in programs that never use the OS version.
+	"golang.org/x/sys/unix"
+)
+
 func productVersion() (string, error) {
-	return unix.Sysctl("kern.osproductversion")
+	if compat, err := unix.SysctlUint32("kern.system_version_compat"); err == nil && compat == 0 {
+		return unix.Sysctl("kern.osproductversion")
+	}
+
+	// In compatibility mode both the sysctl and SystemVersion.plist can report
+	// 10.16. Apple provides this symlink to the actual system version file.
+	f, err := os.Open("/System/Library/CoreServices/.SystemVersionPlatform.plist")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	var plist struct {
+		Dict struct {
+			Entries []struct {
+				XMLName xml.Name
+				Text    string `xml:",chardata"`
+			} `xml:",any"`
+		} `xml:"dict"`
+	}
+	if err := xml.NewDecoder(f).Decode(&plist); err != nil {
+		return "", err
+	}
+	entries := plist.Dict.Entries
+	for i := 0; i+1 < len(entries); i += 2 {
+		key, value := entries[i], entries[i+1]
+		if key.XMLName.Local == "key" && key.Text == "ProductVersion" && value.XMLName.Local == "string" {
+			return value.Text, nil
+		}
+	}
+	return "", errors.New("ProductVersion missing from system version file")
 }

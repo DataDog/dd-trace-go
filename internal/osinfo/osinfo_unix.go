@@ -27,7 +27,7 @@ func init() {
 	if runtime.GOOS == "darwin" {
 		kernelName = "Darwin"
 		version, err := productVersion()
-		if err != nil {
+		if err != nil || version == "" {
 			return
 		}
 
