@@ -75,6 +75,8 @@ kafkav1_consumer_events:
         after: AfterConsumerEvents
         path: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/otelc/v2
 
+# The three commit methods return the same results and the contrib tracks them
+# the same way, so they share AfterConsumerCommit.
 kafkav1_consumer_commit:
   target: github.com/confluentinc/confluent-kafka-go/kafka
   where:
@@ -94,7 +96,7 @@ kafkav1_consumer_commit_message:
   do:
     - inject_hooks:
         before: BeforeConsumerCommitMessage
-        after: AfterConsumerCommitMessage
+        after: AfterConsumerCommit
         path: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/otelc/v2
 
 kafkav1_consumer_commit_offsets:
@@ -105,7 +107,7 @@ kafkav1_consumer_commit_offsets:
   do:
     - inject_hooks:
         before: BeforeConsumerCommitOffsets
-        after: AfterConsumerCommitOffsets
+        after: AfterConsumerCommit
         path: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/otelc/v2
 
 kafkav1_consumer_close:

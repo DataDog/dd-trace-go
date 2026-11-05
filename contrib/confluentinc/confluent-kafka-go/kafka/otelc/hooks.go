@@ -126,37 +126,25 @@ func BeforeConsumerCommit(ictx hook.HookContext, c *kafka.Consumer) {
 	setConsumer(ictx, c)
 }
 
-// AfterConsumerCommit tracks the committed offsets.
+// AfterConsumerCommit tracks the committed offsets. It runs after
+// kafka.Consumer.Commit, kafka.Consumer.CommitMessage and
+// kafka.Consumer.CommitOffsets.
 func AfterConsumerCommit(ictx hook.HookContext, tps []kafka.TopicPartition, err error) {
-	afterCommit(ictx, tps, err)
+	if w, ok := ictx.GetData().(*kafkatrace.Consumer); ok {
+		w.AfterCommit(tps, err)
+	}
 }
 
 // BeforeConsumerCommitMessage passes the contrib wrapper of c to
-// AfterConsumerCommitMessage.
+// AfterConsumerCommit.
 func BeforeConsumerCommitMessage(ictx hook.HookContext, c *kafka.Consumer, _ *kafka.Message) {
 	setConsumer(ictx, c)
 }
 
-// AfterConsumerCommitMessage tracks the committed offsets.
-func AfterConsumerCommitMessage(ictx hook.HookContext, tps []kafka.TopicPartition, err error) {
-	afterCommit(ictx, tps, err)
-}
-
 // BeforeConsumerCommitOffsets passes the contrib wrapper of c to
-// AfterConsumerCommitOffsets.
+// AfterConsumerCommit.
 func BeforeConsumerCommitOffsets(ictx hook.HookContext, c *kafka.Consumer, _ []kafka.TopicPartition) {
 	setConsumer(ictx, c)
-}
-
-// AfterConsumerCommitOffsets tracks the committed offsets.
-func AfterConsumerCommitOffsets(ictx hook.HookContext, tps []kafka.TopicPartition, err error) {
-	afterCommit(ictx, tps, err)
-}
-
-func afterCommit(ictx hook.HookContext, tps []kafka.TopicPartition, err error) {
-	if w, ok := ictx.GetData().(*kafkatrace.Consumer); ok {
-		w.AfterCommit(tps, err)
-	}
 }
 
 // BeforeConsumerClose stops the async jobs of the contrib wrapper.
