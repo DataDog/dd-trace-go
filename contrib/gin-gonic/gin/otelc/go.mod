@@ -6,7 +6,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
 	github.com/gin-gonic/gin v1.10.1
-	go.opentelemetry.io/otelc/pkg v0.0.0-20261103103723-318faabcdf7d
+	go.opentelemetry.io/otelc/pkg v0.0.0-20261105130149-a21770c1888e
 )
 
 require (
