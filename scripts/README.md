@@ -43,7 +43,7 @@ Targets:
   lint/shell           Run shell script linting checks
   lint/misc            Run miscellaneous linting checks (copyright, Makefiles)
   lint/action          Lint GitHub Actions workflows
-  lint/errlog          Run SDK logging safety analyzers — constant messages, SafeError/LogValuer telemetry scrubbing, unsafe %v format verbs
+  lint/errlog          Run SDK analyzers — constant messages, SafeError/LogValuer telemetry scrubbing, unsafe %v format verbs, sync.Once resets
   format               Format code
   format/go            Format Go code
   format/shell         install shfmt
