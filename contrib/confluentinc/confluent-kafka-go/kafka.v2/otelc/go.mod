@@ -11,7 +11,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
 	github.com/confluentinc/confluent-kafka-go/v2 v2.15.0
 	github.com/stretchr/testify v1.11.1
-	go.opentelemetry.io/otelc/pkg v0.0.0-20261103103723-318faabcdf7d
+	go.opentelemetry.io/otelc/pkg v0.0.0-20261105130149-a21770c1888e
 )
 
 require (
