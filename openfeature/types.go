@@ -103,7 +103,8 @@ func (params *evaluatorParams) UnmarshalJSON(data []byte) error {
 	params.maxDependencyDepthInvalid = false
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
+		// Non-object params carry no depth; the default applies.
+		return nil
 	}
 	depthJSON, present := raw["maxDependencyDepth"]
 	if !present {
@@ -469,8 +470,8 @@ func (evaluation *flagEvaluation) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	keyJSON, ok := fields["key"]
-	if !ok || len(fields) != 1 {
-		return errors.New("flagEvaluation must contain only key")
+	if !ok {
+		return errors.New("flagEvaluation must contain key")
 	}
 	if err := json.Unmarshal(keyJSON, &evaluation.Key); err != nil || evaluation.Key == "" {
 		return errors.New("flagEvaluation.key must be a non-empty string")

@@ -37,6 +37,17 @@ func TestDependentFlags_JSONConfiguration(t *testing.T) {
 	require.Empty(t, condition.Attribute)
 }
 
+func TestDependentFlags_NonObjectEvaluatorParamsUseDefaults(t *testing.T) {
+	for _, raw := range []string{`null`, `42`, `"future"`, `true`, `[]`} {
+		t.Run(raw, func(t *testing.T) {
+			var config universalFlagsConfiguration
+			require.NoError(t, json.Unmarshal([]byte(`{"format":"SERVER","evaluatorParams":`+raw+`,"flags":{}}`), &config))
+			require.Nil(t, config.EvaluatorParams.MaxDependencyDepth)
+			require.False(t, config.EvaluatorParams.maxDependencyDepthInvalid)
+		})
+	}
+}
+
 func TestDependentFlags_JSONConditionValidation(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -46,7 +57,7 @@ func TestDependentFlags_JSONConditionValidation(t *testing.T) {
 		{name: "explicit empty attribute", condition: `{"operator":"ONE_OF","attribute":"","value":["on"]}`, valid: true},
 		{name: "missing source", condition: `{"operator":"ONE_OF","value":["on"]}`},
 		{name: "both sources", condition: `{"operator":"ONE_OF","attribute":"","flagEvaluation":{"key":"dependency"},"value":["on"]}`},
-		{name: "extra flag evaluation field", condition: `{"operator":"ONE_OF","flagEvaluation":{"key":"dependency","extra":true},"value":["on"]}`},
+		{name: "extra flag evaluation field", condition: `{"operator":"ONE_OF","flagEvaluation":{"key":"dependency","extra":true},"value":["on"]}`, valid: true},
 		{name: "non string member", condition: `{"operator":"ONE_OF","flagEvaluation":{"key":"dependency"},"value":["on",1]}`},
 	}
 
@@ -183,7 +194,7 @@ func TestDependentFlags_CycleMissingAndDepthErrors(t *testing.T) {
 			config: dependencyTestConfig(
 				dependencyTestFlag("root", "root-on", dependencyCondition("missing", operatorOneOf, "on")),
 			),
-			root: "root", wantCode: of.FlagNotFoundCode, wantReached: []string{"missing"},
+			root: "root", wantCode: of.GeneralCode, wantReached: []string{"missing"},
 		},
 		{
 			name: "maximum depth",
@@ -203,6 +214,7 @@ func TestDependentFlags_CycleMissingAndDepthErrors(t *testing.T) {
 			var graphErr *dependencyGraphError
 			require.True(t, errors.As(result.Error, &graphErr))
 			require.Equal(t, test.wantCode, graphErr.code)
+			require.Contains(t, toResolutionError(result.Error).Error(), string(test.wantCode)+":")
 			require.Equal(t, test.wantReached, dependencyEvaluationKeys(result))
 			require.Empty(t, dependencyExposureKeys(result))
 		})
@@ -234,7 +246,7 @@ func TestDependentFlags_OverDepthEmitsRejectedNodeBeforeAncestors(t *testing.T) 
 	require.Equal(t, of.ErrorReason, result.Reason)
 	require.Equal(t, []telemetryEvent{
 		{key: "leaf", reason: of.ErrorReason, errorCode: of.GeneralCode, message: "maximum flag dependency depth exceeded"},
-		{key: "dependency", reason: of.ErrorReason, errorCode: of.GeneralCode, message: "maximum flag dependency depth exceeded"},
+		{key: "dependency", reason: of.ErrorReason, errorCode: of.GeneralCode, message: "prerequisite flag \"leaf\" failed: maximum flag dependency depth exceeded"},
 	}, events)
 }
 
@@ -676,6 +688,48 @@ func TestDependentFlags_IntegerFlagCanBeEvaluatedAsFloat(t *testing.T) {
 		h.sink.events[1].Flag.Key,
 	})
 	require.Len(t, h.sink.exposures, 2)
+}
+
+func TestDependentFlags_PublicNumericReadsRequireLosslessConversion(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{})
+	makeFlag := func(key string, flagType valueType, value any) *flag {
+		configured := dependencyTestFlag(key, "selected", nil)
+		configured.VariationType = flagType
+		configured.Variations["selected"].Value = value
+		return configured
+	}
+	h.provider.mu.Lock()
+	h.provider.configuration = dependencyTestConfig(
+		makeFlag("whole-number", valueTypeNumeric, float64(6)),
+		makeFlag("fraction", valueTypeNumeric, 1.5),
+		makeFlag("too-large-number", valueTypeNumeric, 1e300),
+		makeFlag("exact-integer", valueTypeInteger, int64(5)),
+		makeFlag("lossy-integer", valueTypeInteger, int64(9007199254740993)),
+	)
+	h.provider.mu.Unlock()
+
+	ctx := context.Background()
+	evalCtx := of.NewEvaluationContext("subject", nil)
+
+	integer, err := h.client.IntValueDetails(ctx, "whole-number", -1, evalCtx)
+	require.NoError(t, err)
+	require.Equal(t, int64(6), integer.Value)
+
+	for _, key := range []string{"fraction", "too-large-number"} {
+		integer, err = h.client.IntValueDetails(ctx, key, -1, evalCtx)
+		require.Error(t, err)
+		require.Equal(t, int64(-1), integer.Value)
+		require.Equal(t, of.TypeMismatchCode, integer.ErrorCode)
+	}
+
+	number, err := h.client.FloatValueDetails(ctx, "exact-integer", -1, evalCtx)
+	require.NoError(t, err)
+	require.Equal(t, 5.0, number.Value)
+
+	number, err = h.client.FloatValueDetails(ctx, "lossy-integer", -1, evalCtx)
+	require.Error(t, err)
+	require.Equal(t, -1.0, number.Value)
+	require.Equal(t, of.TypeMismatchCode, number.ErrorCode)
 }
 
 func TestDependentFlags_InvalidRootActivationPrecedesTypeMismatch(t *testing.T) {

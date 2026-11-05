@@ -140,21 +140,22 @@ func (h *exposureHook) Finally(
 }
 
 func (h *exposureHook) appendDependencyExposures(subject *exposureSubjectSnapshot, metadata of.FlagMetadata) {
-	// Customer hooks only receive the root evaluation. When Datadog delivery is
-	// disabled, caching these invisible prerequisite exposures would suppress a
-	// later direct customer-visible evaluation of the prerequisite.
-	if !h.writer.datadogLoggingEnabled {
-		return
-	}
 	encoded, _ := metadata[metadataDependencyExposuresKey].(string)
 	candidates := decodeDependencyExposureCandidates(encoded)
-	for _, candidate := range candidates {
+	if len(candidates) == 0 {
+		return
+	}
+	for i, candidate := range candidates {
 		event, eligible := makeExposureEvent(candidate.FlagKey, candidate.Result.VariantKey,
 			candidate.Result.Metadata, subject.targetingKey)
 		if eligible {
-			h.writer.appendWithAttributes(event, subject.attributes)
+			isNew, known := h.writer.appendWithDecisionAndAttributes(event, subject.attributes)
+			if known {
+				candidates[i].Result.Metadata[metadataExposureCacheHitKey] = !isNew
+			}
 		}
 	}
+	metadata[metadataDependencyExposuresKey] = encodeDependencyExposureCandidates(candidates)
 }
 
 type exposureSubjectSnapshot struct {
@@ -258,8 +259,9 @@ func (e ExposureEvaluation) ShouldSend() bool {
 }
 
 // ExposureHook calls customer code after completed evaluations, including errors,
-// non-exposures and cache hits. Register it with the OpenFeature API, a client, or
-// an evaluation, retaining the provider's hooks. The callback runs synchronously: enqueue
+// non-exposures and cache hits. A successful dependent evaluation calls the hook
+// once per selected prerequisite before the root. Register it with the OpenFeature API,
+// a client, or an evaluation, retaining the provider's hooks. The callback runs synchronously: enqueue
 // copied scalar fields for background delivery. It can run concurrently.
 // Treat Details.Value as read-only. JSON maps and slices can share provider state;
 // copy them before modification or background processing.
@@ -287,7 +289,8 @@ func NewExposureHook(callback func(ExposureEvaluation)) *ExposureHook {
 	return &ExposureHook{callback: callback}
 }
 
-// Finally invokes the callback with the shared exposure decision.
+// Finally invokes the callback for each transactionally selected prerequisite,
+// followed by the root, using the shared exposure decisions.
 func (h *ExposureHook) Finally(_ context.Context, ctx of.HookContext, details of.InterfaceEvaluationDetails, _ of.HookHints) {
 	if h.callback == nil {
 		return
@@ -298,20 +301,39 @@ func (h *ExposureHook) Finally(_ context.Context, ctx of.HookContext, details of
 		})
 		return
 	}
-	defer func() {
-		if recover() != nil {
-			if h.panicWarned.CompareAndSwap(false, true) {
-				log.Warn("openfeature: customer exposure callback panicked for flag %q; later panics are logged at debug level", ctx.FlagKey()) //errtrack:ignore customer callback
-			} else {
-				log.Debug("openfeature: customer exposure callback panicked for flag %q", ctx.FlagKey())
-			}
-		}
-	}()
 	// TODO(open-feature/go-sdk#623): Remove normalization and marker cleanup when
 	// go.mod requires the fixed release; retain the metadata copy for isolation.
 	details = exposureFinalDetails(ctx, details)
+	encoded, _ := details.FlagMetadata[metadataDependencyExposuresKey].(string)
+	for _, candidate := range decodeDependencyExposureCandidates(encoded) {
+		dependencyDetails := of.InterfaceEvaluationDetails{
+			EvaluationDetails: of.EvaluationDetails{
+				FlagKey: candidate.FlagKey,
+				ResolutionDetail: of.ResolutionDetail{
+					Variant:      candidate.Result.VariantKey,
+					Reason:       candidate.Result.Reason,
+					FlagMetadata: maps.Clone(candidate.Result.Metadata),
+				},
+			},
+		}
+		h.invoke(ctx.EvaluationContext(), candidate.FlagKey, dependencyDetails)
+	}
+
 	// Isolate metadata edits from the other callbacks and returned evaluation.
 	details.FlagMetadata = maps.Clone(details.FlagMetadata)
 	delete(details.FlagMetadata, metadataExposureAfterErrorKey)
-	h.callback(ExposureEvaluation{Context: ctx.EvaluationContext(), Details: details})
+	h.invoke(ctx.EvaluationContext(), ctx.FlagKey(), details)
+}
+
+func (h *ExposureHook) invoke(evaluationContext of.EvaluationContext, flagKey string, details of.InterfaceEvaluationDetails) {
+	defer func() {
+		if recover() != nil {
+			if h.panicWarned.CompareAndSwap(false, true) {
+				log.Warn("openfeature: customer exposure callback panicked for flag %q; later panics are logged at debug level", flagKey) //errtrack:ignore customer callback
+			} else {
+				log.Debug("openfeature: customer exposure callback panicked for flag %q", flagKey)
+			}
+		}
+	}()
+	h.callback(ExposureEvaluation{Context: evaluationContext, Details: details})
 }

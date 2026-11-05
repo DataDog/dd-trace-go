@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -772,9 +773,9 @@ func (p *DatadogProvider) FloatEvaluation(
 	case float32:
 		floatValue = float64(v)
 	case int:
-		floatValue = float64(v)
+		floatValue, conversionErr = exactFloat(flagKey, int64(v))
 	case int64:
-		floatValue = float64(v)
+		floatValue, conversionErr = exactFloat(flagKey, v)
 	case int32:
 		floatValue = float64(v)
 	default:
@@ -787,6 +788,8 @@ func (p *DatadogProvider) FloatEvaluation(
 
 	if conversionErr != nil {
 		result.Error = conversionErr
+		result.Reason = openfeature.ErrorReason
+		floatValue = defaultValue
 	}
 
 	detail := openfeature.FloatResolutionDetail{
@@ -827,11 +830,11 @@ func (p *DatadogProvider) IntEvaluation(
 	case int8:
 		intValue = int64(v)
 	case float64:
-		// Accept float64 if it's a whole number (e.g., -5.0 → -5)
-		if v == float64(int64(v)) {
+		// Accept a whole number in int64 range (e.g., -5.0 → -5); reject lossy reads.
+		if v == math.Trunc(v) && v >= -(1<<63) && v < 1<<63 {
 			intValue = int64(v)
 		} else {
-			conversionErr = fmt.Errorf("%w: flag %q returned float with decimal part: %v", errTypeMismatch, flagKey, v)
+			conversionErr = fmt.Errorf("%w: flag %q returned a value that is not a whole int64: %v", errTypeMismatch, flagKey, v)
 		}
 	default:
 		if result.Error == nil {
@@ -843,6 +846,8 @@ func (p *DatadogProvider) IntEvaluation(
 
 	if conversionErr != nil {
 		result.Error = conversionErr
+		result.Reason = openfeature.ErrorReason
+		intValue = defaultValue
 	}
 
 	detail := openfeature.IntResolutionDetail{
@@ -972,8 +977,9 @@ func (p *DatadogProvider) evaluate(
 	// A malformed root activation is a configuration error in future-only mode,
 	// so it takes precedence over a caller type mismatch without traversing the
 	// dependency graph.
-	if flag, exists := config.Flags[flagKey]; exists &&
-		exclusion.mode == ExperimentationOptOutFutureExperimentsOnly && flag.invalidActivation {
+	rootFlag, rootExists := config.Flags[flagKey]
+	if rootExists &&
+		exclusion.mode == ExperimentationOptOutFutureExperimentsOnly && rootFlag.invalidActivation {
 		return evaluationResult{
 			Value:  defaultValue,
 			Reason: openfeature.ErrorReason,
@@ -984,13 +990,13 @@ func (p *DatadogProvider) evaluate(
 	// Reject a requested type that is incompatible with the configured root before
 	// traversing its dependency graph. Invalid and missing root flags continue
 	// through the evaluator so they retain their existing error precedence.
-	if flag, exists := config.Flags[flagKey]; requestedType != "" && exists &&
-		!compatibleEvaluationType(flag.VariationType, requestedType) {
+	if requestedType != "" && rootExists &&
+		!compatibleEvaluationType(rootFlag.VariationType, requestedType) {
 		return evaluationResult{
 			Value:  defaultValue,
 			Reason: openfeature.ErrorReason,
 			Error: fmt.Errorf("%w: flag %q is configured as %s, not %s", errTypeMismatch,
-				flagKey, flag.VariationType, requestedType),
+				flagKey, rootFlag.VariationType, requestedType),
 		}
 	}
 
@@ -998,17 +1004,29 @@ func (p *DatadogProvider) evaluate(
 	// returned batch is detached from its memo and exposure state, and each record
 	// is cloned again before publication so a failed or mutating publisher cannot
 	// affect the root result or another record.
-	res = evaluateConfiguredFlag(config, flagKey, defaultValue, flatCtx, evalNow, exclusion)
+	res = evaluateConfiguredFlagLookedUp(config, flagKey, rootFlag, rootExists, defaultValue, flatCtx, evalNow, exclusion)
 	p.publishDependencyEvaluations(ctx, flatCtx, res.DependencyEvaluations)
 	res.DependencyEvaluations = nil
 	return res
 }
 
-// compatibleEvaluationType preserves FloatEvaluation's safe integer widening while
-// retaining strict type checks for all other configured/requested type pairs.
+// compatibleEvaluationType lets OpenFeature Number reads reach the lossless typed
+// conversion while retaining strict checks for non-numeric type pairs.
 func compatibleEvaluationType(configuredType, requestedType valueType) bool {
 	return configuredType == requestedType ||
-		(configuredType == valueTypeInteger && requestedType == valueTypeNumeric)
+		isNumericValueType(configuredType) && isNumericValueType(requestedType)
+}
+
+func isNumericValueType(t valueType) bool {
+	return t == valueTypeNumeric || t == valueTypeInteger
+}
+
+func exactFloat(flagKey string, value int64) (float64, error) {
+	converted := float64(value)
+	if converted >= 1<<63 || int64(converted) != value {
+		return 0, fmt.Errorf("%w: flag %q value %d is not exactly representable as float64", errTypeMismatch, flagKey, value)
+	}
+	return converted, nil
 }
 
 func (p *DatadogProvider) publishDependencyEvaluations(
@@ -1101,6 +1119,18 @@ func toResolutionError(err error) openfeature.ResolutionError {
 	}
 
 	errMsg := err.Error()
+	if graphErr, ok := errors.AsType[*dependencyGraphError](err); ok {
+		switch graphErr.code {
+		case openfeature.FlagNotFoundCode:
+			return openfeature.NewFlagNotFoundResolutionError(errMsg)
+		case openfeature.ParseErrorCode:
+			return openfeature.NewParseErrorResolutionError(errMsg)
+		case openfeature.TypeMismatchCode:
+			return openfeature.NewTypeMismatchResolutionError(errMsg)
+		default:
+			return openfeature.NewGeneralResolutionError(errMsg)
+		}
+	}
 
 	// Check for wrapped sentinel errors using errors.Is
 	switch {

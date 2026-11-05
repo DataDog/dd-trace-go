@@ -83,12 +83,14 @@ type dependencyExposureCandidate struct {
 // the public OpenFeature FlagMetadata boundary. The evaluator keeps the richer
 // candidates private and exposes only the encoded JSON string.
 type dependencyExposureSnapshot struct {
-	FlagKey       string  `json:"flagKey"`
-	VariantKey    string  `json:"variantKey"`
-	AllocationKey string  `json:"allocationKey,omitempty"`
-	DoLog         bool    `json:"doLog"`
-	SerialID      *uint32 `json:"serialId,omitempty"`
-	FeaturesKey   string  `json:"featuresKey,omitempty"`
+	FlagKey       string    `json:"flagKey"`
+	VariantKey    string    `json:"variantKey"`
+	Reason        of.Reason `json:"reason"`
+	AllocationKey string    `json:"allocationKey,omitempty"`
+	DoLog         bool      `json:"doLog"`
+	SerialID      *uint32   `json:"serialId,omitempty"`
+	FeaturesKey   string    `json:"featuresKey,omitempty"`
+	CacheHit      *bool     `json:"cacheHit,omitempty"`
 }
 
 type dependencyGraphError struct {
@@ -145,6 +147,14 @@ func evaluateFlagWithResolver(
 		split, matched, err := evaluateAllocationWithResolver(allocation, context, now, resolver)
 		if err != nil {
 			rollbackDependency(resolver, checkpoint)
+			if graphErr, ok := err.(*dependencyGraphError); ok && graphErr.flagKey != flag.Key {
+				err = &dependencyGraphError{
+					flagKey: flag.Key,
+					code:    of.GeneralCode,
+					message: fmt.Sprintf("prerequisite flag %q failed: %s", graphErr.flagKey, graphErr.message),
+					cause:   graphErr,
+				}
+			}
 			return evaluationResult{
 				Value:  defaultValue,
 				Reason: of.ErrorReason,
@@ -235,7 +245,23 @@ func evaluateConfiguredFlag(
 	exclusion experimentationExclusion,
 ) evaluationResult {
 	flag, exists := config.Flags[flagKey]
+	return evaluateConfiguredFlagLookedUp(config, flagKey, flag, exists, defaultValue, context, now, exclusion)
+}
+
+func evaluateConfiguredFlagLookedUp(
+	config *universalFlagsConfiguration,
+	flagKey string,
+	flag *flag,
+	exists bool,
+	defaultValue any,
+	context map[string]any,
+	now time.Time,
+	exclusion experimentationExclusion,
+) evaluationResult {
 	if !exists || !flag.Enabled || !flagMayEvaluateDependencies(flag) {
+		if exists && !(exclusion.mode == ExperimentationOptOutFutureExperimentsOnly && flag.invalidActivation) {
+			return evaluateFlagWithResolver(flag, defaultValue, context, now, exclusion, nil)
+		}
 		return evaluateConfiguredFlagOnce(config, flagKey, defaultValue, context, now, exclusion, nil)
 	}
 	resolver := &lazyDependencyResolver{
@@ -864,13 +890,20 @@ func encodeDependencyExposureCandidates(candidates []dependencyExposureCandidate
 		if hasSerialID {
 			serialIDPtr = &serialID
 		}
+		cacheHit, hasCacheHit := metadata[metadataExposureCacheHitKey].(bool)
+		var cacheHitPtr *bool
+		if hasCacheHit {
+			cacheHitPtr = &cacheHit
+		}
 		snapshots = append(snapshots, dependencyExposureSnapshot{
 			FlagKey:       candidate.FlagKey,
 			VariantKey:    candidate.Result.VariantKey,
+			Reason:        candidate.Result.Reason,
 			AllocationKey: allocationKey,
 			DoLog:         doLog,
 			SerialID:      serialIDPtr,
 			FeaturesKey:   featureValuesKey(metadata, metadataExposureFeaturesKey),
+			CacheHit:      cacheHitPtr,
 		})
 	}
 	encoded, err := json.Marshal(snapshots)
@@ -900,10 +933,14 @@ func decodeDependencyExposureCandidates(encoded string) []dependencyExposureCand
 		if snapshot.FeaturesKey != "" {
 			metadata[metadataExposureFeaturesKey] = snapshot.FeaturesKey
 		}
+		if snapshot.CacheHit != nil {
+			metadata[metadataExposureCacheHitKey] = *snapshot.CacheHit
+		}
 		candidates = append(candidates, dependencyExposureCandidate{
 			FlagKey: snapshot.FlagKey,
 			Result: evaluationResult{
 				VariantKey: snapshot.VariantKey,
+				Reason:     snapshot.Reason,
 				Metadata:   metadata,
 			},
 		})
