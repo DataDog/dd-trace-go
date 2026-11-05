@@ -10,10 +10,8 @@ on:
   push:
     branches:
       - release-v*
-      # The merge queue is not gated (see CONTRIBUTING.md): a queued commit
-      # re-runs the lanes that trigger on mq-working-branch-** in full, this one
-      # now included, so a narrowed pull request cannot skip this lane here.
-      - mq-working-branch-**
+      # Not on mq-working-branch-**: the merge queue deliberately skips this
+      # lane (see .github/AGENTS.md).
     tags-ignore:
       - 'contrib/**'
       - 'instrumentation/**'
@@ -36,7 +34,7 @@ concurrency:
 env:
   # The single place to bump the tested otelc release. Upstream only; do not point
   # this at a fork.
-  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.2.1-0.20261015110818-d3d72efe9f25' }}
+  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.2.1-0.20261103103723-318faabcdf7d' }}
   # Modules otelc reads, tidied by both jobs next to the application each one
   # builds.
   OTELC_MODULES: >-
