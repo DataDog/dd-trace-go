@@ -207,8 +207,8 @@ create_tracer:
 # Custom spans
 # ---------------------------------------------------------------------------
 
-# FIXME: a directive on a function literal is not expanded
-# (https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1602).
+# A directive on a function literal is expanded too. A literal has no name, so
+# its span is named after the first directive argument.
 #
 # otelc matches argument types by name, so an argument whose type only
 # implements context.Context does not give the parent. The parent then comes

@@ -25,6 +25,9 @@ func main() {
 func run() {
 	work(context.Background())
 	_ = fail()
+	//dd:span span.name:main.literal app:literal
+	op := func() {}
+	op()
 }
 
 //dd:span app:work
