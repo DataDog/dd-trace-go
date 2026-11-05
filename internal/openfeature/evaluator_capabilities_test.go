@@ -6,9 +6,11 @@
 package openfeature
 
 import (
-	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
-	"github.com/stretchr/testify/assert"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 )
 
 func TestEvaluatorCapabilities(t *testing.T) {
