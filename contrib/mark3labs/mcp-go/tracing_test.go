@@ -10,10 +10,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/mark3labs/mcp-go/client"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/stretchr/testify/assert"
@@ -492,6 +494,83 @@ func (l *recordLogger) String() string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return strings.Join(l.logs, "\n")
+}
+
+func TestIntegrationStatelessToolCall(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		protocolVersion string
+		wantInitialize  bool
+	}{
+		{name: "2026-07-28", protocolVersion: "", wantInitialize: false},
+		{name: "legacy", protocolVersion: "2025-11-25", wantInitialize: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tt := testTracer(t)
+			ctx := context.Background()
+
+			srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
+
+			type echoArgs struct {
+				Text      string         `json:"text"`
+				ID        uint64         `json:"id"`
+				Telemetry map[string]any `json:"telemetry"`
+			}
+			var bound echoArgs
+			srv.AddTool(mcp.NewTool("echo", mcp.WithString("text"), mcp.WithNumber("id")),
+				func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+					require.NoError(t, req.BindArguments(&bound))
+					return mcp.NewToolResultText(bound.Text), nil
+				},
+			)
+
+			httpServer := httptest.NewServer(server.NewStreamableHTTPServer(srv, server.WithStateLess(true)))
+			defer httpServer.Close()
+
+			cl, err := client.NewStreamableHttpClient(httpServer.URL)
+			require.NoError(t, err)
+			if tc.protocolVersion != "" {
+				client.WithProtocolVersion(tc.protocolVersion)(cl)
+			}
+			require.NoError(t, cl.Start(ctx))
+			defer cl.Close()
+			_, err = cl.Initialize(ctx, mcp.InitializeRequest{Params: mcp.InitializeParams{ClientInfo: mcp.Implementation{Name: "test-client", Version: "1.0.0"}}})
+			require.NoError(t, err)
+
+			const id uint64 = 12345678901234567890
+			req := mcp.CallToolRequest{}
+			req.Params.Name = "echo"
+			req.Params.Arguments = map[string]any{
+				"text":      "hello",
+				"id":        id,
+				"telemetry": map[string]any{"intent": "test stateless intent"},
+			}
+			_, err = cl.CallTool(ctx, req)
+			require.NoError(t, err)
+
+			assert.Equal(t, "hello", bound.Text)
+			assert.Equal(t, id, bound.ID)
+			assert.Nil(t, bound.Telemetry, "BindArguments must not see the telemetry parameter")
+
+			tracer.Flush()
+			if tc.wantInitialize {
+				tt.RequireSpan(t, "mcp.initialize")
+			} else {
+				assert.Nil(t, tt.FindSpan("mcp.initialize"))
+			}
+			toolSpan := tt.RequireSpan(t, "echo")
+
+			assert.Contains(t, toolSpan.Tags, "mcp_tool:echo")
+			assert.Equal(t, "test stateless intent", toolSpan.Meta["intent"])
+			assert.Empty(t, toolSpan.SessionID)
+			for _, tag := range toolSpan.Tags {
+				assert.NotContains(t, tag, "mcp_session_id:")
+			}
+
+			input := toolSpan.Meta["input"].(map[string]any)["value"].(string)
+			assert.JSONEq(t, `{"method":"tools/call","params":{"name":"echo","arguments":{"text":"hello","id":12345678901234567890}}}`, input)
+		})
+	}
 }
 
 // Test helpers

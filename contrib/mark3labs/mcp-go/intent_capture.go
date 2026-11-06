@@ -15,7 +15,6 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	instrmcp "github.com/DataDog/dd-trace-go/v2/instrumentation/mcp"
-	"github.com/DataDog/dd-trace-go/v2/llmobs"
 )
 
 func telemetrySchema() map[string]any {
@@ -166,14 +165,16 @@ func ContextWithIntent(ctx context.Context, intent string) context.Context {
 }
 
 // processAndRemoveTelemetryToolMiddlewareFor returns a tool handler middleware
-// that strips the telemetry parameter from a tools/call request and annotates
-// the active LLMObs span with the supplied intent, but only when the supplied
-// predicate returns true for the request's context. When the predicate
-// returns false, the middleware is a transparent pass-through.
+// that strips the telemetry parameter from a tools/call request and stores the
+// supplied intent on the context for toolHandlerMiddleware to annotate, but only
+// when the supplied predicate returns true for the request's context. When the
+// predicate returns false, the middleware is a transparent pass-through.
 //
-// This must be registered after the tool handler middleware (mcp-go runs
-// middleware in registration order). This removes the telemetry parameter
-// before user-defined middleware or tool handlers can see it.
+// This must be registered before the tool handler middleware (mcp-go runs
+// middleware in registration order). The request is passed by value, so the
+// span only records the stripped arguments when they are stripped before the
+// span middleware runs. This also removes the telemetry parameter before
+// user-defined middleware or tool handlers can see it.
 func processAndRemoveTelemetryToolMiddlewareFor(enabled func(context.Context) bool) func(server.ToolHandlerFunc) server.ToolHandlerFunc {
 	return func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 		return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -184,18 +185,39 @@ func processAndRemoveTelemetryToolMiddlewareFor(enabled func(context.Context) bo
 				if telemetryVal, has := m[instrmcp.TelemetryKey]; has {
 					if telemetryMap, ok := telemetryVal.(map[string]any); ok {
 						if intent := extractIntent(telemetryMap); intent != "" {
-							annotateIntentOnSpan(ctx, intent)
 							ctx = ContextWithIntent(ctx, intent)
 						}
 					} else if instr != nil && instr.Logger() != nil {
 						instr.Logger().Warn("mcp-go intent capture: telemetry value is not a map")
 					}
 					delete(m, instrmcp.TelemetryKey)
+					request.Params.RawArguments = removeTelemetryFromRawArguments(request.Params.RawArguments)
 				}
 			}
 			return next(ctx, request)
 		}
 	}
+}
+
+// removeTelemetryFromRawArguments removes the telemetry parameter from the wire
+// bytes that mcp-go keeps for BindArguments, GetRawArguments, and MarshalJSON.
+// Other values keep their exact encoding, so large integers keep their precision.
+// It returns nil when the bytes cannot be parsed, so mcp-go falls back to the
+// already-stripped Arguments map.
+func removeTelemetryFromRawArguments(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return raw
+	}
+	var args map[string]json.RawMessage
+	if json.Unmarshal(raw, &args) != nil {
+		return nil
+	}
+	delete(args, instrmcp.TelemetryKey)
+	stripped, err := json.Marshal(args)
+	if err != nil {
+		return nil
+	}
+	return stripped
 }
 
 // extractIntent pulls the intent string out of the telemetry map supplied by
@@ -214,22 +236,4 @@ func extractIntent(telemetryVal map[string]any) string {
 		return ""
 	}
 	return intent
-}
-
-// annotateIntentOnSpan records intent on the active LLM Obs tool span, if one
-// is present on ctx. It is a no-op when no span is active or the active span
-// is not a tool span, so it is always safe to call.
-func annotateIntentOnSpan(ctx context.Context, intent string) {
-	if intent == "" {
-		return
-	}
-	span, ok := llmobs.SpanFromContext(ctx)
-	if !ok {
-		return
-	}
-	toolSpan, ok := span.AsTool()
-	if !ok {
-		return
-	}
-	toolSpan.Annotate(llmobs.WithAnnotatedIntent(intent))
 }

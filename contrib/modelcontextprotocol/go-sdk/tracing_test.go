@@ -513,4 +513,70 @@ func TestToolCallNonCallToolResult(t *testing.T) {
 	}
 }
 
+func TestIntegrationStatelessToolCall(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		protocolVersion string
+		wantInitialize  bool
+	}{
+		{name: "2026-07-28", protocolVersion: "", wantInitialize: false},
+		{name: "legacy", protocolVersion: "2025-11-25", wantInitialize: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tt := testTracer(t)
+			ctx := context.Background()
+
+			server := mcp.NewServer(&mcp.Implementation{Name: "test-server", Version: "1.0.0"}, nil)
+			AddTracing(server, WithIntentCapture())
+
+			type echoArgs struct {
+				Text string `json:"text"`
+			}
+			var handlerArgs string
+			mcp.AddTool(server, &mcp.Tool{Name: "echo"},
+				func(ctx context.Context, req *mcp.CallToolRequest, args echoArgs) (*mcp.CallToolResult, any, error) {
+					handlerArgs = string(req.Params.Arguments)
+					return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: args.Text}}}, nil, nil
+				},
+			)
+
+			handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, &mcp.StreamableHTTPOptions{Stateless: true})
+			httpServer := httptest.NewServer(handler)
+			defer httpServer.Close()
+
+			client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "1.0.0"}, nil)
+			clientSession, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: httpServer.URL}, &mcp.ClientSessionOptions{ProtocolVersion: tc.protocolVersion})
+			require.NoError(t, err)
+			defer clientSession.Close()
+
+			_, err = clientSession.CallTool(ctx, &mcp.CallToolParams{
+				Name: "echo",
+				Arguments: map[string]any{
+					"text":      "hello",
+					"telemetry": map[string]any{"intent": "test stateless intent"},
+				},
+			})
+			require.NoError(t, err)
+
+			tracer.Flush()
+			if tc.wantInitialize {
+				tt.RequireSpan(t, "mcp.initialize")
+			} else {
+				assert.Nil(t, tt.FindSpan("mcp.initialize"))
+			}
+			toolSpan := tt.RequireSpan(t, "echo")
+
+			assert.Contains(t, toolSpan.Tags, "mcp_tool:echo")
+			assert.Equal(t, "test stateless intent", toolSpan.Meta["intent"])
+			for _, tag := range toolSpan.Tags {
+				assert.NotContains(t, tag, "mcp_session_id:")
+			}
+			assert.JSONEq(t, `{"text":"hello"}`, handlerArgs)
+
+			input := toolSpan.Meta["input"].(map[string]any)["value"].(string)
+			assert.JSONEq(t, `{"method":"tools/call","params":{"name":"echo","arguments":{"text":"hello"}}}`, input)
+		})
+	}
+}
+
 // Shared helpers
