@@ -222,7 +222,7 @@ func TestRunWAFTimeoutIsNotAnError(t *testing.T) {
 			check: func(t *testing.T, client *telemetrytest.RecordClient, metrics *ContextMetrics) {
 				require.Equal(t, 1.0, sumMetric(client, "waf.error", "waf_error:-127"))
 				require.Equal(t, 1.0, sumMetric(client, "waf.error"))
-				require.EqualValues(t, -127, metrics.WAFErrorCode.Load())
+				require.EqualValues(t, defaultWafErrorCode, metrics.WAFErrorCode.Load())
 			},
 		},
 	} {

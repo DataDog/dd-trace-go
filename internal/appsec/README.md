@@ -321,8 +321,9 @@ does not get an error code. `RegisterWafRun` counts timeouts.
 
 The `waf_error` tag of `waf.error` and `rasp.error`, and the span tags
 `_dd.appsec.waf.error` and `_dd.appsec.rasp.error`, hold the `ddwaf_run` return
-code (RFC-1012). go-libddwaf v5 returns positive `waferrors.RunError` values, so
-`wafRunErrorCode` maps them back:
+code (RFC-1012). `waferrors.ToWafReturnCode` (go-libddwaf v5.1.0 and later)
+gives the code. When it returns zero, dd-trace-go reports `-127`
+(`defaultWafErrorCode`):
 
 | Error from `Run` | Code |
 |------------------|------|

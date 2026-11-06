@@ -466,31 +466,9 @@ func (m *ContextMetrics) IncWafError(addrs addresses.RunAddressData, in error) {
 	}
 }
 
-// ddwaf_run return codes (RFC-1012). go-libddwaf v5 maps them to positive
-// [waferrors.RunError] values, so dd-trace-go maps them back here.
-const (
-	wafErrorCodeInvalidArgument = -1   // DDWAF_ERR_INVALID_ARGUMENT
-	wafErrorCodeInvalidObject   = -2   // DDWAF_ERR_INVALID_OBJECT
-	wafErrorCodeInternal        = -3   // DDWAF_ERR_INTERNAL
-	wafErrorCodeBinding         = -127 // not a ddwaf_run code: error from the bindings
-)
-
-// wafRunErrorCode returns the ddwaf_run code for err. The result is always negative.
-// It compares with the named [waferrors.RunError] constants, not with their integer values,
-// so a renumbering in go-libddwaf cannot change the result.
-func wafRunErrorCode(err error) int {
-	if runErr, ok := errors.AsType[waferrors.RunError](err); ok {
-		switch runErr {
-		case waferrors.ErrInvalidArgument:
-			return wafErrorCodeInvalidArgument
-		case waferrors.ErrInvalidObject:
-			return wafErrorCodeInvalidObject
-		case waferrors.ErrInternal:
-			return wafErrorCodeInternal
-		}
-	}
-	return wafErrorCodeBinding
-}
+// defaultWafErrorCode is the error code (RFC-1012) of an error that has no ddwaf_run return code
+// ([waferrors.ToWafReturnCode] returns zero): an error from the bindings, not from the WAF itself.
+const defaultWafErrorCode = -127
 
 // updateClosestToZero atomically sets target to the closer-to-zero of its current
 // value and code. Codes are always < 0; a code >= 0 is ignored. Zero is the sentinel "no error".
@@ -554,7 +532,10 @@ func (m *ContextMetrics) ExceptionMsg() string {
 	return ""
 }
 func (m *ContextMetrics) wafError(in error) {
-	errCode := wafRunErrorCode(in)
+	errCode := defaultWafErrorCode
+	if code := waferrors.ToWafReturnCode(in); code != 0 {
+		errCode = code
+	}
 	updateClosestToZero(&m.WAFErrorCode, int32(errCode))
 
 	handle, _ := m.wafErrorCount.LoadOrCompute(errCode, func() (telemetry.MetricHandle, bool) {
@@ -578,7 +559,10 @@ func (m *ContextMetrics) SkipRASPRule(ruleType addresses.RASPRuleType, reason st
 }
 
 func (m *ContextMetrics) raspError(in error, ruleType addresses.RASPRuleType) {
-	errCode := wafRunErrorCode(in)
+	errCode := defaultWafErrorCode
+	if code := waferrors.ToWafReturnCode(in); code != 0 {
+		errCode = code
+	}
 	updateClosestToZero(&m.RASPErrorCodes[ruleType], int32(errCode))
 
 	handle, _ := m.raspErrorCount.LoadOrCompute(raspMetricKey[int]{typ: ruleType, additionalTag: errCode}, func() (telemetry.MetricHandle, bool) {
