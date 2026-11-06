@@ -508,7 +508,7 @@ func TestFindMatchingFunctionLiteral(t *testing.T) {
 	assert.Equal(t, len(literals), inspectedLiteralCount)
 }
 
-func TestResolveSourceLocationUsesNamedDeclarationEndLine(t *testing.T) {
+func TestResolveSourceLocationUsesNamedDeclarationRange(t *testing.T) {
 	resolution := resolveSourceLocation(sourceFileMetadata{
 		namedFunctions: map[string][]namedFunctionMetadata{
 			"fixture": {{
@@ -520,7 +520,7 @@ func TestResolveSourceLocationUsesNamedDeclarationEndLine(t *testing.T) {
 		},
 	}, "fixture", 14)
 
-	assert.Equal(t, 14, resolution.startLine)
+	assert.Equal(t, 10, resolution.startLine)
 	assert.Equal(t, 20, resolution.endLine)
 	assert.True(t, resolution.functionUnskippable)
 	require.NotNil(t, resolution.matchedDeclaration)
@@ -547,7 +547,7 @@ func TestResolveSourceLocationDisambiguatesSameNamedDeclarationsByRuntimeStartLi
 		},
 	}, "fixture", 24)
 
-	assert.Equal(t, 24, resolution.startLine)
+	assert.Equal(t, 20, resolution.startLine)
 	assert.Equal(t, 28, resolution.endLine)
 	assert.True(t, resolution.functionUnskippable)
 	require.NotNil(t, resolution.matchedDeclaration)
@@ -570,7 +570,7 @@ func TestResolveSourceLocationUsesLineConfirmedFunc1Declaration(t *testing.T) {
 		}},
 	}, "func1", 14)
 
-	assert.Equal(t, 14, resolution.startLine)
+	assert.Equal(t, 10, resolution.startLine)
 	assert.Equal(t, 20, resolution.endLine)
 	assert.True(t, resolution.functionUnskippable)
 	require.NotNil(t, resolution.matchedDeclaration)
@@ -598,7 +598,7 @@ func TestResolveSourceLocationDisambiguatesFunc1MethodsByRuntimeStartLine(t *tes
 		},
 	}, "func1", 24)
 
-	assert.Equal(t, 24, resolution.startLine)
+	assert.Equal(t, 20, resolution.startLine)
 	assert.Equal(t, 28, resolution.endLine)
 	assert.True(t, resolution.functionUnskippable)
 	require.NotNil(t, resolution.matchedDeclaration)
@@ -773,7 +773,7 @@ func TestSetTestFuncKeepsRealFunc1DeclarationWhenLineConfirmed(t *testing.T) {
 
 	fn := runtime.FuncForPC(reflect.ValueOf(func1).Pointer())
 	require.NotNil(t, fn)
-	file, runtimeStartLine := fn.FileLine(fn.Entry())
+	file, _ := fn.FileLine(fn.Entry())
 	require.Equal(t, "manual_api_sourcecache_funcn_fixture_test.go", filepath.Base(file))
 
 	metadata := loadSourceFileMetadata(filesystemPathForRuntimeSource(file))
@@ -787,7 +787,8 @@ func TestSetTestFuncKeepsRealFunc1DeclarationWhenLineConfirmed(t *testing.T) {
 	endLine, endOK := test.GetTag(constants.TestSourceEndLine)
 	require.True(t, startOK)
 	require.True(t, endOK)
-	assert.Equal(t, float64(runtimeStartLine), startLine)
+	// func1's body has no instructions, so its entry PC maps to the closing brace.
+	assert.Equal(t, float64(declaration.declStartLine), startLine)
 	assert.Equal(t, float64(declaration.endLine), endLine)
 
 	unskippable, ok := test.GetTag(constants.TestUnskippable)
@@ -1074,8 +1075,8 @@ func TestSetTestFuncDisambiguatesSameNamedMethodsInTheSameFile(t *testing.T) {
 	secondFn := runtime.FuncForPC(reflect.ValueOf(sameNameFixtureSuiteB.TestSharedName).Pointer())
 	require.NotNil(t, firstFn)
 	require.NotNil(t, secondFn)
-	firstFile, firstRuntimeStartLine := firstFn.FileLine(firstFn.Entry())
-	secondFile, secondRuntimeStartLine := secondFn.FileLine(secondFn.Entry())
+	firstFile, _ := firstFn.FileLine(firstFn.Entry())
+	secondFile, _ := secondFn.FileLine(secondFn.Entry())
 	require.Equal(t, firstFile, secondFile)
 	metadata := loadSourceFileMetadata(filesystemPathForRuntimeSource(firstFile))
 	require.Len(t, metadata.namedFunctions["TestSharedName"], 2)
@@ -1098,8 +1099,8 @@ func TestSetTestFuncDisambiguatesSameNamedMethodsInTheSameFile(t *testing.T) {
 	require.True(t, firstEndOK)
 	require.True(t, secondStartOK)
 	require.True(t, secondEndOK)
-	assert.Equal(t, float64(firstRuntimeStartLine), firstStartLine)
-	assert.Equal(t, float64(secondRuntimeStartLine), secondStartLine)
+	assert.Equal(t, float64(metadata.namedFunctions["TestSharedName"][0].declStartLine), firstStartLine)
+	assert.Equal(t, float64(metadata.namedFunctions["TestSharedName"][1].declStartLine), secondStartLine)
 	assert.Equal(t, float64(metadata.namedFunctions["TestSharedName"][0].endLine), firstEndLine)
 	assert.Equal(t, float64(metadata.namedFunctions["TestSharedName"][1].endLine), secondEndLine)
 	assert.NotEqual(t, firstEndLine, secondEndLine)

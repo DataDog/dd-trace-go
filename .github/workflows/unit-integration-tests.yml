@@ -19,6 +19,17 @@ on:
         required: false
         type: string
         default: ""
+      test-timeout:
+        description: >-
+          Per-binary go test -timeout for the core test suite. Empty keeps
+          Go's 10m default. Set only by the dynamic-analysis lanes, because
+          -race plus debug/deadlock instrumented binaries run several times
+          slower on a degraded runner and blow the 10m budget; gotestsum
+          --rerun-fails cannot rescue a whole-binary timeout (rerun aborted,
+          suspected panic).
+        required: false
+        type: string
+        default: ""
       contrib-modules:
         description: >-
           Space-separated contrib/instrumentation module directories to test, or
@@ -134,6 +145,14 @@ jobs:
              "modules":${{ toJson(matrix.chunk) }},
              "tags":${{ toJSON(inputs.build_tags || 'standard') }},
              "coverage":"contrib"}
+          # Default-branch seed set: the nightly main run of this workflow
+          # (Go 1.27) saves these keys in all three build-tag variants —
+          # standard, and the debug and deadlock families the nightly
+          # dynamic-checks runs use; every other run, including all PR
+          # and merge-queue runs, restores only. The seed comparison uses
+          # the raw input: pass the alias ("1.27"), not a resolved
+          # version ("1.27.2"), or the job stops seeding.
+          seed: ${{ inputs.go-version == '1.27' }}
 
       - name: Restore and install development tools
         id: tools
@@ -217,8 +236,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p /tmp/trace-check-results
-          RESPONSE_CODE=$(curl -s -w "%{http_code}" -o /tmp/trace-check-results/failures-${{ strategy.job-index }}.json "http://127.0.0.1:9126/test/trace_check/failures?return_all=true")
-          curl -s -o /tmp/trace-check-results/summary-${{ strategy.job-index }}.json "http://127.0.0.1:9126/test/trace_check/summary?return_all=true"
+          RESPONSE_CODE=$(curl -s --retry 5 --retry-delay 2 --retry-connrefused -w "%{http_code}" -o /tmp/trace-check-results/failures-${{ strategy.job-index }}.json "http://127.0.0.1:9126/test/trace_check/failures?return_all=true")
+          curl -fsS --retry 5 --retry-delay 2 --retry-connrefused -o /tmp/trace-check-results/summary-${{ strategy.job-index }}.json "http://127.0.0.1:9126/test/trace_check/summary?return_all=true"
           echo "$RESPONSE_CODE" > /tmp/trace-check-results/response_code-${{ strategy.job-index }}.txt
           echo "APM Test Agent Check Traces Summary Results:"
           jq "." /tmp/trace-check-results/summary-${{ strategy.job-index }}.json
@@ -318,7 +337,10 @@ jobs:
       group: "APM Larger Runners"
     # Without this the job inherits GitHub's 360-minute default, so a hang burns
     # six hours of a larger runner. A healthy run is well under 20 minutes.
-    timeout-minutes: 45
+    # The cap rises only when test-timeout is set (dynamic-analysis lanes),
+    # where healthy runs are 8-13m but a degraded runner absorbs the raised
+    # per-binary budget (30m) before finishing.
+    timeout-minutes: ${{ inputs.test-timeout != '' && 75 || 45 }}
     env:
       INTEGRATION: true
       COMPOSE_FILE: .github/testservices/docker-compose.yaml
@@ -353,6 +375,7 @@ jobs:
              "modules":["core"],
              "tags":${{ toJSON(inputs.build_tags || 'standard') }},
              "coverage":"core"}
+          seed: ${{ inputs.go-version == '1.27' }}
 
       - name: Restore and install development tools
         id: tools
@@ -360,6 +383,11 @@ jobs:
         with:
           go-version: ${{ steps.setup-go.outputs.go-version }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
+      # The gotesting fixture tests invoke this binary directly; without it
+      # they pay `go run` module resolution inside their per-test timeouts.
+      - name: Install orchestrion binary
+        uses: ./.github/actions/install-orchestrion
 
       # Containers were started (non-blocking) before Go setup above, so most of
       # the wait time already overlapped with it; this just waits out whatever's left.
@@ -372,6 +400,7 @@ jobs:
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
           BUILD_TAGS: ${{ inputs.build_tags }}
           RERUN_FAILS: ${{ inputs.rerun-fails }}
+          GO_TEST_TIMEOUT: ${{ inputs.test-timeout }}
         run: |
           set -euo pipefail
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -492,6 +521,7 @@ jobs:
             {"runner":"APM Larger Runners",
              "modules":["internal/apps/telemetry-errors"],
              "coverage":"none"}
+          seed: ${{ inputs.go-version == '1.27' }}
 
       - name: Restore and install development tools
         id: tools

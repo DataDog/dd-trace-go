@@ -90,6 +90,27 @@ func TestFuzzEventsPreserveExecutionDuration(t *testing.T) {
 	}
 }
 
+func TestFuzzEventsClampSkewedNativeDuration(t *testing.T) {
+	for _, nativeDuration := range []time.Duration{-5 * time.Millisecond, 0} {
+		t.Run(fmt.Sprintf("native_duration=%s", nativeDuration), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				native := &testing.F{}
+				setFuzzNativeField(t, native, "duration", nativeDuration)
+				start := time.Now()
+				event := &fuzzTimedRecordingTest{processRetryRecordingTest: newProcessRetryRecordingTestForTesting("skew"), start: start}
+				pending := fuzzTestEvent{native: native, metadata: &testExecutionMetadata{}, test: event, suite: event.suite, module: event.suite.module, finishTime: start.Add(time.Hour)}
+				queue := &fuzzEventQueue{}
+				queue.add(pending)
+				time.Sleep(time.Hour) // The captured wall finish time spans this virtual hour.
+				queue.finishAfterNativeRun()
+				require.Equal(t, start, event.finish, "a read non-positive native duration must report zero, not the captured wall finish time")
+				require.Equal(t, 1, event.closeCount)
+				requireFuzzQueueDrained(t, queue)
+			})
+		})
+	}
+}
+
 func TestFuzzEventsSkipHooksWaitForCleanup(t *testing.T) {
 	oldEnabled := atomic.LoadInt32(&ciVisibilityEnabledValue)
 	atomic.StoreInt32(&ciVisibilityEnabledValue, 1)

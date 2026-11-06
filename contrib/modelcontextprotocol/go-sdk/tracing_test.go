@@ -355,7 +355,7 @@ func TestIntegrationToolCallError(t *testing.T) {
 	assert.Equal(t, "tool", toolSpan.Meta["span.kind"])
 
 	assert.Contains(t, toolSpan.Meta, "error.message")
-	assert.Contains(t, toolSpan.Meta["error.message"], "tool resulted in an error")
+	assert.Contains(t, toolSpan.Meta["error.message"], "intentional test error")
 	assert.Contains(t, toolSpan.Meta, "error.type")
 	assert.Contains(t, toolSpan.Meta, "error.stack")
 
@@ -444,7 +444,7 @@ func TestIntegrationToolCallStructuredError(t *testing.T) {
 	assert.Equal(t, "tool", toolSpan.Meta["span.kind"])
 
 	assert.Contains(t, toolSpan.Meta, "error.message")
-	assert.Contains(t, toolSpan.Meta["error.message"], "tool resulted in an error")
+	assert.Equal(t, "invalid input: name cannot be 'invalid'", toolSpan.Meta["error.message"])
 	assert.Contains(t, toolSpan.Meta, "error.type")
 	assert.Contains(t, toolSpan.Meta, "error.stack")
 

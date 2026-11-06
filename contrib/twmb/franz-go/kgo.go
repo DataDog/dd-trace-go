@@ -301,6 +301,9 @@ func (h *tracingHook) setConsumeDSMCheckpoint(r *kgo.Record) {
 	if !ok {
 		return
 	}
+	// Handlers receive r.Context, so downstream checkpoints can continue the
+	// pathway from it. ctx derives from r.Context and keeps the consume span.
+	r.Context = ctx
 	datastreams.InjectToBase64Carrier(ctx, carrier)
 	// Share groups have no per-partition committed offset: the broker tracks
 	// per-record acknowledgement and may deliver a partition's records to

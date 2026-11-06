@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/go-redis/redis/v7
+display_name: go-redis v7
+description: Instruments Redis commands and pipelines issued through go-redis v7 clients, including standard, failover, and
+  cluster clients, with tracing and error reporting.
+packages:
+- name: github.com/go-redis/redis/v7
+category:
+- db.client
+systems:
+- redis
+creation_date: '2021-03-31'

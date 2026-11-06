@@ -15,6 +15,8 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	civisibilitynet "github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
+	coretelemetry "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
 func TestAdditionalFeaturesInitializationPublishesLockFreeFastPath(t *testing.T) {
@@ -237,6 +239,87 @@ func TestEnsureSettingsInitializationFlakyRetryEnvironmentOverrideEnablesRetries
 		TotalRetryCount:          5,
 		RemainingTotalRetryCount: 5,
 	}, ciVisibilityFlakyRetriesSettings)
+}
+
+func TestEnsureAdditionalFeaturesInitializationDynamicFlakyRetryCountsIgnoreEFDCap(t *testing.T) {
+	// The environment is set before the reset so that the CI Visibility initializer started by TestMain, if it runs
+	// after the reset, builds the same state as this test.
+	t.Setenv(constants.CIVisibilityGitUploadEnabledEnvironmentVariable, "false")
+	t.Setenv(constants.CIVisibilityDynamicFlakyRetryEnabledEnvironmentVariable, "true")
+	t.Setenv(constants.CIVisibilityEarlyFlakeDetectionMaxRetriesEnvironmentVariable, "1")
+	resetCIVisibilityStateForTesting()
+	t.Cleanup(resetCIVisibilityStateForTesting)
+	newCIVisibilityClientWithServiceNameFunc = func(_ string) civisibilitynet.Client {
+		return &mockCIVisibilityClient{
+			getSettings: func() (*civisibilitynet.SettingsResponseData, error) {
+				settings := &civisibilitynet.SettingsResponseData{FlakyTestRetriesEnabled: true}
+				settings.EarlyFlakeDetection.SlowTestRetries.FiveS = 4
+				settings.EarlyFlakeDetection.SlowTestRetries.ThirtyS = 2
+				return settings, nil
+			},
+		}
+	}
+
+	ensureSettingsInitialization("service")
+	ensureAdditionalFeaturesInitialization("service")
+
+	assert.Equal(t, 1, ciVisibilitySettings.EarlyFlakeDetection.SlowTestRetries.FiveS)
+	assert.Equal(t, &[5]int64{4, 5, 2, 2, 1}, ciVisibilityFlakyRetriesSettings.DynamicRetryCounts)
+}
+
+func TestDynamicFlakyRetryCounts(t *testing.T) {
+	enabledMetric := telemetrytest.MetricKey{Namespace: coretelemetry.NamespaceCIVisibility, Name: "dynamic_atr_retries.enabled", Kind: "count"}
+	customBucketsMetric := enabledMetric
+	customBucketsMetric.Tags = "has_custom_buckets:true"
+
+	tests := []struct {
+		name       string
+		enabled    string
+		buckets    string
+		wantCounts *[5]int64
+		wantMetric *telemetrytest.MetricKey
+	}{
+		{name: "disabled ignores buckets", buckets: "3,2,1,1,1"},
+		{name: "slow test retries", enabled: "true", wantCounts: &[5]int64{4, 5, 2, 2, 1}, wantMetric: &enabledMetric},
+		{name: "custom buckets", enabled: "1", buckets: " 3, 2,1,1 ,20", wantCounts: &[5]int64{3, 2, 1, 1, 20}, wantMetric: &customBucketsMetric},
+		{name: "invalid buckets", enabled: "true", buckets: "3,2,1,1,21", wantCounts: &[5]int64{4, 5, 2, 2, 1}, wantMetric: &enabledMetric},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := new(telemetrytest.RecordClient)
+			defer coretelemetry.MockClient(recorder)()
+			t.Setenv(constants.CIVisibilityDynamicFlakyRetryEnabledEnvironmentVariable, tt.enabled)
+			t.Setenv(constants.CIVisibilityDynamicFlakyRetryBucketsEnvironmentVariable, tt.buckets)
+
+			assert.Equal(t, tt.wantCounts, dynamicFlakyRetryCounts([4]int{4, 0, 2, 0}))
+			if tt.wantMetric == nil {
+				assert.NotContains(t, recorder.Metrics, enabledMetric)
+				assert.NotContains(t, recorder.Metrics, customBucketsMetric)
+				return
+			}
+			require.Contains(t, recorder.Metrics, *tt.wantMetric)
+			assert.Equal(t, 1.0, recorder.Metrics[*tt.wantMetric].Get())
+		})
+	}
+}
+
+func TestDynamicFlakyRetryCountsWithoutSlowTestRetries(t *testing.T) {
+	defer coretelemetry.MockClient(new(telemetrytest.RecordClient))()
+	t.Setenv(constants.CIVisibilityDynamicFlakyRetryEnabledEnvironmentVariable, "true")
+	t.Setenv(constants.CIVisibilityDynamicFlakyRetryBucketsEnvironmentVariable, "")
+
+	assert.Equal(t, &[5]int64{10, 5, 3, 2, 1}, dynamicFlakyRetryCounts([4]int{}))
+}
+
+func TestParseDynamicFlakyRetryCounts(t *testing.T) {
+	counts, ok := parseDynamicFlakyRetryCounts("6,4,3,1,1")
+	assert.True(t, ok)
+	assert.Equal(t, [5]int64{6, 4, 3, 1, 1}, counts)
+
+	for _, value := range []string{"", "3,2,1,1", "3,2,1,1,1,1", "3,2,1,1,1,", "3,2,,1,1", "3,2,a,1,1", "3,2,0,1,1", "3,2,-1,1,1", "3,2,21,1,1"} {
+		_, ok := parseDynamicFlakyRetryCounts(value)
+		assert.False(t, ok, "value %q", value)
+	}
 }
 
 func TestEnsureSettingsInitializationGitUploadDisabledSettingsErrorDoesNotRegisterCloseAction(t *testing.T) {

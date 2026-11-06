@@ -1283,10 +1283,10 @@ func TestProcessRetryAdjustedRetryCount(t *testing.T) {
 	settings := integrations.GetSettings()
 	oldSettings := *settings
 	flakyRetries := integrations.GetFlakyRetriesSettings()
-	oldFlakyRetryCount := flakyRetries.RetryCount
+	oldFlakyRetries := *flakyRetries
 	t.Cleanup(func() {
 		*settings = oldSettings
-		flakyRetries.RetryCount = oldFlakyRetryCount
+		*flakyRetries = oldFlakyRetries
 	})
 
 	settings.EarlyFlakeDetection.SlowTestRetries.FiveS = 4
@@ -1361,6 +1361,31 @@ func TestProcessRetryAdjustedRetryCount(t *testing.T) {
 	}
 	require.Equal(t, int64(4), computeAdjustedRetryCount(execMeta, time.Second))
 	require.Equal(t, int64(4), computeAdjustedRetryCount(execMeta, 5*time.Minute), "the scheduler must reuse the span finalizer's duration bucket")
+
+	flakyRetries.DynamicRetryCounts = &[5]int64{6, 5, 4, 3, 2}
+	dynamic := &testExecutionMetadata{isFlakyTestRetriesEnabled: true}
+	require.Equal(t, int64(5), computeAdjustedRetryCount(dynamic, 10*time.Second), "dynamic retry counts replace the flat count, with inclusive bucket bounds")
+	dynamicSlowEFD := &testExecutionMetadata{
+		isEarlyFlakeDetectionEnabled: true,
+		isANewTest:                   true,
+		isFlakyTestRetriesEnabled:    true,
+	}
+	require.Equal(t, int64(3), computeAdjustedRetryCount(dynamicSlowEFD, 5*time.Minute), "EFD skips a 5m test, but dynamic retries keep it in the 5m bucket")
+	require.True(t, dynamicSlowEFD.efdFellBackToFlakyRetries)
+}
+
+func TestProcessRetryDynamicDurationBucket(t *testing.T) {
+	for _, test := range []struct {
+		duration time.Duration
+		bucket   int
+	}{
+		{5 * time.Second, 0}, {5*time.Second + 1, 1},
+		{10 * time.Second, 1}, {10*time.Second + 1, 2},
+		{30 * time.Second, 2}, {30*time.Second + 1, 3},
+		{5 * time.Minute, 3}, {5*time.Minute + 1, 4},
+	} {
+		require.Equal(t, test.bucket, dynamicRetryDurationBucket(test.duration), "duration %s", test.duration)
+	}
 }
 
 func TestProcessRetryTestingMReflectionDrift(t *testing.T) {

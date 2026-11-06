@@ -27,9 +27,9 @@ import (
 func withTestHooks(t *testing.T) *bool {
 	t.Helper()
 	started := false
-	otelmetricsinstall.StartHook = func(_ context.Context) error {
+	otelmetricsinstall.StartHook = func(_ context.Context) (bool, error) {
 		started = true
-		return nil
+		return true, nil
 	}
 	t.Cleanup(func() {
 		otelmetricsinstall.StartHook = nil
@@ -94,7 +94,7 @@ func TestTracerStartOtelRuntimeMetricsHookFailure(t *testing.T) {
 	defer internalconfig.SetUseFreshConfig(false)
 
 	withTestHooks(t)
-	otelmetricsinstall.StartHook = func(_ context.Context) error { return errors.New("hook failed") }
+	otelmetricsinstall.StartHook = func(_ context.Context) (bool, error) { return false, errors.New("hook failed") }
 
 	tp := new(log.RecordLogger)
 	require.NoError(t, Start(WithLogger(tp), WithDebugMode(true), withNoopInfoHTTPClient()))

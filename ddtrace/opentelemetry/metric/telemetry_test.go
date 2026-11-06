@@ -74,7 +74,7 @@ func TestTelemetryExporterConfigurations(t *testing.T) {
 
 	// Check non-sensitive configurations are reported with env_var origin
 	expectedConfigs := map[string]any{
-		"OTEL_EXPORTER_OTLP_TIMEOUT":  30000,
+		"OTEL_EXPORTER_OTLP_TIMEOUT":  "30000",
 		"OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
 		"OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4318",
 	}

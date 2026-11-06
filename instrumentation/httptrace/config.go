@@ -240,7 +240,7 @@ func QueryStringRegexp() *regexp.Regexp {
 	if r, err := regexp.Compile(s); err == nil {
 		return r
 	}
-	log.Error("Could not compile regexp from %s. Using default regexp instead.", EnvQueryStringRegexp)
+	log.Error("Could not compile regexp from %s. Using default regexp instead.", EnvQueryStringRegexp) //errtrack:ignore invalid user configuration
 	return defaultQueryStringRegexp
 }
 

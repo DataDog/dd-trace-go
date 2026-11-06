@@ -1,0 +1,11 @@
+_v: 1
+name: github.com/uptrace/bun
+display_name: bun
+description: Instruments SQL queries executed through bun query hooks, creating spans with query text, execution timing, errors,
+  and configurable service names.
+packages:
+- name: github.com/uptrace/bun
+category:
+- db.client
+systems: []
+creation_date: '2024-07-08'

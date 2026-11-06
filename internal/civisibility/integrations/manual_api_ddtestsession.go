@@ -170,13 +170,18 @@ func (t *tslvTestSession) Close(exitCode int, options ...TestSessionCloseOption)
 		defaults.finishTime = time.Now()
 	}
 
+	empty := defaults.skipIfEmpty && len(t.modules) == 0
 	for _, m := range t.modules {
 		m.Close()
 	}
 	t.modules = map[string]TestModule{}
 
 	setCIVisibilitySpanTag(t.span, constants.TestCommandExitCode, exitCode)
-	if exitCode == 0 {
+	if exitCode == 0 && empty {
+		setCIVisibilitySpanTag(t.span, constants.TestStatus, constants.TestStatusSkip)
+		setCIVisibilitySpanTag(t.span, constants.TestSkipReason, constants.TestSessionEmptySkipReason)
+		setCIVisibilitySpanTag(t.span, constants.TestSessionEmptyReason, constants.TestSessionEmptyReasonZeroTests)
+	} else if exitCode == 0 {
 		setCIVisibilitySpanTag(t.span, constants.TestStatus, constants.TestStatusPass)
 	} else {
 		t.SetError(WithErrorInfo("ExitCode", "exit code is not zero.", ""))

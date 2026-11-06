@@ -9,6 +9,7 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"fmt"
+	"maps"
 	"regexp"
 	"strconv"
 	"strings"
@@ -39,6 +40,11 @@ const (
 	metadataAllocationKey    = "dd.allocation.key"
 	metadataDoLogKey         = "__dd_do_log"
 	metadataSplitSerialIDKey = "__dd_split_serial_id"
+	// metadataExposureAfterErrorKey carries an After failure to the Finally bridge.
+	// TODO(open-feature/go-sdk#623): Remove when go.mod requires the fixed SDK release.
+	metadataExposureAfterErrorKey = "__dd_exposure_after_error"
+	// metadataExposureCacheHitKey carries the shared cache decision to customer hooks.
+	metadataExposureCacheHitKey = "__dd_exposure_cache_hit"
 	// metadataEvalTimeKey carries the evaluation timestamp (UnixMilli, int64). It is stamped in
 	// DatadogProvider.evaluate at evaluation entry so EVP first/last bounds use eval-time. The
 	// __dd_ prefix marks it as internal-only (never serialized to the wire); matches Java's
@@ -57,7 +63,7 @@ const (
 // checks here and the EVP eval-time metadata stamped by DatadogProvider.evaluate — avoiding a
 // second time.Now() on the evaluation path.
 // It returns the variant value, reason, and any error that occurred.
-func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time.Time) evaluationResult {
+func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time.Time, exclusion experimentationExclusion) evaluationResult {
 	if flag == nil {
 		return evaluationResult{Value: defaultValue, Reason: of.DefaultReason}
 	}
@@ -71,6 +77,10 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 
 	// Evaluate allocations in order - first match wins (using the caller-supplied eval time)
 	for _, allocation := range flag.Allocations {
+		// Exclude before targeting or sharding, without changing eligible subjects' buckets.
+		if exclusion.active() && exclusion.excludes(allocation) {
+			continue
+		}
 		split, matched, err := evaluateAllocation(allocation, context, now)
 		if err != nil {
 			return evaluationResult{
@@ -99,8 +109,10 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 				}
 			}
 
-			// Three keys set here plus two stamped by DatadogProvider.evaluate.
-			metadata := make(map[string]any, 5)
+			// Reserve the split's HOOK keys and scalar event-feature snapshots, plus
+			// allocation/serial/doLog, two provider stamps and the exposure decision.
+			features := split.featureMetadata()
+			metadata := make(map[string]any, 6+len(features))
 			metadata[metadataAllocationKey] = allocation.Key
 
 			// Get doLog value (defaults to true if not specified)
@@ -113,6 +125,7 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 			if split.SerialID != nil {
 				metadata[metadataSplitSerialIDKey] = *split.SerialID
 			}
+			maps.Copy(metadata, features)
 
 			// Determine reason:
 			//   rules matched                         → TARGETING_MATCH
@@ -156,10 +169,18 @@ func evaluateConfiguredFlag(
 	defaultValue any,
 	context map[string]any,
 	now time.Time,
+	exclusion experimentationExclusion,
 ) evaluationResult {
 	flag, exists := config.Flags[flagKey]
 	if exists {
-		return evaluateFlag(flag, defaultValue, context, now)
+		if exclusion.mode == ExperimentationOptOutFutureExperimentsOnly && flag.invalidActivation {
+			return evaluationResult{
+				Value:  defaultValue,
+				Reason: of.ErrorReason,
+				Error:  fmt.Errorf("%w: invalid randomizationActivatedAt for flag %q", errParseError, flagKey),
+			}
+		}
+		return evaluateFlag(flag, defaultValue, context, now, exclusion)
 	}
 	if configErr, invalid := config.invalidFlags[flagKey]; invalid {
 		return evaluationResult{

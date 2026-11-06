@@ -248,11 +248,18 @@ func completeFuzzTargetLifecycle(f *testing.F, bodyReturned bool, bodyTerminal a
 // completeFuzzParallelSeeds waits for seeds that called T.Parallel before the
 // fuzz target result and its cleanups are observed.
 func completeFuzzParallelSeeds(f *testing.F) {
-	t := (*testing.T)(unsafe.Pointer(f))
-	fields := getTestPrivateFields(t)
+	fields := getTestPrivateFields((*testing.T)(unsafe.Pointer(f)))
 	state := getFuzzTestState(f)
 	// Unlike tRunner, fRunner releases its slot without reacquiring it.
 	wait := completeParallelSubtestsWithState(fields, state, false, false)
+	if wait > 0 {
+		// On Windows, time.Since reads the interrupt-time clock, which can lead
+		// the performance counter behind fRunner's accumulator by one interrupt
+		// period. Cap the subtraction at the native elapsed time, or the skew
+		// drives the duration below zero and Go prints -0.00s while the payload
+		// reports the full wall time.
+		wait = capFuzzParallelSeedsWait(f, wait)
+	}
 	if wait == 0 {
 		return
 	}

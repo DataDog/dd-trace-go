@@ -318,7 +318,10 @@ func resolveSourceLocation(metadata sourceFileMetadata, shortName string, runtim
 	functions := metadata.namedFunctions[shortName]
 
 	if matchedDeclaration, ok := findLineConfirmedDeclaration(functions, runtimeStartLine); ok {
-		// Named declarations keep the runtime-derived start line for compatibility with the old implementation.
+		// Entry PCs may point at any surviving instruction, including the
+		// closing brace of an optimized-away body. The matched declaration
+		// owns the source range; the runtime line only identifies it.
+		resolution.startLine = matchedDeclaration.declStartLine
 		resolution.endLine = matchedDeclaration.endLine
 		resolution.functionUnskippable = matchedDeclaration.testUnskippable
 		resolution.matchedDeclaration = &matchedDeclaration

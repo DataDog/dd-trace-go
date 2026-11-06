@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -154,6 +155,7 @@ type (
 		options                     *runTestWithRetryOptions // options for the test execution
 		executionIndex              int                      // current execution index
 		retryCount                  int64                    // remaining retry count
+		initialDuration             time.Duration            // first execution duration, which selects dynamic flaky retry counts
 		originalExecutionMetadata   *testExecutionMetadata   // original test execution metadata
 		panicExecutionMetadata      *testExecutionMetadata   // panicked execution metadata
 		nativeFatalPanic            any                      // original panic value when Go requires native-fatal propagation
@@ -717,6 +719,10 @@ func applyAdditionalFeaturesToTestFunc(
 	if meta.isFlakyTestRetriesEnabled {
 		flakyRetriesSettings = integrations.GetFlakyRetriesSettings()
 		flakyRetryCount = flakyRetriesSettings.RetryCount
+		if counts := flakyRetriesSettings.DynamicRetryCounts; counts != nil {
+			// The dynamic count depends on the duration of the first execution, which has not run yet.
+			flakyRetryCount = slices.Max(counts[:])
+		}
 		remainingFlakyRetryBudget = flakyRetryBudgetRemaining(flakyRetriesSettings)
 	}
 
@@ -1241,7 +1247,7 @@ func admitEarlyFlakeDetectionContinuation(execOpts *executionOptions, t *testing
 	// with no successful attempt. Preserve factual EFD metadata while switching
 	// the retry family and resetting its independent per-test budget once.
 	failed := t != nil && t.Failed()
-	if retryCount, ok := transitionSuppressedEFDToFlakyRetries(execMeta, failed, execMeta.anyExecutionPassed); ok {
+	if retryCount, ok := transitionSuppressedEFDToFlakyRetries(execMeta, execOpts.initialDuration, failed, execMeta.anyExecutionPassed); ok {
 		execOpts.retryCount = retryCount
 		if execOpts.options.postRetryFamilyTransition != nil {
 			execOpts.options.postRetryFamilyTransition(execMeta)
@@ -1251,12 +1257,12 @@ func admitEarlyFlakeDetectionContinuation(execOpts *executionOptions, t *testing
 	return false
 }
 
-func transitionSuppressedEFDToFlakyRetries(execMeta *testExecutionMetadata, failed, anyPassed bool) (int64, bool) {
+func transitionSuppressedEFDToFlakyRetries(execMeta *testExecutionMetadata, initialDuration time.Duration, failed, anyPassed bool) (int64, bool) {
 	if execMeta == nil || !failed || anyPassed || !execMeta.isFlakyTestRetriesEnabled || execMeta.efdFellBackToFlakyRetries {
 		return 0, false
 	}
 	execMeta.efdFellBackToFlakyRetries = true
-	retryCount := integrations.GetFlakyRetriesSettings().RetryCount - 1
+	retryCount := flakyRetryCountForDuration(initialDuration) - 1
 	return retryCount, retryCount >= 0
 }
 

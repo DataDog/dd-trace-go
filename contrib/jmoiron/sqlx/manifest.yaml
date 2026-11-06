@@ -1,0 +1,11 @@
+_v: 1
+name: github.com/jmoiron/sqlx
+display_name: sqlx
+description: Instruments sqlx database connections, pings, queries, executions, prepared statements, and transactions, with
+  optional SQL comment propagation, connection pool metrics, and SQL injection protection.
+packages:
+- name: github.com/jmoiron/sqlx
+category:
+- db.client
+systems: []
+creation_date: '2017-05-03'

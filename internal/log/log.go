@@ -336,6 +336,9 @@ func printMsg(lvl Level, format string, a ...any) {
 	b.WriteString(": ")
 	b.WriteString(fmt.Sprintf(format, a...))
 	mu.RLock()
+	// Deferred so a Logger that panics cannot leave mu held, which would
+	// block UseLogger, and then every log call, forever.
+	defer mu.RUnlock()
 	if ll, ok := logger.(interface {
 		LogL(lvl Level, msg string)
 	}); !ok {
@@ -343,7 +346,6 @@ func printMsg(lvl Level, format string, a ...any) {
 	} else {
 		ll.LogL(lvl, b.String())
 	}
-	mu.RUnlock()
 }
 
 type defaultLogger struct{ l *log.Logger }

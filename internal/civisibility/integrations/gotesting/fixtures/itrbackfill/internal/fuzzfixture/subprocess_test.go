@@ -25,6 +25,28 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
 
+func TestPrintedDuration(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		target   string
+		duration string
+		want     string
+	}{
+		{name: "zero", target: "FuzzParallelDuration", duration: "0.00", want: "0.00"},
+		{name: "negative zero", target: "FuzzParallelDuration", duration: "-0.00", want: "0.00"},
+		{name: "positive", target: "FuzzParallelDuration", duration: "1.23", want: "1.23"},
+		{name: "negative nonzero", target: "FuzzParallelDuration", duration: "-0.01", want: "-0.01"},
+		{name: "seed", target: "FuzzParallelDuration/seed#0", duration: "0.01", want: "0.01"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			output := fmt.Sprintf("--- PASS: %s (%ss)\n", tc.target, tc.duration)
+			if got := printedDuration(t, output, tc.target); got != tc.want {
+				t.Errorf("printed duration = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestFixtureChildProcess(t *testing.T) {
 	switch os.Getenv("DD_FUZZ_EXAMPLE_SCENARIO") {
 	case "command-exit":
@@ -102,8 +124,8 @@ func TestFixtureChildExit(t *testing.T) {
 	for _, scenario := range []string{"command-exit", "command-success"} {
 		output, err := runFixtureChild(binary, append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO="+scenario), "-test.run=^TestFixtureChildProcess$")
 		if scenario == "command-exit" {
-			var exit *exec.ExitError
-			if !errors.As(err, &exit) || exit.ExitCode() != 17 {
+			exit, ok := errors.AsType[*exec.ExitError](err)
+			if !ok || exit.ExitCode() != 17 {
 				t.Fatalf("exit=%v, want 17: %s", err, output)
 			}
 		} else if err != nil || !strings.Contains(string(output), "FIXTURE_CHILD_SUCCESS") {
@@ -128,8 +150,7 @@ func TestFixtureChildCancellation(t *testing.T) {
 	if !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "TestFixtureChildProcess") {
 		t.Fatalf("cancellation lost: %v: %s", err, output.String())
 	}
-	var exit *exec.ExitError
-	if errors.As(err, &exit) {
+	if _, ok := errors.AsType[*exec.ExitError](err); ok {
 		t.Fatalf("cancellation can be mistaken for an expected exit: %v", err)
 	}
 	if cmd.ProcessState == nil || !strings.Contains(output.String(), "FIXTURE_CHILD_READY") {
@@ -181,4 +202,45 @@ func TestFixtureChildDeadline(t *testing.T) {
 			t.Fatal("expired context started a child")
 		}
 	})
+}
+
+func TestFixtureChildHarnessTimeout(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want time.Duration
+	}{
+		{name: "child budget", args: []string{"-test.run=^Fuzz$", "-test.timeout=15s"}, want: fixtureChildDeadline(15 * time.Second)},
+		{name: "minute budget", args: []string{"-test.timeout=" + fixtureChildTimeout.String()}, want: fixtureChildDeadline(fixtureChildTimeout)},
+		{name: "no child budget", args: []string{"-test.run=^Fuzz$"}, want: fixtureChildGrace},
+		{name: "invalid child budget", args: []string{"-test.timeout=none"}, want: fixtureChildGrace},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := fixtureChildHarnessTimeout(tc.args); got != tc.want {
+				t.Errorf("harness timeout = %s, want %s", got, tc.want)
+			}
+		})
+	}
+	// A stalled Windows runner held a child past a 15-second budget and past
+	// the harness deadline. Both budgets must absorb a stall of that scale.
+	if fixtureChildTimeout < 45*time.Second || fixtureChildGrace < 30*time.Second {
+		t.Errorf("child budget shrank below the runner-stall headroom: child=%s grace=%s", fixtureChildTimeout, fixtureChildGrace)
+	}
+}
+
+// The harness deadline must stay behind the child's own -test.timeout. When
+// it fires first, the harness kills the child and the run reports the
+// cancellation instead of the child's result.
+func TestFixtureChildSpendsOwnTimeoutFirst(t *testing.T) {
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err := runFixtureChild(binary,
+		append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO=command-block"),
+		"-test.run=^TestFixtureChildProcess$", "-test.timeout=1s")
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) {
+		t.Fatalf("harness deadline fired before the child spent its own timeout: %v: %s", err, output)
+	}
 }
