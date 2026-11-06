@@ -18,3 +18,19 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestConn(t *testing.T) {
+	harness.Run(t, new(TestCaseConn))
+}
+
+func TestContrib(t *testing.T) {
+	harness.Run(t, new(TestCaseContrib))
+}
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestPool(t *testing.T) {
+	harness.Run(t, new(TestCasePool))
+}
