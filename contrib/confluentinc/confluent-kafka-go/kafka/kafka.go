@@ -113,11 +113,23 @@ func WrapConsumer(c *kafka.Consumer, opts ...Option) *Consumer {
 // Close calls the underlying Consumer.Close and if polling is enabled, finishes
 // any remaining span.
 func (c *Consumer) Close() error {
-	// Close any async jobs that might still be running
+	c.BeforeClose()
+	err := c.Consumer.Close()
+	c.AfterClose()
+	return err
+}
+
+// BeforeClose cancels the async jobs of c and waits for them to exit. The
+// otelc hooks call it before kafka.Consumer.Close.
+func (c *Consumer) BeforeClose() {
 	for _, stop := range c.closeAsync {
 		stop()
 	}
-	err := c.Consumer.Close()
+}
+
+// AfterClose finishes the remaining span when c does not consume through the
+// events channel. The otelc hooks call it after kafka.Consumer.Close.
+func (c *Consumer) AfterClose() {
 	// we only close the previous span if consuming via the events channel is
 	// not enabled, because otherwise there would be a data race from the
 	// consuming goroutine.
@@ -125,7 +137,6 @@ func (c *Consumer) Close() error {
 		c.tracer.PrevSpan.Finish()
 		c.tracer.PrevSpan = nil
 	}
-	return err
 }
 
 // Events returns the kafka Events channel (if enabled). msg events will be
@@ -137,11 +148,25 @@ func (c *Consumer) Events() chan kafka.Event {
 // Poll polls the consumer for messages or events. msg will be
 // traced.
 func (c *Consumer) Poll(timeoutMS int) (event kafka.Event) {
+	c.BeforePoll()
+	evt := c.Consumer.Poll(timeoutMS)
+	c.AfterPoll(evt)
+	return evt
+}
+
+// BeforePoll finishes the span of the previous message. The otelc hooks call
+// it before kafka.Consumer.Poll.
+func (c *Consumer) BeforePoll() {
 	if c.tracer.PrevSpan != nil {
 		c.tracer.PrevSpan.Finish()
 		c.tracer.PrevSpan = nil
 	}
-	evt := c.Consumer.Poll(timeoutMS)
+}
+
+// AfterPoll starts a span when evt is a message, and tracks the committed
+// offsets when it is an OffsetsCommitted event. The otelc hooks call it after
+// kafka.Consumer.Poll.
+func (c *Consumer) AfterPoll(evt kafka.Event) {
 	if msg, ok := evt.(*kafka.Message); ok {
 		tMsg := wrapMessage(msg)
 		c.tracer.SetConsumeCheckpoint(tMsg)
@@ -151,15 +176,11 @@ func (c *Consumer) Poll(timeoutMS int) (event kafka.Event) {
 		c.tracer.TrackCommitOffsets(tOffsets, offset.Error)
 		c.tracer.TrackHighWatermarkOffset(tOffsets, c.Consumer)
 	}
-	return evt
 }
 
 // ReadMessage polls the consumer for a message. msg will be traced.
 func (c *Consumer) ReadMessage(timeout time.Duration) (*kafka.Message, error) {
-	if c.tracer.PrevSpan != nil {
-		c.tracer.PrevSpan.Finish()
-		c.tracer.PrevSpan = nil
-	}
+	c.BeforePoll()
 	msg, err := c.Consumer.ReadMessage(timeout)
 	if err != nil {
 		return nil, err
@@ -173,28 +194,31 @@ func (c *Consumer) ReadMessage(timeout time.Duration) (*kafka.Message, error) {
 // Commit commits current offsets and tracks the commit offsets if data streams is enabled.
 func (c *Consumer) Commit() ([]kafka.TopicPartition, error) {
 	tps, err := c.Consumer.Commit()
-	tOffsets := wrapTopicPartitions(tps)
-	c.tracer.TrackCommitOffsets(tOffsets, err)
-	c.tracer.TrackHighWatermarkOffset(tOffsets, c.Consumer)
+	c.AfterCommit(tps, err)
 	return tps, err
 }
 
 // CommitMessage commits a message and tracks the commit offsets if data streams is enabled.
 func (c *Consumer) CommitMessage(msg *kafka.Message) ([]kafka.TopicPartition, error) {
 	tps, err := c.Consumer.CommitMessage(msg)
-	tOffsets := wrapTopicPartitions(tps)
-	c.tracer.TrackCommitOffsets(tOffsets, err)
-	c.tracer.TrackHighWatermarkOffset(tOffsets, c.Consumer)
+	c.AfterCommit(tps, err)
 	return tps, err
 }
 
 // CommitOffsets commits provided offsets and tracks the commit offsets if data streams is enabled.
 func (c *Consumer) CommitOffsets(offsets []kafka.TopicPartition) ([]kafka.TopicPartition, error) {
 	tps, err := c.Consumer.CommitOffsets(offsets)
+	c.AfterCommit(tps, err)
+	return tps, err
+}
+
+// AfterCommit tracks the offsets a commit returned, if data streams is
+// enabled. The otelc hooks call it after kafka.Consumer.Commit,
+// kafka.Consumer.CommitMessage and kafka.Consumer.CommitOffsets.
+func (c *Consumer) AfterCommit(tps []kafka.TopicPartition, err error) {
 	tOffsets := wrapTopicPartitions(tps)
 	c.tracer.TrackCommitOffsets(tOffsets, err)
 	c.tracer.TrackHighWatermarkOffset(tOffsets, c.Consumer)
-	return tps, err
 }
 
 // A Producer wraps a kafka.Producer.
@@ -239,26 +263,46 @@ func (p *Producer) Events() chan kafka.Event {
 // Close calls the underlying Producer.Close and also closes the internal
 // wrapping producer channel.
 func (p *Producer) Close() {
+	p.BeforeClose()
+	p.Producer.Close()
+}
+
+// BeforeClose cancels the async jobs of p, waits for them to exit, and closes
+// the channel [Producer.ProduceChannel] returns. The otelc hooks call it before
+// kafka.Producer.Close.
+func (p *Producer) BeforeClose() {
 	// Close any async jobs that might still be running
 	for _, stop := range p.closeAsync {
 		stop()
 	}
 	close(p.produceChannel)
-	p.Producer.Close()
 }
 
 // Produce calls the underlying Producer.Produce and traces the request.
 func (p *Producer) Produce(msg *kafka.Message, deliveryChan chan kafka.Event) error {
+	deliveryChan, afterProduce := p.BeforeProduce(msg, deliveryChan)
+	err := p.Producer.Produce(msg, deliveryChan)
+	afterProduce(err)
+	return err
+}
+
+// BeforeProduce starts the span for msg. It returns the delivery channel to
+// pass on to the underlying Produce, and a function to call with the error
+// Produce returns. The otelc hooks call it around kafka.Producer.Produce.
+func (p *Producer) BeforeProduce(msg *kafka.Message, deliveryChan chan kafka.Event) (chan kafka.Event, func(error)) {
 	tMsg := wrapMessage(msg)
 	span := p.tracer.StartProduceSpan(tMsg)
 
 	var errChan chan error
+
 	deliveryChan, errChan = kafkatrace.WrapDeliveryChannel(p.tracer, deliveryChan, span, wrapEvent)
 
 	p.tracer.SetProduceCheckpoint(tMsg)
 
-	err := p.Producer.Produce(msg, deliveryChan)
-	if err != nil {
+	return deliveryChan, func(err error) {
+		if err == nil {
+			return
+		}
 		if errChan != nil {
 			errChan <- err
 		} else {
@@ -266,7 +310,6 @@ func (p *Producer) Produce(msg *kafka.Message, deliveryChan chan kafka.Event) er
 			span.Finish(tracer.WithError(err))
 		}
 	}
-	return err
 }
 
 // ProduceChannel returns a channel which can receive kafka Messages and will

@@ -108,6 +108,8 @@ integration-suites:
     contrib/cloudevents/sdk-go.v2: [ cloudevents ]
     contrib/confluentinc/confluent-kafka-go/kafka: [ confluent-kafka-go.v1 ]
     contrib/confluentinc/confluent-kafka-go/kafka.v2: [ confluent-kafka-go.v2 ]
+    contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc: [ confluent-kafka-go.v2 ]
+    contrib/confluentinc/confluent-kafka-go/kafka/otelc: [ confluent-kafka-go.v1 ]
     contrib/connectrpc.com/connect: [ connectrpc ]
     contrib/database/sql: [ sql ]
     contrib/database/sql/otelc: [ sql ]
@@ -481,6 +483,8 @@ components:
     paths:
       - contrib/99designs/gqlgen/**
       - contrib/aws/aws-sdk-go/**
+      - contrib/confluentinc/confluent-kafka-go/kafka/**
+      - contrib/confluentinc/confluent-kafka-go/kafka.v2/**
       - contrib/database/sql/**
       - contrib/gin-gonic/gin/**
       - contrib/go-chi/chi/**

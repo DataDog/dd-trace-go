@@ -18,3 +18,27 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestChannels(t *testing.T) {
+	harness.Run(t, new(TestCaseChannels))
+}
+
+func TestContribClients(t *testing.T) {
+	harness.Run(t, new(TestCaseContribClients))
+}
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestNilDeliveryChannelAndReadMessage(t *testing.T) {
+	harness.Run(t, new(TestCaseNilDeliveryChannelAndReadMessage))
+}
+
+func TestProduceAndPoll(t *testing.T) {
+	harness.Run(t, new(TestCaseProduceAndPoll))
+}
+
+func TestWrappedTwice(t *testing.T) {
+	harness.Run(t, new(TestCaseWrappedTwice))
+}
