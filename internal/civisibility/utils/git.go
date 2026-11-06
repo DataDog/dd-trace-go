@@ -463,15 +463,26 @@ func fetchCommitData(commitSha string) (localCommitData, error) {
 	return commitData, nil
 }
 
-// GetLastLocalGitCommitShas retrieves the commit SHAs of the last 1000 commits in the local Git repository.
+// GetLastLocalGitCommitShas retrieves bounded history rooted at the selected Git commit.
 func GetLastLocalGitCommitShas() []string {
-	// git log --format=%H -n 1000 --since=\"1 month ago\"
+	selected := GetCITags()[constants.GitCommitSHA]
+	if selected == "" || strings.HasPrefix(selected, "-") {
+		return nil
+	}
 	log.Debug("civisibility.git: getting the commit SHAs of the last 1000 commits in the local Git repository")
-	out, err := execGitString(telemetry.GetLocalCommitsCommandsType, "log", "--format=%H", "-n", "1000", "--since=\"1 month ago\"")
-	if err != nil || out == "" {
+	out, err := execGitString(telemetry.GetLocalCommitsCommandsType, "log", "--format=%H", "-n", "1000", "--since=\"1 month ago\"", selected, "--")
+	if err != nil {
 		return []string{}
 	}
-	return strings.Split(out, "\n")
+	commits := strings.Fields(out)
+	if len(commits) == 0 || commits[0] != selected {
+		resolved, err := execGitString(telemetry.GetLocalCommitsCommandsType, "rev-parse", "--verify", selected+"^{commit}")
+		if err != nil || resolved != selected {
+			return nil
+		}
+		commits = append([]string{selected}, commits...)
+	}
+	return commits
 }
 
 // UnshallowGitRepository converts a shallow clone into a complete clone by fetching all missing commits without git content (only commits and tree objects).
@@ -682,17 +693,41 @@ func hasTheGitLogHaveMoreThanOneCommits() (bool, error) {
 
 // getObjectsSha get the objects shas from the git repository based on the commits to include and exclude
 func getObjectsSha(commitsToInclude []string, commitsToExclude []string) []string {
-	// git rev-list --objects --no-object-names --filter=blob:none --since="1 month ago" HEAD " + string.Join(" ", commitsToExclude.Select(c => "^" + c)) + " " + string.Join(" ", commitsToInclude);
+	if len(commitsToInclude) == 0 {
+		return nil
+	}
 	commitsToExcludeArgs := make([]string, 0, len(commitsToExclude)+len(commitsToInclude))
+	outsideWindow := make(map[string]struct{}, len(commitsToInclude))
+	for _, c := range commitsToInclude {
+		outsideWindow[c] = struct{}{}
+	}
 	for _, c := range commitsToExclude {
 		commitsToExcludeArgs = append(commitsToExcludeArgs, "^"+c)
+		delete(outsideWindow, c)
 	}
-	args := append([]string{"rev-list", "--objects", "--no-object-names", "--filter=blob:none", "--since=\"1 month ago\"", "HEAD"}, append(commitsToExcludeArgs, commitsToInclude...)...)
+	args := append([]string{"rev-list", "--objects", "--no-object-names", "--filter=blob:none", "--since=\"1 month ago\"", "--max-count=1000"}, append(commitsToExcludeArgs, commitsToInclude...)...)
 	out, err := execGitString(telemetry.GetObjectsCommandsType, args...)
 	if err != nil {
 		return []string{}
 	}
-	return strings.Split(out, "\n")
+	objects := strings.Fields(out)
+	for _, object := range objects {
+		delete(outsideWindow, object)
+	}
+	if len(outsideWindow) > 0 {
+		args = []string{"rev-list", "--objects", "--no-object-names", "--filter=blob:none", "--no-walk=unsorted"}
+		for _, c := range commitsToInclude {
+			if _, missing := outsideWindow[c]; missing {
+				args = append(args, c)
+			}
+		}
+		out, err = execGitString(telemetry.GetObjectsCommandsType, args...)
+		if err != nil {
+			return nil
+		}
+		objects = append(objects, strings.Fields(out)...)
+	}
+	return objects
 }
 
 // CreatePackFiles creates pack files from the given commits to include and exclude.

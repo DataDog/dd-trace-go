@@ -20,6 +20,13 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 )
 
+func TestSendPackFilesRejectsMismatchedCommit(t *testing.T) {
+	c := &client{repositoryURL: "https://example.com/repository.git", commitSha: "selected-commit"}
+	bytesSent, err := c.SendPackFiles("different-commit", []string{"not-read.pack"})
+	assert.Zero(t, bytesSent)
+	assert.ErrorContains(t, err, "does not match the selected commit")
+}
+
 func TestSendPackFilesApiRequest(t *testing.T) {
 	var c *client
 
@@ -68,7 +75,7 @@ func TestSendPackFilesApiRequest(t *testing.T) {
 
 	cInterface := NewClient()
 	c = cInterface.(*client)
-	_, err := cInterface.SendPackFiles("different-local-sha", []string{
+	_, err := cInterface.SendPackFiles(c.commitSha, []string{
 		"sendpackfiles_api_test.go",
 	})
 	assert.Nil(t, err)

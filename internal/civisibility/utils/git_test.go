@@ -6,11 +6,14 @@
 package utils
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -181,6 +184,45 @@ func TestLocalGitTagRequiresAnUnambiguousDetachedCheckout(t *testing.T) {
 func TestGetLastLocalGitCommitShas(t *testing.T) {
 	shas := GetLastLocalGitCommitShas()
 	assert.NotEmpty(t, shas)
+}
+
+func TestSelectedCommitHistoryAndPackExcludeUnrelatedHead(t *testing.T) {
+	t.Chdir(t.TempDir())
+	run := func(input string, args ...string) string {
+		cmd := exec.Command("git", args...)
+		cmd.Stdin = strings.NewReader(input)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git command failed: %s: %s", err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	run("", "init")
+	tree := run("", "hash-object", "-w", "-t", "tree", "--stdin")
+	selected := run(fmt.Sprintf("tree %s\nauthor Test <test@example.com> 1 +0000\ncommitter Test <test@example.com> 1 +0000\n\nselected\n", tree), "hash-object", "-w", "-t", "commit", "--stdin")
+	now := time.Now().Unix()
+	head := run(fmt.Sprintf("tree %s\nauthor Test <test@example.com> %d +0000\ncommitter Test <test@example.com> %d +0000\n\nother\n", tree, now, now), "hash-object", "-w", "-t", "commit", "--stdin")
+	run("", "update-ref", "HEAD", head)
+	t.Setenv("DD_GIT_COMMIT_SHA", selected)
+	ResetCITags()
+	t.Cleanup(ResetCITags)
+
+	commits := GetLastLocalGitCommitShas()
+	assert.Equal(t, []string{selected}, commits)
+	objects := getObjectsSha(commits, nil)
+	assert.Contains(t, objects, selected)
+	assert.NotContains(t, objects, head)
+	packFiles := CreatePackFiles(commits, nil)
+	t.Cleanup(func() { RemovePackFiles(packFiles) })
+	if !assert.NotEmpty(t, packFiles) {
+		return
+	}
+	var packedObjects strings.Builder
+	for _, packFile := range packFiles {
+		packedObjects.WriteString(run("", "verify-pack", "-v", strings.TrimSuffix(packFile, ".pack")+".idx"))
+	}
+	assert.Contains(t, packedObjects.String(), selected+" commit ")
+	assert.NotContains(t, packedObjects.String(), head+" commit ")
 }
 
 func TestUnshallowGitRepository(t *testing.T) {
