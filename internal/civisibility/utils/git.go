@@ -510,7 +510,7 @@ func UnshallowGitRepository() (bool, error) {
 
 	selected := GetCITags()[constants.GitCommitSHA]
 	selectedMissing := false
-	if (len(selected) == 40 || len(selected) == 64) && strings.Trim(selected, "0123456789abcdefABCDEF") == "" {
+	if isGitCommitSHA(selected) {
 		_, err := execGitString(telemetry.GetHeadCommandsType, "rev-parse", "--verify", selected+"^{commit}")
 		selectedMissing = err != nil
 	}
@@ -615,6 +615,10 @@ func UnshallowGitRepository() (bool, error) {
 	tmpso := sync.Once{}
 	isAShallowCloneRepositoryOnce.Store(&tmpso)
 	return true, nil
+}
+
+func isGitCommitSHA(sha string) bool {
+	return (len(sha) == 40 || len(sha) == 64) && strings.Trim(sha, "0123456789abcdefABCDEF") == ""
 }
 
 // GetGitDiff retrieves the diff between two Git commits using the `git diff` command.

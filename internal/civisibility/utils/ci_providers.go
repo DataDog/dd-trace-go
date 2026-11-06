@@ -336,6 +336,9 @@ func getProviderTags() map[string]string {
 
 // normalizeTags normalizes specific tags to remove prefixes and sensitive information.
 func normalizeTags(tags map[string]string) {
+	if sha := tags[constants.GitCommitSHA]; isGitCommitSHA(sha) {
+		tags[constants.GitCommitSHA] = strings.ToLower(sha)
+	}
 	if tag, ok := tags[constants.GitBranch]; ok && tag != "" {
 		if strings.Contains(tag, "refs/tags") || strings.Contains(tag, "origin/tags") || strings.Contains(tag, "refs/heads/tags") {
 			tags[constants.GitTag] = normalizeRef(tag)

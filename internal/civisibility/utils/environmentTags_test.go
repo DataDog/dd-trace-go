@@ -465,7 +465,7 @@ func TestGetCITagsDoesNotAddBazelProviderOutsideBazelMode(t *testing.T) {
 }
 
 func TestGitMetadataPrecedence(t *testing.T) {
-	for _, source := range []string{"git", "provider", "override", "partial", "sha-only"} {
+	for _, source := range []string{"git", "provider", "override", "partial", "sha-only", "uppercase-sha"} {
 		t.Run(source, func(t *testing.T) {
 			ResetCITags()
 			t.Cleanup(ResetCITags)
@@ -484,6 +484,9 @@ func TestGitMetadataPrecedence(t *testing.T) {
 				constants.GitCommitCommitterDate: time.Unix(2, 0).String(),
 			}
 			provider := map[string]string{constants.CIJobName: "tests", constants.GitHeadCommit: "pr-head"}
+			if source == "uppercase-sha" {
+				local[constants.GitCommitSHA] = strings.Repeat("a", 40)
+			}
 			for key := range local {
 				provider[key] = "provider-" + key
 				value := ""
@@ -495,12 +498,15 @@ func TestGitMetadataPrecedence(t *testing.T) {
 			if source == "sha-only" {
 				t.Setenv("DD_GIT_COMMIT_SHA", "selected-sha")
 			}
+			if source == "uppercase-sha" {
+				t.Setenv("DD_GIT_COMMIT_SHA", strings.ToUpper(local[constants.GitCommitSHA]))
+			}
 			getProviderTagsFunc = func() map[string]string { return maps.Clone(provider) }
 			getLocalGitDataFunc = func() (localGitData, error) {
 				if source == "provider" {
 					return localGitData{}, errors.New("checkout unavailable")
 				}
-				data := localGitData{localCommitData: localCommitData{CommitSha: "local-sha"}}
+				data := localGitData{localCommitData: localCommitData{CommitSha: local[constants.GitCommitSHA]}}
 				if source != "partial" {
 					data.RepositoryURL, data.Branch, data.Tag = local[constants.GitRepositoryURL], "local-branch", "local-tag"
 					data.CommitMessage = "local-message"
@@ -526,7 +532,7 @@ func TestGitMetadataPrecedence(t *testing.T) {
 				case "sha-only":
 					if key == constants.GitCommitSHA {
 						assert.Equal(t, "selected-sha", tags[key], key)
-					} else if strings.HasPrefix(key, "git.commit.") {
+					} else if key == constants.GitTag || strings.HasPrefix(key, "git.commit.") {
 						assert.NotContains(t, tags, key)
 					} else {
 						assert.Equal(t, value, tags[key], key)

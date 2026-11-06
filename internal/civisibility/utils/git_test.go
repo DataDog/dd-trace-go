@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -188,6 +189,8 @@ func TestGetLastLocalGitCommitShas(t *testing.T) {
 }
 
 func TestSelectedCommitHistoryAndPackExcludeUnrelatedHead(t *testing.T) {
+	isolateFixtureGit(t)
+	resetGitCommandCachesForTesting(t)
 	t.Chdir(t.TempDir())
 	run := func(input string, args ...string) string {
 		cmd := exec.Command("git", args...)
@@ -204,9 +207,10 @@ func TestSelectedCommitHistoryAndPackExcludeUnrelatedHead(t *testing.T) {
 	now := time.Now().Unix()
 	head := run(fmt.Sprintf("tree %s\nauthor Test <test@example.com> %d +0000\ncommitter Test <test@example.com> %d +0000\n\nother\n", tree, now, now), "hash-object", "-w", "-t", "commit", "--stdin")
 	run("", "update-ref", "HEAD", head)
-	t.Setenv("DD_GIT_COMMIT_SHA", selected)
+	t.Setenv("DD_GIT_COMMIT_SHA", strings.ToUpper(selected))
 	ResetCITags()
 	t.Cleanup(ResetCITags)
+	assert.Equal(t, selected, GetCITags()[constants.GitCommitSHA])
 
 	commits := GetLastLocalGitCommitShas()
 	assert.Equal(t, []string{selected}, commits)
@@ -461,6 +465,7 @@ func resetGitCommandCachesForTesting(t *testing.T) {
 	t.Helper()
 	originalGitExecutable := gitExecutable
 	originalGitExecutableArgs := append([]string(nil), gitExecutableArgs...)
+	originalProvider := getProviderTagsFunc
 	reset := func() {
 		ResetCITags()
 		gitFinderOnce = sync.Once{}
@@ -475,7 +480,11 @@ func resetGitCommandCachesForTesting(t *testing.T) {
 		isAShallowCloneRepositoryValue = false
 	}
 	reset()
-	t.Cleanup(reset)
+	getProviderTagsFunc = func() map[string]string { return map[string]string{} }
+	t.Cleanup(func() {
+		getProviderTagsFunc = originalProvider
+		reset()
+	})
 }
 
 func countFakeGitFetches(t *testing.T, fetchesFile string) int {

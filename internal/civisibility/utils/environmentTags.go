@@ -283,11 +283,18 @@ func createCITagsMap() map[string]string {
 		}
 
 		if commitSha := env.Get("DD_GIT_COMMIT_SHA"); commitSha != "" {
+			if !strings.EqualFold(commitSha, localTags[constants.GitCommitSHA]) {
+				for key := range localTags {
+					if key == constants.GitTag || (strings.HasPrefix(key, "git.commit.") && key != constants.GitCommitSHA && !strings.HasPrefix(key, "git.commit.head.")) {
+						delete(localTags, key)
+					}
+				}
+			}
 			localTags[constants.GitCommitSHA] = commitSha
 		}
 
 		// If the commit SHA matches, populate additional Git metadata
-		if gitData.CommitSha != "" && localTags[constants.GitCommitSHA] == gitData.CommitSha {
+		if gitData.CommitSha != "" && strings.EqualFold(localTags[constants.GitCommitSHA], gitData.CommitSha) {
 			if _, ok := localTags[constants.GitCommitAuthorDate]; !ok {
 				localTags[constants.GitCommitAuthorDate] = gitData.AuthorDate.String()
 			}
