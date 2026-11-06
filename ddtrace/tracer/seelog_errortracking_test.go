@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
@@ -21,9 +22,9 @@ func TestSeelogSetupErrorsReportedToTelemetry(t *testing.T) {
 	client, rt := telemetrytest.NewCapturingClient(t)
 	defer telemetry.MockClient(client)()
 
-	reportSeelogConstraintsError(errors.New("constraints"))
-	reportSeelogConsoleWriterError(errors.New("console"))
-	reportSeelogDispatcherError(errors.New("dispatcher"))
+	telemetrylog.LogAndReportError("failed to create seelog constraints", errors.New("constraints"))
+	telemetrylog.LogAndReportError("failed to create seelog console writer", errors.New("console"))
+	telemetrylog.LogAndReportError("failed to create seelog dispatcher", errors.New("dispatcher"))
 	client.Flush()
 
 	logs := rt.LogMessages()
@@ -44,6 +45,6 @@ func TestSeelogSetupErrorsReportedToTelemetry(t *testing.T) {
 		assert.Contains(t, logs[got].Message, "error.error_type=errors.errorString")
 		assert.Equal(t, telemetry.LogError, logs[got].Level)
 		assert.EqualValues(t, 1, logs[got].Count)
-		assert.Contains(t, logs[got].StackTrace, "reportSeelog")
+		assert.Contains(t, logs[got].StackTrace, "TestSeelogSetupErrorsReportedToTelemetry")
 	}
 }
