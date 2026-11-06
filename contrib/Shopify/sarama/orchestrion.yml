@@ -11,70 +11,36 @@ meta:
 aspects:
   - id: NewConsumer
     join-point:
-      one-of:
-        - function-call: github.com/Shopify/sarama.NewConsumer
-        - function-call: github.com/Shopify/sarama.NewConsumerClient
+      function-call: github.com/Shopify/sarama.NewConsumer
     advice:
-      - wrap-expression:
-          imports:
-            saramatrace: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
-            sarama: github.com/Shopify/sarama
-          template: |-
-            func(c sarama.Consumer, err error) (sarama.Consumer, error) {
-              if c != nil {
-                c = saramatrace.WrapConsumer(c)
-              }
-              return c, err
-            }({{ . }})
+      - replace-function: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2.NewConsumer
+
+  - id: NewConsumerFromClient
+    join-point:
+      function-call: github.com/Shopify/sarama.NewConsumerFromClient
+    advice:
+      - replace-function: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2.NewConsumerFromClient
 
   - id: NewSyncProducer
     join-point:
-      one-of:
-        - function-call: github.com/Shopify/sarama.NewSyncProducer
-        - function-call: github.com/Shopify/sarama.NewSyncProducerFromClient
+      function-call: github.com/Shopify/sarama.NewSyncProducer
     advice:
-      - wrap-expression:
-          imports:
-            saramatrace: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
-            sarama: github.com/Shopify/sarama
-          template: |-
-            {{- $cfg := .Function.ArgumentOfType "sarama.Config" -}}
-            func(p sarama.SyncProducer, err error) (sarama.SyncProducer, error) {
-              if p != nil {
-                p = saramatrace.WrapSyncProducer(
-                  {{- if $cfg -}}
-                  {{ $cfg }},
-                  {{- else -}}
-                  nil,
-                  {{- end -}}
-                  p,
-                )
-              }
-              return p, err
-            }({{ . }})
+      - replace-function: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2.NewSyncProducer
+
+  - id: NewSyncProducerFromClient
+    join-point:
+      function-call: github.com/Shopify/sarama.NewSyncProducerFromClient
+    advice:
+      - replace-function: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2.NewSyncProducerFromClient
 
   - id: NewAsyncProducer
     join-point:
-      one-of:
-        - function-call: github.com/Shopify/sarama.NewAsyncProducer
-        - function-call: github.com/Shopify/sarama.NewAsyncProducerFromClient
+      function-call: github.com/Shopify/sarama.NewAsyncProducer
     advice:
-      - wrap-expression:
-          imports:
-            saramatrace: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
-            sarama: github.com/Shopify/sarama
-          template: |-
-            {{- $cfg := .Function.ArgumentOfType "sarama.Config" -}}
-            func(p sarama.AsyncProducer, err error) (sarama.AsyncProducer, error) {
-              if p != nil {
-                p = saramatrace.WrapAsyncProducer(
-                  {{- if $cfg -}}
-                  {{ $cfg }},
-                  {{- else -}}
-                  nil,
-                  {{- end -}}
-                  p,
-                )
-              }
-              return p, err
-            }({{ . }})
+      - replace-function: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2.NewAsyncProducer
+
+  - id: NewAsyncProducerFromClient
+    join-point:
+      function-call: github.com/Shopify/sarama.NewAsyncProducerFromClient
+    advice:
+      - replace-function: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2.NewAsyncProducerFromClient
