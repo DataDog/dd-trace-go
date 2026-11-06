@@ -41,6 +41,8 @@ env:
     otelc/all
     contrib/99designs/gqlgen
     contrib/99designs/gqlgen/otelc
+    contrib/aws/aws-sdk-go-v2
+    contrib/aws/aws-sdk-go-v2/otelc
     contrib/aws/aws-sdk-go
     contrib/aws/aws-sdk-go/otelc
     contrib/net/http
@@ -91,6 +93,7 @@ env:
     grpc
     gorilla_mux
     99designs.gqlgen
+    aws.v2
     mongo
     mongo.v2
     echo.v4

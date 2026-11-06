@@ -21,7 +21,7 @@ aspects:
             aws: github.com/aws/aws-sdk-go-v2/aws
           template: |-
             func(cfg aws.Config) (aws.Config) {
-              awstrace.AppendMiddleware(&cfg)
+              cfg.APIOptions = awstrace.APIOptionsWithTracing(cfg.APIOptions)
               return cfg
             }({{ . }})
 
@@ -39,6 +39,25 @@ aspects:
             aws: github.com/aws/aws-sdk-go-v2/aws
           template: |-
             func(cfg *aws.Config) (*aws.Config) {
-              awstrace.AppendMiddleware(cfg)
+              cfg.APIOptions = awstrace.APIOptionsWithTracing(cfg.APIOptions)
               return cfg
+            }({{ . }})
+
+  # The config LoadDefaultConfig returns already holds the API options the
+  # application passed, which replace the ones the literal above set inside
+  # LoadDefaultConfig, so the middleware is added to the result.
+  - id: config.LoadDefaultConfig
+    join-point:
+      function-call: github.com/aws/aws-sdk-go-v2/config.LoadDefaultConfig
+    advice:
+      - wrap-expression:
+          imports:
+            awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws
+            aws: github.com/aws/aws-sdk-go-v2/aws
+          template: |-
+            func(cfg aws.Config, err error) (aws.Config, error) {
+              if err == nil {
+                cfg.APIOptions = awstrace.APIOptionsWithTracing(cfg.APIOptions)
+              }
+              return cfg, err
             }({{ . }})
