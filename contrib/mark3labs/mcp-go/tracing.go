@@ -53,6 +53,7 @@ var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandler
 			startOpts = append(startOpts, llmobs.WithSessionID(sessionID))
 		}
 		toolSpan, ctx := llmobs.StartToolSpan(ctx, request.Params.Name, startOpts...)
+		tagWithClientInfo(ctx, toolSpan)
 		if intent, ok := IntentFromContext(ctx); ok {
 			toolSpan.Annotate(llmobs.WithAnnotatedIntent(intent))
 		}
@@ -164,6 +165,10 @@ func (h *hooks) onBeforeInitialize(ctx context.Context, id any, request *mcp.Ini
 		instrmcp.MCPClientVersionTag: clientName + "_" + clientVersion,
 		instrmcp.MCPMethodTag:        request.Method,
 	}))
+	info := request.Params.ClientInfo
+	if tags := instrmcp.ClientInfoTags(info.Name, info.Title, info.Version); len(tags) > 0 {
+		taskSpan.Annotate(llmobs.WithAnnotatedTags(tags))
+	}
 
 	h.spanCache.Store(key, taskSpan)
 	tagWithSessionID(ctx, taskSpan)
@@ -207,6 +212,28 @@ func sessionIDFromContext(ctx context.Context) string {
 		return session.SessionID()
 	}
 	return ""
+}
+
+// clientInfoFromContext prefers the identity on a 2026-07-28 request's _meta and falls
+// back to the one the session recorded from the initialize handshake.
+func clientInfoFromContext(ctx context.Context) (mcp.Implementation, bool) {
+	if info := server.RequestProtocolInfoFromContext(ctx); info != nil && info.ClientInfo != nil {
+		return *info.ClientInfo, true
+	}
+	if session, ok := server.ClientSessionFromContext(ctx).(server.SessionWithClientInfo); ok {
+		return session.GetClientInfo(), true
+	}
+	return mcp.Implementation{}, false
+}
+
+func tagWithClientInfo(ctx context.Context, span llmobs.Span) {
+	info, ok := clientInfoFromContext(ctx)
+	if !ok {
+		return
+	}
+	if tags := instrmcp.ClientInfoTags(info.Name, info.Title, info.Version); len(tags) > 0 {
+		span.Annotate(llmobs.WithAnnotatedTags(tags))
+	}
 }
 
 func tagWithSessionID(ctx context.Context, span llmobs.Span) {

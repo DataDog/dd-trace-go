@@ -50,6 +50,7 @@ func tracingMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 
 func traceToolCallRequest(next mcp.MethodHandler, ctx context.Context, method string, req *mcp.CallToolRequest) (mcp.Result, error) {
 	toolSpan, ctx := llmobs.StartToolSpan(ctx, req.Params.Name, llmobs.WithIntegration(string(instrumentation.PackageModelContextProtocolGoSDK)))
+	tagWithClientInfo(toolSpan, req.ClientInfo())
 
 	var res mcp.Result
 	var err error
@@ -84,6 +85,7 @@ func traceInitializeRequest(next mcp.MethodHandler, ctx context.Context, method 
 				instrmcp.MCPClientNameTag:    clientName,
 				instrmcp.MCPClientVersionTag: clientName + "_" + clientVersion,
 			}))
+			tagWithClientInfo(taskSpan, initParams.ClientInfo)
 		}
 	}
 
@@ -100,6 +102,17 @@ func traceInitializeRequest(next mcp.MethodHandler, ctx context.Context, method 
 
 	res, err = next(ctx, method, req)
 	return res, err
+}
+
+// tagWithClientInfo tags the client's identity. On tool calls it comes from the request's
+// _meta (2026-07-28 protocol) or the session's initialize handshake.
+func tagWithClientInfo(span llmobs.Span, info *mcp.Implementation) {
+	if info == nil {
+		return
+	}
+	if tags := instrmcp.ClientInfoTags(info.Name, info.Title, info.Version); len(tags) > 0 {
+		span.Annotate(llmobs.WithAnnotatedTags(tags))
+	}
 }
 
 func tagWithSessionID(req mcp.Request, span llmobs.Span) {

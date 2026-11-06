@@ -25,6 +25,34 @@ const MCPSessionIDTag = "mcp_session_id"
 const MCPClientNameTag = "client_name"
 const MCPClientVersionTag = "client_version"
 
+const MCPClientInfoNameTag = "mcp_client_name"
+const MCPClientInfoTitleTag = "mcp_client_title"
+const MCPClientInfoVersionTag = "mcp_client_version"
+
+// MaxClientInfoTagLength caps client-supplied identity values, which are repeated on
+// every tool call span.
+const MaxClientInfoTagLength = 256
+
+// ClientInfoTags returns the mcp_client_* tags for a client's self-reported identity,
+// omitting empty values and truncating long ones.
+func ClientInfoTags(name, title, version string) map[string]string {
+	tags := make(map[string]string, 3)
+	for key, value := range map[string]string{
+		MCPClientInfoNameTag:    name,
+		MCPClientInfoTitleTag:   title,
+		MCPClientInfoVersionTag: version,
+	} {
+		if value == "" {
+			continue
+		}
+		if runes := []rune(value); len(runes) > MaxClientInfoTagLength {
+			value = string(runes[:MaxClientInfoTagLength])
+		}
+		tags[key] = value
+	}
+	return tags
+}
+
 // IsModelCallable reports whether a tool's _meta permits the model to call it.
 // Absent _meta.ui.visibility means model-callable (MCP Apps spec default); a
 // visibility list that omits "model" means UI-only and the model should not
