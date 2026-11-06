@@ -6,6 +6,7 @@
 package waf
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -134,6 +135,93 @@ func TestUpdateClosestToZero(t *testing.T) {
 		updateClosestToZero(&target, -127)
 		require.Equal(t, int32(-127), target.Load())
 	})
+
+	t.Run("non_negative_code_ignored", func(t *testing.T) {
+		var target atomic.Int32
+		updateClosestToZero(&target, -2)
+		updateClosestToZero(&target, 0)
+		updateClosestToZero(&target, 4)
+		require.Equal(t, int32(-2), target.Load())
+	})
+
+	t.Run("non_negative_code_on_empty_target_ignored", func(t *testing.T) {
+		var target atomic.Int32
+		updateClosestToZero(&target, 4)
+		require.Zero(t, target.Load())
+	})
+}
+
+func TestUpdateClosestToZeroConcurrent(t *testing.T) {
+	for name, codes := range map[string][]int32{
+		"negative_only":      {-127, -3, -2, -1},
+		"with_ignored_codes": {-127, -3, -2, -1, 0, 4},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var target atomic.Int32
+			var wg sync.WaitGroup
+			for range 64 {
+				wg.Go(func() {
+					for range 100 {
+						for _, code := range codes {
+							updateClosestToZero(&target, code)
+						}
+					}
+				})
+			}
+			wg.Wait()
+			require.Equal(t, int32(-1), target.Load())
+		})
+	}
+}
+
+// wafErrorCodeCases has one error per kind, with the waf_error code that dd-trace-go reports.
+// go-libddwaf tests the full mapping of waferrors.ToWafReturnCode.
+var wafErrorCodeCases = []struct {
+	name string
+	err  error
+	want int
+}{
+	{"internal", waferrors.ErrInternal, -3},
+	{"invalid_object", waferrors.ErrInvalidObject, -2},
+	{"invalid_argument", waferrors.ErrInvalidArgument, -1},
+	{"run_error_without_return_code", waferrors.ErrOutOfMemory, -127},
+	{"bindings", errors.New("bindings"), -127},
+}
+
+// TestIncWafErrorCodes checks that waf.error and rasp.error get the ddwaf_run code in the waf_error tag,
+// and that the error code atomics hold the same code.
+func TestIncWafErrorCodes(t *testing.T) {
+	for _, tc := range wafErrorCodeCases {
+		code := "waf_error:" + strconv.Itoa(tc.want)
+		t.Run("waf/"+tc.name, func(t *testing.T) {
+			client := new(telemetrytest.RecordClient)
+			defer telemetry.MockClient(client)()
+			handleMetrics := NewMetricsInstance(nil, "test")
+			metrics := handleMetrics.NewContextMetrics()
+
+			metrics.IncWafError(wafScopeAddresses(), tc.err)
+
+			require.Equal(t, 1.0, sumMetric(client, "waf.error", code))
+			require.Equal(t, 1.0, sumMetric(client, "waf.error"))
+			require.Zero(t, sumMetric(client, "rasp.error"))
+			require.EqualValues(t, tc.want, metrics.WAFErrorCode.Load())
+			requireNoRASPErrorCodes(t, metrics)
+		})
+		t.Run("rasp/"+tc.name, func(t *testing.T) {
+			client := new(telemetrytest.RecordClient)
+			defer telemetry.MockClient(client)()
+			handleMetrics := NewMetricsInstance(nil, "test")
+			metrics := handleMetrics.NewContextMetrics()
+
+			metrics.IncWafError(sqliAddresses(), tc.err)
+
+			require.Equal(t, 1.0, sumMetric(client, "rasp.error", code, sqliRuleTypeTag))
+			require.Equal(t, 1.0, sumMetric(client, "rasp.error"))
+			require.Zero(t, sumMetric(client, "waf.error"))
+			require.EqualValues(t, tc.want, metrics.RASPErrorCodes[addresses.RASPRuleTypeSQLI].Load())
+			require.Zero(t, metrics.WAFErrorCode.Load())
+		})
+	}
 }
 
 // TestRegisterWafRunMilestonesRace exercises concurrent WAF-scope RegisterWafRun calls (which the

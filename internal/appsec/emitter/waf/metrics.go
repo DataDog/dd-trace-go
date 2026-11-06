@@ -185,10 +185,12 @@ type ContextMetrics struct {
 
 	// SumRASPCalls is the sum of all the RASP calls made by the WAF whatever the rasp rule type it is.
 	SumRASPCalls atomic.Uint32
-	// WAFErrorCode is the closest-to-zero (least-negative) ddwaf_run error code seen in the WAF scope.
+	// WAFErrorCode is the closest-to-zero (least-negative) error code seen in the WAF scope.
+	// A non-zero value is a ddwaf_run code (-1, -2, -3), or -127 for an error from the bindings.
 	// Zero means no error occurred. Timeouts are not errors and are not recorded here. See RFC-1012.
 	WAFErrorCode atomic.Int32
-	// RASPErrorCodes holds the closest-to-zero ddwaf_run error code per RASP rule type.
+	// RASPErrorCodes holds the closest-to-zero error code per RASP rule type.
+	// A non-zero value is a ddwaf_run code (-1, -2, -3), or -127 for an error from the bindings.
 	// Zero means no error occurred for that rule type. Timeouts are not errors and are not recorded here.
 	// See RFC-1012.
 	RASPErrorCodes [len(addresses.RASPRuleTypes)]atomic.Int32
@@ -456,13 +458,16 @@ func (m *ContextMetrics) IncWafError(addrs addresses.RunAddressData, in error) {
 	}
 }
 
-// defaultWafErrorCode is the default error code if the error does not implement [libddwaf.RunError]
-// meaning if the error actual come for the bindings and not from the WAF itself
+// defaultWafErrorCode is the error code (RFC-1012) of an error that has no ddwaf_run return code
+// ([waferrors.ToWafReturnCode] returns zero): an error from the bindings, not from the WAF itself.
 const defaultWafErrorCode = -127
 
 // updateClosestToZero atomically sets target to the closer-to-zero of its current
-// value and code. Codes are always ≤ 0; zero is the sentinel "no error".
+// value and code. Codes are always < 0; a code >= 0 is ignored. Zero is the sentinel "no error".
 func updateClosestToZero(target *atomic.Int32, code int32) {
+	if code >= 0 {
+		return
+	}
 	for {
 		current := target.Load()
 		if current != 0 && code <= current {
@@ -520,7 +525,7 @@ func (m *ContextMetrics) ExceptionMsg() string {
 }
 func (m *ContextMetrics) wafError(in error) {
 	errCode := defaultWafErrorCode
-	if code := waferrors.ToWafErrorCode(in); code != 0 {
+	if code := waferrors.ToWafReturnCode(in); code != 0 {
 		errCode = code
 	}
 	updateClosestToZero(&m.WAFErrorCode, int32(errCode))
@@ -547,7 +552,7 @@ func (m *ContextMetrics) SkipRASPRule(ruleType addresses.RASPRuleType, reason st
 
 func (m *ContextMetrics) raspError(in error, ruleType addresses.RASPRuleType) {
 	errCode := defaultWafErrorCode
-	if code := waferrors.ToWafErrorCode(in); code != 0 {
+	if code := waferrors.ToWafReturnCode(in); code != 0 {
 		errCode = code
 	}
 	updateClosestToZero(&m.RASPErrorCodes[ruleType], int32(errCode))

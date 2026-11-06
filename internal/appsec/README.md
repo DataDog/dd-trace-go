@@ -312,3 +312,32 @@ monitoring) removes the `block_request` and `redirect_request` actions. It
 reports a removed `block_request` as `block:failure` on `rasp.rule.match`. It
 does not count as a requested block on `waf.requests`, so it cannot hide a
 later block of the same request.
+
+### WAF error telemetry
+
+`ContextMetrics.IncWafError` (`emitter/waf/metrics.go`) reports the errors that
+`Context.Run` returns. A timeout (`waferrors.ErrTimeout`) is not an error: it
+does not get an error code. `RegisterWafRun` counts timeouts.
+
+The `waf_error` tag of `waf.error` and `rasp.error`, and the span tags
+`_dd.appsec.waf.error` and `_dd.appsec.rasp.error`, hold the `ddwaf_run` return
+code (RFC-1012). `waferrors.ToWafReturnCode` (go-libddwaf v5.1.0 and later)
+gives the code. When it returns zero, dd-trace-go reports `-127`
+(`defaultWafErrorCode`):
+
+| Error from `Run` | Code |
+|------------------|------|
+| `ErrInternal` | `-3` |
+| `ErrInvalidObject` | `-2` |
+| `ErrInvalidArgument` | `-1` |
+| Any other error (`ErrOutOfMemory`, `ErrEmptyRuleAddresses`, `ErrContextClosed`, encoder errors, ...) | `-127` (error from the bindings) |
+
+- The boolean `waf_error` tag of `waf.requests` is not a code. It is `true`
+  when `Run` returned an error that is not a timeout.
+- The span tags hold one code per request: the code closest to zero (the least
+  negative). `updateClosestToZero` keeps it, and ignores a code that is not
+  negative. Zero means no error. The RASP tag is the closest code over all rule
+  types.
+- `AddWAFMonitoringTags` sets `_dd.appsec.waf.error` only when `WAFErrorCode`
+  is not zero, and `_dd.appsec.rasp.error` only when one `RASPErrorCodes` entry
+  is not zero.
