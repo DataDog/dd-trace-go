@@ -95,15 +95,23 @@ type evaluatorParams struct {
 	maxDependencyDepthInvalid bool
 }
 
-// UnmarshalJSON keeps malformed depth configuration evaluable so it can be
-// reported as a PARSE_ERROR for each requested flag instead of rejecting the
+// UnmarshalJSON keeps malformed depth configuration evaluable so dependency
+// traversal can log the problem and use the default without rejecting the
 // complete configuration update. JSON numbers such as 3.0 are valid integers.
 func (params *evaluatorParams) UnmarshalJSON(data []byte) error {
 	params.MaxDependencyDepth = nil
 	params.maxDependencyDepthInvalid = false
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
-		// Non-object params carry no depth; the default applies.
+		// Keep the UFC usable. The evaluator logs and applies the default only
+		// if dependency traversal reaches these malformed options.
+		params.maxDependencyDepthInvalid = true
+		return nil
+	}
+	if raw == nil && !bytes.Equal(bytes.TrimSpace(data), []byte("{}")) {
+		// JSON null decodes to a nil map without an error. It is still a
+		// malformed options object rather than an omitted options object.
+		params.maxDependencyDepthInvalid = true
 		return nil
 	}
 	depthJSON, present := raw["maxDependencyDepth"]

@@ -363,18 +363,20 @@ func evaluateConfiguredFlagOnce(
 	}
 }
 
-func configuredMaxDependencyDepth(config *universalFlagsConfiguration) (int, error) {
+func configuredMaxDependencyDepth(config *universalFlagsConfiguration) int {
 	if config.EvaluatorParams.maxDependencyDepthInvalid {
-		return 0, fmt.Errorf("%w: maxDependencyDepth must be an integer from 0 through 255", errParseError)
+		log.Error("openfeature: maxDependencyDepth must be an integer from 0 through 255; using default %d", defaultMaxDependencyDepth) //errtrack:ignore malformed customer configuration
+		return defaultMaxDependencyDepth
 	}
 	if config.EvaluatorParams.MaxDependencyDepth == nil {
-		return defaultMaxDependencyDepth, nil
+		return defaultMaxDependencyDepth
 	}
 	depth := *config.EvaluatorParams.MaxDependencyDepth
 	if depth < 0 || depth > maxMaxDependencyDepth {
-		return 0, fmt.Errorf("%w: maxDependencyDepth must be an integer from 0 through 255", errParseError)
+		log.Error("openfeature: maxDependencyDepth must be an integer from 0 through 255; using default %d", defaultMaxDependencyDepth) //errtrack:ignore malformed customer configuration
+		return defaultMaxDependencyDepth
 	}
-	return depth, nil
+	return depth
 }
 
 // evaluateAllocation evaluates an allocation and returns the matching split if any.
@@ -542,18 +544,21 @@ type memoizedDependency struct {
 }
 
 type dependencyEvaluationSession struct {
-	config         *universalFlagsConfiguration
-	context        map[string]any
-	now            time.Time
-	exclusion      experimentationExclusion
-	maxDepth       int
-	active         map[string]bool
-	memo           map[string]memoizedDependency
-	frames         []*dependencyFrame
-	exposures      []dependencyExposureCandidate
-	exposureKeys   map[string]struct{}
-	evaluations    []dependencyEvaluationRecord
-	evaluationKeys map[string]struct{}
+	config            *universalFlagsConfiguration
+	context           map[string]any
+	now               time.Time
+	exclusion         experimentationExclusion
+	maxDepth          int
+	active            map[string]bool
+	memo              map[string]memoizedDependency
+	frames            []*dependencyFrame
+	exposures         []dependencyExposureCandidate
+	exposureKeys      map[string]struct{}
+	evaluations       []dependencyEvaluationRecord
+	evaluationIndexes map[string]int
+	// onEvaluate is a test seam for proving memoization deduplicates actual
+	// prerequisite evaluation, not merely the returned telemetry.
+	onEvaluate func(string)
 }
 
 // lazyDependencyResolver keeps the dependency session and all of its maps off
@@ -569,41 +574,16 @@ type lazyDependencyResolver struct {
 
 func (r *lazyDependencyResolver) Resolve(ref *flagEvaluation) (string, error) {
 	if r.session == nil {
-		maxDepth, err := configuredMaxDependencyDepth(r.config)
 		r.session = &dependencyEvaluationSession{
-			config:         r.config,
-			context:        r.context,
-			now:            r.now,
-			exclusion:      r.exclusion,
-			maxDepth:       maxDepth,
-			active:         map[string]bool{r.rootFlagKey: true},
-			memo:           make(map[string]memoizedDependency),
-			exposureKeys:   make(map[string]struct{}),
-			evaluationKeys: make(map[string]struct{}),
-		}
-		if err != nil {
-			graphErr := &dependencyGraphError{
-				flagKey: ref.Key,
-				code:    of.ParseErrorCode,
-				message: err.Error(),
-				cause:   err,
-			}
-			// The root is never a prerequisite evaluation record, including when
-			// malformed evaluator parameters are discovered through a self-reference.
-			if ref.Key != r.rootFlagKey {
-				flag := r.config.Flags[ref.Key]
-				flagType := valueTypeBoolean
-				if flag != nil {
-					flagType = flag.VariationType
-				}
-				defaultValue := dependencyDefaultValue(flag)
-				r.session.emit(ref.Key, flagType, defaultValue, evaluationResult{
-					Value:  defaultValue,
-					Reason: of.ErrorReason,
-					Error:  graphErr,
-				})
-			}
-			return "", graphErr
+			config:            r.config,
+			context:           r.context,
+			now:               r.now,
+			exclusion:         r.exclusion,
+			maxDepth:          configuredMaxDependencyDepth(r.config),
+			active:            map[string]bool{r.rootFlagKey: true},
+			memo:              make(map[string]memoizedDependency),
+			exposureKeys:      make(map[string]struct{}),
+			evaluationIndexes: make(map[string]int),
 		}
 	}
 	return r.session.Resolve(ref)
@@ -683,6 +663,14 @@ func (s *dependencyEvaluationSession) resolve(flagKey string, depth int) (string
 
 	flag, exists := s.config.Flags[flagKey]
 	defaultValue := dependencyDefaultValue(flag)
+	flagType := valueTypeBoolean
+	if flag != nil {
+		flagType = flag.VariationType
+	}
+	// Reserve the telemetry position at first reach, before descending into
+	// this prerequisite. Completion fills the slot without changing authored
+	// DFS/preorder, and memo reuse cannot append another record.
+	s.reserve(flagKey, flagType, defaultValue)
 	if !exists {
 		if configErr, invalid := s.config.invalidFlags[flagKey]; invalid {
 			result := evaluationResult{
@@ -690,7 +678,7 @@ func (s *dependencyEvaluationSession) resolve(flagKey string, depth int) (string
 				Reason: of.ErrorReason,
 				Error:  fmt.Errorf("%w: invalid configuration for prerequisite flag %q: %w", errParseError, flagKey, configErr),
 			}
-			s.emit(flagKey, valueTypeBoolean, defaultValue, result)
+			s.emit(flagKey, flagType, defaultValue, result)
 			return "", &dependencyGraphError{flagKey: flagKey, code: of.ParseErrorCode, message: result.Error.Error(), cause: result.Error}
 		}
 		cause := fmt.Errorf("%w: prerequisite flag %q is missing", errFlagNotFound, flagKey)
@@ -705,13 +693,16 @@ func (s *dependencyEvaluationSession) resolve(flagKey string, depth int) (string
 			Reason: of.ErrorReason,
 			Error:  graphErr,
 		}
-		s.emit(flagKey, valueTypeBoolean, defaultValue, result)
+		s.emit(flagKey, flagType, defaultValue, result)
 		return "", graphErr
 	}
 
 	s.active[flagKey] = true
 	frame := &dependencyFrame{maxReachedDepth: depth, exposureKeys: make(map[string]struct{})}
 	s.frames = append(s.frames, frame)
+	if s.onEvaluate != nil {
+		s.onEvaluate(flagKey)
+	}
 	frameActive := true
 	defer func() {
 		if frameActive {
@@ -826,21 +817,32 @@ func withoutEvaluationValue(result evaluationResult) evaluationResult {
 }
 
 func (s *dependencyEvaluationSession) emit(flagKey string, flagType valueType, defaultValue any, result evaluationResult) {
-	if _, exists := s.evaluationKeys[flagKey]; exists {
-		return
-	}
-	s.evaluationKeys[flagKey] = struct{}{}
+	index := s.reserve(flagKey, flagType, defaultValue)
 	if result.Metadata == nil {
 		result.Metadata = make(map[string]any, 2)
 	}
 	result.Metadata[metadataEvalTimeKey] = s.now.UnixMilli()
 	result.Metadata[metadataObserveFullEvaluationDataKey] = s.config.ObserveFullEvaluationData
-	s.evaluations = append(s.evaluations, dependencyEvaluationRecord{
+	s.evaluations[index] = dependencyEvaluationRecord{
 		FlagKey:      flagKey,
 		FlagType:     flagType,
 		DefaultValue: cloneTelemetryValue(defaultValue),
 		Result:       cloneEvaluationResult(result),
+	}
+}
+
+func (s *dependencyEvaluationSession) reserve(flagKey string, flagType valueType, defaultValue any) int {
+	if index, exists := s.evaluationIndexes[flagKey]; exists {
+		return index
+	}
+	index := len(s.evaluations)
+	s.evaluationIndexes[flagKey] = index
+	s.evaluations = append(s.evaluations, dependencyEvaluationRecord{
+		FlagKey:      flagKey,
+		FlagType:     flagType,
+		DefaultValue: cloneTelemetryValue(defaultValue),
 	})
+	return index
 }
 
 func cloneDependencyEvaluationRecords(records []dependencyEvaluationRecord) []dependencyEvaluationRecord {
