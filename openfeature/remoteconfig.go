@@ -32,12 +32,15 @@ func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 
 	// Subscribe via the internal package, which serializes with tracer subscription
 	// and starts RC only if needed (slow path).
-	tracerOwnsSubscription, err := internalffe.SubscribeProvider(provider.rcCallback)
+	tracerOwnsSubscription, token, err := internalffe.SubscribeProvider(provider.rcCallback)
 	if err != nil {
 		return nil, fmt.Errorf("failed to subscribe to Remote Config: %w", err)
 	}
 
 	if !tracerOwnsSubscription {
+		provider.mu.Lock()
+		provider.remoteConfigToken = token
+		provider.mu.Unlock()
 		log.Debug("openfeature: successfully subscribed to Remote Config updates")
 		return provider, nil
 	}
@@ -215,6 +218,24 @@ func validateFlag(flagKey string, flag *flag) error {
 						flagKey, i, condition.Operator)
 				}
 
+				hasAttribute := condition.attributePresent || condition.Attribute != ""
+				hasFlagEvaluation := condition.flagEvaluationPresent || condition.FlagEvaluation != nil
+				if hasAttribute == hasFlagEvaluation {
+					return fmt.Errorf("flag %q allocation %d rule condition must define exactly one of attribute or flagEvaluation", flagKey, i)
+				}
+				if hasFlagEvaluation {
+					if condition.FlagEvaluation == nil {
+						return fmt.Errorf("flag %q allocation %d rule has invalid flag evaluation", flagKey, i)
+					}
+					if condition.FlagEvaluation.Key == "" {
+						return fmt.Errorf("flag %q allocation %d rule has flag evaluation with empty key", flagKey, i)
+					}
+					if condition.Operator != operatorOneOf && condition.Operator != operatorNotOneOf {
+						return fmt.Errorf("flag %q allocation %d rule has flag evaluation with unsupported operator %q",
+							flagKey, i, condition.Operator)
+					}
+				}
+
 				switch condition.Operator {
 				case operatorLT, operatorLTE, operatorGT, operatorGTE:
 					if _, ok := internal.ToFloat64(condition.Value); !ok {
@@ -232,11 +253,9 @@ func validateFlag(flagKey string, flag *flag) error {
 							flagKey, i, regex, err)
 					}
 				case operatorOneOf, operatorNotOneOf:
-					if _, ok := condition.Value.([]any); !ok {
-						if _, ok := condition.Value.([]string); !ok {
-							return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires array value",
-								flagKey, i, condition.Operator)
-						}
+					if !isStringList(condition.Value) {
+						return fmt.Errorf("flag %q allocation %d rule has condition with operator %q that requires an array of strings",
+							flagKey, i, condition.Operator)
 					}
 				case operatorIsNull:
 					if _, ok := condition.Value.(bool); !ok {
@@ -263,16 +282,31 @@ func validateFlag(flagKey string, flag *flag) error {
 	return nil
 }
 
+func isStringList(value any) bool {
+	switch values := value.(type) {
+	case []string:
+		return true
+	case []any:
+		for _, value := range values {
+			if _, ok := value.(string); !ok {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
 // stopRemoteConfig unsubscribes from Remote Config updates.
 // This should be called when shutting down the application or when
 // the OpenFeature provider is no longer needed.
 //
-// Note: In the slow path, this package discards the subscription token from
-// Subscribe(), so we cannot call Unsubscribe(). Instead we unregister the
-// capability which stops updates. In the fast path (tracer subscribed),
-// the subscription is owned by the tracer.
-func stopRemoteConfig() error {
+// The internal bridge removes ownership identified by token. This detaches a
+// matching fast-path provider callback without removing the tracer-owned
+// subscription, or removes a matching slow-path subscription and its exact
+// capability set.
+func stopRemoteConfig(token internalffe.ProviderToken) error {
 	log.Debug("openfeature: unregistered from Remote Config")
-	_ = remoteconfig.UnregisterCapability(remoteconfig.FFEFlagEvaluation)
-	return nil
+	return internalffe.UnsubscribeProvider(token)
 }

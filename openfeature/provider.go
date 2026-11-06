@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -85,7 +86,8 @@ type ProviderConfig struct {
 // using configuration received from Datadog, either via Remote Config or
 // Agentless polling depending on the resolved delivery source.
 type DatadogProvider struct {
-	experimentationOptOutMode ExperimentationOptOutMode
+	experimentationOptOutMode        ExperimentationOptOutMode
+	evaluationTelemetryOptOutEnabled bool
 
 	mu            sync.RWMutex
 	configuration *universalFlagsConfiguration
@@ -119,9 +121,14 @@ type DatadogProvider struct {
 	// rawDataWarned records that this provider warned that debug logs include
 	// raw evaluation data. See warnRawDebugData.
 	rawDataWarned *atomic.Bool
+	// dependencyPublisherPanicWarned deduplicates the best-effort telemetry warning.
+	dependencyPublisherPanicWarned atomic.Bool
 
 	// source is fixed at construction. // +checklocks:mu
 	source internalffe.Source
+	// remoteConfigToken identifies this provider's slow-path subscription or
+	// fast-path callback attachment. Zero means it owns neither. // +checklocks:mu
+	remoteConfigToken internalffe.ProviderToken
 	// agentless stays nil unless tryRegisterAgentless registered a poller. // +checklocks:mu
 	agentless *agentlessSource
 	// shutdownCalled reports whether ShutdownWithContext has already run. // +checklocks:mu
@@ -206,13 +213,23 @@ func newEvaluator(domain string) (internalffe.Evaluator, error) {
 		}
 		client = openfeature.NewClient(domain)
 	}
+	return newAnyEvaluator(client), nil
+}
+
+// anyEvaluationDefault marks the internal UFC adapter's type-agnostic path.
+// It is intentionally private so public ObjectValueDetails calls always request
+// a JSON flag. Its map representation also keeps the OpenFeature hook default
+// value equivalent to the empty object used before this distinction existed.
+type anyEvaluationDefault map[string]any
+
+func newAnyEvaluator(client *openfeature.Client) internalffe.Evaluator {
 	return func(ctx context.Context, key, targetingKey string, attributes map[string]any) (any, error) {
 		if err := waitForProvider(ctx, client); err != nil {
 			return nil, err
 		}
-		details, err := client.ObjectValueDetails(ctx, key, map[string]any{}, openfeature.NewEvaluationContext(targetingKey, attributes))
+		details, err := client.ObjectValueDetails(ctx, key, anyEvaluationDefault{}, openfeature.NewEvaluationContext(targetingKey, attributes))
 		return details.Value, err
-	}, nil
+	}
 }
 
 func waitForProvider(ctx context.Context, client *openfeature.Client) error {
@@ -333,7 +350,8 @@ func newDatadogProviderWithSourceAndEVP(
 	hooks = append(hooks, newDebugLoggingHook(rawDataWarned))
 
 	p := &DatadogProvider{
-		experimentationOptOutMode: config.ExperimentationOptOutMode,
+		experimentationOptOutMode:        config.ExperimentationOptOutMode,
+		evaluationTelemetryOptOutEnabled: telemetryOptOutEnabled,
 		metadata: openfeature.Metadata{
 			Name: datadogProviderName,
 		},
@@ -420,6 +438,7 @@ func (p *DatadogProvider) setConfiguration(config *universalFlagsConfiguration) 
 		// configuration after Shutdown.
 		return readinessUnchanged
 	}
+	prepareDependencyConditions(config)
 	p.configuration = config
 	// Wake every waiter blocked on the current generation, then start a fresh
 	// one for the next update: a closed channel cannot be reused as a signal.
@@ -595,6 +614,8 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 	}
 	p.shutdownCalled = true
 	source := p.source
+	remoteConfigToken := p.remoteConfigToken
+	p.remoteConfigToken = 0
 	agentless := p.agentless
 	p.configuration = nil
 	// Wake any Init parked on the current generation so it observes
@@ -614,7 +635,7 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 		// An agentless provider never registered an RC capability, so it
 		// must not unregister one.
 		if source == internalffe.SourceRemoteConfig {
-			err = stopRemoteConfig()
+			err = stopRemoteConfig(remoteConfigToken)
 		}
 		if agentless != nil {
 			if stopErr := agentless.Stop(ctx); stopErr != nil {
@@ -687,7 +708,7 @@ func (p *DatadogProvider) BooleanEvaluation(
 	defaultValue bool,
 	flatCtx openfeature.FlattenedContext,
 ) openfeature.BoolResolutionDetail {
-	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx)
+	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx, valueTypeBoolean)
 
 	// Convert result to boolean
 	boolValue, ok := result.Value.(bool)
@@ -717,7 +738,7 @@ func (p *DatadogProvider) StringEvaluation(
 	defaultValue string,
 	flatCtx openfeature.FlattenedContext,
 ) openfeature.StringResolutionDetail {
-	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx)
+	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx, valueTypeString)
 
 	// Convert result to string
 	strValue, ok := result.Value.(string)
@@ -747,7 +768,7 @@ func (p *DatadogProvider) FloatEvaluation(
 	defaultValue float64,
 	flatCtx openfeature.FlattenedContext,
 ) openfeature.FloatResolutionDetail {
-	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx)
+	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx, valueTypeNumeric)
 
 	// Convert result to float64
 	var floatValue float64
@@ -759,9 +780,9 @@ func (p *DatadogProvider) FloatEvaluation(
 	case float32:
 		floatValue = float64(v)
 	case int:
-		floatValue = float64(v)
+		floatValue, conversionErr = exactFloat(flagKey, int64(v))
 	case int64:
-		floatValue = float64(v)
+		floatValue, conversionErr = exactFloat(flagKey, v)
 	case int32:
 		floatValue = float64(v)
 	default:
@@ -774,6 +795,8 @@ func (p *DatadogProvider) FloatEvaluation(
 
 	if conversionErr != nil {
 		result.Error = conversionErr
+		result.Reason = openfeature.ErrorReason
+		floatValue = defaultValue
 	}
 
 	detail := openfeature.FloatResolutionDetail{
@@ -796,7 +819,7 @@ func (p *DatadogProvider) IntEvaluation(
 	defaultValue int64,
 	flatCtx openfeature.FlattenedContext,
 ) openfeature.IntResolutionDetail {
-	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx)
+	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx, valueTypeInteger)
 
 	// Convert result to int64
 	var intValue int64
@@ -814,11 +837,11 @@ func (p *DatadogProvider) IntEvaluation(
 	case int8:
 		intValue = int64(v)
 	case float64:
-		// Accept float64 if it's a whole number (e.g., -5.0 → -5)
-		if v == float64(int64(v)) {
+		// Accept a whole number in int64 range (e.g., -5.0 → -5); reject lossy reads.
+		if v == math.Trunc(v) && v >= -(1<<63) && v < 1<<63 {
 			intValue = int64(v)
 		} else {
-			conversionErr = fmt.Errorf("%w: flag %q returned float with decimal part: %v", errTypeMismatch, flagKey, v)
+			conversionErr = fmt.Errorf("%w: flag %q returned a value that is not a whole int64: %v", errTypeMismatch, flagKey, v)
 		}
 	default:
 		if result.Error == nil {
@@ -830,6 +853,8 @@ func (p *DatadogProvider) IntEvaluation(
 
 	if conversionErr != nil {
 		result.Error = conversionErr
+		result.Reason = openfeature.ErrorReason
+		intValue = defaultValue
 	}
 
 	detail := openfeature.IntResolutionDetail{
@@ -852,7 +877,12 @@ func (p *DatadogProvider) ObjectEvaluation(
 	defaultValue any,
 	flatCtx openfeature.FlattenedContext,
 ) openfeature.InterfaceResolutionDetail {
-	result := p.evaluate(ctx, flagKey, defaultValue, flatCtx)
+	var result evaluationResult
+	if internalDefault, ok := defaultValue.(anyEvaluationDefault); ok {
+		result = p.evaluateAny(ctx, flagKey, map[string]any(internalDefault), flatCtx)
+	} else {
+		result = p.evaluate(ctx, flagKey, defaultValue, flatCtx, valueTypeJSON)
+	}
 
 	detail := openfeature.InterfaceResolutionDetail{
 		Value: result.Value,
@@ -865,6 +895,17 @@ func (p *DatadogProvider) ObjectEvaluation(
 	}
 	logResolution(p.rawDataWarned, flagKey, openfeature.Object, defaultValue, flatCtx, detail)
 	return detail
+}
+
+// evaluateAny is the private type-agnostic entrypoint used by the internal UFC
+// adapter. Public OpenFeature object evaluation requires a JSON flag.
+func (p *DatadogProvider) evaluateAny(
+	ctx context.Context,
+	flagKey string,
+	defaultValue any,
+	flatCtx openfeature.FlattenedContext,
+) evaluationResult {
+	return p.evaluate(ctx, flagKey, defaultValue, flatCtx, "")
 }
 
 // Hooks returns hooks for one evaluation.
@@ -890,6 +931,7 @@ func (p *DatadogProvider) evaluate(
 	flagKey string,
 	defaultValue any,
 	flatCtx openfeature.FlattenedContext,
+	requestedType valueType,
 ) (res evaluationResult) {
 	// Capture the evaluation time once, at evaluation entry. It is used for allocation
 	// time-window checks and EVP first/last evaluation bounds.
@@ -939,8 +981,156 @@ func (p *DatadogProvider) evaluate(
 		return evaluationResult{Value: defaultValue, Reason: openfeature.ErrorReason, Error: err}
 	}
 
-	// Evaluate the flag, sharing the eval-time captured at entry.
-	return evaluateConfiguredFlag(config, flagKey, defaultValue, flatCtx, evalNow, exclusion)
+	// A malformed root activation is a configuration error in future-only mode,
+	// so it takes precedence over a caller type mismatch without traversing the
+	// dependency graph.
+	rootFlag, rootExists := config.Flags[flagKey]
+	if rootExists &&
+		exclusion.mode == ExperimentationOptOutFutureExperimentsOnly && rootFlag.invalidActivation {
+		return evaluationResult{
+			Value:  defaultValue,
+			Reason: openfeature.ErrorReason,
+			Error:  fmt.Errorf("%w: invalid randomizationActivatedAt for flag %q", errParseError, flagKey),
+		}
+	}
+
+	// Reject a requested type that is incompatible with the configured root before
+	// traversing its dependency graph. Invalid and missing root flags continue
+	// through the evaluator so they retain their existing error precedence.
+	if requestedType != "" && rootExists &&
+		!compatibleEvaluationType(rootFlag.VariationType, requestedType) {
+		return evaluationResult{
+			Value:  defaultValue,
+			Reason: openfeature.ErrorReason,
+			Error: fmt.Errorf("%w: flag %q is configured as %s, not %s", errTypeMismatch,
+				flagKey, rootFlag.VariationType, requestedType),
+		}
+	}
+
+	// Complete the graph before publishing prerequisite telemetry. The evaluator's
+	// returned batch is detached from its memo and exposure state, and each record
+	// is cloned again before publication so a failed or mutating publisher cannot
+	// affect the root result or another record.
+	res = evaluateConfiguredFlagLookedUp(config, flagKey, rootFlag, rootExists, defaultValue, flatCtx, evalNow, exclusion)
+	p.publishDependencyEvaluations(ctx, flatCtx, res.DependencyEvaluations)
+	res.DependencyEvaluations = nil
+	return res
+}
+
+// compatibleEvaluationType lets OpenFeature Number reads reach the lossless typed
+// conversion while retaining strict checks for non-numeric type pairs.
+func compatibleEvaluationType(configuredType, requestedType valueType) bool {
+	return configuredType == requestedType ||
+		isNumericValueType(configuredType) && isNumericValueType(requestedType)
+}
+
+func isNumericValueType(t valueType) bool {
+	return t == valueTypeNumeric || t == valueTypeInteger
+}
+
+func exactFloat(flagKey string, value int64) (float64, error) {
+	converted := float64(value)
+	if converted >= 1<<63 || int64(converted) != value {
+		return 0, fmt.Errorf("%w: flag %q value %d is not exactly representable as float64", errTypeMismatch, flagKey, value)
+	}
+	return converted, nil
+}
+
+func (p *DatadogProvider) publishDependencyEvaluations(
+	ctx context.Context,
+	flatCtx openfeature.FlattenedContext,
+	records []dependencyEvaluationRecord,
+) {
+	loggingBatch := newDependencyEvaluationLoggingBatch(flatCtx)
+	dropped := publishDependencyEvaluationBatch(records, func(record dependencyEvaluationRecord) {
+		p.recordDependencyEvaluation(ctx, record.FlagKey, record.FlagType,
+			flatCtx, record.Result, &loggingBatch)
+	})
+	p.reportDependencyPublisherPanics(dropped)
+}
+
+func (p *DatadogProvider) reportDependencyPublisherPanics(dropped int64) {
+	if dropped > 0 {
+		countMetric(metricFlagEvalDropped, dropped, "publisher_panic")
+		if p.dependencyPublisherPanicWarned.CompareAndSwap(false, true) {
+			log.Warn("openfeature: dependency evaluation publisher panicked; dropped %d evaluation(s) (best-effort telemetry)", dropped) //errtrack:ignore recovered telemetry publisher panic
+		}
+	}
+}
+
+func publishDependencyEvaluationBatch(records []dependencyEvaluationRecord, publish func(dependencyEvaluationRecord)) (dropped int64) {
+	for _, record := range records {
+		record := dependencyEvaluationRecord{
+			FlagKey:      record.FlagKey,
+			FlagType:     record.FlagType,
+			DefaultValue: cloneTelemetryValue(record.DefaultValue),
+			Result:       cloneEvaluationResult(record.Result),
+		}
+		func() {
+			defer func() {
+				if recover() != nil {
+					dropped++
+				}
+			}()
+			publish(record)
+		}()
+	}
+	return dropped
+}
+
+func (p *DatadogProvider) recordDependencyEvaluation(
+	ctx context.Context,
+	flagKey string,
+	flagType valueType,
+	flatCtx openfeature.FlattenedContext,
+	result evaluationResult,
+	loggingBatch *dependencyEvaluationLoggingBatch,
+) {
+	if p.evaluationTelemetryOptOutEnabled {
+		if optedOut, _ := flatCtx["dd_evaluation_telemetry_opt_out"].(bool); optedOut {
+			return
+		}
+	}
+
+	details := openfeature.InterfaceEvaluationDetails{
+		Value: result.Value,
+		EvaluationDetails: openfeature.EvaluationDetails{
+			FlagKey:  flagKey,
+			FlagType: openFeatureType(flagType),
+			ResolutionDetail: openfeature.ResolutionDetail{
+				Variant:      result.VariantKey,
+				Reason:       result.Reason,
+				ErrorCode:    errorCodeFor(result.Error),
+				FlagMetadata: result.Metadata,
+			},
+		},
+	}
+	if result.Error != nil {
+		details.ErrorMessage = result.Error.Error()
+	}
+	if p.flagEvalMetricsHook != nil && p.flagEvalMetricsHook.metrics != nil {
+		p.flagEvalMetricsHook.metrics.record(ctx, flagKey, details)
+	}
+	if p.flagEvalLoggingWriter != nil {
+		p.flagEvalLoggingWriter.recordDependency(loggingBatch, flagKey, details)
+	}
+}
+
+func openFeatureType(flagType valueType) openfeature.Type {
+	switch flagType {
+	case valueTypeBoolean:
+		return openfeature.Boolean
+	case valueTypeString:
+		return openfeature.String
+	case valueTypeInteger:
+		return openfeature.Int
+	case valueTypeNumeric:
+		return openfeature.Float
+	case valueTypeJSON:
+		return openfeature.Object
+	default:
+		return openfeature.Boolean
+	}
 }
 
 // toResolutionError converts a Go error to an OpenFeature ResolutionError.
@@ -951,6 +1141,18 @@ func toResolutionError(err error) openfeature.ResolutionError {
 	}
 
 	errMsg := err.Error()
+	if graphErr, ok := errors.AsType[*dependencyGraphError](err); ok {
+		switch graphErr.code {
+		case openfeature.FlagNotFoundCode:
+			return openfeature.NewFlagNotFoundResolutionError(errMsg)
+		case openfeature.ParseErrorCode:
+			return openfeature.NewParseErrorResolutionError(errMsg)
+		case openfeature.TypeMismatchCode:
+			return openfeature.NewTypeMismatchResolutionError(errMsg)
+		default:
+			return openfeature.NewGeneralResolutionError(errMsg)
+		}
+	}
 
 	// Check for wrapped sentinel errors using errors.Is
 	switch {
@@ -968,5 +1170,30 @@ func toResolutionError(err error) openfeature.ResolutionError {
 		return openfeature.NewInvalidContextResolutionError(errMsg)
 	default:
 		return openfeature.NewGeneralResolutionError(errMsg)
+	}
+}
+
+func errorCodeFor(err error) openfeature.ErrorCode {
+	if err == nil {
+		return ""
+	}
+	if graphErr, ok := errors.AsType[*dependencyGraphError](err); ok {
+		return graphErr.code
+	}
+	switch {
+	case errors.Is(err, errFlagNotFound):
+		return openfeature.FlagNotFoundCode
+	case errors.Is(err, errTypeMismatch):
+		return openfeature.TypeMismatchCode
+	case errors.Is(err, errParseError):
+		return openfeature.ParseErrorCode
+	case errors.Is(err, errNoConfiguration):
+		return openfeature.ProviderNotReadyCode
+	case errors.Is(err, errTargetingKeyMissing):
+		return openfeature.TargetingKeyMissingCode
+	case errors.Is(err, errInvalidContext):
+		return openfeature.InvalidContextCode
+	default:
+		return openfeature.GeneralCode
 	}
 }

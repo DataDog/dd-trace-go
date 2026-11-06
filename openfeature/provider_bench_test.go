@@ -119,6 +119,60 @@ func BenchmarkBooleanEvaluationOptOut(b *testing.B) {
 	}
 }
 
+func BenchmarkDependencyEvaluationLoggingBatch(b *testing.B) {
+	details := openfeature.InterfaceEvaluationDetails{
+		EvaluationDetails: openfeature.EvaluationDetails{
+			ResolutionDetail: openfeature.ResolutionDetail{
+				Variant: "on",
+				Reason:  openfeature.TargetingMatchReason,
+				FlagMetadata: openfeature.FlagMetadata{
+					metadataObserveFullEvaluationDataKey: true,
+				},
+			},
+		},
+	}
+
+	b.Run("full_queue_skips_oversized_context", func(b *testing.B) {
+		flatCtx := make(openfeature.FlattenedContext, maxContextFields+2)
+		flatCtx[openfeature.TargetingKey] = "user-123"
+		for i := 0; i <= maxContextFields; i++ {
+			flatCtx[fmt.Sprintf("field-%03d", i)] = i
+		}
+		w := newFlagEvalLoggingWriter(ProviderConfig{})
+		w.events = make(chan evalEvent, 1)
+		w.events <- evalEvent{}
+		b.ReportAllocs()
+		for b.Loop() {
+			batch := newDependencyEvaluationLoggingBatch(flatCtx)
+			w.recordDependency(&batch, "dependency", details)
+			if batch.snapshotReady {
+				b.Fatal("full queue unexpectedly copied context")
+			}
+		}
+	})
+
+	b.Run("eight_dependencies_share_snapshot", func(b *testing.B) {
+		flatCtx := make(openfeature.FlattenedContext, maxContextFields+1)
+		flatCtx[openfeature.TargetingKey] = "user-123"
+		for i := range maxContextFields {
+			flatCtx[fmt.Sprintf("field-%03d", i)] = i
+		}
+		w := newFlagEvalLoggingWriter(ProviderConfig{})
+		w.events = make(chan evalEvent, 8)
+		b.ReportAllocs()
+		b.ReportMetric(8, "dependencies/op")
+		for b.Loop() {
+			batch := newDependencyEvaluationLoggingBatch(flatCtx)
+			for i := range 8 {
+				w.recordDependency(&batch, fmt.Sprintf("dependency-%d", i), details)
+			}
+			for range 8 {
+				<-w.events
+			}
+		}
+	})
+}
+
 // BenchmarkStringEvaluation benchmarks string flag evaluation
 func BenchmarkStringEvaluation(b *testing.B) {
 	provider := newDatadogProvider(ProviderConfig{})

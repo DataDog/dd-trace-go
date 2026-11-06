@@ -8,6 +8,7 @@ package openfeature
 import (
 	"crypto/md5"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"regexp"
@@ -34,9 +35,16 @@ type evaluationResult struct {
 	Error error
 	// Metadata contains additional evaluation metadata for hooks
 	Metadata map[string]any
+	// DependencyEvaluations contains each reached prerequisite exactly once. It is
+	// populated after the dependency graph finishes and is not exposed as flag
+	// metadata.
+	DependencyEvaluations []dependencyEvaluationRecord
 }
 
 const (
+	defaultMaxDependencyDepth = 10
+	maxMaxDependencyDepth     = 255
+
 	metadataAllocationKey    = "dd.allocation.key"
 	metadataDoLogKey         = "__dd_do_log"
 	metadataSplitSerialIDKey = "__dd_split_serial_id"
@@ -56,7 +64,45 @@ const (
 	// cross-SDK contract key (confirmed in the PII RFC and the Java pilot); every SDK stamps and
 	// reads consent under this exact key so the same identifier appears across SDK sources.
 	metadataObserveFullEvaluationDataKey = "observe_full_evaluation_data"
+	metadataDependencyExposuresKey       = "__dd_dependency_exposures"
 )
+
+type dependencyEvaluationRecord struct {
+	FlagKey      string
+	FlagType     valueType
+	DefaultValue any
+	Result       evaluationResult
+}
+
+type dependencyExposureCandidate struct {
+	FlagKey string
+	Result  evaluationResult
+}
+
+// dependencyExposureSnapshot is the scalar-safe representation carried across
+// the public OpenFeature FlagMetadata boundary. The evaluator keeps the richer
+// candidates private and exposes only the encoded JSON string.
+type dependencyExposureSnapshot struct {
+	FlagKey       string    `json:"flagKey"`
+	VariantKey    string    `json:"variantKey"`
+	Reason        of.Reason `json:"reason"`
+	AllocationKey string    `json:"allocationKey,omitempty"`
+	DoLog         bool      `json:"doLog"`
+	SerialID      *uint32   `json:"serialId,omitempty"`
+	FeaturesKey   string    `json:"featuresKey,omitempty"`
+	HookFeatures  string    `json:"hookFeatures,omitempty"`
+	CacheHit      *bool     `json:"cacheHit,omitempty"`
+}
+
+type dependencyGraphError struct {
+	flagKey string
+	code    of.ErrorCode
+	message string
+	cause   error
+}
+
+func (e *dependencyGraphError) Error() string { return e.message }
+func (e *dependencyGraphError) Unwrap() error { return e.cause }
 
 // evaluateFlag evaluates a feature flag with the given context. The caller supplies the
 // evaluation time (now) so a single timestamp is shared between the allocation time-window
@@ -64,6 +110,23 @@ const (
 // second time.Now() on the evaluation path.
 // It returns the variant value, reason, and any error that occurred.
 func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time.Time, exclusion experimentationExclusion) evaluationResult {
+	return evaluateFlagWithResolver(flag, defaultValue, context, now, exclusion, nil)
+}
+
+type dependencyResolver interface {
+	Resolve(*flagEvaluation) (string, error)
+	Checkpoint() dependencyCheckpoint
+	Rollback(dependencyCheckpoint)
+}
+
+func evaluateFlagWithResolver(
+	flag *flag,
+	defaultValue any,
+	context map[string]any,
+	now time.Time,
+	exclusion experimentationExclusion,
+	resolver dependencyResolver,
+) evaluationResult {
 	if flag == nil {
 		return evaluationResult{Value: defaultValue, Reason: of.DefaultReason}
 	}
@@ -81,8 +144,18 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 		if exclusion.active() && exclusion.excludes(allocation) {
 			continue
 		}
-		split, matched, err := evaluateAllocation(allocation, context, now)
+		checkpoint := checkpointDependency(resolver)
+		split, matched, err := evaluateAllocationWithResolver(allocation, context, now, resolver)
 		if err != nil {
+			rollbackDependency(resolver, checkpoint)
+			if graphErr, ok := err.(*dependencyGraphError); ok && graphErr.flagKey != flag.Key {
+				err = &dependencyGraphError{
+					flagKey: flag.Key,
+					code:    of.GeneralCode,
+					message: fmt.Sprintf("prerequisite flag %q failed: %s", graphErr.flagKey, graphErr.message),
+					cause:   graphErr,
+				}
+			}
 			return evaluationResult{
 				Value:  defaultValue,
 				Reason: of.ErrorReason,
@@ -152,6 +225,7 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 				Metadata:   metadata,
 			}
 		}
+		rollbackDependency(resolver, checkpoint)
 	}
 
 	// No allocations matched, return default
@@ -172,6 +246,99 @@ func evaluateConfiguredFlag(
 	exclusion experimentationExclusion,
 ) evaluationResult {
 	flag, exists := config.Flags[flagKey]
+	return evaluateConfiguredFlagLookedUp(config, flagKey, flag, exists, defaultValue, context, now, exclusion)
+}
+
+func evaluateConfiguredFlagLookedUp(
+	config *universalFlagsConfiguration,
+	flagKey string,
+	flag *flag,
+	exists bool,
+	defaultValue any,
+	context map[string]any,
+	now time.Time,
+	exclusion experimentationExclusion,
+) evaluationResult {
+	if !exists || !flag.Enabled || !flagMayEvaluateDependencies(flag) {
+		if exists && !(exclusion.mode == ExperimentationOptOutFutureExperimentsOnly && flag.invalidActivation) {
+			return evaluateFlagWithResolver(flag, defaultValue, context, now, exclusion, nil)
+		}
+		return evaluateConfiguredFlagOnce(config, flagKey, defaultValue, context, now, exclusion, nil)
+	}
+	resolver := &lazyDependencyResolver{
+		config:      config,
+		rootFlagKey: flagKey,
+		context:     context,
+		now:         now,
+		exclusion:   exclusion,
+	}
+	result := evaluateConfiguredFlagOnce(config, flagKey, defaultValue, context, now, exclusion, resolver)
+	if resolver.session == nil {
+		return result
+	}
+	result.DependencyEvaluations = cloneDependencyEvaluationRecords(resolver.session.evaluations)
+	if result.Error == nil && len(resolver.session.exposures) > 0 {
+		if result.Metadata == nil {
+			result.Metadata = make(map[string]any, 1)
+		}
+		result.Metadata[metadataDependencyExposuresKey] = encodeDependencyExposureCandidates(resolver.session.exposures)
+	}
+	return result
+}
+
+// flagMayEvaluateDependencies reports whether a flag contains any authored
+// prerequisite condition. Accepted provider configurations have this marker
+// prepared once at update time. The scan fallback preserves the behavior of
+// package-internal callers and tests that assemble flags directly.
+func flagMayEvaluateDependencies(flag *flag) bool {
+	if flag.dependencyConditionsPrepared {
+		return flag.hasDependencyConditions
+	}
+	return flagContainsDependencyConditions(flag)
+}
+
+func flagContainsDependencyConditions(flag *flag) bool {
+	for _, allocation := range flag.Allocations {
+		if allocation == nil {
+			continue
+		}
+		for _, rule := range allocation.Rules {
+			if rule == nil {
+				continue
+			}
+			for _, condition := range rule.Conditions {
+				if condition != nil && condition.FlagEvaluation != nil {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func prepareDependencyConditions(config *universalFlagsConfiguration) {
+	if config == nil {
+		return
+	}
+	for _, flag := range config.Flags {
+		if flag == nil || flag.dependencyConditionsPrepared {
+			continue
+		}
+		flag.hasDependencyConditions = flagContainsDependencyConditions(flag)
+		flag.dependencyConditionsPrepared = true
+	}
+}
+
+func evaluateConfiguredFlagOnce(
+	config *universalFlagsConfiguration,
+	flagKey string,
+	defaultValue any,
+	context map[string]any,
+	now time.Time,
+	exclusion experimentationExclusion,
+	resolver dependencyResolver,
+) evaluationResult {
+	flag, exists := config.Flags[flagKey]
 	if exists {
 		if exclusion.mode == ExperimentationOptOutFutureExperimentsOnly && flag.invalidActivation {
 			return evaluationResult{
@@ -180,7 +347,7 @@ func evaluateConfiguredFlag(
 				Error:  fmt.Errorf("%w: invalid randomizationActivatedAt for flag %q", errParseError, flagKey),
 			}
 		}
-		return evaluateFlag(flag, defaultValue, context, now, exclusion)
+		return evaluateFlagWithResolver(flag, defaultValue, context, now, exclusion, resolver)
 	}
 	if configErr, invalid := config.invalidFlags[flagKey]; invalid {
 		return evaluationResult{
@@ -196,8 +363,45 @@ func evaluateConfiguredFlag(
 	}
 }
 
+func configuredMaxDependencyDepth(config *universalFlagsConfiguration) int {
+	if config.EvaluatorParams.maxDependencyDepthInvalid {
+		logInvalidMaxDependencyDepth(config.EvaluatorParams.state)
+		return defaultMaxDependencyDepth
+	}
+	if config.EvaluatorParams.MaxDependencyDepth == nil {
+		return defaultMaxDependencyDepth
+	}
+	depth := *config.EvaluatorParams.MaxDependencyDepth
+	if depth < 0 || depth > maxMaxDependencyDepth {
+		logInvalidMaxDependencyDepth(config.EvaluatorParams.state)
+		return defaultMaxDependencyDepth
+	}
+	return depth
+}
+
+func logInvalidMaxDependencyDepth(state *evaluatorParamsState) {
+	// Production configurations initialize a distinct state during JSON
+	// unmarshalling. Keep the zero value safe for internal programmatic
+	// configurations without mutating an immutable config during evaluation.
+	if state == nil {
+		state = &uninitializedEvaluatorParamsState
+	}
+	state.maxDependencyDepthLog.Do(func() {
+		log.Error("openfeature: maxDependencyDepth must be an integer from 0 through 255; using default %d", defaultMaxDependencyDepth) //errtrack:ignore malformed customer configuration
+	})
+}
+
 // evaluateAllocation evaluates an allocation and returns the matching split if any.
 func evaluateAllocation(allocation *allocation, context map[string]any, currentTime time.Time) (*split, bool, error) {
+	return evaluateAllocationWithResolver(allocation, context, currentTime, nil)
+}
+
+func evaluateAllocationWithResolver(
+	allocation *allocation,
+	context map[string]any,
+	currentTime time.Time,
+	resolver dependencyResolver,
+) (*split, bool, error) {
 	// Check time window constraints
 	if allocation.StartAt != nil && currentTime.Before(*allocation.StartAt) {
 		return nil, false, nil
@@ -210,10 +414,17 @@ func evaluateAllocation(allocation *allocation, context map[string]any, currentT
 	// If there are no rules, the allocation matches everyone
 	ruleMatched := len(allocation.Rules) == 0
 	for _, rule := range allocation.Rules {
-		if evaluateRule(rule, context) {
+		checkpoint := checkpointDependency(resolver)
+		matched, err := evaluateRuleWithResolver(rule, context, resolver)
+		if err != nil {
+			rollbackDependency(resolver, checkpoint)
+			return nil, false, err
+		}
+		if matched {
 			ruleMatched = true
 			break
 		}
+		rollbackDependency(resolver, checkpoint)
 	}
 
 	if !ruleMatched {
@@ -236,16 +447,52 @@ func evaluateAllocation(allocation *allocation, context map[string]any, currentT
 
 // evaluateRule evaluates a rule by checking all conditions (AND logic).
 func evaluateRule(rule *rule, context map[string]any) bool {
+	matched, _ := evaluateRuleWithResolver(rule, context, nil)
+	return matched
+}
+
+func evaluateRuleWithResolver(rule *rule, context map[string]any, resolver dependencyResolver) (bool, error) {
 	for _, condition := range rule.Conditions {
-		if !evaluateCondition(condition, context) {
-			return false
+		matched, err := evaluateConditionWithResolver(condition, context, resolver)
+		if err != nil {
+			return false, err
+		}
+		if !matched {
+			return false, nil
 		}
 	}
-	return true
+	return true, nil
 }
 
 // evaluateCondition evaluates a single condition against the context.
 func evaluateCondition(condition *condition, context map[string]any) bool {
+	matched, _ := evaluateConditionWithResolver(condition, context, nil)
+	return matched
+}
+
+func evaluateConditionWithResolver(
+	condition *condition,
+	context map[string]any,
+	resolver dependencyResolver,
+) (bool, error) {
+	if condition.FlagEvaluation != nil {
+		if resolver == nil {
+			return false, nil
+		}
+		variantKey, err := resolver.Resolve(condition.FlagEvaluation)
+		if err != nil {
+			return false, err
+		}
+		switch condition.Operator {
+		case operatorOneOf:
+			return isOneOf(variantKey, condition.Value), nil
+		case operatorNotOneOf:
+			return !isOneOf(variantKey, condition.Value), nil
+		default:
+			return false, nil
+		}
+	}
+
 	attributeValue, exists := context[condition.Attribute]
 
 	// Special handling for "id" attribute: if not explicitly provided, use targeting key
@@ -261,30 +508,523 @@ func evaluateCondition(condition *condition, context map[string]any) bool {
 		isNull := !exists || attributeValue == nil
 		expectedNull, ok := condition.Value.(bool)
 		if !ok {
-			return false
+			return false, nil
 		}
-		return isNull == expectedNull
+		return isNull == expectedNull, nil
 	}
 
 	// For all other operators, attribute must exist
 	if !exists || attributeValue == nil {
-		return false
+		return false, nil
 	}
 
 	switch condition.Operator {
 	case operatorMatches:
-		return matchesRegex(attributeValue, condition.Value)
+		return matchesRegex(attributeValue, condition.Value), nil
 	case operatorNotMatches:
-		return !matchesRegex(attributeValue, condition.Value)
+		return !matchesRegex(attributeValue, condition.Value), nil
 	case operatorOneOf:
-		return isOneOf(attributeValue, condition.Value)
+		return isOneOf(attributeValue, condition.Value), nil
 	case operatorNotOneOf:
-		return !isOneOf(attributeValue, condition.Value)
+		return !isOneOf(attributeValue, condition.Value), nil
 	case operatorGT, operatorGTE, operatorLT, operatorLTE:
-		return evaluateNumericCondition(attributeValue, condition.Value, condition.Operator)
+		return evaluateNumericCondition(attributeValue, condition.Value, condition.Operator), nil
 	case operatorSemverEQ, operatorSemverNEQ, operatorSemverLT,
 		operatorSemverLTE, operatorSemverGT, operatorSemverGTE:
-		return evaluateSemverCondition(attributeValue, condition.semverComparand, condition.Operator)
+		return evaluateSemverCondition(attributeValue, condition.semverComparand, condition.Operator), nil
+	default:
+		return false, nil
+	}
+}
+
+type dependencyCheckpoint struct {
+	exposureCount      int
+	frameExposureCount int
+	hasFrame           bool
+}
+
+type dependencyFrame struct {
+	maxReachedDepth int
+	exposureTrace   []dependencyExposureCandidate
+	exposureKeys    map[string]struct{}
+}
+
+type memoizedDependency struct {
+	result          evaluationResult
+	descendantDepth int
+	exposureTrace   []dependencyExposureCandidate
+}
+
+type dependencyEvaluationSession struct {
+	config            *universalFlagsConfiguration
+	context           map[string]any
+	now               time.Time
+	exclusion         experimentationExclusion
+	maxDepth          int
+	active            map[string]bool
+	memo              map[string]memoizedDependency
+	frames            []*dependencyFrame
+	exposures         []dependencyExposureCandidate
+	exposureKeys      map[string]struct{}
+	evaluations       []dependencyEvaluationRecord
+	evaluationIndexes map[string]int
+	// onEvaluate is a test seam for proving memoization deduplicates actual
+	// prerequisite evaluation, not merely the returned telemetry.
+	onEvaluate func(string)
+}
+
+// lazyDependencyResolver keeps the dependency session and all of its maps off
+// the ordinary evaluation path until a flagEvaluation condition is reached.
+type lazyDependencyResolver struct {
+	config      *universalFlagsConfiguration
+	rootFlagKey string
+	context     map[string]any
+	now         time.Time
+	exclusion   experimentationExclusion
+	session     *dependencyEvaluationSession
+}
+
+func (r *lazyDependencyResolver) Resolve(ref *flagEvaluation) (string, error) {
+	if r.session == nil {
+		r.session = &dependencyEvaluationSession{
+			config:            r.config,
+			context:           r.context,
+			now:               r.now,
+			exclusion:         r.exclusion,
+			maxDepth:          configuredMaxDependencyDepth(r.config),
+			active:            map[string]bool{r.rootFlagKey: true},
+			memo:              make(map[string]memoizedDependency),
+			exposureKeys:      make(map[string]struct{}),
+			evaluationIndexes: make(map[string]int),
+		}
+	}
+	return r.session.Resolve(ref)
+}
+
+func (r *lazyDependencyResolver) Checkpoint() dependencyCheckpoint {
+	if r.session == nil {
+		return dependencyCheckpoint{}
+	}
+	return r.session.Checkpoint()
+}
+
+func (r *lazyDependencyResolver) Rollback(checkpoint dependencyCheckpoint) {
+	if r.session != nil {
+		r.session.Rollback(checkpoint)
+	}
+}
+
+func checkpointDependency(resolver dependencyResolver) dependencyCheckpoint {
+	if resolver == nil {
+		return dependencyCheckpoint{}
+	}
+	return resolver.Checkpoint()
+}
+
+func rollbackDependency(resolver dependencyResolver, checkpoint dependencyCheckpoint) {
+	if resolver != nil {
+		resolver.Rollback(checkpoint)
+	}
+}
+
+func (s *dependencyEvaluationSession) Checkpoint() dependencyCheckpoint {
+	checkpoint := dependencyCheckpoint{exposureCount: len(s.exposures)}
+	if len(s.frames) > 0 {
+		checkpoint.hasFrame = true
+		checkpoint.frameExposureCount = len(s.frames[len(s.frames)-1].exposureTrace)
+	}
+	return checkpoint
+}
+
+func (s *dependencyEvaluationSession) Rollback(checkpoint dependencyCheckpoint) {
+	if checkpoint.exposureCount <= len(s.exposures) {
+		truncateExposureTrace(&s.exposures, s.exposureKeys, checkpoint.exposureCount)
+	}
+	if checkpoint.hasFrame && len(s.frames) > 0 {
+		frame := s.frames[len(s.frames)-1]
+		if checkpoint.frameExposureCount <= len(frame.exposureTrace) {
+			truncateExposureTrace(&frame.exposureTrace, frame.exposureKeys, checkpoint.frameExposureCount)
+		}
+	}
+}
+
+func (s *dependencyEvaluationSession) Resolve(ref *flagEvaluation) (string, error) {
+	return s.resolve(ref.Key, 1)
+}
+
+func (s *dependencyEvaluationSession) resolve(flagKey string, depth int) (string, error) {
+	if depth > s.maxDepth {
+		graphErr := dependencyDepthError(flagKey)
+		_, memoized := s.memo[flagKey]
+		if !memoized && !s.active[flagKey] {
+			s.emitDepthError(flagKey, graphErr)
+		}
+		return "", graphErr
+	}
+	if s.active[flagKey] {
+		return "", &dependencyGraphError{flagKey: flagKey, code: of.GeneralCode, message: "flag dependency cycle detected"}
+	}
+	if memoized, ok := s.memo[flagKey]; ok {
+		if depth+memoized.descendantDepth > s.maxDepth {
+			return "", dependencyDepthError(flagKey)
+		}
+		s.recordReachedDepth(depth + memoized.descendantDepth)
+		s.recordExposureTrace(memoized.exposureTrace)
+		return memoized.result.VariantKey, nil
+	}
+
+	flag, exists := s.config.Flags[flagKey]
+	defaultValue := dependencyDefaultValue(flag)
+	flagType := valueTypeBoolean
+	if flag != nil {
+		flagType = flag.VariationType
+	}
+	// Reserve the telemetry position at first reach, before descending into
+	// this prerequisite. Completion fills the slot without changing authored
+	// DFS/preorder, and memo reuse cannot append another record.
+	s.reserve(flagKey, flagType, defaultValue)
+	if !exists {
+		if configErr, invalid := s.config.invalidFlags[flagKey]; invalid {
+			result := evaluationResult{
+				Value:  defaultValue,
+				Reason: of.ErrorReason,
+				Error:  fmt.Errorf("%w: invalid configuration for prerequisite flag %q: %w", errParseError, flagKey, configErr),
+			}
+			s.emit(flagKey, flagType, defaultValue, result)
+			return "", &dependencyGraphError{flagKey: flagKey, code: of.ParseErrorCode, message: result.Error.Error(), cause: result.Error}
+		}
+		cause := fmt.Errorf("%w: prerequisite flag %q is missing", errFlagNotFound, flagKey)
+		graphErr := &dependencyGraphError{
+			flagKey: flagKey,
+			code:    of.FlagNotFoundCode,
+			message: "prerequisite flag is missing",
+			cause:   cause,
+		}
+		result := evaluationResult{
+			Value:  defaultValue,
+			Reason: of.ErrorReason,
+			Error:  graphErr,
+		}
+		s.emit(flagKey, flagType, defaultValue, result)
+		return "", graphErr
+	}
+
+	s.active[flagKey] = true
+	frame := &dependencyFrame{maxReachedDepth: depth, exposureKeys: make(map[string]struct{})}
+	s.frames = append(s.frames, frame)
+	if s.onEvaluate != nil {
+		s.onEvaluate(flagKey)
+	}
+	frameActive := true
+	defer func() {
+		if frameActive {
+			s.frames = s.frames[:len(s.frames)-1]
+			delete(s.active, flagKey)
+		}
+	}()
+
+	result := evaluateConfiguredFlagOnce(s.config, flagKey, defaultValue, s.context, s.now, s.exclusion,
+		dependencyResolverAtDepth{session: s, depth: depth + 1})
+	if result.Error != nil || result.Reason == of.ErrorReason {
+		graphErr := dependencyErrorFromResult(flagKey, result)
+		result.Value = defaultValue
+		result.Reason = of.ErrorReason
+		result.Error = graphErr
+		s.emit(flagKey, flag.VariationType, defaultValue, result)
+		return "", graphErr
+	}
+	if result.VariantKey == "" {
+		graphErr := &dependencyGraphError{flagKey: flagKey, code: of.GeneralCode, message: "prerequisite flag evaluation returned no variant"}
+		result.Value = defaultValue
+		result.Reason = of.ErrorReason
+		result.Error = graphErr
+		s.emit(flagKey, flag.VariationType, defaultValue, result)
+		return "", graphErr
+	}
+
+	candidate := dependencyExposureCandidate{FlagKey: flagKey, Result: withoutEvaluationValue(result)}
+	appendExposureUnique(&frame.exposureTrace, frame.exposureKeys, candidate)
+	memoized := memoizedDependency{
+		result:          result,
+		descendantDepth: frame.maxReachedDepth - depth,
+		exposureTrace:   append([]dependencyExposureCandidate(nil), frame.exposureTrace...),
+	}
+	s.memo[flagKey] = memoized
+	s.emit(flagKey, flag.VariationType, defaultValue, result)
+	s.frames = s.frames[:len(s.frames)-1]
+	delete(s.active, flagKey)
+	frameActive = false
+	s.recordReachedDepth(depth + memoized.descendantDepth)
+	s.recordExposureTrace(memoized.exposureTrace)
+	return result.VariantKey, nil
+}
+
+func dependencyDepthError(flagKey string) *dependencyGraphError {
+	return &dependencyGraphError{
+		flagKey: flagKey,
+		code:    of.GeneralCode,
+		message: "maximum flag dependency depth exceeded",
+	}
+}
+
+func (s *dependencyEvaluationSession) emitDepthError(flagKey string, graphErr *dependencyGraphError) {
+	flag := s.config.Flags[flagKey]
+	flagType := valueTypeBoolean
+	if flag != nil {
+		flagType = flag.VariationType
+	}
+	defaultValue := dependencyDefaultValue(flag)
+	s.emit(flagKey, flagType, defaultValue, evaluationResult{
+		Value:  defaultValue,
+		Reason: of.ErrorReason,
+		Error:  graphErr,
+	})
+}
+
+type dependencyResolverAtDepth struct {
+	session *dependencyEvaluationSession
+	depth   int
+}
+
+func (r dependencyResolverAtDepth) Resolve(ref *flagEvaluation) (string, error) {
+	return r.session.resolve(ref.Key, r.depth)
+}
+func (r dependencyResolverAtDepth) Checkpoint() dependencyCheckpoint { return r.session.Checkpoint() }
+func (r dependencyResolverAtDepth) Rollback(c dependencyCheckpoint)  { r.session.Rollback(c) }
+
+func (s *dependencyEvaluationSession) recordReachedDepth(depth int) {
+	if len(s.frames) > 0 && depth > s.frames[len(s.frames)-1].maxReachedDepth {
+		s.frames[len(s.frames)-1].maxReachedDepth = depth
+	}
+}
+
+func (s *dependencyEvaluationSession) recordExposureTrace(trace []dependencyExposureCandidate) {
+	for _, candidate := range trace {
+		appendExposureUnique(&s.exposures, s.exposureKeys, candidate)
+		if len(s.frames) > 0 {
+			frame := s.frames[len(s.frames)-1]
+			appendExposureUnique(&frame.exposureTrace, frame.exposureKeys, candidate)
+		}
+	}
+}
+
+func appendExposureUnique(target *[]dependencyExposureCandidate, keys map[string]struct{}, candidate dependencyExposureCandidate) {
+	if _, exists := keys[candidate.FlagKey]; exists {
+		return
+	}
+	keys[candidate.FlagKey] = struct{}{}
+	*target = append(*target, candidate)
+}
+
+func truncateExposureTrace(target *[]dependencyExposureCandidate, keys map[string]struct{}, count int) {
+	for _, candidate := range (*target)[count:] {
+		delete(keys, candidate.FlagKey)
+	}
+	*target = (*target)[:count]
+}
+
+func withoutEvaluationValue(result evaluationResult) evaluationResult {
+	result.Value = nil
+	return result
+}
+
+func (s *dependencyEvaluationSession) emit(flagKey string, flagType valueType, defaultValue any, result evaluationResult) {
+	index := s.reserve(flagKey, flagType, defaultValue)
+	if result.Metadata == nil {
+		result.Metadata = make(map[string]any, 2)
+	}
+	result.Metadata[metadataEvalTimeKey] = s.now.UnixMilli()
+	result.Metadata[metadataObserveFullEvaluationDataKey] = s.config.ObserveFullEvaluationData
+	s.evaluations[index] = dependencyEvaluationRecord{
+		FlagKey:      flagKey,
+		FlagType:     flagType,
+		DefaultValue: cloneTelemetryValue(defaultValue),
+		Result:       cloneEvaluationResult(result),
+	}
+}
+
+func (s *dependencyEvaluationSession) reserve(flagKey string, flagType valueType, defaultValue any) int {
+	if index, exists := s.evaluationIndexes[flagKey]; exists {
+		return index
+	}
+	index := len(s.evaluations)
+	s.evaluationIndexes[flagKey] = index
+	s.evaluations = append(s.evaluations, dependencyEvaluationRecord{
+		FlagKey:      flagKey,
+		FlagType:     flagType,
+		DefaultValue: cloneTelemetryValue(defaultValue),
+	})
+	return index
+}
+
+func cloneDependencyEvaluationRecords(records []dependencyEvaluationRecord) []dependencyEvaluationRecord {
+	if len(records) == 0 {
+		return nil
+	}
+	cloned := make([]dependencyEvaluationRecord, len(records))
+	for i, record := range records {
+		cloned[i] = dependencyEvaluationRecord{
+			FlagKey:      record.FlagKey,
+			FlagType:     record.FlagType,
+			DefaultValue: cloneTelemetryValue(record.DefaultValue),
+			Result:       cloneEvaluationResult(record.Result),
+		}
+	}
+	return cloned
+}
+
+func cloneEvaluationResult(result evaluationResult) evaluationResult {
+	result.Value = cloneTelemetryValue(result.Value)
+	result.Metadata = cloneTelemetryMap(result.Metadata)
+	result.Error = cloneDependencyError(result.Error)
+	result.DependencyEvaluations = nil
+	return result
+}
+
+func cloneDependencyError(err error) error {
+	graphErr, ok := err.(*dependencyGraphError)
+	if !ok || graphErr == nil {
+		return err
+	}
+	return &dependencyGraphError{
+		flagKey: graphErr.flagKey,
+		code:    graphErr.code,
+		message: graphErr.message,
+		cause:   cloneDependencyError(graphErr.cause),
+	}
+}
+
+func encodeDependencyExposureCandidates(candidates []dependencyExposureCandidate) string {
+	snapshots := make([]dependencyExposureSnapshot, 0, len(candidates))
+	for _, candidate := range candidates {
+		metadata := candidate.Result.Metadata
+		allocationKey, _ := metadata[metadataAllocationKey].(string)
+		doLog, _ := metadata[metadataDoLogKey].(bool)
+		serialID, hasSerialID := metadata[metadataSplitSerialIDKey].(uint32)
+		var serialIDPtr *uint32
+		if hasSerialID {
+			serialIDPtr = &serialID
+		}
+		cacheHit, hasCacheHit := metadata[metadataExposureCacheHitKey].(bool)
+		var cacheHitPtr *bool
+		if hasCacheHit {
+			cacheHitPtr = &cacheHit
+		}
+		snapshots = append(snapshots, dependencyExposureSnapshot{
+			FlagKey:       candidate.FlagKey,
+			VariantKey:    candidate.Result.VariantKey,
+			Reason:        candidate.Result.Reason,
+			AllocationKey: allocationKey,
+			DoLog:         doLog,
+			SerialID:      serialIDPtr,
+			FeaturesKey:   featureValuesKey(metadata, metadataExposureFeaturesKey),
+			HookFeatures:  encodeFeatureValues(splitFeatureValues(metadata, metadataHookFeaturePrefix)),
+			CacheHit:      cacheHitPtr,
+		})
+	}
+	encoded, err := json.Marshal(snapshots)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
+func decodeDependencyExposureCandidates(encoded string) []dependencyExposureCandidate {
+	if encoded == "" {
+		return nil
+	}
+	var snapshots []dependencyExposureSnapshot
+	if err := json.Unmarshal([]byte(encoded), &snapshots); err != nil {
+		return nil
+	}
+	candidates := make([]dependencyExposureCandidate, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		metadata := map[string]any{
+			metadataAllocationKey: snapshot.AllocationKey,
+			metadataDoLogKey:      snapshot.DoLog,
+		}
+		if snapshot.SerialID != nil {
+			metadata[metadataSplitSerialIDKey] = *snapshot.SerialID
+		}
+		if snapshot.FeaturesKey != "" {
+			metadata[metadataExposureFeaturesKey] = snapshot.FeaturesKey
+		}
+		if snapshot.HookFeatures != "" {
+			var features map[string]any
+			if json.Unmarshal([]byte(snapshot.HookFeatures), &features) == nil {
+				for key, value := range features {
+					metadata[metadataHookFeaturePrefix+key] = value
+				}
+			}
+		}
+		if snapshot.CacheHit != nil {
+			metadata[metadataExposureCacheHitKey] = *snapshot.CacheHit
+		}
+		candidates = append(candidates, dependencyExposureCandidate{
+			FlagKey: snapshot.FlagKey,
+			Result: evaluationResult{
+				VariantKey: snapshot.VariantKey,
+				Reason:     snapshot.Reason,
+				Metadata:   metadata,
+			},
+		})
+	}
+	return candidates
+}
+
+func cloneTelemetryMap(source map[string]any) map[string]any {
+	if source == nil {
+		return nil
+	}
+	cloned := make(map[string]any, len(source))
+	for key, value := range source {
+		cloned[key] = cloneTelemetryValue(value)
+	}
+	return cloned
+}
+
+func cloneTelemetryValue(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		return cloneTelemetryMap(value)
+	case []any:
+		cloned := make([]any, len(value))
+		for i, item := range value {
+			cloned[i] = cloneTelemetryValue(item)
+		}
+		return cloned
+	case []string:
+		return append([]string(nil), value...)
+	default:
+		return value
+	}
+}
+
+func dependencyErrorFromResult(flagKey string, result evaluationResult) *dependencyGraphError {
+	code := errorCodeFor(result.Error)
+	if code == "" {
+		code = of.GeneralCode
+	}
+	message := "prerequisite flag evaluation failed"
+	if result.Error != nil {
+		message = result.Error.Error()
+	}
+	return &dependencyGraphError{flagKey: flagKey, code: code, message: message, cause: result.Error}
+}
+
+func dependencyDefaultValue(flag *flag) any {
+	if flag == nil {
+		return false
+	}
+	switch flag.VariationType {
+	case valueTypeBoolean:
+		return false
+	case valueTypeInteger, valueTypeNumeric:
+		return 0
+	case valueTypeString:
+		return ""
+	case valueTypeJSON:
+		return map[string]any{}
 	default:
 		return false
 	}
@@ -368,11 +1108,11 @@ func isOneOf(attributeValue any, conditionValue any) bool {
 	case []any:
 		conditionList = make([]string, len(cv))
 		for i, v := range cv {
-			if s, ok := v.(string); ok {
-				conditionList[i] = s
-			} else {
-				conditionList[i] = fmt.Sprintf("%v", v)
+			s, ok := v.(string)
+			if !ok {
+				return false
 			}
+			conditionList[i] = s
 		}
 	default:
 		return false

@@ -6,7 +6,10 @@
 package openfeature
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -25,6 +28,9 @@ type universalFlagsConfiguration struct {
 	// root, as a sibling of Environment. Plain bool (no omitempty, no pointer) so an absent
 	// or malformed value fails closed to false.
 	ObserveFullEvaluationData bool `json:"observeFullEvaluationData"`
+	// EvaluatorParams controls optional evaluator behaviour. Missing fields use
+	// evaluator defaults; a present zero maxDependencyDepth is meaningful.
+	EvaluatorParams evaluatorParams `json:"evaluatorParams"`
 	// Flags is a map of feature flag keys to their configurations
 	Flags map[string]*flag `json:"flags"`
 	// invalidFlags contains errors for flags that could not be parsed or validated.
@@ -46,6 +52,7 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 		Format                    string                     `json:"format"`
 		Environment               environment                `json:"environment"`
 		ObserveFullEvaluationData json.RawMessage            `json:"observeFullEvaluationData"`
+		EvaluatorParams           evaluatorParams            `json:"evaluatorParams"`
 		Flags                     map[string]json.RawMessage `json:"flags"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -56,6 +63,7 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 	config.Format = raw.Format
 	config.Environment = raw.Environment
 	config.ObserveFullEvaluationData = parseLenientBool(raw.ObserveFullEvaluationData)
+	config.EvaluatorParams = raw.EvaluatorParams
 	config.Flags = make(map[string]*flag, len(raw.Flags))
 	config.invalidFlags = make(map[string]error)
 
@@ -81,6 +89,204 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 	}
 
 	return nil
+}
+
+type evaluatorParams struct {
+	MaxDependencyDepth        *int `json:"-"`
+	maxDependencyDepthInvalid bool
+	state                     *evaluatorParamsState
+}
+
+// evaluatorParamsState owns mutable, concurrency-safe state separately from
+// the copyable evaluatorParams values embedded in immutable configurations.
+// Configuration copies intentionally share this state so a malformed option
+// is logged once for the parsed configuration, not once per copy or request.
+type evaluatorParamsState struct {
+	maxDependencyDepthLog sync.Once
+}
+
+var uninitializedEvaluatorParamsState evaluatorParamsState
+
+// UnmarshalJSON keeps malformed depth configuration evaluable so dependency
+// traversal can log the problem and use the default without rejecting the
+// complete configuration update. JSON numbers such as 3.0 are valid integers.
+func (params *evaluatorParams) UnmarshalJSON(data []byte) error {
+	params.MaxDependencyDepth = nil
+	params.maxDependencyDepthInvalid = false
+	params.state = new(evaluatorParamsState)
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		// Keep the UFC usable. The evaluator logs and applies the default only
+		// if dependency traversal reaches these malformed options.
+		params.maxDependencyDepthInvalid = true
+		return nil
+	}
+	if raw == nil && !bytes.Equal(bytes.TrimSpace(data), []byte("{}")) {
+		// JSON null decodes to a nil map without an error. It is still a
+		// malformed options object rather than an omitted options object.
+		params.maxDependencyDepthInvalid = true
+		return nil
+	}
+	depthJSON, present := raw["maxDependencyDepth"]
+	if !present {
+		return nil
+	}
+	// Validate the original JSON number lexeme exactly. Decoding through
+	// float64 can round a non-integer such as 254.99999999999999 to 255. The
+	// bounded parser also avoids expanding untrusted decimal exponents into
+	// arbitrarily large big integers before rejecting values outside 0..255.
+	value, ok := parseMaxDependencyDepth(depthJSON)
+	if !ok {
+		params.maxDependencyDepthInvalid = true
+		return nil
+	}
+	params.MaxDependencyDepth = &value
+	return nil
+}
+
+// parseMaxDependencyDepth parses one JSON number without floating-point
+// rounding or big-number exponent expansion. It scans O(len(raw)) bytes and
+// materializes at most the three integer digits needed for the 0..255 range.
+func parseMaxDependencyDepth(raw []byte) (int, bool) {
+	number := bytes.TrimSpace(raw)
+	if len(number) == 0 {
+		return 0, false
+	}
+	i := 0
+	negative := false
+	if number[i] == '-' {
+		negative = true
+		i++
+		if i == len(number) {
+			return 0, false
+		}
+	}
+
+	integerStart := i
+	switch {
+	case number[i] == '0':
+		i++
+	case number[i] >= '1' && number[i] <= '9':
+		for i < len(number) && number[i] >= '0' && number[i] <= '9' {
+			i++
+		}
+	default:
+		return 0, false
+	}
+	integerEnd := i
+
+	fractionStart, fractionEnd := i, i
+	if i < len(number) && number[i] == '.' {
+		i++
+		fractionStart = i
+		for i < len(number) && number[i] >= '0' && number[i] <= '9' {
+			i++
+		}
+		fractionEnd = i
+		if fractionStart == fractionEnd {
+			return 0, false
+		}
+	}
+
+	exponent, exponentNegative := 0, false
+	if i < len(number) && (number[i] == 'e' || number[i] == 'E') {
+		i++
+		if i < len(number) && (number[i] == '+' || number[i] == '-') {
+			exponentNegative = number[i] == '-'
+			i++
+		}
+		exponentStart := i
+		// Saturating at the input length is sufficient: the fraction and
+		// significand contain fewer digits, so a larger exponent cannot alter
+		// an in-range decision and never needs to be represented exactly.
+		limit := len(number)
+		for i < len(number) && number[i] >= '0' && number[i] <= '9' {
+			digit := int(number[i] - '0')
+			if exponent > limit/10 || exponent == limit/10 && digit > limit%10 {
+				exponent = limit
+			} else {
+				exponent = exponent*10 + digit
+			}
+			i++
+		}
+		if exponentStart == i {
+			return 0, false
+		}
+	}
+	if i != len(number) {
+		return 0, false
+	}
+
+	totalDigits := integerEnd - integerStart + fractionEnd - fractionStart
+	leadingZeros, trailingZeros := 0, 0
+	nonzero := false
+	visitDigits := func(visit func(byte) bool) {
+		for _, bounds := range [][2]int{{integerStart, integerEnd}, {fractionStart, fractionEnd}} {
+			for j := bounds[0]; j < bounds[1]; j++ {
+				if !visit(number[j]) {
+					return
+				}
+			}
+		}
+	}
+	visitDigits(func(digit byte) bool {
+		if !nonzero && digit == '0' {
+			leadingZeros++
+		}
+		if digit == '0' {
+			trailingZeros++
+		} else {
+			nonzero = true
+			trailingZeros = 0
+		}
+		return true
+	})
+	if !nonzero {
+		return 0, true // Preserve accepted negative and exponentiated zero forms.
+	}
+	if negative {
+		return 0, false
+	}
+
+	significantDigits := totalDigits - leadingZeros
+	fractionDigits := fractionEnd - fractionStart
+	removeTrailing, appendZeros := 0, 0
+	if exponentNegative {
+		if fractionDigits > trailingZeros || exponent > trailingZeros-fractionDigits {
+			return 0, false
+		}
+		removeTrailing = fractionDigits + exponent
+	} else if exponent < fractionDigits {
+		removeTrailing = fractionDigits - exponent
+		if removeTrailing > trailingZeros {
+			return 0, false
+		}
+	} else {
+		appendZeros = exponent - fractionDigits
+	}
+
+	keptDigits := significantDigits - removeTrailing
+	if keptDigits <= 0 || keptDigits > 3 || appendZeros > 3-keptDigits {
+		return 0, false
+	}
+	value, remaining := 0, keptDigits
+	seenNonzero := false
+	visitDigits(func(digit byte) bool {
+		if !seenNonzero && digit == '0' {
+			return true
+		}
+		seenNonzero = true
+		if remaining == 0 {
+			return false
+		}
+		value = value*10 + int(digit-'0')
+		remaining--
+		return remaining > 0
+	})
+	for range appendZeros {
+		value *= 10
+	}
+	return value, value <= 255
 }
 
 // environment represents environment information for the configuration.
@@ -122,6 +328,12 @@ type flag struct {
 	Allocations []*allocation `json:"allocations"`
 	// invalidActivation is consumed only by opted-out future-mode evaluations.
 	invalidActivation bool
+	// dependencyConditionsPrepared distinguishes configurations prepared for
+	// evaluation from flags assembled directly by tests and internal callers.
+	// hasDependencyConditions keeps the ordinary evaluation path from
+	// constructing a dependency resolver when this flag cannot traverse one.
+	dependencyConditionsPrepared bool
+	hasDependencyConditions      bool
 }
 
 // variant represents a single variation/variation of a feature flag.
@@ -244,8 +456,48 @@ type condition struct {
 	// - List operators (ONE_OF, NOT_ONE_OF): []any or []string
 	// - Null check (IS_NULL): bool
 	Value any `json:"value"`
+	// FlagEvaluation selects another flag's variant key as the condition input.
+	// It is mutually exclusive with Attribute in authored UFC.
+	FlagEvaluation        *flagEvaluation `json:"flagEvaluation,omitempty"`
+	attributePresent      bool
+	flagEvaluationPresent bool
 	// semverComparand is the validated, parsed SemVer condition value.
 	semverComparand *parsedSemver
+}
+
+func (c *condition) UnmarshalJSON(data []byte) error {
+	type plain condition
+	var decoded plain
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*c = condition(decoded)
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	_, c.attributePresent = fields["attribute"]
+	_, c.flagEvaluationPresent = fields["flagEvaluation"]
+	return nil
+}
+
+type flagEvaluation struct {
+	Key string `json:"key"`
+}
+
+func (evaluation *flagEvaluation) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	keyJSON, ok := fields["key"]
+	if !ok {
+		return errors.New("flagEvaluation must contain key")
+	}
+	if err := json.Unmarshal(keyJSON, &evaluation.Key); err != nil || evaluation.Key == "" {
+		return errors.New("flagEvaluation.key must be a non-empty string")
+	}
+	return nil
 }
 
 // split defines how traffic should be distributed for a specific variant.

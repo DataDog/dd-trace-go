@@ -354,6 +354,31 @@ type evalDetails struct {
 	observeFullEvaluationData bool
 }
 
+// dependencyEvaluationLoggingBatch holds the caller context only for the
+// synchronous prerequisite-publication loop. Its bounded, detached snapshot is
+// created lazily after the first record passes writer admission and then shared
+// read-only by the admitted records in this root batch.
+type dependencyEvaluationLoggingBatch struct {
+	targetingKey  string
+	flatCtx       of.FlattenedContext
+	contextAttrs  map[string]any
+	truncReasons  []string
+	snapshotReady bool
+}
+
+func newDependencyEvaluationLoggingBatch(flatCtx of.FlattenedContext) dependencyEvaluationLoggingBatch {
+	targetingKey, _ := flatCtx[of.TargetingKey].(string)
+	return dependencyEvaluationLoggingBatch{targetingKey: targetingKey, flatCtx: flatCtx}
+}
+
+func (b *dependencyEvaluationLoggingBatch) snapshot() (map[string]any, []string) {
+	if !b.snapshotReady {
+		b.contextAttrs, b.truncReasons = flattenAndPruneContextExcluding(b.flatCtx, of.TargetingKey)
+		b.snapshotReady = true
+	}
+	return b.contextAttrs, b.truncReasons
+}
+
 // newFlagEvalLoggingWriter creates a new flag evaluation writer.
 func newFlagEvalLoggingWriter(config ProviderConfig) *flagEvalLoggingWriter {
 	return newFlagEvalLoggingWriterWithEVP(config, newEVPClient())
@@ -625,24 +650,10 @@ func baseFlagEvalLoggingEvent(flagKey string, e *evaluationEntry, flushTimeMs in
 // full check ever fires. Non-blocking on enqueue; failure paths bump split counters so an
 // undersized cap surfaces as pre-queue overflow rather than getting hidden in a race counter.
 func (w *flagEvalLoggingWriter) record(hookContext of.HookContext, details of.InterfaceEvaluationDetails) {
-	w.enqueueMu.RLock()
-	defer w.enqueueMu.RUnlock()
+	if !w.admitContextSnapshot() {
+		return
+	}
 
-	// Post-stop no-op: after stop() the worker no longer drains w.events, so enqueuing would
-	// silently lose the event. Check the atomic gate lock-free (reading under the aggregator
-	// lock would add hot-path contention) and count the event as a closed drop (distinct from
-	// queue-overflow) so shutdown loss stays observable with its own reason tag.
-	if w.stopped.Load() {
-		w.closedDrop.Add(1)
-		return
-	}
-	if len(w.events) == cap(w.events) {
-		// Queue full at hook time — O(1) drop, no copy work. This is the hot signal for an
-		// undersized cap. Counted separately from the racy send-site loss below so the two
-		// causes stay distinguishable.
-		w.preQueueOverflow.Add(1)
-		return
-	}
 	d := extractEvalDetails(hookContext, details)
 	evaluationTimeMs := d.evalTimeMs
 	if evaluationTimeMs == 0 {
@@ -655,18 +666,81 @@ func (w *flagEvalLoggingWriter) record(hookContext of.HookContext, details of.In
 	if d.observeFullEvaluationData {
 		// Bound the context ON THE EVALUATION THREAD, before the async queue. The worker
 		// then only ever sees the pruned snapshot, and the caller's context reference is
-		// released as soon as record() returns.
+		// released as soon as record() returns. Application String methods run without
+		// enqueueMu held so they can safely re-enter evaluation while stop is pending.
 		attrs, truncReasons := flattenAndPruneContext(hookContext.EvaluationContext().Attributes())
 		ev.contextAttrs = attrs
 		for _, reason := range truncReasons {
 			w.incContextTruncated(reason)
 		}
 	}
+	w.enqueueAfterSnapshot(ev)
+}
+
+// admitContextSnapshot rejects work that is already known to be undeliverable
+// before walking caller context. The lock is released before application String
+// methods can run; enqueueAfterSnapshot performs the stop-safe final admission.
+func (w *flagEvalLoggingWriter) admitContextSnapshot() bool {
+	w.enqueueMu.RLock()
+	defer w.enqueueMu.RUnlock()
+
+	// Post-stop no-op: after stop() the worker no longer drains w.events, so enqueuing would
+	// silently lose the event. Check the atomic gate lock-free (reading under the aggregator
+	// lock would add hot-path contention) and count the event as a closed drop (distinct from
+	// queue-overflow) so shutdown loss stays observable with its own reason tag.
+	if w.stopped.Load() {
+		w.closedDrop.Add(1)
+		return false
+	}
+	if len(w.events) == cap(w.events) {
+		// Queue full at hook time — O(1) drop, no copy work. This is the hot signal for an
+		// undersized cap. Counted separately from the racy send-site loss below so the two
+		// causes stay distinguishable.
+		w.preQueueOverflow.Add(1)
+		return false
+	}
+	return true
+}
+
+func (w *flagEvalLoggingWriter) enqueueAfterSnapshot(ev evalEvent) {
+	w.enqueueMu.RLock()
+	defer w.enqueueMu.RUnlock()
+	if w.stopped.Load() {
+		w.closedDrop.Add(1)
+		return
+	}
 	select {
 	case w.events <- ev:
 	default:
 		w.enqueueDropped.Add(1)
 	}
+}
+
+// recordDependency admits a prerequisite record before touching its caller
+// context. Admitted records share one bounded, detached context snapshot for
+// the root batch; truncation counters still advance once per admitted record,
+// matching record's per-event semantics.
+func (w *flagEvalLoggingWriter) recordDependency(
+	batch *dependencyEvaluationLoggingBatch,
+	flagKey string,
+	details of.InterfaceEvaluationDetails,
+) {
+	if !w.admitContextSnapshot() {
+		return
+	}
+	d := extractEvalDetailsFor(flagKey, batch.targetingKey, details)
+	evaluationTimeMs := d.evalTimeMs
+	if evaluationTimeMs == 0 {
+		evaluationTimeMs = time.Now().UnixMilli()
+	}
+	ev := evalEvent{d: d, evaluationTimeMs: evaluationTimeMs}
+	if d.observeFullEvaluationData {
+		ev.contextAttrs, _ = batch.snapshot()
+		for _, reason := range batch.truncReasons {
+			w.incContextTruncated(reason)
+		}
+	}
+	w.enqueueAfterSnapshot(ev)
 }
 
 // aggregate updates the aggregator. It runs only on the writer's single worker goroutine.
@@ -728,21 +802,38 @@ func (w *flagEvalLoggingWriter) incContextTruncated(reason string) {
 // reviewer's recommendation and avoids the O(K log K) sort-then-trim that made the prior
 // implementation proportional to the caller's input.
 func flattenAndPruneContext(attrs map[string]any) (map[string]any, []string) {
+	return flattenAndPruneContextBounded(attrs, "", false)
+}
+
+func flattenAndPruneContextExcluding(attrs map[string]any, excludedKey string) (map[string]any, []string) {
+	return flattenAndPruneContextBounded(attrs, excludedKey, true)
+}
+
+func flattenAndPruneContextBounded(attrs map[string]any, excludedKey string, exclude bool) (map[string]any, []string) {
 	if len(attrs) == 0 {
 		return nil, nil
+	}
+	fieldCount := len(attrs)
+	if exclude {
+		if _, exists := attrs[excludedKey]; exists {
+			fieldCount--
+		}
 	}
 	// Omit the entire context when the top-level map itself exceeds the field cap, so the
 	// evaluation-thread cost is bounded by the cap rather than by the supplied width. Sorting
 	// every key only to keep the first ≤256 would be O(K log K) in K.
-	if len(attrs) > maxContextFields {
+	if fieldCount > maxContextFields {
 		return nil, []string{truncReasonMaxContextFields}
 	}
 	// Sort top-level keys so the field-count cap keeps a deterministic subset. Without this,
 	// Go's randomized map iteration would keep a different 256-field subset each call and
 	// fragment aggregation buckets. The sort is bounded to ≤ maxContextFields keys by the
 	// check above.
-	keys := make([]string, 0, len(attrs))
+	keys := make([]string, 0, fieldCount)
 	for k := range attrs {
+		if exclude && k == excludedKey {
+			continue
+		}
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
@@ -1418,9 +1509,17 @@ func pruneContext(raw map[string]any) map[string]any {
 }
 
 // extractEvalDetails extracts EVP-relevant fields from hook context and evaluation details.
-// This helper is used only by flagEvalLoggingHook — it does NOT replace the extraction in
-// flageval_metrics.go (that file is left untouched to preserve the OTel path).
+// The field-based helper also serves returned prerequisite batches; neither replaces the
+// extraction in flageval_metrics.go (that file is left untouched to preserve the OTel path).
 func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluationDetails) evalDetails {
+	return extractEvalDetailsFor(
+		hookContext.FlagKey(),
+		hookContext.EvaluationContext().TargetingKey(),
+		details,
+	)
+}
+
+func extractEvalDetailsFor(flagKey, targetingKey string, details of.InterfaceEvaluationDetails) evalDetails {
 	allocationKey, _ := details.FlagMetadata[metadataAllocationKey].(string)
 	evalTimeMs, _ := details.FlagMetadata[metadataEvalTimeKey].(int64)
 	// Fail closed: a missing or non-bool consent stamp yields false, so an evaluation that
@@ -1444,10 +1543,10 @@ func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluati
 		errMsg = string(details.ErrorCode)
 	}
 	return evalDetails{
-		flagKey:                   hookContext.FlagKey(),
+		flagKey:                   flagKey,
 		variant:                   details.Variant,
 		allocationKey:             allocationKey,
-		targetingKey:              hookContext.EvaluationContext().TargetingKey(),
+		targetingKey:              targetingKey,
 		errorMessage:              errMsg,
 		runtimeDefault:            isRuntimeDefault(details),
 		evalTimeMs:                evalTimeMs,

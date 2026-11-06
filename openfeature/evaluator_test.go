@@ -12,7 +12,9 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -106,6 +108,15 @@ func TestRegisteredEvaluatorWaitsForProvider(t *testing.T) {
 	if _, err := evaluate(context.Background(), "flag", "alice", nil); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestInternalAnyEvaluatorAcceptsScalarFlag(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{})
+	evaluate := newAnyEvaluator(h.client)
+
+	value, err := evaluate(context.Background(), "experiment", "subject", nil)
+	require.NoError(t, err)
+	require.Equal(t, true, value)
 }
 
 func TestEvaluateShard(t *testing.T) {
@@ -429,20 +440,149 @@ type fixtureEvaluationResult struct {
 }
 
 type fixtureEvaluationCase struct {
-	Flag         string                             `json:"flag"`
-	DefaultValue any                                `json:"defaultValue"`
-	TargetingKey *string                            `json:"targetingKey"`
-	Attributes   map[string]any                     `json:"attributes"`
-	Result       fixtureEvaluationResult            `json:"result"`
-	Capabilities map[string]fixtureEvaluationResult `json:"capabilities"`
+	Description   string                             `json:"description"`
+	Flag          string                             `json:"flag"`
+	DefaultValue  any                                `json:"defaultValue"`
+	TargetingKey  *string                            `json:"targetingKey"`
+	Attributes    map[string]any                     `json:"attributes"`
+	VariationType string                             `json:"variationType"`
+	Result        fixtureEvaluationResult            `json:"result"`
+	Capabilities  map[string]fixtureEvaluationResult `json:"capabilities"`
+	Expectations  fixtureExpectations                `json:"expectations"`
 }
 
-func TestEvaluateFlag_JSONFixtures(t *testing.T) {
-	fixtureDir := "ffe-system-test-data"
-	configData, err := os.ReadFile(filepath.Join(fixtureDir, "ufc-config.json"))
+type fixtureExpectations struct {
+	Exposures         []fixtureExpectedExposure        `json:"exposures"`
+	EvaluationEvents  []fixtureExpectedEvaluationEvent `json:"evaluationEvents"`
+	NoUnmatchedEvents bool                             `json:"noUnmatchedEvents"`
+}
+
+type fixtureExpectedExposure struct {
+	Count      int    `json:"_count"`
+	Allocation string `json:"allocation"`
+	Flag       string `json:"flag"`
+	Variant    string `json:"variant"`
+}
+
+type fixtureExpectedEvaluationEvent struct {
+	Count     int     `json:"_count"`
+	Flag      string  `json:"flag"`
+	ErrorCode *string `json:"errorCode"`
+}
+
+type fixtureCaseFile struct {
+	name  string
+	cases []fixtureEvaluationCase
+}
+
+type fixtureSuite struct {
+	name              string
+	configurationPath string
+	casesPath         string
+	assertTelemetry   bool
+}
+
+func loadFixtureSuite(t *testing.T, suite fixtureSuite) ([]fixtureCaseFile, []byte, int) {
+	t.Helper()
+	files, err := filepath.Glob(filepath.Join(suite.casesPath, "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no canonical FFE evaluation-case fixtures found (initialize them with `git submodule update --init --recursive`)")
+	}
+
+	fixtureFiles := make([]fixtureCaseFile, 0, len(files))
+	caseCount := 0
+	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cases []fixtureEvaluationCase
+		if err := json.Unmarshal(data, &cases); err != nil {
+			t.Fatalf("parse %s: %v", file, err)
+		}
+		caseCount += len(cases)
+		fixtureFiles = append(fixtureFiles, fixtureCaseFile{name: filepath.Base(file), cases: cases})
+	}
+	if caseCount == 0 {
+		t.Fatal("no canonical FFE evaluation cases found")
+	}
+	configData, err := os.ReadFile(suite.configurationPath)
 	if err != nil {
 		t.Fatalf("read canonical FFE fixtures: %v (initialize them with `git submodule update --init --recursive`)", err)
 	}
+	return fixtureFiles, configData, caseCount
+}
+
+func fixtureRevision(fixtureDir string) (string, error) {
+	out, err := exec.Command("git", "-C", fixtureDir, "rev-parse", "--show-toplevel", "HEAD").Output()
+	if err != nil {
+		return "", fmt.Errorf("resolve fixture revision: %w", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) != 2 {
+		return "", fmt.Errorf("resolve fixture revision: expected repository root and revision, got %d lines", len(lines))
+	}
+	fixtureInfo, err := os.Stat(fixtureDir)
+	if err != nil {
+		return "", fmt.Errorf("resolve fixture revision: stat fixture directory: %w", err)
+	}
+	repositoryRoot := strings.TrimSpace(lines[0])
+	repositoryInfo, err := os.Stat(repositoryRoot)
+	if err != nil {
+		return "", fmt.Errorf("resolve fixture revision: stat repository root: %w", err)
+	}
+	if !os.SameFile(fixtureInfo, repositoryInfo) {
+		return "", fmt.Errorf("resolve fixture revision: fixture directory %q is not repository root %q", fixtureDir, repositoryRoot)
+	}
+	revision := strings.TrimSpace(lines[1])
+	if revision == "" {
+		return "", errors.New("resolve fixture revision: empty revision")
+	}
+	return revision, nil
+}
+
+func TestFixtureRevisionRejectsMissingGitMetadata(t *testing.T) {
+	_, err := fixtureRevision(t.TempDir())
+	require.Error(t, err)
+}
+
+func TestFixtureRevisionRejectsParentGitMetadata(t *testing.T) {
+	// The package directory is inside the superproject but is not itself a Git root.
+	_, err := fixtureRevision(".")
+	require.Error(t, err)
+}
+
+func TestEvaluateFlag_JSONFixtures(t *testing.T) {
+	fixtureRoot := "ffe-system-test-data"
+	revision, err := fixtureRevision(fixtureRoot)
+	require.NoError(t, err)
+	for _, suite := range []fixtureSuite{
+		{
+			name:              "Core",
+			configurationPath: filepath.Join(fixtureRoot, "ufc-config.json"),
+			casesPath:         filepath.Join(fixtureRoot, "evaluation-cases"),
+		},
+		{
+			name:              "Dependent",
+			configurationPath: filepath.Join(fixtureRoot, "evaluation-suites", "dependent-flags", "ufc-config.json"),
+			casesPath:         filepath.Join(fixtureRoot, "evaluation-suites", "dependent-flags", "cases"),
+			assertTelemetry:   true,
+		},
+	} {
+		t.Run(suite.name, func(t *testing.T) {
+			runEvaluateFlagJSONFixtures(t, suite, revision)
+		})
+	}
+}
+
+func runEvaluateFlagJSONFixtures(t *testing.T, suite fixtureSuite, revision string) {
+	t.Helper()
+	fixtureFiles, configData, caseCount := loadFixtureSuite(t, suite)
+	t.Logf("canonical FFE fixtures suite=%s revision=%s cases=%d", suite.name, revision, caseCount)
+
 	var cfg universalFlagsConfiguration
 	if err := json.Unmarshal(configData, &cfg); err != nil {
 		t.Fatal(err)
@@ -453,7 +593,6 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 	if err := of.SetProviderAndWait(provider); err != nil {
 		t.Fatalf("set provider: %v", err)
 	}
-	client := of.NewClient("fixture-test")
 	immediateProvider := newDatadogProvider(ProviderConfig{
 		ExperimentationOptOutMode: ExperimentationOptOutImmediate,
 	})
@@ -470,7 +609,7 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 		"experimentationOptOutFutureExperimentsOnly": futureProvider,
 	}
 	capabilityCases := make(map[string]int)
-	// Minimums pin each semantic family independently; additional cases are welcome.
+	// Pin each supported semantic family independently; additional cases are welcome.
 	// A global capability count can hide a missing family behind another file.
 	requiredFamilies := map[string]map[string]int{
 		"test-case-experimentation-opt-out.json": {
@@ -483,39 +622,27 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 	}
 	familyCases := make(map[string]map[string]int)
 
-	files, err := filepath.Glob(filepath.Join(fixtureDir, "evaluation-cases", "*.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(files) == 0 {
-		t.Fatal("no canonical FFE evaluation-case fixtures found (initialize them with `git submodule update --init --recursive`)")
-	}
-
-	for _, file := range files {
-		data, err := os.ReadFile(file)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var cases []fixtureEvaluationCase
-		if err := json.Unmarshal(data, &cases); err != nil {
-			t.Fatalf("parse %s: %v", file, err)
-		}
+	for _, file := range fixtureFiles {
 		// Count discovered cases, not selected subtests, so -run filters remain usable.
 		counts := make(map[string]int)
-		familyCases[filepath.Base(file)] = counts
-		for _, tc := range cases {
+		familyCases[file.name] = counts
+		for _, tc := range file.cases {
 			for capability := range tc.Capabilities {
 				capabilityCases[capability]++
 				counts[capability]++
 			}
 		}
-		t.Run(filepath.Base(file), func(t *testing.T) {
-			for i, tc := range cases {
+		t.Run(file.name, func(t *testing.T) {
+			for i, tc := range file.cases {
 				tkLabel := "<nil>"
 				if tc.TargetingKey != nil {
 					tkLabel = *tc.TargetingKey
 				}
 				t.Run(fmt.Sprintf("case%d/%s", i, tkLabel), func(t *testing.T) {
+					if suite.assertTelemetry {
+						assertDependentFixtureCase(t, configData, tc)
+						return
+					}
 					ctx := make(map[string]any, len(tc.Attributes)+1)
 					maps.Copy(ctx, tc.Attributes)
 					if tc.TargetingKey != nil {
@@ -547,16 +674,12 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 						assertFixtureFeatures(t, &cfg, tc, result)
 					}
 					if tc.Result.ErrorCode != "" {
-						evaluationContext := of.NewEvaluationContext("", tc.Attributes)
-						if tc.TargetingKey != nil {
-							evaluationContext = of.NewEvaluationContext(*tc.TargetingKey, tc.Attributes)
-						}
-						details, err := client.ObjectValueDetails(context.Background(), tc.Flag, tc.DefaultValue, evaluationContext)
-						if err == nil {
+						result := provider.evaluateAny(context.Background(), tc.Flag, tc.DefaultValue, ctx)
+						if result.Error == nil {
 							t.Error("expected SDK evaluation error, got nil")
 						}
-						if details.ErrorCode != of.ErrorCode(tc.Result.ErrorCode) {
-							t.Errorf("error code: got %q, want %q", details.ErrorCode, tc.Result.ErrorCode)
+						if code := errorCodeFor(result.Error); code != of.ErrorCode(tc.Result.ErrorCode) {
+							t.Errorf("error code: got %q, want %q", code, tc.Result.ErrorCode)
 						}
 					}
 					for capability, expected := range tc.Capabilities {
@@ -565,12 +688,12 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 							continue
 						}
 						t.Run(capability, func(t *testing.T) {
-							result := p.ObjectEvaluation(context.Background(), tc.Flag, tc.DefaultValue, ctx)
+							result := p.evaluateAny(context.Background(), tc.Flag, tc.DefaultValue, ctx)
 							assert.Equal(t, expected.Value, result.Value, "capability result value")
 							if result.Reason != of.Reason(expected.Reason) {
 								t.Errorf("reason: got %q, want %q", result.Reason, expected.Reason)
 							}
-							if code := result.ResolutionDetail().ErrorCode; code != of.ErrorCode(expected.ErrorCode) {
+							if code := errorCodeFor(result.Error); code != of.ErrorCode(expected.ErrorCode) {
 								t.Errorf("error code: got %q, want %q", code, expected.ErrorCode)
 							}
 						})
@@ -579,17 +702,183 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 			}
 		})
 	}
-	for family, minimums := range requiredFamilies {
-		for capability, minimum := range minimums {
-			if count := familyCases[family][capability]; count < minimum {
-				t.Errorf("canonical fixture family %q has %d cases for capability %q; require at least %d", family, count, capability, minimum)
+	if !suite.assertTelemetry {
+		for family, minimums := range requiredFamilies {
+			for capability, minimum := range minimums {
+				if count := familyCases[family][capability]; count < minimum {
+					t.Errorf("canonical fixture family %q has %d cases for capability %q; require at least %d", family, count, capability, minimum)
+				}
+			}
+		}
+		for capability := range capabilityProviders {
+			if capabilityCases[capability] == 0 {
+				t.Errorf("no canonical fixture cases found for supported capability %q", capability)
 			}
 		}
 	}
-	for capability := range capabilityProviders {
-		if capabilityCases[capability] == 0 {
-			t.Errorf("no canonical fixture cases found for supported capability %q", capability)
+	t.Logf("canonical FFE fixture capabilities=%v", capabilityCases)
+}
+
+type fixtureResolution struct {
+	value     any
+	reason    of.Reason
+	errorCode of.ErrorCode
+}
+
+func assertDependentFixtureCase(t *testing.T, configData []byte, tc fixtureEvaluationCase) {
+	t.Helper()
+	var cfg universalFlagsConfiguration
+	require.NoError(t, json.Unmarshal(configData, &cfg))
+	prepareDependencyConditions(&cfg)
+
+	// Each corpus case gets an isolated provider, cache, writers, and transport
+	// sink so no earlier subject or aggregation bucket can affect its events.
+	h := newOptOutHarness(t, ProviderConfig{})
+	h.provider.mu.Lock()
+	h.provider.configuration = &cfg
+	h.provider.mu.Unlock()
+
+	resolution := evaluateFixtureThroughClient(t, h.client, tc)
+	assert.Equal(t, fmt.Sprint(tc.Result.Value), fmt.Sprint(resolution.value), "result value")
+	if tc.Result.Reason != "" {
+		assert.Equal(t, of.Reason(tc.Result.Reason), resolution.reason, "result reason")
+	}
+	if tc.Result.ErrorCode != "" {
+		assert.Equal(t, of.ErrorCode(tc.Result.ErrorCode), resolution.errorCode, "result error code")
+	}
+
+	h.provider.flagEvalLoggingWriter.drainAndFlush()
+	h.provider.exposureWriter.flush()
+	if tc.Expectations.Exposures != nil {
+		assertFixtureExpectedExposures(t, tc.Expectations, h.sink.exposures)
+	}
+	if tc.Expectations.EvaluationEvents != nil {
+		assertFixtureExpectedEvaluationEvents(t, tc.Expectations, h.sink.events)
+	}
+}
+
+func evaluateFixtureThroughClient(t *testing.T, client *of.Client, tc fixtureEvaluationCase) fixtureResolution {
+	t.Helper()
+	targetingKey := ""
+	if tc.TargetingKey != nil {
+		targetingKey = *tc.TargetingKey
+	}
+	evaluationContext := of.NewEvaluationContext(targetingKey, tc.Attributes)
+	ctx := context.Background()
+	switch tc.VariationType {
+	case "BOOLEAN":
+		defaultValue, _ := tc.DefaultValue.(bool)
+		details, _ := client.BooleanValueDetails(ctx, tc.Flag, defaultValue, evaluationContext)
+		return fixtureResolution{value: details.Value, reason: details.Reason, errorCode: details.ErrorCode}
+	case "STRING":
+		defaultValue, _ := tc.DefaultValue.(string)
+		details, _ := client.StringValueDetails(ctx, tc.Flag, defaultValue, evaluationContext)
+		return fixtureResolution{value: details.Value, reason: details.Reason, errorCode: details.ErrorCode}
+	case "INTEGER":
+		defaultValue := fixtureInteger(tc.DefaultValue)
+		details, _ := client.IntValueDetails(ctx, tc.Flag, defaultValue, evaluationContext)
+		return fixtureResolution{value: details.Value, reason: details.Reason, errorCode: details.ErrorCode}
+	case "NUMERIC":
+		defaultValue := fixtureFloat(tc.DefaultValue)
+		details, _ := client.FloatValueDetails(ctx, tc.Flag, defaultValue, evaluationContext)
+		return fixtureResolution{value: details.Value, reason: details.Reason, errorCode: details.ErrorCode}
+	case "JSON":
+		details, _ := client.ObjectValueDetails(ctx, tc.Flag, tc.DefaultValue, evaluationContext)
+		return fixtureResolution{value: details.Value, reason: details.Reason, errorCode: details.ErrorCode}
+	default:
+		t.Fatalf("unsupported fixture variationType %q", tc.VariationType)
+		return fixtureResolution{}
+	}
+}
+
+func fixtureInteger(value any) int64 {
+	switch value := value.(type) {
+	case int64:
+		return value
+	case int:
+		return int64(value)
+	case float64:
+		return int64(value)
+	default:
+		return 0
+	}
+}
+
+func fixtureFloat(value any) float64 {
+	switch value := value.(type) {
+	case float64:
+		return value
+	case int64:
+		return float64(value)
+	case int:
+		return float64(value)
+	default:
+		return 0
+	}
+}
+
+func fixtureExpectedCount(count int) int {
+	if count <= 0 {
+		return 1
+	}
+	return count
+}
+
+func assertFixtureExpectedExposures(t *testing.T, expectations fixtureExpectations, actual []exposureEvent) {
+	t.Helper()
+	remaining := append([]exposureEvent(nil), actual...)
+	for _, expected := range expectations.Exposures {
+		for range fixtureExpectedCount(expected.Count) {
+			match := -1
+			for i, event := range remaining {
+				if event.Flag.Key != expected.Flag ||
+					(expected.Allocation != "" && event.Allocation.Key != expected.Allocation) ||
+					(expected.Variant != "" && event.Variant.Key != expected.Variant) {
+					continue
+				}
+				match = i
+				break
+			}
+			require.NotEqual(t, -1, match, "missing expected exposure %+v; actual=%+v", expected, actual)
+			remaining = append(remaining[:match], remaining[match+1:]...)
 		}
+	}
+	if expectations.NoUnmatchedEvents {
+		assert.Empty(t, remaining, "unexpected exposures")
+	}
+}
+
+func assertFixtureExpectedEvaluationEvents(t *testing.T, expectations fixtureExpectations, actual []flagEvalLoggingEvent) {
+	t.Helper()
+	remaining := make([]flagEvalLoggingEvent, 0, len(actual))
+	for _, event := range actual {
+		for range max(int(event.EvaluationCount), 1) {
+			remaining = append(remaining, event)
+		}
+	}
+	for _, expected := range expectations.EvaluationEvents {
+		for range fixtureExpectedCount(expected.Count) {
+			match := -1
+			for i, event := range remaining {
+				actualErrorCode := ""
+				if event.Error != nil {
+					actualErrorCode = event.Error.Message
+				}
+				expectedErrorCode := ""
+				if expected.ErrorCode != nil {
+					expectedErrorCode = *expected.ErrorCode
+				}
+				if event.Flag.Key == expected.Flag && actualErrorCode == expectedErrorCode {
+					match = i
+					break
+				}
+			}
+			require.NotEqual(t, -1, match, "missing expected evaluation event %+v; actual=%+v", expected, actual)
+			remaining = append(remaining[:match], remaining[match+1:]...)
+		}
+	}
+	if expectations.NoUnmatchedEvents {
+		assert.Empty(t, remaining, "unexpected evaluation events")
 	}
 }
 
@@ -623,11 +912,10 @@ func assertFixtureFeatures(t *testing.T, cfg *universalFlagsConfiguration, tc fi
 	if tc.TargetingKey != nil {
 		targetingKey = *tc.TargetingKey
 	}
-	details, err := h.client.ObjectValueDetails(context.Background(), tc.Flag, tc.DefaultValue,
-		of.NewEvaluationContext(targetingKey, tc.Attributes))
+	evaluate := newAnyEvaluator(h.client)
+	value, err := evaluate(context.Background(), tc.Flag, targetingKey, tc.Attributes)
 	require.NoError(t, err)
-	assert.Equal(t, tc.Result.Value, details.Value)
-	assert.Equal(t, of.Reason(tc.Result.Reason), details.Reason)
+	assert.Equal(t, tc.Result.Value, value)
 	require.Len(t, callbacks, 1)
 	assertFeatures("HOOK", callbacks[0].Features())
 	if tc.Result.DoLog != nil {

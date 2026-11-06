@@ -700,3 +700,47 @@ func (l *capturingLogger) countContaining(substr string) int {
 	}
 	return count
 }
+
+func TestAgentlessSourceRequestsDependentFlagsParameter(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		assert.Equal(t, "v1", r.URL.Query().Get("cap_dependent-flags-variant-key"))
+		if requests == 1 {
+			w.Header().Set("ETag", fakeUFCBackendETag)
+			_, _ = w.Write([]byte(fakeUFCValidBody))
+		} else {
+			assert.Equal(t, fakeUFCBackendETag, r.Header.Get("If-None-Match"))
+			w.WriteHeader(http.StatusNotModified)
+		}
+	}))
+	defer server.Close()
+	source, err := newAgentlessSource(internalffe.Settings{
+		AgentlessBaseURL: server.URL,
+		PollInterval:     time.Second,
+		RequestTimeout:   time.Second,
+	}, func(*universalFlagsConfiguration) {})
+	require.NoError(t, err)
+	source.pollOnce(1)
+	source.pollOnce(1)
+	assert.Equal(t, 2, requests)
+}
+
+func TestAddEvaluatorCapabilitiesUsesQueryParameter(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		capabilities []string
+		expected     string
+	}{
+		{"absent", nil, "https://example.test/ufc?token=preserved"},
+		{"unknown", []string{"unknown-v1"}, "https://example.test/ufc?token=preserved"},
+		{"dependent flags", []string{internalffe.DependentFlagVariantKeyV1}, "https://example.test/ufc?cap_dependent-flags-variant-key=v1&token=preserved"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "https://example.test/ufc?token=preserved", nil)
+			addEvaluatorCapabilities(req, test.capabilities)
+
+			assert.Equal(t, test.expected, req.URL.String())
+		})
+	}
+}
