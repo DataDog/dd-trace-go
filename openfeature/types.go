@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -93,6 +94,7 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 type evaluatorParams struct {
 	MaxDependencyDepth        *int `json:"-"`
 	maxDependencyDepthInvalid bool
+	maxDependencyDepthLog     sync.Once
 }
 
 // UnmarshalJSON keeps malformed depth configuration evaluable so dependency
@@ -101,6 +103,7 @@ type evaluatorParams struct {
 func (params *evaluatorParams) UnmarshalJSON(data []byte) error {
 	params.MaxDependencyDepth = nil
 	params.maxDependencyDepthInvalid = false
+	params.maxDependencyDepthLog = sync.Once{}
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		// Keep the UFC usable. The evaluator logs and applies the default only

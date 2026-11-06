@@ -439,8 +439,10 @@ func TestDependentFlags_InvalidConfiguredDepthLogsAndUsesDefault(t *testing.T) {
 			)
 			require.NoError(t, json.Unmarshal([]byte(`{"maxDependencyDepth":`+configured+`}`), &config.EvaluatorParams))
 			result := evaluateConfiguredFlag(config, "root", false, nil, time.Now(), experimentationExclusion{})
+			secondResult := evaluateConfiguredFlag(config, "root", false, nil, time.Now(), experimentationExclusion{})
 			log.Flush()
 			require.NoError(t, result.Error)
+			require.NoError(t, secondResult.Error)
 			require.Equal(t, of.TargetingMatchReason, result.Reason)
 			require.Equal(t, []string{"dependency"}, dependencyEvaluationKeys(result))
 			require.Len(t, result.DependencyEvaluations, 1)
@@ -450,7 +452,7 @@ func TestDependentFlags_InvalidConfiguredDepthLogsAndUsesDefault(t *testing.T) {
 			require.Equal(t, true, record.Result.Value)
 			require.NoError(t, record.Result.Error)
 			require.Equal(t, []string{"dependency"}, dependencyExposureKeys(result))
-			require.Equal(t, 1, logger.countContaining("maxDependencyDepth must be an integer from 0 through 255; using default 10"))
+			require.Equal(t, 1, logger.countContaining("maxDependencyDepth must be an integer from 0 through 255; using default 10"), "malformed configuration must not log at request QPS")
 		})
 	}
 }
