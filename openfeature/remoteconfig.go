@@ -299,12 +299,10 @@ func isStringList(value any) bool {
 // This should be called when shutting down the application or when
 // the OpenFeature provider is no longer needed.
 //
-// Note: In the slow path, this package discards the subscription token from
-// Subscribe(), so we cannot call Unsubscribe(). Instead we unregister the
-// capability which stops updates. In the fast path (tracer subscribed),
-// the subscription is owned by the tracer.
+// The internal bridge removes a provider-owned slow-path subscription and all
+// capabilities registered with it. A tracer-owned fast-path subscription is
+// left unchanged.
 func stopRemoteConfig() error {
 	log.Debug("openfeature: unregistered from Remote Config")
-	_ = remoteconfig.UnregisterCapability(remoteconfig.FFEFlagEvaluation)
-	return nil
+	return internalffe.UnsubscribeProvider()
 }

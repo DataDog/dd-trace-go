@@ -14,6 +14,8 @@ func ResetForTest() {
 	rcState.subscribed = false
 	rcState.callback = nil
 	rcState.buffered = nil
+	rcState.providerToken = 0
+	rcState.providerCapabilities = nil
 }
 
 // SetSubscribedForTest sets the subscribed flag without actually calling Subscribe.

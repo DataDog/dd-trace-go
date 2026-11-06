@@ -6,6 +6,7 @@
 package openfeature
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -148,4 +149,65 @@ func TestStartWithRemoteConfig_ConfiguresAgentEVP(t *testing.T) {
 	assert.Empty(t, evp.apiKey)
 	assert.Nil(t, evp.directURL)
 	assert.Nil(t, evp.directClient)
+}
+
+func TestRemoteConfigSlowPathShutdownRemovesEvaluatorCapabilities(t *testing.T) {
+	internalffe.ResetForTest()
+	remoteconfig.Reset()
+	t.Cleanup(func() {
+		internalffe.ResetForTest()
+		remoteconfig.Reset()
+	})
+
+	provider, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+
+	for _, capability := range []remoteconfig.Capability{
+		remoteconfig.FFEFlagEvaluation,
+		remoteconfig.FFEFlagDependentFlagVariantKeyV1,
+	} {
+		has, err := remoteconfig.HasCapability(capability)
+		require.NoError(t, err)
+		require.True(t, has, "slow-path subscription should register capability %d", capability)
+	}
+
+	require.NoError(t, provider.ShutdownWithContext(context.Background()))
+	hasProduct, err := remoteconfig.HasProduct(internalffe.FFEProductName)
+	require.NoError(t, err)
+	assert.False(t, hasProduct)
+	for _, capability := range []remoteconfig.Capability{
+		remoteconfig.FFEFlagEvaluation,
+		remoteconfig.FFEFlagDependentFlagVariantKeyV1,
+	} {
+		has, err := remoteconfig.HasCapability(capability)
+		require.NoError(t, err)
+		assert.False(t, has, "slow-path shutdown should remove capability %d", capability)
+	}
+}
+
+func TestRemoteConfigFastPathShutdownKeepsTracerCapabilities(t *testing.T) {
+	internalffe.ResetForTest()
+	remoteconfig.Reset()
+	t.Cleanup(func() {
+		internalffe.ResetForTest()
+		remoteconfig.Reset()
+	})
+
+	require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+	require.NoError(t, internalffe.SubscribeRC())
+	provider, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+	require.NoError(t, provider.ShutdownWithContext(context.Background()))
+
+	hasProduct, err := remoteconfig.HasProduct(internalffe.FFEProductName)
+	require.NoError(t, err)
+	assert.True(t, hasProduct, "provider shutdown must not remove the tracer-owned subscription")
+	for _, capability := range []remoteconfig.Capability{
+		remoteconfig.FFEFlagEvaluation,
+		remoteconfig.FFEFlagDependentFlagVariantKeyV1,
+	} {
+		has, err := remoteconfig.HasCapability(capability)
+		require.NoError(t, err)
+		assert.True(t, has, "provider shutdown must keep tracer capability %d", capability)
+	}
 }

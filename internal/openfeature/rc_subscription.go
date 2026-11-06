@@ -34,9 +34,11 @@ type Callback func(update remoteconfig.ProductUpdate) map[string]rc.ApplyStatus
 // with the late-created DatadogProvider (during NewDatadogProvider).
 var rcState struct {
 	sync.Mutex
-	subscribed bool
-	callback   Callback
-	buffered   remoteconfig.ProductUpdate // latest snapshot; RC sends full state each time
+	subscribed           bool
+	callback             Callback
+	buffered             remoteconfig.ProductUpdate // latest snapshot; RC sends full state each time
+	providerToken        remoteconfig.SubscriptionToken
+	providerCapabilities []remoteconfig.Capability
 }
 
 // SubscribeRC subscribes to the FFE_FLAGS RC product using a forwarding
@@ -147,10 +149,40 @@ func SubscribeProvider(cb remoteconfig.ProductCallback) (tracerOwnsSubscription 
 		return false, fmt.Errorf("RC product %s already subscribed", FFEProductName)
 	}
 
-	if _, err := remoteconfig.Subscribe(FFEProductName, cb, remoteConfigCapabilities(EvaluatorCapabilities())...); err != nil {
+	capabilities := remoteConfigCapabilities(EvaluatorCapabilities())
+	token, err := remoteconfig.Subscribe(FFEProductName, cb, capabilities...)
+	if err != nil {
 		return false, err
 	}
+	rcState.providerToken = token
+	rcState.providerCapabilities = append(rcState.providerCapabilities[:0], capabilities...)
 
 	log.Debug("openfeature: provider subscribed to RC product %s", FFEProductName)
 	return false, nil
+}
+
+// UnsubscribeProvider removes only a provider-owned slow-path subscription.
+// A zero token means SubscribeProvider used the tracer-owned fast path, which
+// must remain registered until the tracer stops Remote Config.
+func UnsubscribeProvider() error {
+	rcState.Lock()
+	defer rcState.Unlock()
+
+	if rcState.providerToken == 0 {
+		return nil
+	}
+	token := rcState.providerToken
+	capabilities := append([]remoteconfig.Capability(nil), rcState.providerCapabilities...)
+	rcState.providerToken = 0
+	rcState.providerCapabilities = nil
+
+	if err := remoteconfig.Unsubscribe(token); err != nil {
+		return err
+	}
+	for _, capability := range capabilities {
+		if err := remoteconfig.UnregisterCapability(capability); err != nil {
+			return err
+		}
+	}
+	return nil
 }
