@@ -178,8 +178,8 @@ func TestAddEventsCap(t *testing.T) {
 		if got := lim.calls.Load(); got != 0 {
 			t.Errorf("limiter calls = %d, want 0", got)
 		}
-		if got := len(op.Events()); got != maxWAFEventsPerRequest {
-			t.Errorf("stored events = %d, want %d", got, maxWAFEventsPerRequest)
+		if got := len(op.Events()); got != expectedEventCap {
+			t.Errorf("stored events = %d, want %d", got, expectedEventCap)
 		}
 	})
 
@@ -225,8 +225,8 @@ func TestAddEventsConcurrent(t *testing.T) {
 	close(start)
 	wg.Wait()
 
-	if got := len(op.Events()); got != maxWAFEventsPerRequest {
-		t.Errorf("stored events = %d, want %d", got, maxWAFEventsPerRequest)
+	if got := len(op.Events()); got != expectedEventCap {
+		t.Errorf("stored events = %d, want %d", got, expectedEventCap)
 	}
 }
 

@@ -351,6 +351,11 @@ func requireWAFRequests(t *testing.T, client *telemetrytest.RecordClient, rateLi
 	require.Equal(t, 1.0, sumMetric(client, "waf.requests", rateLimitedTag, ruleTriggeredTag), "waf.requests with %s %s", rateLimitedTag, ruleTriggeredTag)
 }
 
+// expectedEventCap is the number of stored events after which a request accepts
+// no new batch. It is a literal on purpose: the tests state the contract, and
+// they do not use a symbol of the code under test.
+const expectedEventCap = 10
+
 // TestRunWAFLimiter checks that the limiter decides only about ManualKeep, for
 // a result with keep=true, and that it never removes events.
 func TestRunWAFLimiter(t *testing.T) {
@@ -425,14 +430,14 @@ func TestRunWAFLimiter(t *testing.T) {
 		lim := new(countingLimiter)
 		op, tags, metrics, client := newKeepTestOperation(t, lim)
 
-		for range maxWAFEventsPerRequest + 1 {
+		for range expectedEventCap + 1 {
 			op.runWAF(op, keepEventRunner, wafScopeAddresses(), false)
 		}
 		metrics.Submit(libddwaf.Truncations{}, nil)
 
 		require.EqualValues(t, 1, lim.calls.Load(), "the request is admitted 1 time, then it uses no token")
 		requireManualKeep(t, tags, true)
-		require.Len(t, op.Events(), maxWAFEventsPerRequest)
+		require.Len(t, op.Events(), expectedEventCap)
 		requireWAFRequests(t, client, false, true)
 	})
 
@@ -440,7 +445,7 @@ func TestRunWAFLimiter(t *testing.T) {
 		lim := new(countingLimiter)
 		op, tags, metrics, client := newKeepTestOperation(t, lim)
 
-		for range maxWAFEventsPerRequest {
+		for range expectedEventCap {
 			op.runWAF(op, eventRunner, wafScopeAddresses(), false)
 		}
 		require.Zero(t, lim.calls.Load())
@@ -449,7 +454,7 @@ func TestRunWAFLimiter(t *testing.T) {
 
 		require.EqualValues(t, 1, lim.calls.Load(), "a capped keep run can ask for the first admission")
 		requireManualKeep(t, tags, true)
-		require.Len(t, op.Events(), maxWAFEventsPerRequest)
+		require.Len(t, op.Events(), expectedEventCap)
 		requireWAFRequests(t, client, false, true)
 	})
 
@@ -461,14 +466,14 @@ func TestRunWAFLimiter(t *testing.T) {
 		op.runWAF(op, keepEventRunner, wafScopeAddresses(), false)
 		requireManualKeep(t, tags, false)
 		lim.deny.Store(false)
-		for range maxWAFEventsPerRequest + 2 {
+		for range expectedEventCap + 2 {
 			op.runWAF(op, keepEventRunner, wafScopeAddresses(), false)
 		}
 		metrics.Submit(libddwaf.Truncations{}, nil)
 
 		require.EqualValues(t, 2, lim.calls.Load(), "1 denial, 1 admission, then no more call")
 		requireManualKeep(t, tags, true)
-		require.Len(t, op.Events(), maxWAFEventsPerRequest)
+		require.Len(t, op.Events(), expectedEventCap)
 		requireWAFRequests(t, client, true, true)
 	})
 
@@ -495,6 +500,7 @@ func TestRunWAFLimiter(t *testing.T) {
 
 		require.EqualValues(t, 1, lim.calls.Load())
 		requireManualKeep(t, tags, true)
+		require.Len(t, op.Events(), 1)
 		requireWAFRequests(t, client, false, false)
 	})
 
@@ -524,6 +530,7 @@ func TestRunWAFLimiter(t *testing.T) {
 
 		require.EqualValues(t, 1, lim.calls.Load())
 		requireManualKeep(t, tags, false)
+		require.Len(t, op.Events(), 1)
 		requireWAFRequests(t, client, true, false)
 	})
 }
