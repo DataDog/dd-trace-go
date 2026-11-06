@@ -508,8 +508,15 @@ func UnshallowGitRepository() (bool, error) {
 		return false, fmt.Errorf("civisibility.unshallow: error checking if the git log has more than one commit: %s", err)
 	}
 
-	// if there are more than 1 commits, we can return early
-	if hasMoreThanOneCommits {
+	selected := GetCITags()[constants.GitCommitSHA]
+	selectedMissing := false
+	if (len(selected) == 40 || len(selected) == 64) && strings.Trim(selected, "0123456789abcdefABCDEF") == "" {
+		_, err := execGitString(telemetry.GetHeadCommandsType, "rev-parse", "--verify", selected+"^{commit}")
+		selectedMissing = err != nil
+	}
+
+	// Existing history is sufficient unless the selected revision is missing.
+	if hasMoreThanOneCommits && !selectedMissing {
 		log.Debug("civisibility.unshallow: the git log has more than one commits")
 		return false, nil
 	}
@@ -539,6 +546,13 @@ func UnshallowGitRepository() (bool, error) {
 		remoteName = "origin"
 	}
 	log.Debug("civisibility.unshallow: remote name: %s", remoteName)
+	if selectedMissing {
+		out, err := execGitString(telemetry.UnshallowCommandsType, "fetch", "--depth=1", "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", remoteName, selected)
+		if err != nil {
+			return false, fmt.Errorf("civisibility.unshallow: error fetching the selected commit: %s | %s", err, out)
+		}
+		return true, nil
+	}
 
 	// let's get the sha of the HEAD (git rev-parse HEAD)
 	headSha, err := execGitString(telemetry.GetHeadCommandsType, "rev-parse", "HEAD")

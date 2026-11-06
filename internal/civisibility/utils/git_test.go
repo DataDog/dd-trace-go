@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
@@ -225,6 +226,57 @@ func TestSelectedCommitHistoryAndPackExcludeUnrelatedHead(t *testing.T) {
 	assert.NotContains(t, packedObjects.String(), head+" commit ")
 }
 
+func TestUnshallowRecoversUnrelatedSelectedCommit(t *testing.T) {
+	for _, depth := range []string{"1", "2"} {
+		for _, available := range []bool{true, false} {
+			t.Run(fmt.Sprintf("depth=%s/remote=%t", depth, available), func(t *testing.T) {
+				isolateFixtureGit(t)
+				remote, checkout := t.TempDir(), filepath.Join(t.TempDir(), "checkout")
+				run := func(dir, input string, args ...string) string {
+					cmd := exec.Command("git", args...)
+					cmd.Dir, cmd.Stdin = dir, strings.NewReader(input)
+					out, err := cmd.CombinedOutput()
+					require.NoError(t, err, "%s", out)
+					return strings.TrimSpace(string(out))
+				}
+				run(remote, "", "init")
+				tree := run(remote, "", "hash-object", "-w", "-t", "tree", "--stdin")
+				selected := run(remote, fmt.Sprintf("tree %s\nauthor Test <test@example.com> 1 +0000\ncommitter Test <test@example.com> 1 +0000\n\nselected\n", tree), "hash-object", "-w", "-t", "commit", "--stdin")
+				now := time.Now().Unix()
+				root := run(remote, fmt.Sprintf("tree %s\nauthor Test <test@example.com> %d +0000\ncommitter Test <test@example.com> %d +0000\n\nroot\n", tree, now, now), "hash-object", "-w", "-t", "commit", "--stdin")
+				head := run(remote, fmt.Sprintf("tree %s\nparent %s\nauthor Test <test@example.com> %d +0000\ncommitter Test <test@example.com> %d +0000\n\nhead\n", tree, root, now, now), "hash-object", "-w", "-t", "commit", "--stdin")
+				run(remote, "", "update-ref", "refs/heads/juan-fernandez/tip", head)
+				run(remote, "", "update-ref", "refs/heads/juan-fernandez/selected", selected)
+				run(remote, "", "clone", "--no-local", "--depth="+depth, "--branch", "juan-fernandez/tip", remote, checkout)
+				if !available {
+					run(checkout, "", "remote", "set-url", "origin", filepath.Join(t.TempDir(), "unavailable"))
+				}
+				t.Chdir(checkout)
+				resetGitCommandCachesForTesting(t)
+				t.Setenv("DD_GIT_COMMIT_SHA", selected)
+				ResetCITags()
+				t.Cleanup(ResetCITags)
+				before := run(checkout, "", "rev-list", "--count", "HEAD")
+				require.Empty(t, GetLastLocalGitCommitShas())
+
+				recovered, err := UnshallowGitRepository()
+
+				if available {
+					require.NoError(t, err)
+					assert.True(t, recovered)
+					assert.Equal(t, []string{selected}, GetLastLocalGitCommitShas())
+				} else {
+					assert.Error(t, err)
+					assert.False(t, recovered)
+					assert.Empty(t, GetLastLocalGitCommitShas())
+				}
+				assert.Equal(t, head, run(checkout, "", "rev-parse", "HEAD"))
+				assert.Equal(t, before, run(checkout, "", "rev-list", "--count", "HEAD"))
+			})
+		}
+	}
+}
+
 func TestUnshallowGitRepository(t *testing.T) {
 	_, err := UnshallowGitRepository()
 	if err != nil && acceptableError(err) {
@@ -410,6 +462,7 @@ func resetGitCommandCachesForTesting(t *testing.T) {
 	originalGitExecutable := gitExecutable
 	originalGitExecutableArgs := append([]string(nil), gitExecutableArgs...)
 	reset := func() {
+		ResetCITags()
 		gitFinderOnce = sync.Once{}
 		gitExecutable = originalGitExecutable
 		gitExecutableArgs = append([]string(nil), originalGitExecutableArgs...)
