@@ -257,6 +257,8 @@ func createCITagsMap() map[string]string {
 		applyEnvironmentalDataIfRequiredFunc(localTags)
 		log.Debug("civisibility: skipping local git enrichment in payload-file mode")
 	} else {
+		// File metadata is a fallback too; a readable checkout replaces its Git fields.
+		applyEnvironmentalDataIfRequiredFunc(localTags)
 		// Populate missing git data
 		gitData, _ := getLocalGitDataFunc()
 
@@ -334,9 +336,6 @@ func createCITagsMap() map[string]string {
 				delete(localTags, key)
 			}
 		}
-
-		// Apply environmental data if is available
-		applyEnvironmentalDataIfRequiredFunc(localTags)
 	}
 
 	// Apply the Bazel provider fallback only after all other CI provider sources had a chance to populate the tag.

@@ -473,7 +473,12 @@ func TestGitMetadataPrecedence(t *testing.T) {
 				return data, nil
 			}
 			fetchCommitDataFunc = func(sha string) (localCommitData, error) { return localCommitData{CommitSha: sha}, nil }
-			applyEnvironmentalDataIfRequiredFunc = func(map[string]string) {}
+			applyEnvironmentalDataIfRequiredFunc = func(tags map[string]string) {
+				if tags[constants.GitCommitAuthorName] == "" {
+					tags[constants.GitCommitAuthorName] = "environment-file-author"
+				}
+				tags[constants.CINodeName] = "environment-file-node"
+			}
 			tags := GetCITags()
 			for key, value := range local {
 				switch source {
@@ -496,6 +501,7 @@ func TestGitMetadataPrecedence(t *testing.T) {
 				}
 			}
 			assert.Equal(t, "tests", tags[constants.CIJobName])
+			assert.Equal(t, "environment-file-node", tags[constants.CINodeName])
 			assert.Equal(t, "pr-head", tags[constants.GitHeadCommit])
 		})
 	}

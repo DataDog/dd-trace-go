@@ -157,6 +157,27 @@ func TestGetLocalGitData(t *testing.T) {
 	assert.NotEmpty(t, data.CommitMessage)
 }
 
+func TestLocalGitTagRequiresAnUnambiguousDetachedCheckout(t *testing.T) {
+	for _, tc := range []struct{ name, branch, tags, want string }{
+		{"attached", "main", "v1", ""},
+		{"unique", "HEAD", "v1", "v1"},
+		{"ambiguous", "HEAD", "v1\nstable", ""},
+		{"none", "HEAD", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setupFakeGitForUnshallow(t, false)
+			t.Setenv("DD_TEST_GIT_LOCAL_METADATA", "1")
+			t.Setenv("DD_TEST_GIT_LOCAL_BRANCH", tc.branch)
+			t.Setenv("DD_TEST_GIT_LOCAL_TAGS", tc.tags)
+			data, err := getLocalGitData()
+			assert.NoError(t, err)
+			assert.Equal(t, tc.want, data.Tag)
+			assert.Equal(t, "author\",\"name", data.AuthorName)
+			assert.Equal(t, "message [\"a\",\"b\"]", data.CommitMessage)
+		})
+	}
+}
+
 func TestGetLastLocalGitCommitShas(t *testing.T) {
 	shas := GetLastLocalGitCommitShas()
 	assert.NotEmpty(t, shas)
@@ -285,6 +306,25 @@ func TestFakeGitForUnshallowHelperProcess(t *testing.T) {
 		_ = os.WriteFile(commandsFile, []byte(strings.Join(args, " ")+"\n"), 0o644)
 	}
 	if len(args) == 0 {
+		os.Exit(0)
+	}
+
+	if os.Getenv("DD_TEST_GIT_LOCAL_METADATA") == "1" {
+		switch args[0] {
+		case "rev-parse":
+			if len(args) > 1 && args[1] == "--abbrev-ref" {
+				_, _ = os.Stdout.WriteString(os.Getenv("DD_TEST_GIT_LOCAL_BRANCH") + "\n")
+			} else {
+				_, _ = os.Stdout.WriteString(filepath.Dir(os.Getenv("DD_TEST_GIT_COMMANDS")) + "\n")
+			}
+		case "tag":
+			_, _ = os.Stdout.WriteString(os.Getenv("DD_TEST_GIT_LOCAL_TAGS") + "\n")
+		case "log":
+			fields := []string{"local-sha", "1", "author\",\"name", "author@example.com", "2", "committer", "committer@example.com", "message [\"a\",\"b\"]"}
+			_, _ = os.Stdout.WriteString(strings.Join(fields, "\x00") + "\n")
+		case "--version":
+			_, _ = os.Stdout.WriteString("git version 2.43.0\n")
+		}
 		os.Exit(0)
 	}
 

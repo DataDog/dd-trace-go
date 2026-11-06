@@ -343,19 +343,23 @@ func getLocalGitData() (localGitData, error) {
 	if err == nil && out != "HEAD" {
 		gitData.Branch = out
 	}
-	if tag, tagErr := execGitString(telemetry.GetBranchCommandsType, "describe", "--tags", "--exact-match", "HEAD"); tagErr == nil {
-		gitData.Tag = tag
+	if gitData.Branch == "" {
+		if out, tagErr := execGitString(telemetry.GetBranchCommandsType, "tag", "--points-at", "HEAD"); tagErr == nil {
+			if tags := strings.Fields(out); len(tags) == 1 {
+				gitData.Tag = tags[0]
+			}
+		}
 	}
 
-	// Get commit details from the latest commit using git log (git log -1 --pretty='%H","%aI","%an","%ae","%cI","%cn","%ce","%B')
+	// Read machine-readable commit details without signature diagnostics.
 	log.Debug("civisibility.git: getting the latest commit details")
-	out, err = execGitString(telemetry.GetGitCommitInfoCommandType, "log", "-1", "--pretty=%H\",\"%at\",\"%an\",\"%ae\",\"%ct\",\"%cn\",\"%ce\",\"%B")
+	out, err = execGitString(telemetry.GetGitCommitInfoCommandType, "log", "--no-show-signature", "-1", "--pretty=%H%x00%at%x00%an%x00%ae%x00%ct%x00%cn%x00%ce%x00%B")
 	if err != nil {
 		return gitData, err
 	}
 
 	// Split the output into individual components
-	outArray := strings.Split(out, "\",\"")
+	outArray := strings.SplitN(out, "\x00", 8)
 	if len(outArray) < 8 {
 		return gitData, errors.New("git log failed")
 	}
@@ -428,15 +432,15 @@ func fetchCommitData(commitSha string) (localCommitData, error) {
 		}
 	}
 
-	// Get commit details from the latest commit using git log (git show <commitSha> -s --format='%H","%aI","%an","%ae","%cI","%cn","%ce","%B')
+	// Read machine-readable commit details without signature diagnostics.
 	log.Debug("civisibility.git: getting the latest commit details")
-	out, err := execGitString(telemetry.GetGitCommitInfoCommandType, "show", commitSha, "-s", "--format=%H\",\"%at\",\"%an\",\"%ae\",\"%ct\",\"%cn\",\"%ce\",\"%B")
+	out, err := execGitString(telemetry.GetGitCommitInfoCommandType, "show", commitSha, "-s", "--no-show-signature", "--format=%H%x00%at%x00%an%x00%ae%x00%ct%x00%cn%x00%ce%x00%B")
 	if err != nil {
 		return commitData, err
 	}
 
 	// Split the output into individual components
-	outArray := strings.Split(out, "\",\"")
+	outArray := strings.SplitN(out, "\x00", 8)
 	if len(outArray) < 8 {
 		return commitData, errors.New("git log failed")
 	}
