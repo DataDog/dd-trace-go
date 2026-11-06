@@ -428,7 +428,7 @@ func TestGetCITagsDoesNotAddBazelProviderOutsideBazelMode(t *testing.T) {
 }
 
 func TestGitMetadataPrecedence(t *testing.T) {
-	for _, source := range []string{"git", "provider", "override", "partial"} {
+	for _, source := range []string{"git", "provider", "override", "partial", "sha-only"} {
 		t.Run(source, func(t *testing.T) {
 			ResetCITags()
 			t.Cleanup(ResetCITags)
@@ -455,6 +455,9 @@ func TestGitMetadataPrecedence(t *testing.T) {
 				}
 				t.Setenv("DD_"+strings.ToUpper(strings.ReplaceAll(key, ".", "_")), value)
 			}
+			if source == "sha-only" {
+				t.Setenv("DD_GIT_COMMIT_SHA", "selected-sha")
+			}
 			getProviderTagsFunc = func() map[string]string { return maps.Clone(provider) }
 			getLocalGitDataFunc = func() (localGitData, error) {
 				if source == "provider" {
@@ -478,6 +481,14 @@ func TestGitMetadataPrecedence(t *testing.T) {
 					assert.Equal(t, provider[key], tags[key], key)
 				case "override":
 					assert.Equal(t, "user-"+key, tags[key], key)
+				case "sha-only":
+					if key == constants.GitCommitSHA {
+						assert.Equal(t, "selected-sha", tags[key], key)
+					} else if strings.HasPrefix(key, "git.commit.") {
+						assert.NotContains(t, tags, key)
+					} else {
+						assert.Equal(t, value, tags[key], key)
+					}
 				case "partial":
 					assert.NotEqual(t, provider[key], tags[key], key)
 				default:
