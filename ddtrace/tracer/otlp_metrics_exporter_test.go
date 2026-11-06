@@ -197,7 +197,7 @@ func TestOTLPMetricsExporterSignalHeadersReplaceGeneric(t *testing.T) {
 
 	exp := newOTLPMetricsExporter(internalconfig.CreateNew())
 	gs := &pb.ClientGroupedStats{Service: "svc", Resource: "op", OkSummary: encodeSketch(t, 50e6)}
-	require.NoError(t, exp.export(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs})))
+	require.NoError(t, exportPayload(t, exp, makePayload("svc", "", "", []*pb.ClientGroupedStats{gs})))
 
 	assert.Equal(t, "signal", gotHeaders.Get("Authorization"))
 	assert.Empty(t, gotHeaders.Values("X-Generic"))

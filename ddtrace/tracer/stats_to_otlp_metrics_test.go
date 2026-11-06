@@ -288,7 +288,8 @@ func TestBuildOTLPMetricsRequestOTelSemantics(t *testing.T) {
 		TopLevelHits: 1,
 		OkSummary:    encodeSketch(t, 50e6),
 	}
-	rm := buildOTLPMetricsRequest(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs}), cfg)
+	rm, err := buildOTLPMetricsRequest(makePayload("svc", "", "", []*pb.ClientGroupedStats{gs}), cfg)
+	require.NoError(t, err)
 	require.Len(t, rm, 1)
 	assert.Equal(t, "otel", kvAttrsToMap(rm[0].Resource.Attributes)["datadog.sdk.semantics"])
 }
