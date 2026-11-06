@@ -186,12 +186,13 @@ type ContextMetrics struct {
 	// SumRASPCalls is the sum of all the RASP calls made by the WAF whatever the rasp rule type it is.
 	SumRASPCalls atomic.Uint32
 	// WAFErrorCode is the closest-to-zero (least-negative) error code seen in the WAF scope.
-	// A non-zero value is a ddwaf_run code (-1, -2, -3) or -127 for an error from the bindings.
-	// Zero means no error occurred. Timeouts are not included. See RFC-1012.
+	// A non-zero value is a ddwaf_run code (-1, -2, -3), or -127 for an error from the bindings.
+	// Zero means no error occurred. Timeouts are not errors and are not recorded here. See RFC-1012.
 	WAFErrorCode atomic.Int32
 	// RASPErrorCodes holds the closest-to-zero error code per RASP rule type.
-	// A non-zero value is a ddwaf_run code (-1, -2, -3) or -127 for an error from the bindings.
-	// Zero means no error occurred for that rule type. Timeouts are not included. See RFC-1012.
+	// A non-zero value is a ddwaf_run code (-1, -2, -3), or -127 for an error from the bindings.
+	// Zero means no error occurred for that rule type. Timeouts are not errors and are not recorded here.
+	// See RFC-1012.
 	RASPErrorCodes [len(addresses.RASPRuleTypes)]atomic.Int32
 
 	// exceptionOnce + exception store the first exception atomically.
@@ -418,15 +419,17 @@ func (m *ContextMetrics) RegisterWafRun(addrs addresses.RunAddressData, timerSta
 // - `waf.error`
 // - `rasp.error`
 //
-// A timeout is not a WAF error: [ContextMetrics.RegisterWafRun] counts it, so IncWafError does not
-// record an exception or an error metric for it. Invalid input (unknown RASP rule type or unexpected
-// scope) is still reported as an instrumentation exception, also for a timeout.
+// A timeout is not counted here: [ContextMetrics.RegisterWafRun] counts it.
 func (m *ContextMetrics) IncWafError(addrs addresses.RunAddressData, in error) {
 	if in == nil {
 		return
 	}
 
+	// A timeout is not an error. RegisterWafRun counts it: rasp.timeout for RASP,
+	// waf.requests{waf_timeout:true} for the WAF scope. Do not count it again in
+	// rasp.error or waf.error. The scope and rule type checks below still apply.
 	timeout := errors.Is(in, waferrors.ErrTimeout)
+
 	if !timeout {
 		switch addrs.TimerKey {
 		case addresses.RASPScope:

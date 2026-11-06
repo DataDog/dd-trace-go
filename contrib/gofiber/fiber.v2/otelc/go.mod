@@ -11,7 +11,7 @@ require github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.13.0-dev.1
 require (
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.13.0-dev.1 // indirect
 	github.com/molecule-man/go-brrr v1.1.1 // indirect
-	go.opentelemetry.io/otelc/pkg v0.0.0-20261103103723-318faabcdf7d // indirect
+	go.opentelemetry.io/otelc/pkg v0.0.0-20261105152245-5f2bd2ed6ac8 // indirect
 )
 
 require (

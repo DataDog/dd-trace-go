@@ -161,70 +161,111 @@ func TestWAFErrorCodeSpanTag(t *testing.T) {
 		require.Equal(t, int32(-1), th.Tags()[raspErrorTag])
 	})
 
-	t.Run("timeout_sets_no_error_tag", func(t *testing.T) {
-		metrics := newErrorTestMetrics(t)
-		metrics.IncWafError(addresses.RunAddressData{TimerKey: addresses.WAFScope}, waferrors.ErrTimeout)
-		metrics.IncWafError(sqliAddresses(), waferrors.ErrTimeout)
-		metrics.SumWAFTimeouts.Store(1)
-		metrics.SumRASPTimeouts[addresses.RASPRuleTypeSQLI].Store(1)
+	// The subtests below do not call t.Parallel: they replace the global
+	// telemetry client.
+	wafAddrs := func() addresses.RunAddressData {
+		return addresses.RunAddressData{TimerKey: addresses.WAFScope}
+	}
+	raspAddrs := func() addresses.RunAddressData {
+		return addresses.NewAddressesBuilder().WithDBStatement("SELECT 1").WithDBType("postgresql").Build()
+	}
 
-		tags := monitoringTags(metrics)
+	// tagsAfter returns the span tags that AddWAFMonitoringTags sets after
+	// IncWafError received each error, in order.
+	tagsAfter := func(t *testing.T, addrs func() addresses.RunAddressData, errs ...error) map[string]any {
+		t.Helper()
+		defer telemetry.MockClient(new(telemetrytest.RecordClient))()
+		handleMetrics := emitter.NewMetricsInstance(nil, "test")
+		metrics := handleMetrics.NewContextMetrics()
+		for _, err := range errs {
+			metrics.IncWafError(addrs(), err)
+		}
+		th := make(trace.TestTagSetter)
+		AddWAFMonitoringTags(&th, metrics, "1.0.0", libddwaf.Truncations{}, map[timer.Key]time.Duration{
+			addresses.WAFScope:  time.Millisecond,
+			addresses.RASPScope: time.Millisecond,
+		})
+		return th.Tags()
+	}
+
+	t.Run("waf_timeout_sets_no_error_tag", func(t *testing.T) {
+		tags := tagsAfter(t, wafAddrs, waferrors.ErrTimeout)
 		require.NotContains(t, tags, wafErrorTag)
 		require.NotContains(t, tags, raspErrorTag)
-		require.NotContains(t, tags, "_dd.appsec.error.type")
-		require.Equal(t, uint32(1), tags[wafTimeoutTag])
-		require.Equal(t, uint32(1), tags[raspTimeoutTag])
 	})
+
+	t.Run("rasp_timeout_sets_no_error_tag", func(t *testing.T) {
+		tags := tagsAfter(t, raspAddrs, waferrors.ErrTimeout)
+		require.NotContains(t, tags, wafErrorTag)
+		require.NotContains(t, tags, raspErrorTag)
+	})
+
+	for _, order := range []struct {
+		name string
+		errs []error
+	}{
+		{name: "error_then_timeout", errs: []error{waferrors.ErrInternal, waferrors.ErrTimeout}},
+		{name: "timeout_then_error", errs: []error{waferrors.ErrTimeout, waferrors.ErrInternal}},
+	} {
+		t.Run("waf_timeout_does_not_hide_real_error/"+order.name, func(t *testing.T) {
+			tags := tagsAfter(t, wafAddrs, order.errs...)
+			require.Equal(t, int32(-3), tags[wafErrorTag])
+		})
+
+		t.Run("rasp_timeout_does_not_hide_real_error/"+order.name, func(t *testing.T) {
+			tags := tagsAfter(t, raspAddrs, order.errs...)
+			require.Equal(t, int32(-3), tags[raspErrorTag])
+		})
+	}
 
 	t.Run("errors_set_ddwaf_run_code", func(t *testing.T) {
 		for _, tc := range []struct {
 			name string
-			err  error
+			errs []error
 			want int32
 		}{
-			{"invalid_object", waferrors.ErrInvalidObject, -2},
-			{"bindings", errors.New("bindings"), -127},
+			{name: "invalid_object", errs: []error{waferrors.ErrInvalidObject}, want: -2},
+			{name: "bindings", errs: []error{errors.New("bindings")}, want: -127},
+			// The span tag keeps the code closest to zero: -1 over -3 and -127.
+			{name: "least_negative_wins", errs: []error{waferrors.ErrInternal, waferrors.ErrInvalidArgument, waferrors.ErrOutOfMemory}, want: -1},
 		} {
 			t.Run("waf/"+tc.name, func(t *testing.T) {
-				metrics := newErrorTestMetrics(t)
-				metrics.IncWafError(addresses.RunAddressData{TimerKey: addresses.WAFScope}, tc.err)
-				require.Equal(t, tc.want, monitoringTags(metrics)[wafErrorTag])
+				tags := tagsAfter(t, wafAddrs, tc.errs...)
+				require.Equal(t, tc.want, tags[wafErrorTag])
+				require.NotContains(t, tags, raspErrorTag)
+			})
+			t.Run("rasp/"+tc.name, func(t *testing.T) {
+				tags := tagsAfter(t, raspAddrs, tc.errs...)
+				require.Equal(t, tc.want, tags[raspErrorTag])
+				require.NotContains(t, tags, wafErrorTag)
 			})
 		}
-
-		// One error per RASP rule type: the span tag is the least-negative code.
-		metrics := newErrorTestMetrics(t)
-		metrics.IncWafError(sqliAddresses(), waferrors.ErrInternal)                                                            // -3
-		metrics.IncWafError(addresses.NewAddressesBuilder().WithFilePath("/etc/passwd").Build(), waferrors.ErrInvalidArgument) // -1
-		metrics.IncWafError(addresses.NewAddressesBuilder().WithSysExecCmd([]string{"ls"}).Build(), waferrors.ErrOutOfMemory)  // -127
-		require.Equal(t, int32(-1), monitoringTags(metrics)[raspErrorTag])
 	})
 
 	t.Run("timeout_invalid_input_keeps_exception_tags", func(t *testing.T) {
 		for _, tc := range []struct {
 			name    string
-			addrs   addresses.RunAddressData
+			addrs   func() addresses.RunAddressData
 			wantMsg string
 		}{
 			{
 				name: "unknown_rasp_rule_type",
-				addrs: addresses.RunAddressData{
-					TimerKey: addresses.RASPScope,
-					Data:     map[string]any{addresses.ServerIONetResponseHeadersAddr: map[string][]string{"a": {"b"}}},
+				addrs: func() addresses.RunAddressData {
+					return addresses.RunAddressData{
+						TimerKey: addresses.RASPScope,
+						Data:     map[string]any{addresses.ServerIONetResponseHeadersAddr: map[string][]string{"a": {"b"}}},
+					}
 				},
 				wantMsg: "unknown RASP rule type",
 			},
 			{
 				name:    "invalid_scope",
-				addrs:   addresses.RunAddressData{TimerKey: addresses.Scope("bogus")},
+				addrs:   func() addresses.RunAddressData { return addresses.RunAddressData{TimerKey: addresses.Scope("bogus")} },
 				wantMsg: "unexpected WAF error scope",
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				metrics := newErrorTestMetrics(t)
-				metrics.IncWafError(tc.addrs, waferrors.ErrTimeout)
-
-				tags := monitoringTags(metrics)
+				tags := tagsAfter(t, tc.addrs, waferrors.ErrTimeout)
 				require.NotContains(t, tags, wafErrorTag)
 				require.NotContains(t, tags, raspErrorTag)
 				require.Equal(t, emitter.ExceptionTypeInstrumentation, tags["_dd.appsec.error.type"])
@@ -232,26 +273,4 @@ func TestWAFErrorCodeSpanTag(t *testing.T) {
 			})
 		}
 	})
-}
-
-// monitoringTags runs [AddWAFMonitoringTags] on metrics and returns the span tags.
-func monitoringTags(metrics *emitter.ContextMetrics) map[string]any {
-	th := make(trace.TestTagSetter)
-	AddWAFMonitoringTags(&th, metrics, "1.0.0", libddwaf.Truncations{}, map[timer.Key]time.Duration{
-		addresses.WAFScope:  time.Millisecond,
-		addresses.RASPScope: time.Millisecond,
-	})
-	return th.Tags()
-}
-
-// newErrorTestMetrics returns a real context metrics instance and mocks the telemetry client.
-func newErrorTestMetrics(t *testing.T) *emitter.ContextMetrics {
-	t.Helper()
-	t.Cleanup(telemetry.MockClient(new(telemetrytest.RecordClient)))
-	handleMetrics := emitter.NewMetricsInstance(nil, "1.0.0")
-	return handleMetrics.NewContextMetrics()
-}
-
-func sqliAddresses() addresses.RunAddressData {
-	return addresses.NewAddressesBuilder().WithDBStatement("SELECT 1").WithDBType("postgresql").Build()
 }

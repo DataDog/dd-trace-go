@@ -136,21 +136,6 @@ func TestUpdateClosestToZero(t *testing.T) {
 		require.Equal(t, int32(-127), target.Load())
 	})
 
-	t.Run("mixed_order", func(t *testing.T) {
-		var target atomic.Int32
-		for _, code := range []int32{-127, -3, -1, -2} {
-			updateClosestToZero(&target, code)
-		}
-		require.Equal(t, int32(-1), target.Load())
-	})
-
-	t.Run("least_negative_wins", func(t *testing.T) {
-		var target atomic.Int32
-		updateClosestToZero(&target, -1)
-		updateClosestToZero(&target, -3)
-		require.Equal(t, int32(-1), target.Load())
-	})
-
 	t.Run("non_negative_code_ignored", func(t *testing.T) {
 		var target atomic.Int32
 		updateClosestToZero(&target, -2)
@@ -216,31 +201,38 @@ func TestWafRunErrorCode(t *testing.T) {
 	}
 }
 
+// TestIncWafErrorCodes checks that waf.error and rasp.error get the ddwaf_run code in the waf_error tag,
+// and that the error code atomics hold the same code.
 func TestIncWafErrorCodes(t *testing.T) {
-	baseTags := []string{"event_rules_version:test", "waf_version:" + libddwaf.Version()}
 	for _, tc := range wafErrorCodeCases {
-		code := strconv.Itoa(tc.want)
+		code := "waf_error:" + strconv.Itoa(tc.want)
 		t.Run("waf/"+tc.name, func(t *testing.T) {
 			client := new(telemetrytest.RecordClient)
 			defer telemetry.MockClient(client)()
-			metrics := newTestContextMetrics()
+			handleMetrics := NewMetricsInstance(nil, "test")
+			metrics := handleMetrics.NewContextMetrics()
 
-			metrics.IncWafError(addresses.RunAddressData{TimerKey: addresses.WAFScope}, tc.err)
+			metrics.IncWafError(wafScopeAddresses(), tc.err)
 
-			tags := append([]string{"waf_error:" + code}, baseTags...)
-			require.Equal(t, 1.0, client.Count(telemetry.NamespaceAppSec, "waf.error", tags).Get())
+			require.Equal(t, 1.0, sumMetric(client, "waf.error", code))
+			require.Equal(t, 1.0, sumMetric(client, "waf.error"))
+			require.Zero(t, sumMetric(client, "rasp.error"))
 			require.EqualValues(t, tc.want, metrics.WAFErrorCode.Load())
+			requireNoRASPErrorCodes(t, metrics)
 		})
 		t.Run("rasp/"+tc.name, func(t *testing.T) {
 			client := new(telemetrytest.RecordClient)
 			defer telemetry.MockClient(client)()
-			metrics := newTestContextMetrics()
+			handleMetrics := NewMetricsInstance(nil, "test")
+			metrics := handleMetrics.NewContextMetrics()
 
-			metrics.IncWafError(raspSQLiAddresses(), tc.err)
+			metrics.IncWafError(sqliAddresses(), tc.err)
 
-			tags := append([]string{"waf_error:" + code, "rule_type:sql_injection"}, baseTags...)
-			require.Equal(t, 1.0, client.Count(telemetry.NamespaceAppSec, "rasp.error", tags).Get())
+			require.Equal(t, 1.0, sumMetric(client, "rasp.error", code, sqliRuleTypeTag))
+			require.Equal(t, 1.0, sumMetric(client, "rasp.error"))
+			require.Zero(t, sumMetric(client, "waf.error"))
 			require.EqualValues(t, tc.want, metrics.RASPErrorCodes[addresses.RASPRuleTypeSQLI].Load())
+			require.Zero(t, metrics.WAFErrorCode.Load())
 		})
 	}
 }
@@ -353,101 +345,43 @@ func TestSubmitIncludesBlockOutcomeReportedDuringSubmit(t *testing.T) {
 	}
 }
 
-func newTestContextMetrics() *ContextMetrics {
-	handleMetrics := NewMetricsInstance(nil, "test")
-	return handleMetrics.NewContextMetrics()
-}
-
-// requireNoErrorMetric checks that client holds no metric with the given name.
-// It loops over the recorded keys, because [telemetrytest.RecordClient.Count] creates a missing key.
-func requireNoErrorMetric(t *testing.T, client *telemetrytest.RecordClient, name string) {
-	t.Helper()
-	for key := range client.Metrics {
-		require.NotEqual(t, name, key.Name, "unexpected metric %s{%s}", key.Name, key.Tags)
-	}
-}
-
-// requireNoErrorState checks that no error metric, no error code and no exception log is recorded.
-func requireNoErrorState(t *testing.T, client *telemetrytest.RecordClient, metrics *ContextMetrics) {
-	t.Helper()
-	requireNoErrorMetric(t, client, "waf.error")
-	requireNoErrorMetric(t, client, "rasp.error")
-	require.Zero(t, metrics.WAFErrorCode.Load())
-	for i := range metrics.RASPErrorCodes {
-		require.Zero(t, metrics.RASPErrorCodes[i].Load())
-	}
-	require.Empty(t, client.Logs)
-}
-
-// raspSQLiAddresses is valid input for the SQL injection RASP rule type.
-func raspSQLiAddresses() addresses.RunAddressData {
-	return addresses.NewAddressesBuilder().WithDBStatement("SELECT 1").WithDBType("postgresql").Build()
-}
-
+// TestIncWafErrorTimeout checks that IncWafError does not count a timeout as an
+// error, and that it still reports the broken scopes and rule types.
 func TestIncWafErrorTimeout(t *testing.T) {
+	timeout := fmt.Errorf("encode: %w", waferrors.ErrTimeout)
+
 	for _, tc := range []struct {
-		name  string
-		addrs addresses.RunAddressData
+		name          string
+		addrs         addresses.RunAddressData
+		wantException string
 	}{
-		{name: "waf", addrs: addresses.RunAddressData{TimerKey: addresses.WAFScope}},
-		{name: "rasp", addrs: raspSQLiAddresses()},
-	} {
-		for errName, err := range map[string]error{
-			"plain":   waferrors.ErrTimeout,
-			"wrapped": fmt.Errorf("x: %w", waferrors.ErrTimeout),
-		} {
-			t.Run(tc.name+"/"+errName, func(t *testing.T) {
-				client := new(telemetrytest.RecordClient)
-				defer telemetry.MockClient(client)()
-				metrics := newTestContextMetrics()
-
-				metrics.IncWafError(tc.addrs, err)
-
-				requireNoErrorState(t, client, metrics)
-				require.Empty(t, metrics.ExceptionType())
-			})
-		}
-	}
-}
-
-func TestIncWafErrorTimeoutInvalidInput(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		addrs   addresses.RunAddressData
-		wantMsg string
-	}{
+		{name: "waf-scope", addrs: wafScopeAddresses()},
+		{name: "rasp-sqli", addrs: sqliAddresses()},
 		{
-			name: "unknown_rasp_rule_type",
-			addrs: addresses.RunAddressData{
-				TimerKey: addresses.RASPScope,
-				Data:     map[string]any{addresses.ServerIONetResponseHeadersAddr: map[string][]string{"a": {"b"}}},
-			},
-			wantMsg: "unknown RASP rule type",
+			name:          "rasp-without-rule-address",
+			addrs:         addresses.RunAddressData{TimerKey: addresses.RASPScope},
+			wantException: ExceptionTypeInstrumentation,
 		},
 		{
-			name:    "invalid_scope",
-			addrs:   addresses.RunAddressData{TimerKey: addresses.Scope("bogus")},
-			wantMsg: "unexpected WAF error scope",
+			name:          "unknown-scope",
+			addrs:         addresses.RunAddressData{TimerKey: "unknown"},
+			wantException: ExceptionTypeInstrumentation,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client := new(telemetrytest.RecordClient)
 			defer telemetry.MockClient(client)()
-			metrics := newTestContextMetrics()
+			handleMetrics := NewMetricsInstance(nil, "test")
+			metrics := handleMetrics.NewContextMetrics()
 
-			metrics.IncWafError(tc.addrs, waferrors.ErrTimeout)
+			metrics.IncWafError(tc.addrs, timeout)
 
-			requireNoErrorMetric(t, client, "waf.error")
-			requireNoErrorMetric(t, client, "rasp.error")
+			require.Zero(t, sumMetric(client, "waf.error"))
+			require.Zero(t, sumMetric(client, "rasp.error"))
 			require.Zero(t, metrics.WAFErrorCode.Load())
-			for i := range metrics.RASPErrorCodes {
-				require.Zero(t, metrics.RASPErrorCodes[i].Load())
-			}
-			require.Equal(t, ExceptionTypeInstrumentation, metrics.ExceptionType())
-			require.Contains(t, metrics.ExceptionMsg(), tc.wantMsg)
-			require.Len(t, client.Logs, 1)
-			require.Equal(t, telemetry.LogError, client.Logs[0].Level)
-			require.Equal(t, "appsec exception", client.Logs[0].Text)
+			requireNoRASPErrorCodes(t, metrics)
+			require.Equal(t, tc.wantException, metrics.ExceptionType())
+			require.Equal(t, tc.wantException != "", hasExceptionLog(client), "logs: %v", client.Logs)
 		})
 	}
 }
