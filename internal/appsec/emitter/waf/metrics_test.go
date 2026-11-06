@@ -174,7 +174,8 @@ func TestUpdateClosestToZeroConcurrent(t *testing.T) {
 	}
 }
 
-// wafErrorCodeCases lists the errors that [wafRunErrorCode] maps, with their ddwaf_run code.
+// wafErrorCodeCases has one error per kind, with the waf_error code that dd-trace-go reports.
+// go-libddwaf tests the full mapping of waferrors.ToWafReturnCode.
 var wafErrorCodeCases = []struct {
 	name string
 	err  error
@@ -183,22 +184,8 @@ var wafErrorCodeCases = []struct {
 	{"internal", waferrors.ErrInternal, -3},
 	{"invalid_object", waferrors.ErrInvalidObject, -2},
 	{"invalid_argument", waferrors.ErrInvalidArgument, -1},
-	{"out_of_memory", waferrors.ErrOutOfMemory, -127},
-	{"empty_rule_addresses", waferrors.ErrEmptyRuleAddresses, -127},
-	{"unknown_run_error", waferrors.RunError(99), -127},
+	{"run_error_without_return_code", waferrors.ErrOutOfMemory, -127},
 	{"bindings", errors.New("bindings"), -127},
-	{"context_closed", waferrors.ErrContextClosed, -127},
-	{"wrapped_invalid_object", fmt.Errorf("x: %w", waferrors.ErrInvalidObject), -2},
-}
-
-func TestWafRunErrorCode(t *testing.T) {
-	for _, tc := range wafErrorCodeCases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := wafRunErrorCode(tc.err)
-			require.Equal(t, tc.want, got)
-			require.Negative(t, got)
-		})
-	}
 }
 
 // TestIncWafErrorCodes checks that waf.error and rasp.error get the ddwaf_run code in the waf_error tag,
