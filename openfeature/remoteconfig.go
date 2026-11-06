@@ -32,12 +32,15 @@ func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 
 	// Subscribe via the internal package, which serializes with tracer subscription
 	// and starts RC only if needed (slow path).
-	tracerOwnsSubscription, err := internalffe.SubscribeProvider(provider.rcCallback)
+	tracerOwnsSubscription, token, err := internalffe.SubscribeProvider(provider.rcCallback)
 	if err != nil {
 		return nil, fmt.Errorf("failed to subscribe to Remote Config: %w", err)
 	}
 
 	if !tracerOwnsSubscription {
+		provider.mu.Lock()
+		provider.remoteConfigToken = token
+		provider.mu.Unlock()
 		log.Debug("openfeature: successfully subscribed to Remote Config updates")
 		return provider, nil
 	}
@@ -299,10 +302,11 @@ func isStringList(value any) bool {
 // This should be called when shutting down the application or when
 // the OpenFeature provider is no longer needed.
 //
-// The internal bridge removes a provider-owned slow-path subscription and all
-// capabilities registered with it. A tracer-owned fast-path subscription is
-// left unchanged.
-func stopRemoteConfig() error {
+// The internal bridge removes ownership identified by token. This detaches a
+// matching fast-path provider callback without removing the tracer-owned
+// subscription, or removes a matching slow-path subscription and its exact
+// capability set.
+func stopRemoteConfig(token internalffe.ProviderToken) error {
 	log.Debug("openfeature: unregistered from Remote Config")
-	return internalffe.UnsubscribeProvider()
+	return internalffe.UnsubscribeProvider(token)
 }

@@ -126,6 +126,9 @@ type DatadogProvider struct {
 
 	// source is fixed at construction. // +checklocks:mu
 	source internalffe.Source
+	// remoteConfigToken identifies this provider's slow-path subscription or
+	// fast-path callback attachment. Zero means it owns neither. // +checklocks:mu
+	remoteConfigToken internalffe.ProviderToken
 	// agentless stays nil unless tryRegisterAgentless registered a poller. // +checklocks:mu
 	agentless *agentlessSource
 	// shutdownCalled reports whether ShutdownWithContext has already run. // +checklocks:mu
@@ -611,6 +614,8 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 	}
 	p.shutdownCalled = true
 	source := p.source
+	remoteConfigToken := p.remoteConfigToken
+	p.remoteConfigToken = 0
 	agentless := p.agentless
 	p.configuration = nil
 	// Wake any Init parked on the current generation so it observes
@@ -630,7 +635,7 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 		// An agentless provider never registered an RC capability, so it
 		// must not unregister one.
 		if source == internalffe.SourceRemoteConfig {
-			err = stopRemoteConfig()
+			err = stopRemoteConfig(remoteConfigToken)
 		}
 		if agentless != nil {
 			if stopErr := agentless.Stop(ctx); stopErr != nil {
