@@ -162,10 +162,29 @@ func scan(root string, opts scanOptions) ([]Site, error) {
 	return sites, nil
 }
 
+// scanPlatform loads the module at root for one build platform and returns
+// every audited call site in scope: the platform load, the fail-closed error
+// collection, and the reporting-closure exclusion read as separate steps.
 func scanPlatform(root string, opts scanOptions, platform buildPlatform) ([]Site, error) {
-	// GOWORK=off keeps the scan on the module at root even when a Go
-	// workspace is active. CGO_ENABLED=0 makes cross-platform type checking
-	// independent of the host C toolchain.
+	pkgs, err := loadPlatform(root, platform)
+	if err != nil {
+		return nil, err
+	}
+	if errs := packageErrors(pkgs); len(errs) > 0 {
+		return nil, fmt.Errorf("the scanned module did not load cleanly for %s/%s; the audit would be incomplete:\n%v", platform.goos, platform.goarch, errs)
+	}
+	excludedPackages, err := reportingDependencies(pkgs, opts.reportingPackagePath)
+	if err != nil {
+		return nil, err
+	}
+	return scanPackages(pkgs, excludedPackages, root, opts)
+}
+
+// loadPlatform loads every package of the module at root for one build
+// platform. GOWORK=off keeps the scan on the module at root even when a Go
+// workspace is active. CGO_ENABLED=0 makes cross-platform type checking
+// independent of the host C toolchain.
+func loadPlatform(root string, platform buildPlatform) ([]*packages.Package, error) {
 	env := append([]string{}, os.Environ()...)
 	env = append(env, "GOWORK=off")
 	if platform.goos != "" {
@@ -183,13 +202,13 @@ func scanPlatform(root string, opts scanOptions, platform buildPlatform) ([]Site
 	if err != nil {
 		return nil, fmt.Errorf("packages.Load for %s/%s: %w", platform.goos, platform.goarch, err)
 	}
-	if errs := packageErrors(pkgs); len(errs) > 0 {
-		return nil, fmt.Errorf("the scanned module did not load cleanly for %s/%s; the audit would be incomplete:\n%v", platform.goos, platform.goarch, errs)
-	}
-	excludedPackages, err := reportingDependencies(pkgs, opts.reportingPackagePath)
-	if err != nil {
-		return nil, err
-	}
+	return pkgs, nil
+}
+
+// scanPackages walks the loaded packages and returns every audited call site,
+// skipping the packages excluded because importing the reporting package
+// would create an import cycle.
+func scanPackages(pkgs []*packages.Package, excludedPackages map[string]bool, root string, opts scanOptions) ([]Site, error) {
 	var sites []Site
 	for _, pkg := range pkgs {
 		if excludedPackages[pkg.PkgPath] {
@@ -201,23 +220,35 @@ func scanPlatform(root string, opts scanOptions, platform buildPlatform) ([]Site
 		if pkg.Module == nil {
 			continue
 		}
-		for i, file := range pkg.Syntax {
-			filename := pkg.CompiledGoFiles[i]
-			rel, err := filepath.Rel(root, filename)
-			if err != nil {
-				return nil, fmt.Errorf("relative path for %s: %w", filename, err)
-			}
-			relSlash := filepath.ToSlash(rel)
-			// Exclusion patterns are repo-relative (e.g. "/testdata/"), so
-			// match against relSlash, not the absolute filename: an absolute
-			// checkout path containing one of these substrings (e.g. a
-			// clone under a directory named "testdata") would otherwise
-			// exclude every file and silently return an empty inventory.
-			if excluded("/"+relSlash, opts.exclude) {
-				continue
-			}
-			sites = append(sites, scanFile(pkg, file, relSlash, opts)...)
+		pkgSites, err := scanPackageFiles(pkg, root, opts)
+		if err != nil {
+			return nil, err
 		}
+		sites = append(sites, pkgSites...)
+	}
+	return sites, nil
+}
+
+// scanPackageFiles scans one package's compiled files, reporting each site's
+// file path relative to root.
+func scanPackageFiles(pkg *packages.Package, root string, opts scanOptions) ([]Site, error) {
+	var sites []Site
+	for i, file := range pkg.Syntax {
+		filename := pkg.CompiledGoFiles[i]
+		rel, err := filepath.Rel(root, filename)
+		if err != nil {
+			return nil, fmt.Errorf("relative path for %s: %w", filename, err)
+		}
+		relSlash := filepath.ToSlash(rel)
+		// Exclusion patterns are repo-relative (e.g. "/testdata/"), so
+		// match against relSlash, not the absolute filename: an absolute
+		// checkout path containing one of these substrings (e.g. a
+		// clone under a directory named "testdata") would otherwise
+		// exclude every file and silently return an empty inventory.
+		if excluded("/"+relSlash, opts.exclude) {
+			continue
+		}
+		sites = append(sites, scanFile(pkg, file, relSlash, opts)...)
 	}
 	return sites, nil
 }
@@ -335,6 +366,11 @@ func (v *callVisitor) Visit(n ast.Node) ast.Visitor {
 // leaves the importing root package IllTyped with no Errors of its own, so
 // walking only pkgs would miss it and let the scan proceed on an incomplete
 // package graph.
+// maxReportedLoadErrors caps how many load errors the failure message
+// carries: one broken dependency cascades into hundreds of errors across the
+// package graph, and the first few identify the cause.
+const maxReportedLoadErrors = 5
+
 func packageErrors(pkgs []*packages.Package) []error {
 	var errs []error
 	packages.Visit(pkgs, nil, func(pkg *packages.Package) {
@@ -342,8 +378,8 @@ func packageErrors(pkgs []*packages.Package) []error {
 			errs = append(errs, e)
 		}
 	})
-	if len(errs) > 5 {
-		errs = errs[:5]
+	if len(errs) > maxReportedLoadErrors {
+		errs = errs[:maxReportedLoadErrors]
 	}
 	return errs
 }
@@ -420,94 +456,4 @@ func funcName(fn *ast.FuncDecl) string {
 		return fn.Name.Name
 	}
 	return "(" + types.ExprString(fn.Recv.List[0].Type) + ")." + fn.Name.Name
-}
-
-// errtrackIgnore is a standalone directive, not a //nolint: entry: this tool
-// is the repository's own scanner, not a golangci-lint linter, so naming it in
-// a //nolint: comment makes golangci-lint's nolint filter warn about an
-// unknown linter on every run. Mirrors //configaudit:ignore.
-const errtrackIgnore = "errtrack:ignore"
-
-// hasIgnoreDirective reports whether text is a comment carrying
-// //errtrack:ignore, with or without a trailing reason
-// (e.g. "//errtrack:ignore adopted in #5251"). Both line and block comment
-// forms are recognized, like golangci-lint's nolint, so a /* */ directive
-// suppresses the same as a // one.
-func hasIgnoreDirective(text string) bool {
-	t := strings.TrimRight(strings.TrimLeft(text, "/*"), "*/ ")
-	fields := strings.Fields(t)
-	return len(fields) > 0 && fields[0] == errtrackIgnore
-}
-
-// ignoreDirectiveLines returns, for each 1-based line in file that carries an
-// //errtrack:ignore directive, the sorted columns of that line's directive
-// comments.
-//
-// Directive semantics (exact): a directive suppresses a call when the comment
-// sits on a line spanned by the call itself — a trailing comment on the
-// call's first line, or a comment anywhere between a multi-line call's opening
-// and closing parenthesis. A standalone comment line above the call does NOT
-// suppress it: there is no reliable way to bind a preceding comment to the
-// next statement, and a broad "comment near the call" rule would silently
-// swallow directives meant for other lines. When multiple calls share a
-// line, a trailing comment's column (not just its line) decides which call
-// it suppresses; see applyIgnoreDirectives.
-func ignoreDirectiveLines(file *ast.File, fset *token.FileSet) map[int][]int {
-	out := map[int][]int{}
-	for _, cg := range file.Comments {
-		for _, c := range cg.List {
-			if hasIgnoreDirective(c.Text) {
-				pos := fset.Position(c.Pos())
-				out[pos.Line] = append(out[pos.Line], pos.Column)
-			}
-		}
-	}
-	for line := range out {
-		slices.Sort(out[line])
-	}
-	return out
-}
-
-// applyIgnoreDirectives sets Ignored on each site in sites, mutating them in
-// place, from the directive comment columns collected by
-// ignoreDirectiveLines.
-//
-// A multi-line call (endLine > Line) keeps the simple rule: any directive on
-// a line it spans suppresses it. A single-line call only suppresses on a
-// directive whose column is at or after its own — the nearest such call,
-// by column, on that line — so "log.Error(a); log.Warn(b) //errtrack:ignore"
-// binds the directive to Warn, not to both calls on the line.
-func applyIgnoreDirectives(sites []Site, suppressed map[int][]int) {
-	sameLine := map[int][]int{} // line -> indices into sites, single-line calls only
-	for i := range sites {
-		if sites[i].Line != sites[i].endLine {
-			for line := sites[i].Line; line <= sites[i].endLine; line++ {
-				if len(suppressed[line]) > 0 {
-					sites[i].Ignored = true
-					break
-				}
-			}
-			continue
-		}
-		sameLine[sites[i].Line] = append(sameLine[sites[i].Line], i)
-	}
-	for line, idxs := range sameLine {
-		cols := suppressed[line]
-		if len(cols) == 0 {
-			continue
-		}
-		slices.SortFunc(idxs, func(a, b int) int { return sites[a].column - sites[b].column })
-		for _, c := range cols {
-			nearest := -1
-			for _, i := range idxs {
-				if sites[i].column > c {
-					break
-				}
-				nearest = i
-			}
-			if nearest >= 0 {
-				sites[nearest].Ignored = true
-			}
-		}
-	}
 }
