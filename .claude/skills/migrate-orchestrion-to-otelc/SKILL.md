@@ -234,6 +234,11 @@ wrap its call sites with `wrap_call` instead (see "Rules" under "Cautions").
   contrib's `init`, the build panics and the trampoline recovers it. `sync.Once` and
   `sync.OnceValue` would then never retry, or replay the panic on every call, and the object stays
   untraced. Store the state only after the build returns, for example with `LoadOrStore`.
+- Contrib code that only otelc builds need, such as a mark that stops a second span, goes in the
+  contrib behind `instrumentation.OtelcEnabled()`, not in an `inject_code` rule that targets the
+  contrib. A refactor of the contrib can make such a rule match nothing without any error, and
+  the check costs plain builds only a bool test (`contrib/gorilla/mux/mux.go`,
+  `contrib/redis/go-redis.v9/otelc_mark.go`).
 - Every hook call allocates: the trampoline builds a `HookContext` holding pointers to the
   parameters, and it escapes. On a hot path in our own code, prefer `inject_code`. On a library's
   per-request method, a hook that reuses the contrib is usually worth it, but benchmark it under

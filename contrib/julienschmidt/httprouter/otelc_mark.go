@@ -13,8 +13,8 @@ import (
 
 type traceMarkKey struct{}
 
-// traceMark tags ctx as a request this package serves through router. Only
-// otelc builds call it, from code the otelc rules add to [Router.ServeHTTP].
+// traceMark tags ctx as a request this package serves through router.
+// [Router.ServeHTTP] calls it in otelc builds only.
 func traceMark(ctx context.Context, router *httprouter.Router) context.Context {
 	return context.WithValue(ctx, traceMarkKey{}, router)
 }

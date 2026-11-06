@@ -14,6 +14,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -32,6 +33,9 @@ func init() {
 
 type datadogHook struct {
 	*params
+	// replaced is set in an otelc build when the application wraps the client
+	// again, so that only the newer hook traces it.
+	replaced atomic.Bool
 }
 
 // params holds the tracer and a set of parameters which are recorded with every trace.
@@ -67,7 +71,9 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 		config: cfg,
 	}
 	hookParams.spanCfg = newSpanConfig(cfg, additionalTagOptions(client))
-	client.AddHook(&datadogHook{params: hookParams})
+	h := &datadogHook{params: hookParams}
+	replaceHook(client, h)
+	client.AddHook(h)
 }
 
 // newSpanConfig builds the base StartSpanConfig holding the tags that stay
@@ -132,6 +138,10 @@ func additionalTagOptions(client redis.UniversalClient) []tracer.StartSpanOption
 }
 
 func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (context.Context, error) {
+	ctx, skip := markOrSkip(ctx, ddh, cmd)
+	if skip {
+		return ctx, nil
+	}
 	raw := strings.TrimSpace(cmd.String())
 	first := strings.SplitN(raw, " ", 2)[0]
 	length := strings.Count(raw, " ") + 1
@@ -151,6 +161,9 @@ func (ddh *datadogHook) BeforeProcess(ctx context.Context, cmd redis.Cmder) (con
 }
 
 func (ddh *datadogHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error {
+	if !tracedBy(ctx, ddh) {
+		return nil
+	}
 	var span *tracer.Span
 	span, _ = tracer.SpanFromContext(ctx)
 	var finishOpts []tracer.FinishOption
@@ -163,6 +176,10 @@ func (ddh *datadogHook) AfterProcess(ctx context.Context, cmd redis.Cmder) error
 }
 
 func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
+	ctx, skip := markOrSkipPipeline(ctx, ddh, cmds)
+	if skip {
+		return ctx, nil
+	}
 	raw := strings.TrimSpace(commandsToString(cmds))
 	first := strings.SplitN(raw, " ", 2)[0]
 	length := strings.Count(raw, " ") + 1
@@ -183,6 +200,9 @@ func (ddh *datadogHook) BeforeProcessPipeline(ctx context.Context, cmds []redis.
 }
 
 func (ddh *datadogHook) AfterProcessPipeline(ctx context.Context, cmds []redis.Cmder) error {
+	if !tracedBy(ctx, ddh) {
+		return nil
+	}
 	var span *tracer.Span
 	span, _ = tracer.SpanFromContext(ctx)
 	var finishOpts []tracer.FinishOption

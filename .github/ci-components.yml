@@ -125,7 +125,10 @@ integration-suites:
     contrib/go-pg/pg.v10: []
     contrib/go-redis/redis: [ go-redis.v0 ]
     contrib/go-redis/redis.v7: [ go-redis.v7 ]
+    contrib/go-redis/redis.v7/otelc: [ go-redis.v7 ]
     contrib/go-redis/redis.v8: [ go-redis.v8 ]
+    contrib/go-redis/redis.v8/otelc: [ go-redis.v8 ]
+    contrib/go-redis/redis/otelc: [ go-redis.v0 ]
     contrib/go.mongodb.org/mongo-driver: [ mongo ]
     contrib/go.mongodb.org/mongo-driver.v2: [mongo, mongo.v2]
     contrib/go.mongodb.org/mongo-driver.v2/otelc: [mongo, mongo.v2]
@@ -168,6 +171,7 @@ integration-suites:
     contrib/olivere/elastic.v5: []
     contrib/opensearch-project/opensearch-go.v4: [ opensearch-go.v4 ]
     contrib/redis/go-redis.v9: [ go-redis.v9 ]
+    contrib/redis/go-redis.v9/otelc: [ go-redis.v9 ]
     contrib/redis/rueidis: [ rueidis ]
     contrib/rs/zerolog: [ zerolog ]
     contrib/segmentio/kafka-go: [ segmentio_kafka.v0 ]
@@ -485,6 +489,9 @@ components:
       - contrib/gin-gonic/gin/**
       - contrib/go-chi/chi/**
       - contrib/go-chi/chi.v5/**
+      - contrib/go-redis/redis.v7/**
+      - contrib/go-redis/redis.v8/**
+      - contrib/go-redis/redis/**
       - contrib/gofiber/fiber.v2/**
       - contrib/go.mongodb.org/mongo-driver/**
       - contrib/go.mongodb.org/mongo-driver.v2/**
@@ -495,6 +502,7 @@ components:
       - contrib/labstack/echo.v4/**
       - contrib/labstack/echo.v5/**
       - contrib/net/http/**
+      - contrib/redis/go-redis.v9/**
       - contrib/valyala/fasthttp/**
     module-scoped: true
     dependent-modules: []

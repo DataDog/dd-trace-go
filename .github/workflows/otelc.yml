@@ -61,6 +61,14 @@ env:
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
     contrib/google.golang.org/grpc/otelc
+    contrib/go-redis/redis
+    contrib/go-redis/redis/otelc
+    contrib/go-redis/redis.v7
+    contrib/go-redis/redis.v7/otelc
+    contrib/go-redis/redis.v8
+    contrib/go-redis/redis.v8/otelc
+    contrib/redis/go-redis.v9
+    contrib/redis/go-redis.v9/otelc
     contrib/go.mongodb.org/mongo-driver
     contrib/go.mongodb.org/mongo-driver/otelc
     contrib/go.mongodb.org/mongo-driver.v2
@@ -91,6 +99,10 @@ env:
     grpc
     gorilla_mux
     99designs.gqlgen
+    go-redis.v0
+    go-redis.v7
+    go-redis.v8
+    go-redis.v9
     mongo
     mongo.v2
     echo.v4
