@@ -6,9 +6,13 @@
 package utils
 
 import (
+	"errors"
+	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
@@ -421,4 +425,67 @@ func TestGetCITagsDoesNotAddBazelProviderOutsideBazelMode(t *testing.T) {
 
 	tags := GetCITags()
 	assert.NotContains(t, tags, constants.CIProviderName)
+}
+
+func TestGitMetadataPrecedence(t *testing.T) {
+	for _, source := range []string{"git", "provider", "override", "partial"} {
+		t.Run(source, func(t *testing.T) {
+			ResetCITags()
+			t.Cleanup(ResetCITags)
+			bazel.ResetForTesting()
+			t.Cleanup(bazel.ResetForTesting)
+			originalProvider, originalGit, originalFetch, originalEnvironmental := getProviderTagsFunc, getLocalGitDataFunc, fetchCommitDataFunc, applyEnvironmentalDataIfRequiredFunc
+			t.Cleanup(func() {
+				getProviderTagsFunc, getLocalGitDataFunc, fetchCommitDataFunc, applyEnvironmentalDataIfRequiredFunc = originalProvider, originalGit, originalFetch, originalEnvironmental
+			})
+			local := map[string]string{
+				constants.GitCommitSHA: "local-sha", constants.GitRepositoryURL: "https://example.com/local.git",
+				constants.GitBranch: "local-branch", constants.GitTag: "local-tag",
+				constants.GitCommitMessage: "local-message", constants.GitCommitAuthorName: "local-author",
+				constants.GitCommitAuthorEmail: "local-author@example.com", constants.GitCommitAuthorDate: time.Unix(1, 0).String(),
+				constants.GitCommitCommitterName: "local-committer", constants.GitCommitCommitterEmail: "local-committer@example.com",
+				constants.GitCommitCommitterDate: time.Unix(2, 0).String(),
+			}
+			provider := map[string]string{constants.CIJobName: "tests", constants.GitHeadCommit: "pr-head"}
+			for key := range local {
+				provider[key] = "provider-" + key
+				value := ""
+				if source == "override" {
+					value = "user-" + key
+				}
+				t.Setenv("DD_"+strings.ToUpper(strings.ReplaceAll(key, ".", "_")), value)
+			}
+			getProviderTagsFunc = func() map[string]string { return maps.Clone(provider) }
+			getLocalGitDataFunc = func() (localGitData, error) {
+				if source == "provider" {
+					return localGitData{}, errors.New("checkout unavailable")
+				}
+				data := localGitData{localCommitData: localCommitData{CommitSha: "local-sha"}}
+				if source != "partial" {
+					data.RepositoryURL, data.Branch, data.Tag = local[constants.GitRepositoryURL], "local-branch", "local-tag"
+					data.CommitMessage = "local-message"
+					data.AuthorName, data.AuthorEmail, data.AuthorDate = "local-author", "local-author@example.com", time.Unix(1, 0)
+					data.CommitterName, data.CommitterEmail, data.CommitterDate = "local-committer", "local-committer@example.com", time.Unix(2, 0)
+				}
+				return data, nil
+			}
+			fetchCommitDataFunc = func(sha string) (localCommitData, error) { return localCommitData{CommitSha: sha}, nil }
+			applyEnvironmentalDataIfRequiredFunc = func(map[string]string) {}
+			tags := GetCITags()
+			for key, value := range local {
+				switch source {
+				case "provider":
+					assert.Equal(t, provider[key], tags[key], key)
+				case "override":
+					assert.Equal(t, "user-"+key, tags[key], key)
+				case "partial":
+					assert.NotEqual(t, provider[key], tags[key], key)
+				default:
+					assert.Equal(t, value, tags[key], key)
+				}
+			}
+			assert.Equal(t, "tests", tags[constants.CIJobName])
+			assert.Equal(t, "pr-head", tags[constants.GitHeadCommit])
+		})
+	}
 }

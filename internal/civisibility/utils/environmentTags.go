@@ -260,7 +260,14 @@ func createCITagsMap() map[string]string {
 		// Populate missing git data
 		gitData, _ := getLocalGitDataFunc()
 
-		// Populate Git metadata from the local Git repository if not already present in localTags
+		if gitData.CommitSha != "" {
+			for key := range localTags {
+				if strings.HasPrefix(key, "git.") && !strings.HasPrefix(key, "git.commit.head.") && !strings.HasPrefix(key, "git.pull_request.") {
+					delete(localTags, key)
+				}
+			}
+			localTags[constants.GitTag] = gitData.Tag
+		}
 		if _, ok := localTags[constants.CIWorkspacePath]; !ok {
 			localTags[constants.CIWorkspacePath] = gitData.SourceRoot
 		}
@@ -313,6 +320,14 @@ func createCITagsMap() map[string]string {
 				localTags[constants.GitHeadMessage] = headCommitData.CommitMessage
 			} else {
 				log.Warn("civisibility: head commit SHA %s does not match the fetched commit SHA %s", headCommitSha, headCommitData.CommitSha) //errtrack:ignore repository state mismatch
+			}
+		}
+
+		replaceWithUserSpecificTags(localTags)
+		normalizeTags(localTags)
+		for key, value := range localTags {
+			if value == "" {
+				delete(localTags, key)
 			}
 		}
 

@@ -42,7 +42,7 @@ func (c *client) SendPackFiles(commitSha string, packFiles []string) (bytes int6
 		return 0, nil
 	}
 
-	if commitSha == "" {
+	if c.commitSha != "" {
 		commitSha = c.commitSha
 	}
 

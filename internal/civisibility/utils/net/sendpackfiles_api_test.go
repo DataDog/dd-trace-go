@@ -68,7 +68,7 @@ func TestSendPackFilesApiRequest(t *testing.T) {
 
 	cInterface := NewClient()
 	c = cInterface.(*client)
-	_, err := cInterface.SendPackFiles(c.commitSha, []string{
+	_, err := cInterface.SendPackFiles("different-local-sha", []string{
 		"sendpackfiles_api_test.go",
 	})
 	assert.Nil(t, err)

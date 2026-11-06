@@ -46,6 +46,7 @@ type localGitData struct {
 	SourceRoot    string
 	RepositoryURL string
 	Branch        string
+	Tag           string
 }
 
 // gitVersionData holds the major, minor, and patch version numbers of the Git executable.
@@ -339,8 +340,11 @@ func getLocalGitData() (localGitData, error) {
 	// Extract the current branch name
 	log.Debug("civisibility.git: getting the current branch name")
 	out, err = execGitString(telemetry.GetBranchCommandsType, "rev-parse", "--abbrev-ref", "HEAD")
-	if err == nil {
+	if err == nil && out != "HEAD" {
 		gitData.Branch = out
+	}
+	if tag, tagErr := execGitString(telemetry.GetBranchCommandsType, "describe", "--tags", "--exact-match", "HEAD"); tagErr == nil {
+		gitData.Tag = tag
 	}
 
 	// Get commit details from the latest commit using git log (git log -1 --pretty='%H","%aI","%an","%ae","%cI","%cn","%ce","%B')
