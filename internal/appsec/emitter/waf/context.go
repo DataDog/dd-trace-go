@@ -55,8 +55,11 @@ type (
 		// wafKeepAdmitted is true when the limiter admitted 1 WAF keep request for this context.
 		// It does not tell the current sampling priority. Another source can keep the trace, and user
 		// code can drop it later (ext.ManualDrop).
-		wafKeepAdmitted bool
-		// mu protects the events, stacks, and derivatives, supportedAddresses, eventRulesetVersion slices, requestBlocked, and wafKeepAdmitted.
+		// Only [ContextOperation.allowKeep] sets it, and only while it holds mu. It is atomic so that
+		// the common case (a request that is already admitted) reads it without taking mu.
+		wafKeepAdmitted atomic.Bool
+		// mu protects the events, stacks, and derivatives, supportedAddresses, eventRulesetVersion slices, and requestBlocked.
+		// It also serializes the limiter call and the admission in [ContextOperation.allowKeep].
 		mu sync.Mutex
 		// logOnce is used to log a warning once when a request reaches the per-request cap of 10 stored events.
 		logOnce sync.Once
@@ -187,19 +190,24 @@ func (op *ContextOperation) AddEvents(events ...any) {
 // allowKeep tells if the trace can be force-kept for a WAF or RASP result with keep=true.
 // While the request has no WAF keep admission, it calls the limiter 1 time and records a success.
 // After the first success, it returns true and does not call the limiter again.
-// The flag check, the limiter call and the flag set are in one op.mu section, so concurrent runs
-// of the same request make only 1 limiter call as long as the limiter allows.
+// An admitted request returns from a lock-free read of the flag. Otherwise, the flag check, the
+// limiter call and the flag set are in one op.mu section, so concurrent runs of the same request
+// make only 1 limiter call as long as the limiter allows.
 func (op *ContextOperation) allowKeep() bool {
+	if op.wafKeepAdmitted.Load() {
+		return true
+	}
+
 	op.mu.Lock()
 	defer op.mu.Unlock()
 
-	if op.wafKeepAdmitted {
+	if op.wafKeepAdmitted.Load() {
 		return true
 	}
 	if !op.limiter.Allow() {
 		return false
 	}
-	op.wafKeepAdmitted = true
+	op.wafKeepAdmitted.Store(true)
 	return true
 }
 
