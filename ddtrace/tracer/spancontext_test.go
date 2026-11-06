@@ -285,7 +285,7 @@ func TestSubmitChunkQueueFull(t *testing.T) {
 	assert.Nil(err)
 	defer tracer.Stop()
 
-	for range payloadQueueSize + 1 {
+	for range cap(tracer.out) + 1 {
 		c := chunk{spans: make([]*Span, 1)}
 		tracer.submitChunk(&c)
 	}
@@ -308,7 +308,7 @@ func TestSubmitChunkQueueFullFilterRejected(t *testing.T) {
 	assert.Nil(err)
 	defer tracer.Stop()
 
-	for range payloadQueueSize {
+	for range cap(tracer.out) {
 		c := chunk{spans: make([]*Span, 1)}
 		tracer.submitChunk(&c)
 	}

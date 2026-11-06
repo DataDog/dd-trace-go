@@ -22,6 +22,7 @@ import (
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
@@ -181,6 +182,56 @@ func TestOTLPWriterFlush(t *testing.T) {
 	assert.Equal(t, version.Tag, scope.Version)
 
 	assert.Equal(t, 2, len(rs[0].ScopeSpans[0].Spans))
+}
+
+func TestOTLPExportGlobalTagsOnResource(t *testing.T) {
+	srv := newTestOTLPServer()
+	defer srv.Close()
+
+	trc, err := newTracer(
+		WithGlobalTag("team", "core"),
+		WithGlobalTag("region", "us1"),
+		func(c *config) {
+			c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode)
+			c.ddTransport = newDummyTransport()
+		},
+	)
+	require.NoError(t, err)
+	w := trc.traceWriter.(*otlpTraceWriter)
+	w.transport = newOTLPTransport(srv.Client(), srv.URL, nil)
+	setGlobalTracer(trc)
+	t.Cleanup(func() { setGlobalTracer(&NoopTracer{}) })
+
+	trc.StartSpan("global").Finish()
+	override := trc.StartSpan("override")
+	override.SetTag("region", "eu1")
+	override.Finish()
+	// Stop drains t.out, flushes the writer, and waits for in-flight sends.
+	trc.Stop()
+
+	payloads := srv.getPayloads()
+	require.Len(t, payloads, 1)
+	var td otlptrace.TracesData
+	require.NoError(t, proto.Unmarshal(payloads[0], &td))
+	require.Len(t, td.ResourceSpans, 1)
+
+	resource := keyValuesToMap(td.ResourceSpans[0].Resource.Attributes)
+	assert.Equal(t, "core", resource["team"])
+	assert.Equal(t, "us1", resource["region"])
+	assert.NotEmpty(t, resource[ext.RuntimeID])
+
+	spans := make(map[string]map[string]any)
+	for _, s := range td.ResourceSpans[0].ScopeSpans[0].Spans {
+		attrs := keyValuesToMap(s.Attributes)
+		spans[attrs["operation.name"].(string)] = attrs
+	}
+	require.Len(t, spans, 2)
+	for name, attrs := range spans {
+		assert.NotContains(t, attrs, "team", name)
+		assert.NotContains(t, attrs, ext.RuntimeID, name)
+	}
+	assert.NotContains(t, spans["global"], "region")
+	assert.Equal(t, "eu1", spans["override"]["region"])
 }
 
 func TestOTLPWriterSignalHeadersReplaceGeneric(t *testing.T) {

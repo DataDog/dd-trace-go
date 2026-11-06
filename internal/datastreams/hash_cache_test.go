@@ -102,13 +102,15 @@ func TestComputeFingerprint(t *testing.T) {
 	edgeTags := []string{"type:kafka", "topic:topic1", "group:group1"}
 	pTags := []string{"entrypoint.name:something", "entrypoint.type:executable"}
 
-	fp := computeFingerprint(edgeTags, pTags, "container-hash", parentHash)
+	fp := computeFingerprint("svc", "env", edgeTags, pTags, "container-hash", parentHash)
 	// Deterministic for identical inputs within a process.
-	assert.Equal(t, fp, computeFingerprint(edgeTags, pTags, "container-hash", parentHash))
+	assert.Equal(t, fp, computeFingerprint("svc", "env", edgeTags, pTags, "container-hash", parentHash))
 
 	// Each component contributes to the fingerprint.
-	assert.NotEqual(t, fp, computeFingerprint([]string{"type:kafka", "topic:topic2", "group:group1"}, pTags, "container-hash", parentHash))
-	assert.NotEqual(t, fp, computeFingerprint(edgeTags, nil, "container-hash", parentHash))
-	assert.NotEqual(t, fp, computeFingerprint(edgeTags, pTags, "other-container-hash", parentHash))
-	assert.NotEqual(t, fp, computeFingerprint(edgeTags, pTags, "container-hash", parentHash+1))
+	assert.NotEqual(t, fp, computeFingerprint("svc", "env", []string{"type:kafka", "topic:topic2", "group:group1"}, pTags, "container-hash", parentHash))
+	assert.NotEqual(t, fp, computeFingerprint("svc", "env", edgeTags, nil, "container-hash", parentHash))
+	assert.NotEqual(t, fp, computeFingerprint("svc", "env", edgeTags, pTags, "other-container-hash", parentHash))
+	assert.NotEqual(t, fp, computeFingerprint("svc", "env", edgeTags, pTags, "container-hash", parentHash+1))
+	assert.NotEqual(t, fp, computeFingerprint("other-svc", "env", edgeTags, pTags, "container-hash", parentHash))
+	assert.NotEqual(t, fp, computeFingerprint("svc", "other-env", edgeTags, pTags, "container-hash", parentHash))
 }

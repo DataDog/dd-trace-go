@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/syndtr/goleveldb
+display_name: goleveldb
+description: Instruments goleveldb reads, writes, deletions, batch writes, range compaction, snapshot and transaction reads,
+  transaction commits, and iterator lifetimes with error reporting.
+packages:
+- name: github.com/syndtr/goleveldb
+category:
+- db.client
+systems:
+- leveldb
+creation_date: '2018-09-12'

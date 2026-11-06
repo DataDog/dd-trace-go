@@ -6,6 +6,7 @@
 package openfeature
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -78,7 +79,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 
 	var config universalFlagsConfiguration
 	if err := json.Unmarshal(data, &config); err != nil {
-		log.Error("openfeature: remote config: failed to unmarshal configuration %q: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
+		log.Error("openfeature: remote config: failed to unmarshal configuration %q, keeping the last known configuration: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
 		return rc.ApplyStatus{
 			State: rc.ApplyStateError,
 			Error: fmt.Sprintf("failed to unmarshal configuration: %v", err),
@@ -88,7 +89,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	// Validate the configuration
 	err := validateConfiguration(&config)
 	if err != nil {
-		log.Error("openfeature: remote config: invalid configuration %q: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
+		log.Error("openfeature: remote config: invalid configuration %q, keeping the last known configuration: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
 		return rc.ApplyStatus{
 			State: rc.ApplyStateError,
 			Error: fmt.Sprintf("invalid configuration: %v", err),
@@ -98,8 +99,13 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	// Update the provider with the new configuration
 	provider.updateConfiguration(&config)
 	if log.DebugEnabled() {
-		logOnboarding("remote_config configuration %q applied successfully (%d flag(s), %d rejected, created_at=%s)",
-			path, len(config.Flags), len(config.invalidFlags), formatCreatedAt(config.CreatedAt))
+		// sdk_env is the environment the Remote Config client reports to the
+		// Agent; config_env is the one the delivered configuration names.
+		logOnboarding("remote_config configuration %q applied successfully (%d flag(s), %d rejected, sdk_env=%s, config_env=%s, created_at=%s)",
+			path, len(config.Flags), len(config.invalidFlags),
+			cmp.Or(remoteconfig.ActiveEnv(), "unset"), cmp.Or(config.Environment.Name, "unset"),
+			formatCreatedAt(config.CreatedAt))
+		logRejectedFlags(fmt.Sprintf("remote_config configuration %q", path), &config)
 	}
 
 	return rc.ApplyStatus{

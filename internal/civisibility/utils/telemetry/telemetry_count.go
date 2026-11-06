@@ -301,3 +301,13 @@ func ImpactedTestsRequestErrors(errorType ErrorType) {
 func ImpactedTestsModified() {
 	telemetry.Count(telemetry.NamespaceCIVisibility, "impacted_tests_detection.is_modified", nil).Submit(1.0)
 }
+
+// DynamicATRRetriesEnabled the number of sessions that use duration-based automatic test retries, tagged when
+// DD_CIVISIBILITY_DYNAMIC_ATR_BUCKETS provides the retry counts.
+func DynamicATRRetriesEnabled(hasCustomBuckets bool) {
+	var tags []string
+	if hasCustomBuckets {
+		tags = []string{"has_custom_buckets:true"}
+	}
+	telemetry.Count(telemetry.NamespaceCIVisibility, "dynamic_atr_retries.enabled", tags).Submit(1.0)
+}

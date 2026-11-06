@@ -54,6 +54,10 @@ type handlers struct {
 }
 
 // WrapSession wraps a session.Session, causing requests and responses to be traced.
+// Wrapping a session that is already wrapped replaces its tracing handlers, so
+// each request is traced once, with the options of the last call. The handlers
+// move back to the front and back of their lists, so handlers added between
+// two calls still run inside the span.
 func WrapSession(s *session.Session, opts ...Option) *session.Session {
 	cfg := new(config)
 	defaults(cfg)
@@ -63,10 +67,12 @@ func WrapSession(s *session.Session, opts ...Option) *session.Session {
 	instr.Logger().Debug("contrib/aws/aws-sdk-go/aws: Wrapping Session: %#v", cfg)
 	h := &handlers{cfg: cfg}
 	s = s.Copy()
+	s.Handlers.Send.RemoveByName(SendHandlerName)
 	s.Handlers.Send.PushFrontNamed(request.NamedHandler{
 		Name: SendHandlerName,
 		Fn:   h.Send,
 	})
+	s.Handlers.Complete.RemoveByName(CompleteHandlerName)
 	s.Handlers.Complete.PushBackNamed(request.NamedHandler{
 		Name: CompleteHandlerName,
 		Fn:   h.Complete,
@@ -361,29 +367,50 @@ func kinesisTags(params interface{}) (map[string]interface{}, error) {
 	var streamName string
 	switch input := params.(type) {
 	case *kinesis.PutRecordInput:
-		streamName = *input.StreamName
+		streamName = coalesceNameOrArnResource(input.StreamName, input.StreamARN)
 	case *kinesis.PutRecordsInput:
-		streamName = *input.StreamName
+		streamName = coalesceNameOrArnResource(input.StreamName, input.StreamARN)
 	case *kinesis.AddTagsToStreamInput:
-		streamName = *input.StreamName
+		streamName = coalesceNameOrArnResource(input.StreamName, input.StreamARN)
 	case *kinesis.RemoveTagsFromStreamInput:
-		streamName = *input.StreamName
+		streamName = coalesceNameOrArnResource(input.StreamName, input.StreamARN)
 	case *kinesis.CreateStreamInput:
-		streamName = *input.StreamName
+		// CreateStreamInput has no StreamARN: the stream does not exist yet.
+		if input.StreamName != nil {
+			streamName = *input.StreamName
+		}
 	case *kinesis.DeleteStreamInput:
-		streamName = *input.StreamName
+		streamName = coalesceNameOrArnResource(input.StreamName, input.StreamARN)
 	case *kinesis.DescribeStreamInput:
-		streamName = *input.StreamName
+		streamName = coalesceNameOrArnResource(input.StreamName, input.StreamARN)
 	case *kinesis.DescribeStreamSummaryInput:
-		streamName = *input.StreamName
+		streamName = coalesceNameOrArnResource(input.StreamName, input.StreamARN)
 	case *kinesis.GetShardIteratorInput:
-		streamName = *input.StreamName
+		streamName = coalesceNameOrArnResource(input.StreamName, input.StreamARN)
 	default:
+		return nil, nil
+	}
+	if streamName == "" {
 		return nil, nil
 	}
 	return map[string]interface{}{
 		ext.KinesisStreamName: streamName,
 	}, nil
+}
+
+// coalesceNameOrArnResource returns name when it is set, otherwise the
+// trailing "/" segment of arnVal, otherwise the empty string. Kinesis requests
+// may identify a stream by name or by ARN; when both are set, the name takes
+// precedence.
+func coalesceNameOrArnResource(name *string, arnVal *string) string {
+	if name != nil {
+		return *name
+	}
+	if arnVal != nil {
+		parts := strings.Split(*arnVal, "/")
+		return parts[len(parts)-1]
+	}
+	return ""
 }
 
 func eventBridgeTags(params interface{}) (map[string]interface{}, error) {

@@ -20,3 +20,7 @@ func Test(t *testing.T) {
 func TestAppSec(t *testing.T) {
 	harness.Run(t, new(TestCaseAppSec))
 }
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}

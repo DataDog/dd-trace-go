@@ -102,26 +102,62 @@ func adjustedRetryCount(execMeta *testExecutionMetadata, duration time.Duration)
 
 	// Automatic flaky tests retries are set to the configured value.
 	if execMeta.isFlakyTestRetriesEnabled {
-		return integrations.GetFlakyRetriesSettings().RetryCount
+		return flakyRetryCountForDuration(duration)
 	}
 
 	// No retries
 	return 0
 }
 
+// Upper bounds of the slow test retries duration buckets. EFD treats them as exclusive and dynamic automatic test
+// retries as inclusive.
+const (
+	bucketBoundFiveS   = 5 * time.Second
+	bucketBoundTenS    = 10 * time.Second
+	bucketBoundThirtyS = 30 * time.Second
+	bucketBoundFiveM   = 5 * time.Minute
+)
+
 func efdRetryCountForDuration(settings *civisibilitynet.SettingsResponseData, duration time.Duration) (int64, bool) {
 	slowTestRetries := settings.EarlyFlakeDetection.SlowTestRetries
-	secs := duration.Seconds()
-	if secs < 5 {
+	if duration < bucketBoundFiveS {
 		return int64(slowTestRetries.FiveS), true
-	} else if secs < 10 {
+	} else if duration < bucketBoundTenS {
 		return int64(slowTestRetries.TenS), true
-	} else if secs < 30 {
+	} else if duration < bucketBoundThirtyS {
 		return int64(slowTestRetries.ThirtyS), true
-	} else if duration.Minutes() < 5 {
+	} else if duration < bucketBoundFiveM {
 		return int64(slowTestRetries.FiveM), true
 	}
 	return 0, false
+}
+
+// flakyRetryCountForDuration returns the automatic test retries count for a test whose first execution took
+// duration. Dynamic retry counts replace the flat DD_CIVISIBILITY_FLAKY_RETRY_COUNT value when configured.
+func flakyRetryCountForDuration(duration time.Duration) int64 {
+	flakyRetries := integrations.GetFlakyRetriesSettings()
+	if counts := flakyRetries.DynamicRetryCounts; counts != nil {
+		return counts[dynamicRetryDurationBucket(duration)]
+	}
+	return flakyRetries.RetryCount
+}
+
+// dynamicRetryDurationBucket returns the dynamic automatic test retries bucket for the duration of a test's first
+// execution. The buckets are the EFD ones in efdRetryCountForDuration, but with inclusive upper bounds, so a first
+// execution of exactly 5s is in the first bucket.
+func dynamicRetryDurationBucket(duration time.Duration) int {
+	switch {
+	case duration <= bucketBoundFiveS:
+		return 0
+	case duration <= bucketBoundTenS:
+		return 1
+	case duration <= bucketBoundThirtyS:
+		return 2
+	case duration <= bucketBoundFiveM:
+		return 3
+	default:
+		return 4
+	}
 }
 
 func efdHasPossibleRetry(settings *civisibilitynet.SettingsResponseData) bool {

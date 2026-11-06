@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,6 +25,22 @@ import (
 
 // encodeSketch serializes the given nanosecond values into proto-encoded DDSketch bytes,
 // matching the format produced by the stats concentrator (proto.Marshal(sketch.ToProto())).
+func TestBuildDataPointAttributesNormalizesInvalidUTF8(t *testing.T) {
+	invalid := "value\xff"
+	attrs := buildDataPointAttributes(&pb.ClientGroupedStats{
+		Resource:             invalid,
+		Service:              invalid,
+		AdditionalMetricTags: []string{"key\xff:value\xff"},
+		PeerTags:             []string{invalid},
+	}, false)
+
+	_, err := proto.Marshal(&otlpmetrics.HistogramDataPoint{Attributes: attrs})
+	require.NoError(t, err)
+	for _, attr := range attrs {
+		assert.True(t, utf8.ValidString(attr.Key))
+	}
+}
+
 func encodeSketch(t *testing.T, valuesNs ...float64) []byte {
 	t.Helper()
 	sk, err := ddsketch.LogCollapsingLowestDenseDDSketch(0.01, 2048)

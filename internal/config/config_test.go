@@ -2780,6 +2780,46 @@ func TestFlagEvalTelemetryOptOutEnabled(t *testing.T) {
 	}
 }
 
+func TestFeatureFlagsExposuresDatadogLoggingEnabled(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  bool
+	}{
+		{"", true}, {"true", true}, {"false", false}, {"invalid", true},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			t.Setenv("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", tc.value)
+			assert.Equal(t, tc.want, loadConfig().FeatureFlagsExposuresDatadogLoggingEnabled())
+		})
+	}
+}
+
+func TestFeatureFlagsExperimentationOptOutMode(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		value *string
+		want  string
+	}{
+		{"unset", nil, "disabled"},
+		{"empty", new(""), "disabled"},
+		{"disabled", new("disabled"), "disabled"},
+		{"immediate", new("immediate"), "immediate"},
+		{"normalization deferred to provider", new(" IMMEDIATE "), " IMMEDIATE "},
+		{"validation deferred to provider", new("unsupported"), "unsupported"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			const key = "DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE"
+			t.Setenv(key, "")
+			if tc.value == nil {
+				require.NoError(t, os.Unsetenv(key))
+			} else {
+				t.Setenv(key, *tc.value)
+			}
+			assert.Equal(t, tc.want, loadConfig().FeatureFlagsExperimentationOptOutMode())
+		})
+	}
+}
+
 func TestFeatureFlagsConfigurationSource(t *testing.T) {
 	t.Run("default", func(t *testing.T) {
 		resetGlobalState()
@@ -3130,6 +3170,48 @@ func TestOTLPTraceURLInvalidSignalFallback(t *testing.T) {
 			t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", endpoint)
 			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318/base")
 			assert.Equal(t, "http://collector:4318/base/v1/traces", loadConfig().OTLPTraceURL())
+		})
+	}
+}
+
+func TestInjectDatadogAttributeEnabled(t *testing.T) {
+	services := []struct {
+		name    string
+		env     string
+		enabled func(*Config) bool
+	}{
+		{"kinesis", "DD_TRACE_KINESIS_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).KinesisInjectDatadogAttributeEnabled},
+		{"eventbridge", "DD_TRACE_EVENTBRIDGE_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).EventBridgeInjectDatadogAttributeEnabled},
+		{"sqs", "DD_TRACE_SQS_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).SQSInjectDatadogAttributeEnabled},
+		{"sns", "DD_TRACE_SNS_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).SNSInjectDatadogAttributeEnabled},
+		{"sfn", "DD_TRACE_SFN_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).SFNInjectDatadogAttributeEnabled},
+	}
+	// Neutralize values inherited from the environment of the test process. The subtests set the
+	// one they need.
+	for _, s := range services {
+		t.Setenv(s.env, "")
+	}
+
+	t.Run("default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		for _, s := range services {
+			assert.True(t, s.enabled(cfg), s.name)
+		}
+	})
+
+	for _, disabled := range services {
+		t.Run("only "+disabled.name+" disabled", func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+			t.Setenv(disabled.env, "false")
+
+			cfg := Get()
+			for _, s := range services {
+				assert.Equal(t, s.name != disabled.name, s.enabled(cfg), s.name)
+			}
 		})
 	}
 }

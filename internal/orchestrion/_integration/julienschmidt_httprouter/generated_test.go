@@ -16,3 +16,15 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestContribRouter(t *testing.T) {
+	harness.Run(t, new(TestCaseContribRouter))
+}
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestPanic(t *testing.T) {
+	harness.Run(t, new(TestCasePanic))
+}

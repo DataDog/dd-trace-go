@@ -40,13 +40,17 @@ func TestReadCacheSharesBootstrapAcrossGoTestPackages(t *testing.T) {
 	homeDir := t.TempDir()
 	outputDir := t.TempDir()
 	moduleCacheDir := readCacheE2EGoEnv(t, "GOMODCACHE")
+	// Reuse the runner's build cache; the HOME and XDG_CACHE_HOME overrides
+	// below isolate CI Visibility state. A fresh cache recompiles the tracer
+	// dependency graph in every run and costs 35-65s per multios CI leg.
+	buildCacheDir := readCacheE2EGoEnv(t, "GOCACHE")
 
 	cmd := exec.Command("go", "test", "-mod=mod", "-count=1", "-p=2", "./...")
 	cmd.Dir = moduleDir
 	cmd.Env = readCacheE2EEnv(os.Environ(), []readCacheE2EEnvVar{
 		{Name: "HOME", Value: homeDir},
 		{Name: "XDG_CACHE_HOME", Value: filepath.Join(homeDir, "xdg-cache")},
-		{Name: "GOCACHE", Value: filepath.Join(t.TempDir(), "go-build")},
+		{Name: "GOCACHE", Value: buildCacheDir},
 		{Name: "GOMODCACHE", Value: moduleCacheDir},
 		{Name: "GOWORK", Value: "off"},
 		{Name: "GOFLAGS", Value: ""},

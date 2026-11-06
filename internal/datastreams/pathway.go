@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math/rand"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -28,7 +29,11 @@ func isWellFormedEdgeTag(t string) bool {
 
 func nodeHash(service, env string, edgeTags, processTags []string, containerTagsHash string) uint64 {
 	h := fnv.New64()
-	sort.Strings(edgeTags)
+	// edgeTags is often the caller's variadic slice, possibly shared across goroutines, so never sort it in place.
+	if !sort.StringsAreSorted(edgeTags) {
+		edgeTags = slices.Clone(edgeTags)
+		sort.Strings(edgeTags)
+	}
 	h.Write([]byte(service))
 	h.Write([]byte(env))
 	for _, t := range edgeTags {

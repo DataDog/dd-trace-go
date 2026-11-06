@@ -17,6 +17,8 @@ import (
 	"time"
 
 	of "github.com/open-feature/go-sdk/openfeature"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 )
@@ -401,7 +403,7 @@ func TestEvaluateFlag_VariantTypeMismatchReturnsParseError(t *testing.T) {
 				},
 			}
 
-			result := evaluateFlag(flag, nil, map[string]any{"targetingKey": "user-123"}, time.Now())
+			result := evaluateFlag(flag, nil, map[string]any{"targetingKey": "user-123"}, time.Now(), experimentationExclusion{})
 
 			if result.Reason != of.ErrorReason {
 				t.Errorf("expected ErrorReason, got %s", result.Reason)
@@ -417,9 +419,26 @@ func TestEvaluateFlag_VariantTypeMismatchReturnsParseError(t *testing.T) {
 	}
 }
 
+type fixtureEvaluationResult struct {
+	Value     any                       `json:"value"`
+	Reason    string                    `json:"reason"`
+	ErrorCode string                    `json:"errorCode"`
+	SerialID  json.RawMessage           `json:"serialId"`
+	DoLog     *bool                     `json:"doLog"`
+	Features  map[string]map[string]any `json:"features"`
+}
+
+type fixtureEvaluationCase struct {
+	Flag         string                             `json:"flag"`
+	DefaultValue any                                `json:"defaultValue"`
+	TargetingKey *string                            `json:"targetingKey"`
+	Attributes   map[string]any                     `json:"attributes"`
+	Result       fixtureEvaluationResult            `json:"result"`
+	Capabilities map[string]fixtureEvaluationResult `json:"capabilities"`
+}
+
 func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 	fixtureDir := "ffe-system-test-data"
-
 	configData, err := os.ReadFile(filepath.Join(fixtureDir, "ufc-config.json"))
 	if err != nil {
 		t.Fatalf("read canonical FFE fixtures: %v (initialize them with `git submodule update --init --recursive`)", err)
@@ -435,6 +454,34 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 		t.Fatalf("set provider: %v", err)
 	}
 	client := of.NewClient("fixture-test")
+	immediateProvider := newDatadogProvider(ProviderConfig{
+		ExperimentationOptOutMode: ExperimentationOptOutImmediate,
+	})
+	t.Cleanup(immediateProvider.Shutdown)
+	// Reuse the configuration without starting telemetry workers for capability checks.
+	immediateProvider.configuration = &cfg
+	futureProvider := newDatadogProvider(ProviderConfig{
+		ExperimentationOptOutMode: ExperimentationOptOutFutureExperimentsOnly,
+	})
+	t.Cleanup(futureProvider.Shutdown)
+	futureProvider.configuration = &cfg
+	capabilityProviders := map[string]*DatadogProvider{
+		"experimentationOptOutImmediate":             immediateProvider,
+		"experimentationOptOutFutureExperimentsOnly": futureProvider,
+	}
+	capabilityCases := make(map[string]int)
+	// Minimums pin each semantic family independently; additional cases are welcome.
+	// A global capability count can hide a missing family behind another file.
+	requiredFamilies := map[string]map[string]int{
+		"test-case-experimentation-opt-out.json": {
+			"experimentationOptOutImmediate":             26,
+			"experimentationOptOutFutureExperimentsOnly": 26,
+		},
+		"test-case-experimentation-opt-out-future.json": {
+			"experimentationOptOutFutureExperimentsOnly": 16,
+		},
+	}
+	familyCases := make(map[string]map[string]int)
 
 	files, err := filepath.Glob(filepath.Join(fixtureDir, "evaluation-cases", "*.json"))
 	if err != nil {
@@ -445,25 +492,24 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 	}
 
 	for _, file := range files {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cases []fixtureEvaluationCase
+		if err := json.Unmarshal(data, &cases); err != nil {
+			t.Fatalf("parse %s: %v", file, err)
+		}
+		// Count discovered cases, not selected subtests, so -run filters remain usable.
+		counts := make(map[string]int)
+		familyCases[filepath.Base(file)] = counts
+		for _, tc := range cases {
+			for capability := range tc.Capabilities {
+				capabilityCases[capability]++
+				counts[capability]++
+			}
+		}
 		t.Run(filepath.Base(file), func(t *testing.T) {
-			data, err := os.ReadFile(file)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var cases []struct {
-				Flag         string         `json:"flag"`
-				DefaultValue any            `json:"defaultValue"`
-				TargetingKey *string        `json:"targetingKey"`
-				Attributes   map[string]any `json:"attributes"`
-				Result       struct {
-					Value     any    `json:"value"`
-					Reason    string `json:"reason"`
-					ErrorCode string `json:"errorCode"`
-				} `json:"result"`
-			}
-			if err := json.Unmarshal(data, &cases); err != nil {
-				t.Fatalf("parse error: %v", err)
-			}
 			for i, tc := range cases {
 				tkLabel := "<nil>"
 				if tc.TargetingKey != nil {
@@ -476,13 +522,29 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 						ctx["targetingKey"] = *tc.TargetingKey
 					}
 
-					result := evaluateConfiguredFlag(&cfg, tc.Flag, tc.DefaultValue, ctx, time.Now())
+					result := evaluateConfiguredFlag(&cfg, tc.Flag, tc.DefaultValue, ctx, time.Now(), experimentationExclusion{})
 
 					if fmt.Sprintf("%v", result.Value) != fmt.Sprintf("%v", tc.Result.Value) {
 						t.Errorf("value: got %v, want %v", result.Value, tc.Result.Value)
 					}
 					if tc.Result.Reason != "" && result.Reason != of.Reason(tc.Result.Reason) {
 						t.Errorf("reason: got %q, want %q", result.Reason, tc.Result.Reason)
+					}
+					if tc.Result.SerialID != nil {
+						// Omission is unspecified; JSON null asserts absence, unlike zero.
+						var expected *uint32
+						require.NoError(t, json.Unmarshal(tc.Result.SerialID, &expected))
+						actual, present := result.Metadata[metadataSplitSerialIDKey]
+						assert.Equal(t, expected != nil, present, "serial ID presence")
+						if expected != nil {
+							assert.Equal(t, *expected, actual, "serial ID")
+						}
+					}
+					if tc.Result.DoLog != nil {
+						assert.Equal(t, *tc.Result.DoLog, result.Metadata[metadataDoLogKey], "doLog")
+					}
+					if tc.Result.Features != nil {
+						assertFixtureFeatures(t, &cfg, tc, result)
 					}
 					if tc.Result.ErrorCode != "" {
 						evaluationContext := of.NewEvaluationContext("", tc.Attributes)
@@ -497,8 +559,97 @@ func TestEvaluateFlag_JSONFixtures(t *testing.T) {
 							t.Errorf("error code: got %q, want %q", details.ErrorCode, tc.Result.ErrorCode)
 						}
 					}
+					for capability, expected := range tc.Capabilities {
+						p, supported := capabilityProviders[capability]
+						if !supported {
+							continue
+						}
+						t.Run(capability, func(t *testing.T) {
+							result := p.ObjectEvaluation(context.Background(), tc.Flag, tc.DefaultValue, ctx)
+							assert.Equal(t, expected.Value, result.Value, "capability result value")
+							if result.Reason != of.Reason(expected.Reason) {
+								t.Errorf("reason: got %q, want %q", result.Reason, expected.Reason)
+							}
+							if code := result.ResolutionDetail().ErrorCode; code != of.ErrorCode(expected.ErrorCode) {
+								t.Errorf("error code: got %q, want %q", code, expected.ErrorCode)
+							}
+						})
+					}
 				})
 			}
 		})
 	}
+	for family, minimums := range requiredFamilies {
+		for capability, minimum := range minimums {
+			if count := familyCases[family][capability]; count < minimum {
+				t.Errorf("canonical fixture family %q has %d cases for capability %q; require at least %d", family, count, capability, minimum)
+			}
+		}
+	}
+	for capability := range capabilityProviders {
+		if capabilityCases[capability] == 0 {
+			t.Errorf("no canonical fixture cases found for supported capability %q", capability)
+		}
+	}
+}
+
+// assertFixtureFeatures runs every case declaring result.features through the
+// real client hooks and synchronous writers. Expectations come only from the
+// shared fixtures, including empty maps and features selected with doLog=false.
+func assertFixtureFeatures(t *testing.T, cfg *universalFlagsConfiguration, tc fixtureEvaluationCase, selected evaluationResult) {
+	t.Helper()
+	assertFeatures := func(destination string, actual map[string]any) {
+		t.Helper()
+		expected, present := tc.Result.Features[destination]
+		require.True(t, present, "missing %s feature expectation", destination)
+		if actual == nil {
+			actual = map[string]any{}
+		}
+		assert.Equal(t, expected, actual, "%s features", destination)
+	}
+	assertFeatures("EXPOSURE", decodedFeatureValues(selected.Metadata, metadataExposureFeaturesKey))
+	assertFeatures("EVALUATION", decodedFeatureValues(selected.Metadata, metadataEvaluationFeaturesKey))
+
+	// A fresh cache per case prevents identical subjects in independent fixtures
+	// from suppressing delivery. The sink decodes actual serialized EVP payloads.
+	h := newOptOutHarness(t, ProviderConfig{})
+	// As in newOptOutHarness, install without starting background flush workers.
+	h.provider.mu.Lock()
+	h.provider.configuration = cfg
+	h.provider.mu.Unlock()
+	var callbacks []ExposureEvaluation
+	h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) { callbacks = append(callbacks, e) }))
+	targetingKey := ""
+	if tc.TargetingKey != nil {
+		targetingKey = *tc.TargetingKey
+	}
+	details, err := h.client.ObjectValueDetails(context.Background(), tc.Flag, tc.DefaultValue,
+		of.NewEvaluationContext(targetingKey, tc.Attributes))
+	require.NoError(t, err)
+	assert.Equal(t, tc.Result.Value, details.Value)
+	assert.Equal(t, of.Reason(tc.Result.Reason), details.Reason)
+	require.Len(t, callbacks, 1)
+	assertFeatures("HOOK", callbacks[0].Features())
+	if tc.Result.DoLog != nil {
+		assert.Equal(t, *tc.Result.DoLog, callbacks[0].ShouldSend())
+	}
+	assert.False(t, callbacks[0].IsCacheHit())
+
+	h.provider.exposureWriter.flush()
+	h.provider.flagEvalLoggingWriter.drainAndFlush()
+	if tc.Result.DoLog != nil {
+		if *tc.Result.DoLog {
+			require.Len(t, h.sink.exposures, 1)
+		} else {
+			assert.Empty(t, h.sink.exposures, "doLog=false suppresses exposure delivery, not selected features")
+		}
+	}
+	for _, exposure := range h.sink.exposures {
+		assert.Equal(t, tc.Flag, exposure.Flag.Key)
+		assertFeatures("EXPOSURE", exposure.Features)
+	}
+	require.Len(t, h.sink.events, 1)
+	assert.Equal(t, tc.Flag, h.sink.events[0].Flag.Key)
+	assert.Equal(t, int64(1), h.sink.events[0].EvaluationCount)
+	assertFeatures("EVALUATION", h.sink.events[0].Features)
 }
