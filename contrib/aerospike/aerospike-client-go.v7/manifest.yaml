@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/aerospike/aerospike-client-go/v7
+display_name: Aerospike Go Client v7
+description: Instruments Aerospike Go client record reads and writes, batch operations, scans, queries, aggregations, user-defined
+  function execution, and truncation with context-linked spans.
+packages:
+- name: github.com/aerospike/aerospike-client-go/v7
+category:
+- db.client
+systems:
+- aerospike
+creation_date: '2026-07-01'

@@ -3,9 +3,9 @@ module github.com/DataDog/dd-trace-go/internal/apps/v2
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.13.0-dev
-	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev
-	golang.org/x/sync v0.23.0
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.13.0-dev.1
+	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
+	golang.org/x/sync v0.24.0
 )
 
 require (
@@ -35,7 +35,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.7 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/linkdata/deadlock v0.5.5 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260330125221-c963978e514e // indirect
@@ -81,7 +81,7 @@ require (
 require (
 	github.com/DataDog/go-tuf v1.1.1-0.5.2 // indirect
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca // indirect

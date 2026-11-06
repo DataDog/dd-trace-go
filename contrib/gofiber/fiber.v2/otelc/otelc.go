@@ -7,5 +7,6 @@
 package otelc
 
 import (
-	_ "github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2" // used by the otelc.yaml rules
+	_ "github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2"       // used by the otelc.yaml rules
+	_ "github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2" // used by the otelc.yaml rules
 )

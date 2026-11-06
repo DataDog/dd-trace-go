@@ -6,6 +6,7 @@
 package waf
 
 import (
+	"fmt"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/DataDog/go-libddwaf/v5"
 	"github.com/DataDog/go-libddwaf/v5/timer"
+	"github.com/DataDog/go-libddwaf/v5/waferrors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
@@ -238,6 +240,47 @@ func TestSubmitIncludesBlockOutcomeReportedDuringSubmit(t *testing.T) {
 			}
 
 			requireBlockOutcome(t, client, false, !tc.failed, tc.failed)
+		})
+	}
+}
+
+// TestIncWafErrorTimeout checks that IncWafError does not count a timeout as an
+// error, and that it still reports the broken scopes and rule types.
+func TestIncWafErrorTimeout(t *testing.T) {
+	timeout := fmt.Errorf("encode: %w", waferrors.ErrTimeout)
+
+	for _, tc := range []struct {
+		name          string
+		addrs         addresses.RunAddressData
+		wantException string
+	}{
+		{name: "waf-scope", addrs: wafScopeAddresses()},
+		{name: "rasp-sqli", addrs: sqliAddresses()},
+		{
+			name:          "rasp-without-rule-address",
+			addrs:         addresses.RunAddressData{TimerKey: addresses.RASPScope},
+			wantException: ExceptionTypeInstrumentation,
+		},
+		{
+			name:          "unknown-scope",
+			addrs:         addresses.RunAddressData{TimerKey: "unknown"},
+			wantException: ExceptionTypeInstrumentation,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := new(telemetrytest.RecordClient)
+			defer telemetry.MockClient(client)()
+			handleMetrics := NewMetricsInstance(nil, "test")
+			metrics := handleMetrics.NewContextMetrics()
+
+			metrics.IncWafError(tc.addrs, timeout)
+
+			require.Zero(t, sumMetric(client, "waf.error"))
+			require.Zero(t, sumMetric(client, "rasp.error"))
+			require.Zero(t, metrics.WAFErrorCode.Load())
+			requireNoRASPErrorCodes(t, metrics)
+			require.Equal(t, tc.wantException, metrics.ExceptionType())
+			require.Equal(t, tc.wantException != "", hasExceptionLog(client), "logs: %v", client.Logs)
 		})
 	}
 }

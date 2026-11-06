@@ -11,7 +11,7 @@ in `references.md`.
 | `append-args` | `wrap_call` with `append_args`, plus `variadic_type` when the matched call spreads a slice |
 | `replace-function` | paired before/after hooks: the before-hook calls the drop-in, keeps its result with `SetData` and calls `SetSkipCall(true)`; the after-hook writes it with `SetReturnVal`. Guard re-entrancy if the drop-in calls the target again |
 | `prepend-statements` in a `function-body` | `inject_hooks`, or `inject_code` when the code must run in-package |
-| `add-struct-field` | `add_struct_fields`. A hook cannot read the new field (see below) |
+| `add-struct-field` | `add_struct_fields`, when the field is read in-package. A hook cannot read the new field, so for a hook keep the state in a side table instead (see below) |
 | `wrap-expression` on a `struct-literal` | `where: {struct_literal:}` with `set_fields`: `value:` to set a field, `wrap:` to wrap what the literal already assigns |
 | `assign-value` | `assign_value`: `replace:` for a new expression, `wrap:` to keep the original as `{{ . }}` |
 | `inject-declarations` | `add_file`: a Go file with `//go:build ignore` in the rules module, copied into the target package at build time. It can declare types, functions, methods on the target's types, and a `//go:linkname` to an unexported contrib function. Nothing is needed when the declaration only linked a hook, since otelc links hooks itself. For `package main`, see `feature-gaps.md` |
@@ -74,8 +74,24 @@ its unexported ones, and not fields added by `add_struct_fields`. For either, wr
 accessor's return value, or read the field in-package with `inject_code`
 (`transport_round_trip_tracer_internal` in `contrib/net/http/otelc/otelc.yaml`).
 
-When the aspect injects more than a few statements around an added field, as router and server
-aspects do, move the whole template into the target package instead of a hook:
+Prefer a hook with the per-object state in a side table. This replaces an added field such as an
+"already wrapped" flag or a per-router config, and lets the hook call the contrib directly. When
+the state is the same for every object, one package variable is enough. That is not the case when
+the contrib reads global settings as it builds the state, such as a router's config: one variable
+would keep the settings from the first object for every object. Otherwise use a `sync.Map` keyed by
+`weak.Make(obj)`:
+
+- A value must not reach its key, or the object is never freed. Store the contrib's wrapper with
+  its object field nil, and set the field on a copy for each call.
+- A weak key does not remove its entry. Delete it with `runtime.AddCleanup` on the object, and do
+  not capture the object in the cleanup.
+- `LoadOrStore` keeps one value per object when goroutines race. Register the cleanup only when
+  the store happened.
+
+`contribRouter` in `contrib/gorilla/mux/otelc/hooks.go` does all three.
+
+Run the code in-package only when the hook cannot do the job, for example when it must read an
+unexported field. Then move the whole template into the target package:
 
 - `add_struct_fields` adds the field.
 - `add_file` adds the template as a function or as a method on the target type, together with any
@@ -86,3 +102,33 @@ aspects do, move the whole template into the target package instead of a hook:
 
 This code compiles as part of the library, so it reads the added field directly. The runtime GLS
 rules in `ddtrace/tracer/otelc.yaml` use the same three rules.
+
+## Routers and servers
+
+Reuse the contrib from the hook instead of copying the orchestrion template, which is usually a
+copy of the contrib that has drifted from it (`contrib/gorilla/mux/otelc/`):
+
+- A before hook on the library's `ServeHTTP` starts the span through the contrib, and an after
+  hook finishes it. If the contrib only traces inside its own `ServeHTTP`, add a method that starts
+  the span and returns the traced writer and request with an `afterHandle` function, and make
+  `ServeHTTP` call it (`Router.BeforeHandle` in `contrib/gorilla/mux/mux.go`). If the contrib can
+  only build its wrapper around a new object, add a `Wrap` function that takes an existing one, and
+  make the constructor call it.
+- The handlers run in the original call, never in the hook. The before hook passes the traced
+  writer and request on with `SetParam` and keeps `afterHandle` with `SetData`, and the after hook
+  calls `afterHandle`. The after trampoline is deferred, so it also runs when a handler panics, and
+  it does not stop the panic.
+- The contrib's `ServeHTTP` calls the hooked method, so the hook would trace the request again. An
+  `inject_code` rule on the contrib's own `ServeHTTP` marks the request with the object, and the
+  hook lets a marked call through. A rule keeps the cost out of plain builds. Put the mark at the
+  top of the function, before any ignore check, so ignored requests are not traced by the hook
+  either. This also gives one span, not two, for an object the application wrapped with the
+  contrib itself.
+- Keep the contrib's per-router config in a side table, as described above.
+
+Tests in `_integration/<name>/`:
+
+- A handler that panics with `http.ErrAbortHandler` runs once, and the caller recovers the panic
+  (`gorilla_mux/panic.go`).
+- A router wrapped with the contrib gives an exact span count. If orchestrion still reports two
+  spans there, skip the test under orchestrion and say why (`gorilla_mux/contrib_router.go`).
