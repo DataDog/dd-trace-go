@@ -16,6 +16,8 @@ import (
 // If the telemetry client has already been started by the tracer, then
 // app-product-change event is queued to signal the profiler is enabled, and an
 // app-client-configuration-change event is also queued with profiler config data.
+// When StartApp rejects the profiler's client, the profiler closes the client,
+// so the periodic ticker that NewClient started stops.
 func startTelemetry(c *config) {
 	if telemetry.Disabled() {
 		// Do not do extra work populating config data if instrumentation telemetry is disabled.
@@ -33,7 +35,13 @@ func startTelemetry(c *config) {
 			log.Debug("profiler: failed to create telemetry client: %s", err.Error())
 			return
 		}
-		telemetry.StartApp(client)
+		if telemetry.StartApp(client) {
+			return
+		}
+		// The tracer installed its own client first, or a concurrent stop
+		// invalidated this start. The profiler keeps ownership of the rejected
+		// client and closes it, so its periodic ticker stops.
+		client.Close()
 	}
 }
 
