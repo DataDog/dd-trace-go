@@ -201,6 +201,43 @@ func TestGetCITagsUsesGitEnrichmentOutsidePayloadFilesMode(t *testing.T) {
 	assert.Equal(t, "true", tags["env.applied"])
 }
 
+func TestGetCITagsWorkspacePrecedence(t *testing.T) {
+	for _, tc := range []struct {
+		name, provider, local, file, expected string
+	}{
+		{"provider", "/provider", "/checkout", "/old-checkout", "/provider"},
+		{"local", "", "/checkout", "/old-checkout", "/checkout"},
+		{"file", "", "", "/old-checkout", "/old-checkout"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ResetCITags()
+			t.Cleanup(ResetCITags)
+			bazel.ResetForTesting()
+			t.Cleanup(bazel.ResetForTesting)
+			originalProvider, originalGit, originalEnvironmental := getProviderTagsFunc, getLocalGitDataFunc, applyEnvironmentalDataIfRequiredFunc
+			t.Cleanup(func() {
+				getProviderTagsFunc, getLocalGitDataFunc, applyEnvironmentalDataIfRequiredFunc = originalProvider, originalGit, originalEnvironmental
+			})
+			getProviderTagsFunc = func() map[string]string {
+				tags := map[string]string{}
+				if tc.provider != "" {
+					tags[constants.CIWorkspacePath] = tc.provider
+				}
+				return tags
+			}
+			getLocalGitDataFunc = func() (localGitData, error) {
+				return localGitData{SourceRoot: tc.local}, nil
+			}
+			applyEnvironmentalDataIfRequiredFunc = func(tags map[string]string) {
+				if _, ok := tags[constants.CIWorkspacePath]; !ok {
+					tags[constants.CIWorkspacePath] = tc.file
+				}
+			}
+			assert.Equal(t, tc.expected, GetCITags()[constants.CIWorkspacePath])
+		})
+	}
+}
+
 func TestGetCITagsSkipsGitEnrichmentInPayloadFilesMode(t *testing.T) {
 	ResetCITags()
 	bazel.ResetForTesting()

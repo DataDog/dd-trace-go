@@ -257,10 +257,12 @@ func createCITagsMap() map[string]string {
 		applyEnvironmentalDataIfRequiredFunc(localTags)
 		log.Debug("civisibility: skipping local git enrichment in payload-file mode")
 	} else {
+		gitData, _ := getLocalGitDataFunc()
+		if _, ok := localTags[constants.CIWorkspacePath]; !ok && gitData.SourceRoot != "" {
+			localTags[constants.CIWorkspacePath] = gitData.SourceRoot
+		}
 		// File metadata is a fallback too; a readable checkout replaces its Git fields.
 		applyEnvironmentalDataIfRequiredFunc(localTags)
-		// Populate missing git data
-		gitData, _ := getLocalGitDataFunc()
 
 		if gitData.CommitSha != "" {
 			for key := range localTags {
@@ -269,9 +271,6 @@ func createCITagsMap() map[string]string {
 				}
 			}
 			localTags[constants.GitTag] = gitData.Tag
-		}
-		if _, ok := localTags[constants.CIWorkspacePath]; !ok {
-			localTags[constants.CIWorkspacePath] = gitData.SourceRoot
 		}
 		if _, ok := localTags[constants.GitRepositoryURL]; !ok {
 			localTags[constants.GitRepositoryURL] = gitData.RepositoryURL
