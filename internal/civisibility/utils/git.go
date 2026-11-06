@@ -344,7 +344,7 @@ func getLocalGitData() (localGitData, error) {
 		gitData.Branch = out
 	}
 	if gitData.Branch == "" {
-		if out, tagErr := execGitString(telemetry.GetBranchCommandsType, "tag", "--points-at", "HEAD"); tagErr == nil {
+		if out, tagErr := execGitString(telemetry.GetBranchCommandsType, "tag", "--no-column", "--points-at", "HEAD"); tagErr == nil {
 			if tags := strings.Fields(out); len(tags) == 1 {
 				gitData.Tag = tags[0]
 			}
