@@ -457,6 +457,24 @@ func TestDependentFlags_InvalidConfiguredDepthLogsAndUsesDefault(t *testing.T) {
 	}
 }
 
+func TestDependentFlags_CopiedConfigurationSharesInvalidDepthLogState(t *testing.T) {
+	logger := withLogLevel(t, log.LevelError)
+	config := dependencyTestConfig(
+		dependencyTestFlag("dependency", "on", nil),
+		dependencyTestFlag("root", "on", dependencyCondition("dependency", operatorOneOf, "on")),
+	)
+	require.NoError(t, json.Unmarshal([]byte(`{"maxDependencyDepth":null}`), &config.EvaluatorParams))
+	copied := *config
+
+	for _, candidate := range []*universalFlagsConfiguration{config, &copied, config, &copied} {
+		result := evaluateConfiguredFlag(candidate, "root", false, nil, time.Now(), experimentationExclusion{})
+		require.NoError(t, result.Error)
+		require.True(t, result.Value.(bool))
+	}
+	log.Flush()
+	require.Equal(t, 1, logger.countContaining("maxDependencyDepth must be an integer from 0 through 255; using default 10"))
+}
+
 func TestDependentFlags_ExactIntegerDepthForms(t *testing.T) {
 	for configured, want := range map[string]int{
 		"3.0":    3,

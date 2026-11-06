@@ -365,9 +365,7 @@ func evaluateConfiguredFlagOnce(
 
 func configuredMaxDependencyDepth(config *universalFlagsConfiguration) int {
 	if config.EvaluatorParams.maxDependencyDepthInvalid {
-		config.EvaluatorParams.maxDependencyDepthLog.Do(func() {
-			log.Error("openfeature: maxDependencyDepth must be an integer from 0 through 255; using default %d", defaultMaxDependencyDepth) //errtrack:ignore malformed customer configuration
-		})
+		logInvalidMaxDependencyDepth(config.EvaluatorParams.state)
 		return defaultMaxDependencyDepth
 	}
 	if config.EvaluatorParams.MaxDependencyDepth == nil {
@@ -375,12 +373,22 @@ func configuredMaxDependencyDepth(config *universalFlagsConfiguration) int {
 	}
 	depth := *config.EvaluatorParams.MaxDependencyDepth
 	if depth < 0 || depth > maxMaxDependencyDepth {
-		config.EvaluatorParams.maxDependencyDepthLog.Do(func() {
-			log.Error("openfeature: maxDependencyDepth must be an integer from 0 through 255; using default %d", defaultMaxDependencyDepth) //errtrack:ignore malformed customer configuration
-		})
+		logInvalidMaxDependencyDepth(config.EvaluatorParams.state)
 		return defaultMaxDependencyDepth
 	}
 	return depth
+}
+
+func logInvalidMaxDependencyDepth(state *evaluatorParamsState) {
+	// Production configurations initialize a distinct state during JSON
+	// unmarshalling. Keep the zero value safe for internal programmatic
+	// configurations without mutating an immutable config during evaluation.
+	if state == nil {
+		state = &uninitializedEvaluatorParamsState
+	}
+	state.maxDependencyDepthLog.Do(func() {
+		log.Error("openfeature: maxDependencyDepth must be an integer from 0 through 255; using default %d", defaultMaxDependencyDepth) //errtrack:ignore malformed customer configuration
+	})
 }
 
 // evaluateAllocation evaluates an allocation and returns the matching split if any.

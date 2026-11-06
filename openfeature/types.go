@@ -94,8 +94,18 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 type evaluatorParams struct {
 	MaxDependencyDepth        *int `json:"-"`
 	maxDependencyDepthInvalid bool
-	maxDependencyDepthLog     sync.Once
+	state                     *evaluatorParamsState
 }
+
+// evaluatorParamsState owns mutable, concurrency-safe state separately from
+// the copyable evaluatorParams values embedded in immutable configurations.
+// Configuration copies intentionally share this state so a malformed option
+// is logged once for the parsed configuration, not once per copy or request.
+type evaluatorParamsState struct {
+	maxDependencyDepthLog sync.Once
+}
+
+var uninitializedEvaluatorParamsState evaluatorParamsState
 
 // UnmarshalJSON keeps malformed depth configuration evaluable so dependency
 // traversal can log the problem and use the default without rejecting the
@@ -103,7 +113,7 @@ type evaluatorParams struct {
 func (params *evaluatorParams) UnmarshalJSON(data []byte) error {
 	params.MaxDependencyDepth = nil
 	params.maxDependencyDepthInvalid = false
-	params.maxDependencyDepthLog = sync.Once{}
+	params.state = new(evaluatorParamsState)
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
 		// Keep the UFC usable. The evaluator logs and applies the default only
