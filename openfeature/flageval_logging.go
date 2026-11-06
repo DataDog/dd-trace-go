@@ -691,7 +691,7 @@ func (w *flagEvalLoggingWriter) incContextTruncated(reason string) {
 // single bounded traversal. It is the Go mirror of Java's DDEvaluator.copyPrunedContext: every
 // retained-size dimension is capped INLINE so the work the evaluation thread performs is
 // proportional to what is KEPT, never to what the caller supplied. The exposure track's
-// flattenContext (flatten.go) is untouched and remains unbounded for its own contract.
+// flattenContext (flatten.go) has separate traversal bounds for exposure attributes.
 //
 // Caps enforced during traversal (all aligned to the cross-SDK RFC, matching Java):
 //   - maxContextFields (256):       at most 256 retained fields total
@@ -701,8 +701,7 @@ func (w *flagEvalLoggingWriter) incContextTruncated(reason string) {
 //   - maxStructureProperties (256): at most 256 properties walked per structure
 //   - maxSnapshotDepth (4):         containers nested deeper than 4 are truncated
 //   - cycle detection:              identity-based; a container reachable from its own descendant
-//     is truncated, preventing infinite recursion over a caller-built cyclic structure (which
-//     the unbounded flattenRecursive used by the exposure path would infinite-loop on).
+//     is truncated, preventing infinite recursion over a caller-built cyclic structure.
 //
 // The second return value is the SET of truncation reasons that fired, so the caller can bump
 // telemetry counters (context-truncated by reason). Reasons are unique and in a stable order;
