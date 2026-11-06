@@ -6,6 +6,7 @@
 package mcp
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -52,4 +53,12 @@ func TestStripReservedMeta(t *testing.T) {
 			assert.Equal(t, tc.want, string(StripReservedMeta([]byte(tc.in))))
 		})
 	}
+}
+
+func TestClientInfoTags(t *testing.T) {
+	assert.Equal(t, map[string]string{"mcp_client_name": "cursor", "mcp_client_version": "1.2"}, ClientInfoTags("cursor", "", "1.2"))
+	assert.Empty(t, ClientInfoTags("", "", ""))
+
+	long := strings.Repeat("é", MaxClientInfoTagLength+5)
+	assert.Equal(t, strings.Repeat("é", MaxClientInfoTagLength), ClientInfoTags(long, "", "")["mcp_client_name"])
 }
