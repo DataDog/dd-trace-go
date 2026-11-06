@@ -1,0 +1,43 @@
+# Dedicated golangci-lint config for the "new exported identifiers need a doc
+# comment" check wired into the lint job of .github/workflows/static-checks.yml.
+#
+# Why a separate config instead of adding this to the `exported` state inside
+# the main revive rule list in .golangci.yml: the main .golangci.yml is linted
+# across the *entire* repository on every PR (no --new-from-rev scoping), and
+# a repo-wide sweep of revive's `exported` rule currently reports roughly 800
+# pre-existing issues (mostly in internal/ and instrumentation/ packages that
+# predate this rule). Enabling it there would fail CI for every PR, including
+# ones that never touch an affected file. This config is instead paired with
+# golangci-lint's --new-from-rev flag in CI, so it only ever reports exported
+# identifiers that are newly introduced (or newly exported) by the current
+# PR's own commits, never pre-existing gaps.
+#
+# Review pattern this replaces: reviewers repeatedly ask authors, by hand, to
+# add a one-line doc comment to a newly exported type/func/const/var ("nit:
+# this needs a doc comment since it's exported, one line is enough."). That
+# feedback is accepted quickly (it's a mechanical, low-judgment fix), but it
+# still costs a review round trip every time a human has to catch it. revive's
+# built-in `exported` rule already implements the exact same check that
+# `golint`/`go vet`'s doc-comment convention describes, so no custom tooling
+# is needed -- just scoping the existing rule to new code.
+version: "2"
+run:
+  build-tags:
+    - goexperiment.synctest
+linters:
+  default: none
+  enable:
+    - revive
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+      - \.claude
+  settings:
+    revive:
+      rules:
+        - name: exported
+          severity: warning
+          disabled: false
