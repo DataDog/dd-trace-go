@@ -469,7 +469,7 @@
 //
 //	provider, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{
 //	    FlagSelection: &ddopenfeature.FlagSelection{
-//	        Tags:        []string{"team:checkout"},
+//	        Tags:        []string{"checkout"},
 //	        KeyPatterns: []string{"checkout.*"},
 //	    },
 //	})

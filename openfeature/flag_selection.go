@@ -27,8 +27,12 @@ import (
 // loads every flag.
 //
 // Each list holds at most 31 values, and each value is at most 200 UTF-8
-// bytes. A selection over a limit, or with a value that is not valid UTF-8, is
-// not sent: the provider logs an error and loads every flag.
+// bytes. A selection over a limit, with a value that is not valid UTF-8, or
+// that makes the request URL longer than 8192 bytes is not sent: the provider
+// logs an error and loads every flag. When the server cannot apply a
+// selection, it returns every flag and the provider logs an error once per
+// process per reason. A selection that matches no flag is not an error: the
+// provider becomes ready with no flags.
 //
 // Set it through ProviderConfig.FlagSelection; there is no environment
 // variable. Each provider copies its one selection at construction. Under
@@ -44,7 +48,7 @@ type FlagSelection struct {
 	KeyPatterns []string
 }
 
-// These limits are the server's, shared by every Datadog SDK:
+// The value limits are the server's, shared by every Datadog SDK:
 // https://github.com/DataDog/ffe-system-test-data/blob/main/flag-selection/README.md
 const (
 	flagSelectionMaxValues          = 31
@@ -192,8 +196,8 @@ func requestURLWithFlagSelection(endpoint string, s *FlagSelection) (string, boo
 	return endpoint, false
 }
 
-// flagSelectionReported holds the "metric:reason" keys already reported in
-// this process. Every provider shares it.
+// flagSelectionReported holds the diagnostics already reported in this
+// process, keyed by "metric:reason" or "remote_config". Every provider shares it.
 var flagSelectionReported sync.Map
 
 func firstFlagSelectionReport(key string) bool {

@@ -80,8 +80,8 @@ type agentlessSource struct {
 	stopOnce sync.Once
 }
 
-// newAgentlessSource builds a poller for settings that requests only the flags
-// in selection. It performs no I/O.
+// newAgentlessSource builds a poller for settings that sends selection when it
+// can. It performs no I/O.
 func newAgentlessSource(settings internalffe.Settings, selection *FlagSelection, apply func(*universalFlagsConfiguration)) (*agentlessSource, error) {
 	endpoint, err := buildAgentlessEndpoint(settings.AgentlessBaseURL, settings.Site, settings.Env, settings.APIKey)
 	if err != nil {

@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -170,8 +171,8 @@ func TestRequestURLWithFlagSelection(t *testing.T) {
 		{
 			name:      "repeated parameters, tags before key patterns",
 			endpoint:  "https://example.test/rules",
-			selection: FlagSelection{Tags: []string{"team:b", "team:a"}, KeyPatterns: []string{"checkout.*"}},
-			want:      "https://example.test/rules?selected_flag_tags=team%3Aa&selected_flag_tags=team%3Ab&selected_flag_key_patterns=checkout.%2A",
+			selection: FlagSelection{Tags: []string{"area:b", "area:a"}, KeyPatterns: []string{"checkout.*"}},
+			want:      "https://example.test/rules?selected_flag_tags=area%3Aa&selected_flag_tags=area%3Ab&selected_flag_key_patterns=checkout.%2A",
 		},
 		{
 			name:      "managed endpoint keeps its dd_env encoding",
@@ -506,7 +507,7 @@ func TestAgentlessSource_SendsFlagSelectionAndRevalidatesWithItsETag(t *testing.
 	resetFlagSelectionReports(t)
 	backend := newSelectionBackend(t, selectionResponse{status: http.StatusOK}, selectionResponse{status: http.StatusNotModified})
 	src := newSelectionSource(t, backend.server.URL+"/custom/rules?dd_env=test", &FlagSelection{
-		Tags:        []string{" team:b ", "team:a", "team:b"},
+		Tags:        []string{" area:b ", "area:a", "area:b"},
 		KeyPatterns: []string{"checkout.*"},
 	}, nil)
 
@@ -516,7 +517,7 @@ func TestAgentlessSource_SendsFlagSelectionAndRevalidatesWithItsETag(t *testing.
 	require.Equal(t, pollOutcomeSuccess, outcome)
 
 	rawQueries, paths, ifNoneMatch := backend.requests()
-	const want = "dd_env=test&selected_flag_tags=team%3Aa&selected_flag_tags=team%3Ab&selected_flag_key_patterns=checkout.%2A"
+	const want = "dd_env=test&selected_flag_tags=area%3Aa&selected_flag_tags=area%3Ab&selected_flag_key_patterns=checkout.%2A"
 	assert.Equal(t, []string{want, want}, rawQueries)
 	assert.Equal(t, []string{"/custom/rules", "/custom/rules"}, paths)
 	assert.Equal(t, []string{"", selectionBackendETag}, ifNoneMatch)
@@ -636,6 +637,18 @@ func TestAgentlessSource_FlagSelectionIgnoredHeader(t *testing.T) {
 		},
 		"an empty value counts as absent": {
 			{status: http.StatusOK, ignored: new("")},
+		},
+		"not read on a 401": {
+			{status: http.StatusUnauthorized, ignored: new("invalid_tag")},
+		},
+		"not read on a 403": {
+			{status: http.StatusForbidden, ignored: new("invalid_tag")},
+		},
+		"not read on a 404": {
+			{status: http.StatusNotFound, ignored: new("invalid_tag")},
+		},
+		"not read on a 429": {
+			{status: http.StatusTooManyRequests, ignored: new("invalid_tag")},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -807,4 +820,59 @@ func TestNewDatadogProvider_FlagSelectionWithRemoteConfig(t *testing.T) {
 
 		assert.Zero(t, logger.countContaining("FlagSelection"))
 	})
+}
+
+func TestReportFlagSelectionIgnored_EachKnownReasonVerbatim(t *testing.T) {
+	resetFlagSelectionReports(t)
+	logger := withLogLevel(t, log.LevelWarn)
+	log.Flush()
+
+	reasons := []string{"malformed_selection", "too_many_values", "invalid_key_pattern", "invalid_tag", "tag_load_failed"}
+	for _, reason := range reasons {
+		reportFlagSelectionIgnored(reason)
+	}
+	log.Flush()
+
+	for _, reason := range reasons {
+		assert.Equal(t, 1, logger.countContaining(wantIgnored(reason)+" (occurred: "), "want exactly one line for %s in:\n%s", reason, strings.Join(logger.all(), "\n"))
+	}
+	assert.Zero(t, logger.countContaining(wantIgnored("unknown")))
+}
+
+// With DD_LOGGING_RATE=0, log.Error prints synchronously, so this is the only
+// configuration in which containLoggerPanic guards the error-level reports.
+// The log package reads DD_LOGGING_RATE once at init, hence the subprocess.
+func TestFlagSelectionDiagnostics_PanickingLoggerWithImmediateErrors(t *testing.T) {
+	if os.Getenv("DD_TEST_SUBPROCESS") != "1" {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestFlagSelectionDiagnostics_PanickingLoggerWithImmediateErrors$", "-test.count=1")
+		cmd.Env = append(os.Environ(), "DD_TEST_SUBPROCESS=1", "DD_LOGGING_RATE=0")
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		return
+	}
+	resetFlagSelectionReports(t)
+	withLogLevel(t, log.LevelWarn)
+	backend := newSelectionBackend(t, selectionResponse{status: http.StatusOK, ignored: new("tag_load_failed")})
+	t.Cleanup(log.UseLogger(panickingLogger{}))
+
+	var applied bool
+	assert.NotPanics(t, func() {
+		newSelectionSource(t, backend.server.URL, &FlagSelection{Tags: numbered("t", 32)}, nil)
+		sent := newSelectionSource(t, backend.server.URL, &FlagSelection{Tags: []string{"mobile"}}, func(*universalFlagsConfiguration) { applied = true })
+		outcome, _ := sent.pollOnce(1)
+		assert.Equal(t, pollOutcomeSuccess, outcome)
+	})
+	assert.True(t, applied)
+}
+
+func TestNewAgentlessSource_EndpointErrorSkipsFlagSelectionDiagnostics(t *testing.T) {
+	resetFlagSelectionReports(t)
+	logger := withLogLevel(t, log.LevelWarn)
+	log.Flush()
+
+	_, err := newAgentlessSource(internalffe.Settings{}, &FlagSelection{Tags: numbered("t", 32)}, func(*universalFlagsConfiguration) {})
+	require.ErrorIs(t, err, errAgentlessNoAPIKey)
+	log.Flush()
+	assert.Zero(t, logger.countContaining("FlagSelection"))
+	assert.False(t, flagSelectionReportedFor(flagSelectionDroppedMetric, "too_many_values"))
 }
