@@ -14,6 +14,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,11 +30,6 @@ import (
 // maxPollAttempts is the number of times a single poll retries a retryable
 // failure before giving up and waiting for the next tick.
 const maxPollAttempts = 3
-
-const (
-	featureFlagsCapabilitiesHeader = "X-DD-FEATURE-FLAGS-CAPABILITIES"
-	dependentFlagCapability        = "dependent-flag-variant-key-v1"
-)
 
 // maxDrainBytes bounds how much of a non-200 response body is read before
 // closing, so the underlying connection can be reused without risking
@@ -235,6 +231,14 @@ func reportMalformedAgentlessConfiguration(err error) {
 	telemetrylog.ReportError("openfeature: agentless: received malformed configuration", err)
 }
 
+func addEvaluatorCapabilities(req *http.Request, capabilities []string) {
+	if slices.Contains(capabilities, internalffe.DependentFlagVariantKeyV1) {
+		query := req.URL.Query()
+		query.Set(internalffe.DependentFlagsVariantKeyQueryParameter, internalffe.DependentFlagsVariantKeyQueryVersion)
+		req.URL.RawQuery = query.Encode()
+	}
+}
+
 // attempt is only used to number debug log lines.
 func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.requestTimeout)
@@ -261,10 +265,10 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 		}
 		return pollOutcomeStop, 0
 	}
+	addEvaluatorCapabilities(req, internalffe.EvaluatorCapabilities())
 	req.Header.Set("Accept-Encoding", "gzip")
 	req.Header.Set("DD-Client-Library-Language", "go")
 	req.Header.Set("DD-Client-Library-Version", version.Tag)
-	req.Header.Set(featureFlagsCapabilitiesHeader, dependentFlagCapability)
 	if etag := s.currentETag(); etag != "" {
 		req.Header.Set("If-None-Match", etag)
 	}
