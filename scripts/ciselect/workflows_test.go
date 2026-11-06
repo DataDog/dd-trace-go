@@ -512,7 +512,8 @@ func TestJoinJobsRejectDependencyInducedSkips(t *testing.T) {
 			deps: []string{
 				"changes", "warm-repo-cache", "build-weblog-images",
 				"build-service-extensions-callout", "build-haproxy",
-				"build-apim-callout", "system-tests", "tracer-release",
+				"build-apim-callout", "system-tests", "build-system-tests-binaries",
+				"tracer-release",
 			},
 		},
 		{
