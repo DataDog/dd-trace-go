@@ -9,14 +9,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/DataDog/go-libddwaf/v5"
 	"github.com/DataDog/go-libddwaf/v5/waferrors"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
 	tracelib "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
@@ -279,4 +282,248 @@ func TestRunWAFErrorAndTimeoutOrder(t *testing.T) {
 			require.EqualValues(t, 1, metrics.SumWAFTimeouts.Load())
 		})
 	}
+}
+
+// countingLimiter is a [limiter.Limiter] that counts its Allow calls. It denies
+// when deny is true.
+type countingLimiter struct {
+	deny  atomic.Bool
+	calls atomic.Int64
+}
+
+func (l *countingLimiter) Allow() bool {
+	l.calls.Add(1)
+	// Let the other goroutines run, so that a missing lock shows up in the concurrent tests.
+	runtime.Gosched()
+	return !l.deny.Load()
+}
+
+// fakeRunner is a [libddwaf.Runner] that always returns the same result.
+type fakeRunner struct{ result libddwaf.Result }
+
+func (r fakeRunner) Run(context.Context, libddwaf.RunAddressData) (libddwaf.Result, error) {
+	return r.result, nil
+}
+
+var (
+	// keepEventRunner returns 1 event and keep=true.
+	keepEventRunner = fakeRunner{libddwaf.Result{Events: []any{"event"}, Keep: true}}
+	// keepNoEventRunner returns keep=true and no event, like a trace tagging rule.
+	keepNoEventRunner = fakeRunner{libddwaf.Result{Keep: true}}
+	// eventRunner returns 1 event and keep=false.
+	eventRunner = fakeRunner{libddwaf.Result{Events: []any{"event"}}}
+)
+
+// newKeepTestOperation returns a context operation that uses lim, a fresh
+// metrics instance and a tag setter that records ext.ManualKeep. The caller must
+// call the returned function.
+func newKeepTestOperation(t *testing.T, lim *countingLimiter, supported ...string) (*ContextOperation, *recordingTagSetter, *ContextMetrics, *telemetrytest.RecordClient) {
+	t.Helper()
+	client := new(telemetrytest.RecordClient)
+	restoreClient := telemetry.MockClient(client)
+	tags := newRecordingTagSetter()
+	op, _ := StartContextOperation(context.Background(), tags)
+	op.SetLimiter(lim)
+	op.SetSupportedAddresses(config.NewAddressSet(supported))
+	handleMetrics := NewMetricsInstance(nil, "test")
+	metrics := handleMetrics.NewContextMetrics()
+	op.SetMetricsInstance(metrics)
+	t.Cleanup(func() {
+		op.Finish()
+		restoreClient()
+	})
+	return op, tags, metrics, client
+}
+
+// requireManualKeep checks if the operation set ext.ManualKeep on the span.
+func requireManualKeep(t *testing.T, tags *recordingTagSetter, want bool) {
+	t.Helper()
+	_, got := tags.Get(ext.ManualKeep)
+	require.Equal(t, want, got, "ManualKeep")
+}
+
+// requireWAFRequests checks the rate_limited and rule_triggered tags of the only waf.requests series.
+func requireWAFRequests(t *testing.T, client *telemetrytest.RecordClient, rateLimited, ruleTriggered bool) {
+	t.Helper()
+	rateLimitedTag := fmt.Sprintf("rate_limited:%t", rateLimited)
+	ruleTriggeredTag := fmt.Sprintf("rule_triggered:%t", ruleTriggered)
+	require.Equal(t, 1.0, sumMetric(client, "waf.requests"), "waf.requests count")
+	require.Equal(t, 1.0, sumMetric(client, "waf.requests", rateLimitedTag, ruleTriggeredTag), "waf.requests with %s %s", rateLimitedTag, ruleTriggeredTag)
+}
+
+// TestRunWAFLimiter checks that the limiter decides only about ManualKeep, for
+// a result with keep=true, and that it never removes events.
+func TestRunWAFLimiter(t *testing.T) {
+	t.Run("keep-allowed", func(t *testing.T) {
+		lim := new(countingLimiter)
+		op, tags, metrics, client := newKeepTestOperation(t, lim)
+
+		op.runWAF(op, keepEventRunner, wafScopeAddresses(), false)
+		metrics.Submit(libddwaf.Truncations{}, nil)
+
+		require.EqualValues(t, 1, lim.calls.Load())
+		requireManualKeep(t, tags, true)
+		require.Len(t, op.Events(), 1)
+		requireWAFRequests(t, client, false, true)
+	})
+
+	t.Run("keep-denied", func(t *testing.T) {
+		lim := new(countingLimiter)
+		lim.deny.Store(true)
+		op, tags, metrics, client := newKeepTestOperation(t, lim)
+
+		op.runWAF(op, keepEventRunner, wafScopeAddresses(), false)
+		metrics.Submit(libddwaf.Truncations{}, nil)
+
+		require.EqualValues(t, 1, lim.calls.Load())
+		requireManualKeep(t, tags, false)
+		require.Len(t, op.Events(), 1, "a denial must not remove the events")
+		requireWAFRequests(t, client, true, true)
+	})
+
+	t.Run("no-keep-with-events", func(t *testing.T) {
+		lim := new(countingLimiter)
+		lim.deny.Store(true)
+		op, tags, metrics, client := newKeepTestOperation(t, lim)
+
+		op.runWAF(op, eventRunner, wafScopeAddresses(), false)
+		metrics.Submit(libddwaf.Truncations{}, nil)
+
+		require.Zero(t, lim.calls.Load(), "a result without keep must not use a token")
+		requireManualKeep(t, tags, false)
+		require.Len(t, op.Events(), 1)
+		requireWAFRequests(t, client, false, true)
+	})
+
+	t.Run("keep-no-events", func(t *testing.T) {
+		lim := new(countingLimiter)
+		op, tags, metrics, client := newKeepTestOperation(t, lim)
+
+		op.runWAF(op, keepNoEventRunner, wafScopeAddresses(), false)
+		metrics.Submit(libddwaf.Truncations{}, nil)
+
+		require.EqualValues(t, 1, lim.calls.Load())
+		requireManualKeep(t, tags, true)
+		require.Empty(t, op.Events())
+		requireWAFRequests(t, client, false, false)
+	})
+
+	t.Run("keep-no-events-denied", func(t *testing.T) {
+		lim := new(countingLimiter)
+		lim.deny.Store(true)
+		op, tags, metrics, client := newKeepTestOperation(t, lim)
+
+		op.runWAF(op, keepNoEventRunner, wafScopeAddresses(), false)
+		metrics.Submit(libddwaf.Truncations{}, nil)
+
+		require.EqualValues(t, 1, lim.calls.Load())
+		requireManualKeep(t, tags, false)
+		requireWAFRequests(t, client, true, false)
+	})
+
+	t.Run("cap-only", func(t *testing.T) {
+		lim := new(countingLimiter)
+		op, tags, metrics, client := newKeepTestOperation(t, lim)
+
+		for range maxWAFEventsPerRequest + 1 {
+			op.runWAF(op, keepEventRunner, wafScopeAddresses(), false)
+		}
+		metrics.Submit(libddwaf.Truncations{}, nil)
+
+		require.EqualValues(t, 1, lim.calls.Load(), "the request is admitted 1 time, then it uses no token")
+		requireManualKeep(t, tags, true)
+		require.Len(t, op.Events(), maxWAFEventsPerRequest)
+		requireWAFRequests(t, client, false, true)
+	})
+
+	t.Run("capped-keep-run-request-not-kept-yet", func(t *testing.T) {
+		lim := new(countingLimiter)
+		op, tags, metrics, client := newKeepTestOperation(t, lim)
+
+		for range maxWAFEventsPerRequest {
+			op.runWAF(op, eventRunner, wafScopeAddresses(), false)
+		}
+		require.Zero(t, lim.calls.Load())
+		op.runWAF(op, keepEventRunner, wafScopeAddresses(), false)
+		metrics.Submit(libddwaf.Truncations{}, nil)
+
+		require.EqualValues(t, 1, lim.calls.Load(), "a capped keep run can ask for the first admission")
+		requireManualKeep(t, tags, true)
+		require.Len(t, op.Events(), maxWAFEventsPerRequest)
+		requireWAFRequests(t, client, false, true)
+	})
+
+	t.Run("denial-then-allowed-then-cap", func(t *testing.T) {
+		lim := new(countingLimiter)
+		lim.deny.Store(true)
+		op, tags, metrics, client := newKeepTestOperation(t, lim)
+
+		op.runWAF(op, keepEventRunner, wafScopeAddresses(), false)
+		requireManualKeep(t, tags, false)
+		lim.deny.Store(false)
+		for range maxWAFEventsPerRequest + 2 {
+			op.runWAF(op, keepEventRunner, wafScopeAddresses(), false)
+		}
+		metrics.Submit(libddwaf.Truncations{}, nil)
+
+		require.EqualValues(t, 2, lim.calls.Load(), "1 denial, 1 admission, then no more call")
+		requireManualKeep(t, tags, true)
+		require.Len(t, op.Events(), maxWAFEventsPerRequest)
+		requireWAFRequests(t, client, true, true)
+	})
+
+	t.Run("rasp-keep-denied", func(t *testing.T) {
+		lim := new(countingLimiter)
+		lim.deny.Store(true)
+		op, tags, metrics, client := newKeepTestOperation(t, lim, sqliSupportedAddresses...)
+
+		op.runWAF(op, keepEventRunner, sqliAddresses(), false)
+		metrics.Submit(libddwaf.Truncations{}, nil)
+
+		require.EqualValues(t, 1, lim.calls.Load())
+		requireManualKeep(t, tags, false)
+		require.Len(t, op.Events(), 1)
+		requireWAFRequests(t, client, true, false)
+	})
+
+	t.Run("rasp-keep-allowed", func(t *testing.T) {
+		lim := new(countingLimiter)
+		op, tags, metrics, client := newKeepTestOperation(t, lim, sqliSupportedAddresses...)
+
+		op.runWAF(op, keepEventRunner, sqliAddresses(), false)
+		metrics.Submit(libddwaf.Truncations{}, nil)
+
+		require.EqualValues(t, 1, lim.calls.Load())
+		requireManualKeep(t, tags, true)
+		requireWAFRequests(t, client, false, false)
+	})
+
+	t.Run("monitor-only-keep-denied", func(t *testing.T) {
+		lim := new(countingLimiter)
+		lim.deny.Store(true)
+		op, tags, metrics, client := newKeepTestOperation(t, lim, sqliSupportedAddresses...)
+
+		op.runWAF(op, keepEventRunner, sqliAddresses(), true)
+		metrics.Submit(libddwaf.Truncations{}, nil)
+
+		require.EqualValues(t, 1, lim.calls.Load())
+		requireManualKeep(t, tags, false)
+		require.Len(t, op.Events(), 1)
+		requireWAFRequests(t, client, true, false)
+	})
+
+	// The RASP address is unknown here, so RegisterWafRun returns early in its RASP
+	// branch. The rate_limited milestone must be set before this return.
+	t.Run("rasp-keep-denied-unknown-address", func(t *testing.T) {
+		lim := new(countingLimiter)
+		lim.deny.Store(true)
+		op, tags, metrics, client := newKeepTestOperation(t, lim)
+
+		op.runWAF(op, keepEventRunner, addresses.RunAddressData{TimerKey: addresses.RASPScope}, false)
+		metrics.Submit(libddwaf.Truncations{}, nil)
+
+		require.EqualValues(t, 1, lim.calls.Load())
+		requireManualKeep(t, tags, false)
+		requireWAFRequests(t, client, true, false)
+	})
 }
