@@ -94,6 +94,8 @@ integration-suites:
   modules:
     contrib/99designs/gqlgen: [ 99designs.gqlgen ]
     contrib/99designs/gqlgen/otelc: [ 99designs.gqlgen ]
+    contrib/IBM/sarama/otelc: [ ibm_sarama ]
+    contrib/Shopify/sarama/otelc: [ shopify_sarama ]
     contrib/aerospike/aerospike-client-go.v7: [ aerospike.v7 ]
     contrib/aws/aws-sdk-go: [ aws.v1 ]
     contrib/aws/aws-sdk-go-v2: [ aws.v2 ]
@@ -480,6 +482,8 @@ components:
       contrib entry claims them without the gate.
     paths:
       - contrib/99designs/gqlgen/**
+      - contrib/IBM/sarama/**
+      - contrib/Shopify/sarama/**
       - contrib/aws/aws-sdk-go/**
       - contrib/database/sql/**
       - contrib/gin-gonic/gin/**

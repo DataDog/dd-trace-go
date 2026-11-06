@@ -41,6 +41,10 @@ env:
     otelc/all
     contrib/99designs/gqlgen
     contrib/99designs/gqlgen/otelc
+    contrib/IBM/sarama
+    contrib/IBM/sarama/otelc
+    contrib/Shopify/sarama
+    contrib/Shopify/sarama/otelc
     contrib/aws/aws-sdk-go
     contrib/aws/aws-sdk-go/otelc
     contrib/net/http
@@ -91,6 +95,8 @@ env:
     grpc
     gorilla_mux
     99designs.gqlgen
+    ibm_sarama
+    shopify_sarama
     mongo
     mongo.v2
     echo.v4
