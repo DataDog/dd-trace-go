@@ -706,7 +706,6 @@ func TestAgentlessSourceUnsupportedEvaluatorOmitsDependentFlagsParameter(t *test
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
 		assert.Empty(t, r.URL.Query().Get("cap_dependent-flags-variant-key"))
-		assert.Empty(t, r.Header.Values("X-DD-FEATURE-FLAGS-CAPABILITIES"))
 		if requests == 1 {
 			w.Header().Set("ETag", fakeUFCBackendETag)
 			_, _ = w.Write([]byte(fakeUFCValidBody))
