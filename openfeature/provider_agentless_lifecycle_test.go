@@ -38,7 +38,7 @@ func TestTryRegisterAgentless_AfterShutdownRegistersNothing(t *testing.T) {
 	p.shutdownCalled = true
 	p.mu.Unlock()
 
-	src, err := newAgentlessSource(settings, p.updateConfiguration)
+	src, err := newAgentlessSource(settings, nil, p.updateConfiguration)
 	require.NoError(t, err)
 
 	assert.False(t, p.tryRegisterAgentless(src))

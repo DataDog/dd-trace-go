@@ -460,6 +460,37 @@
 // first: the tracer eagerly subscribes to the FFE_FLAGS Remote Config product
 // and may fetch and buffer configuration before NewDatadogProvider is called.
 //
+// # Flag Selection
+//
+// A service that needs only some of its flags can pass a flag selection when it
+// creates the provider. The provider then downloads and holds only the flags
+// that have any of the selected tags or whose key matches any of the selected
+// key patterns:
+//
+//	provider, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{
+//	    FlagSelection: &ddopenfeature.FlagSelection{
+//	        Tags:        []string{"team:checkout"},
+//	        KeyPatterns: []string{"checkout.*"},
+//	    },
+//	})
+//
+// Evaluating a flag outside the selection returns the default value with
+// FLAG_NOT_FOUND. Tags match exactly. In a key pattern, * matches any run of
+// characters and every other character is literal. Values are trimmed of white
+// space, and empty values and duplicates are dropped. Each list holds at most
+// 31 values, each at most 200 UTF-8 bytes. A selection over a limit, with a
+// value that is not valid UTF-8, or that makes the request URL longer than 8192
+// bytes is not sent: the provider logs an error and loads every flag. When the
+// server cannot apply a selection, it sends every flag, and the provider logs
+// an error once per reason.
+//
+// The selection is set in code only; there is no environment variable. Each
+// provider sends its own selection, fixed at construction. The selection
+// applies to the agentless configuration source; with Remote Config, the
+// provider logs a warning and loads every flag. When the provider is the
+// default OpenFeature provider, LLM Observability prompt flags are evaluated
+// through it and share its selection.
+//
 // # Configuration
 //
 // The provider can be configured using ProviderConfig when creating a new instance:
@@ -475,6 +506,9 @@
 //     to the Datadog agent. Defaults to 1 second if not specified. Exposure events
 //     track which feature flags are evaluated and by which users, providing visibility
 //     into feature flag usage. Set to 0 to disable automatic flushing (not recommended).
+//
+//   - FlagSelection: Limits the flags the provider loads to the selected tags and
+//     key patterns. Nil loads every flag. See "# Flag Selection" above.
 //
 // # Environment Variables
 //
