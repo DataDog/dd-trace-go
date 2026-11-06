@@ -6,12 +6,14 @@
 package openfeature
 
 import (
+	"os"
 	"testing"
 
 	of "github.com/open-feature/go-sdk/openfeature"
+	"github.com/stretchr/testify/require"
 )
 
-// TestFlagEvaluationKillswitch verifies that DD_FLAGGING_EVALUATION_COUNTS_ENABLED (default true)
+// TestFlagEvaluationKillswitch verifies that DD_FEATURE_FLAGS_EVALUATION_COUNTS_ENABLED (default true)
 // controls ONLY the EVP flagevaluation hook/writer, leaving the OTel flagEvalHook unaffected.
 //
 // When the killswitch is "false": the EVP hook (flagEvalEVPHook) is NOT registered in Hooks()
@@ -21,30 +23,38 @@ import (
 func TestFlagEvaluationKillswitch(t *testing.T) {
 	tests := []struct {
 		name           string
-		envValue       string
+		canonical      *string
+		legacy         *string
 		wantEVPEnabled bool
 	}{
-		{
-			name:           "killswitch disabled: EVP hook absent from Hooks(), OTel hook present",
-			envValue:       "false",
-			wantEVPEnabled: false,
-		},
-		{
-			// "1" exercises the default-true behavior (any truthy value enables the EVP path).
-			name:           "killswitch enabled (unset = default true): EVP hook present in Hooks()",
-			envValue:       "1",
-			wantEVPEnabled: true,
-		},
-		{
-			name:           "killswitch explicitly true: EVP hook present in Hooks()",
-			envValue:       "true",
-			wantEVPEnabled: true,
-		},
+		{name: "default", wantEVPEnabled: true},
+		{name: "canonical false", canonical: new("false"), wantEVPEnabled: false},
+		{name: "canonical true", canonical: new("true"), wantEVPEnabled: true},
+		{name: "legacy false", legacy: new("false"), wantEVPEnabled: false},
+		{name: "legacy true", legacy: new("true"), wantEVPEnabled: true},
+		{name: "canonical false wins", canonical: new("false"), legacy: new("true"), wantEVPEnabled: false},
+		{name: "canonical true wins", canonical: new("true"), legacy: new("false"), wantEVPEnabled: true},
+		{name: "empty canonical uses default", canonical: new(""), legacy: new("false"), wantEVPEnabled: true},
+		{name: "invalid canonical uses default", canonical: new("invalid"), legacy: new("false"), wantEVPEnabled: true},
+		{name: "empty legacy uses default", legacy: new(""), wantEVPEnabled: true},
+		{name: "invalid legacy uses default", legacy: new("invalid"), wantEVPEnabled: true},
+		{name: "numeric canonical true", canonical: new("1"), wantEVPEnabled: true},
+		{name: "numeric legacy true", legacy: new("1"), wantEVPEnabled: true},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv(flagEvalCountsEnabledEnvVar, tc.envValue)
+			for key, value := range map[string]*string{
+				flagEvalCountsEnabledEnvVar:             tc.canonical,
+				"DD_FLAGGING_EVALUATION_COUNTS_ENABLED": tc.legacy,
+			} {
+				t.Setenv(key, "")
+				if value == nil {
+					require.NoError(t, os.Unsetenv(key))
+				} else {
+					t.Setenv(key, *value)
+				}
+			}
 
 			p := newDatadogProvider(ProviderConfig{})
 
