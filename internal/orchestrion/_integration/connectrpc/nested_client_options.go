@@ -55,13 +55,16 @@ func (tc *TestCaseNestedClientOptions) Run(ctx context.Context, t *testing.T) {
 	require.Equal(t, "hello", res.Msg.GetValue())
 	tc.stop()
 	require.True(t, tc.clientIntercepted.Load(), "user client interceptor was not called")
-	// The harness cannot count spans. A second connect.client span would be a child of the first
-	// and active when the request is sent, so check that the active span is the trace root.
+	// ExpectedSpanCount rules out a second connect.client span that finishes. One would be a child
+	// of the first and active when the request is sent, so also check that the active span is the
+	// trace root.
 	sent := tc.httpClient.last.Load()
 	require.NotNil(t, sent)
 	require.True(t, sent.traced, "request sent without an active span")
 	require.True(t, sent.root, "request sent under nested spans")
 }
+
+func (*TestCaseNestedClientOptions) ExpectedSpanCount() int { return 4 }
 
 func (tc *TestCaseNestedClientOptions) ExpectedTraces() trace.Traces {
 	return trace.Traces{

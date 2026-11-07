@@ -50,6 +50,8 @@ func (tc *TestCaseClientStreamSimple) Run(ctx context.Context, t *testing.T) {
 	tc.stop()
 }
 
+func (*TestCaseClientStreamSimple) ExpectedSpanCount() int { return 12 }
+
 func (tc *TestCaseClientStreamSimple) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		// Send x2, then CloseAndReceive's Receive x2 (the response and the EOF). The header-flushing

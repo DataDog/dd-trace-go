@@ -61,6 +61,15 @@ var classifyCases = []classifyCase{
 		wantAll: true,
 	},
 	{
+		// Root-module code under contrib/ too, but only the two connect
+		// contribs import it, so it is not core. It keeps every gate of
+		// `contrib`; only the contrib matrix narrows (TestSelectContribModules).
+		name:    "the connect contribs' shared package keeps the contrib gates",
+		files:   []string{"contrib/connectrpc.com/connectshared/config.go"},
+		want:    []string{"pull-request-tests", "orchestrion", "benchmark-apps", "system-tests", "static-lint"},
+		notWant: []string{"parametric-tests", "otelc"},
+	},
+	{
 		name:    "datastreams/options is reachable from 77 modules",
 		files:   []string{"datastreams/options/options.go"},
 		wantAll: true,
