@@ -469,6 +469,7 @@ func TestShaOverrideDoesNotRestoreInferredProviderTag(t *testing.T) {
 		{name: "inferred"},
 		{name: "explicit-tag", tag: "explicit-tag", wantTag: "explicit-tag"},
 		{name: "explicit-branch", branch: "refs/tags/explicit-tag", wantTag: "explicit-tag"},
+		{name: "explicit-tag-and-branch", tag: "explicit-tag", branch: "refs/tags/branch-tag", wantTag: "explicit-tag"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ResetCITags()
@@ -500,6 +501,82 @@ func TestShaOverrideDoesNotRestoreInferredProviderTag(t *testing.T) {
 			}
 			assert.Equal(t, "tests", tags[constants.CIJobName])
 			assert.Equal(t, "pr-head", tags[constants.GitHeadCommit])
+		})
+	}
+}
+
+func TestProviderShaIsPreservedUntilOverrideCleanup(t *testing.T) {
+	for _, source := range []string{"changed", "same", "explicit", "payload-changed", "payload-same", "payload-explicit"} {
+		t.Run(source, func(t *testing.T) {
+			ResetCITags()
+			t.Cleanup(ResetCITags)
+			bazel.ResetForTesting()
+			t.Cleanup(bazel.ResetForTesting)
+			t.Setenv(bazel.PayloadsInFilesEnv, "false")
+			if strings.HasPrefix(source, "payload-") {
+				t.Setenv(bazel.PayloadsInFilesEnv, "true")
+				t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
+				source = strings.TrimPrefix(source, "payload-")
+			}
+			for key := range providers {
+				t.Setenv(key, "")
+				assert.NoError(t, os.Unsetenv(key))
+			}
+			for _, key := range []string{"DD_GIT_BRANCH", "DD_GIT_TAG", "DD_GIT_REPOSITORY_URL", "DD_GIT_COMMIT_MESSAGE", "DD_GIT_COMMIT_AUTHOR_NAME", "DD_GIT_COMMIT_AUTHOR_EMAIL", "DD_GIT_COMMIT_AUTHOR_DATE", "DD_GIT_COMMIT_COMMITTER_NAME", "DD_GIT_COMMIT_COMMITTER_EMAIL", "DD_GIT_COMMIT_COMMITTER_DATE", "DD_GIT_PULL_REQUEST_BASE_BRANCH", "DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA"} {
+				t.Setenv(key, "")
+			}
+			t.Setenv("GITLAB_CI", "true")
+			t.Setenv("CI_COMMIT_SHA", strings.Repeat("b", 40))
+			t.Setenv("CI_COMMIT_BRANCH", "refs/tags/provider-tag")
+			t.Setenv("CI_COMMIT_TAG", "provider-tag")
+			t.Setenv("CI_COMMIT_MESSAGE", "provider-message")
+			t.Setenv("CI_COMMIT_AUTHOR", "Provider <provider@example.com>")
+			t.Setenv("CI_COMMIT_TIMESTAMP", "2025-01-01T00:00:00Z")
+			t.Setenv("CI_JOB_NAME", "tests")
+			t.Setenv("CI_MERGE_REQUEST_SOURCE_BRANCH_SHA", strings.Repeat("d", 40))
+			t.Setenv("CI_MERGE_REQUEST_TARGET_BRANCH_NAME", "main")
+			selected := strings.Repeat("c", 40)
+			if source == "same" {
+				selected = strings.Repeat("b", 40)
+			}
+			t.Setenv("DD_GIT_COMMIT_SHA", selected)
+			if source == "explicit" {
+				t.Setenv("DD_GIT_COMMIT_MESSAGE", "explicit-message")
+				t.Setenv("DD_GIT_COMMIT_AUTHOR_NAME", "Explicit")
+				t.Setenv("DD_GIT_TAG", "explicit-tag")
+			}
+			originalProvider, originalGit, originalFetch, originalEnvironmental := getProviderTagsFunc, getLocalGitDataFunc, fetchCommitDataFunc, applyEnvironmentalDataIfRequiredFunc
+			t.Cleanup(func() {
+				getProviderTagsFunc, getLocalGitDataFunc, fetchCommitDataFunc, applyEnvironmentalDataIfRequiredFunc = originalProvider, originalGit, originalFetch, originalEnvironmental
+			})
+			getProviderTagsFunc = getProviderTags
+			getLocalGitDataFunc = func() (localGitData, error) { return localGitData{}, errors.New("checkout unavailable") }
+			fetchCommitDataFunc = func(string) (localCommitData, error) { return localCommitData{}, errors.New("checkout unavailable") }
+			applyEnvironmentalDataIfRequiredFunc = func(map[string]string) {}
+
+			tags := GetCITags()
+			assert.Equal(t, selected, tags[constants.GitCommitSHA])
+			assert.Equal(t, "tests", tags[constants.CIJobName])
+			assert.Equal(t, strings.Repeat("d", 40), tags[constants.GitHeadCommit])
+			assert.Equal(t, "main", tags[constants.GitPrBaseBranch])
+			if source == "same" {
+				assert.Equal(t, "provider-message", tags[constants.GitCommitMessage])
+				assert.Equal(t, "Provider", tags[constants.GitCommitAuthorName])
+				assert.Equal(t, "provider-tag", tags[constants.GitTag])
+			} else {
+				assert.NotContains(t, tags, constants.GitCommitAuthorEmail)
+				assert.NotContains(t, tags, constants.GitCommitAuthorDate)
+				assert.NotContains(t, tags, constants.GitBranch)
+				if source == "explicit" {
+					assert.Equal(t, "explicit-message", tags[constants.GitCommitMessage])
+					assert.Equal(t, "Explicit", tags[constants.GitCommitAuthorName])
+					assert.Equal(t, "explicit-tag", tags[constants.GitTag])
+				} else {
+					assert.NotContains(t, tags, constants.GitCommitMessage)
+					assert.NotContains(t, tags, constants.GitCommitAuthorName)
+					assert.NotContains(t, tags, constants.GitTag)
+				}
+			}
 		})
 	}
 }

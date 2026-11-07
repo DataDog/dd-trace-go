@@ -252,6 +252,7 @@ func createCITagsMap() map[string]string {
 		localTags[constants.UserProvidedTestServiceTag] = "false"
 	}
 
+	commitShaOverride := env.Get("DD_GIT_COMMIT_SHA")
 	if bazel.IsPayloadFilesModeEnabled() {
 		// Payload-file mode relies on the environmental data file instead of invoking the Git CLI.
 		applyEnvironmentalDataIfRequiredFunc(localTags)
@@ -282,22 +283,9 @@ func createCITagsMap() map[string]string {
 			localTags[constants.GitBranch] = gitData.Branch
 		}
 
-		if commitSha := env.Get("DD_GIT_COMMIT_SHA"); commitSha != "" {
-			if !strings.EqualFold(commitSha, localTags[constants.GitCommitSHA]) {
-				if isTagRef(localTags[constants.GitBranch]) {
-					delete(localTags, constants.GitBranch)
-				}
-				for key := range localTags {
-					if key == constants.GitTag || (strings.HasPrefix(key, "git.commit.") && key != constants.GitCommitSHA && !strings.HasPrefix(key, "git.commit.head.")) {
-						delete(localTags, key)
-					}
-				}
-			}
-			localTags[constants.GitCommitSHA] = commitSha
-		}
-
 		// If the commit SHA matches, populate additional Git metadata
-		if gitData.CommitSha != "" && strings.EqualFold(localTags[constants.GitCommitSHA], gitData.CommitSha) {
+		if gitData.CommitSha != "" && strings.EqualFold(localTags[constants.GitCommitSHA], gitData.CommitSha) &&
+			(commitShaOverride == "" || strings.EqualFold(commitShaOverride, gitData.CommitSha)) {
 			if _, ok := localTags[constants.GitCommitAuthorDate]; !ok {
 				localTags[constants.GitCommitAuthorDate] = gitData.AuthorDate.String()
 			}
@@ -337,13 +325,24 @@ func createCITagsMap() map[string]string {
 				log.Warn("civisibility: head commit SHA %s does not match the fetched commit SHA %s", headCommitSha, headCommitData.CommitSha) //errtrack:ignore repository state mismatch
 			}
 		}
+	}
 
-		replaceWithUserSpecificTags(localTags)
-		normalizeTags(localTags)
-		for key, value := range localTags {
-			if value == "" {
+	if commitShaOverride != "" && !strings.EqualFold(commitShaOverride, localTags[constants.GitCommitSHA]) {
+		if isTagRef(localTags[constants.GitBranch]) {
+			delete(localTags, constants.GitBranch)
+		}
+		for key := range localTags {
+			if key == constants.GitTag || (strings.HasPrefix(key, "git.commit.") && key != constants.GitCommitSHA && !strings.HasPrefix(key, "git.commit.head.")) {
 				delete(localTags, key)
 			}
+		}
+	}
+
+	replaceWithUserSpecificTags(localTags)
+	normalizeTags(localTags)
+	for key, value := range localTags {
+		if value == "" {
+			delete(localTags, key)
 		}
 	}
 

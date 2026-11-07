@@ -305,12 +305,6 @@ func getProviderTags() map[string]string {
 		tags = provider()
 	}
 
-	// replace with user specific tags
-	replaceWithUserSpecificTags(tags)
-
-	// Normalize tags
-	normalizeTags(tags)
-
 	// Expand ~
 	if tag, ok := tags[constants.CIWorkspacePath]; ok && tag != "" {
 		tags[constants.CIWorkspacePath] = ExpandPath(tag)
@@ -375,7 +369,13 @@ func replaceWithUserSpecificTags(tags map[string]string) {
 		tags[tagName] = getEnvironmentVariableIfIsNotEmpty(envName, tags[tagName])
 	}
 
-	replace(constants.GitBranch, "DD_GIT_BRANCH")
+	if branch := env.Get("DD_GIT_BRANCH"); branch != "" {
+		if isTagRef(branch) {
+			branch = normalizeRef(branch)
+			tags[constants.GitTag] = branch
+		}
+		tags[constants.GitBranch] = branch
+	}
 	replace(constants.GitTag, "DD_GIT_TAG")
 	replace(constants.GitRepositoryURL, "DD_GIT_REPOSITORY_URL")
 	replace(constants.GitCommitSHA, "DD_GIT_COMMIT_SHA")
