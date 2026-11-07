@@ -30,7 +30,9 @@ type Config struct {
 	MLApp            string
 	AgentlessEnabled bool
 	ProjectName      string
-	TracerConfig     TracerConfig
+	// SampleRate is the proportion of LLMObs traces to keep, in [0, 1].
+	SampleRate   float64
+	TracerConfig TracerConfig
 	// TestBaseURL, when non-empty, overrides the transport base URL and bypasses
 	// agent-mode/agentless-mode selection. For use in tests only.
 	TestBaseURL string
