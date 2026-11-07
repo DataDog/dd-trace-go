@@ -37,6 +37,10 @@ func Publish(ctx context.Context, t *pubsub.Topic, msg *pubsub.Message, opts ...
 	traceMsg := newTraceMessage(msg)
 	ctx, closeSpan := pstrace.TracePublish(ctx, t, traceMsg, opts...)
 	msg.Attributes = traceMsg.Attributes
+	if instrumentation.OtelcEnabled() {
+		// Keeps otelc from starting a second span in t.Publish.
+		ctx = pubsubtrace.MarkPublishTraced(ctx)
+	}
 
 	return &PublishResult{
 		PublishResult: t.Publish(ctx, msg),

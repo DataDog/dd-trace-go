@@ -30,3 +30,7 @@ func TestAdminGAPIC(t *testing.T) {
 func TestAdminSchema(t *testing.T) {
 	harness.Run(t, new(TestCaseAdminSchema))
 }
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}

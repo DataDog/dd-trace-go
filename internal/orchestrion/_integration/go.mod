@@ -117,6 +117,7 @@ require (
 	example.com/grpcdep v0.0.0-00010101000000-000000000000
 	example.com/httpdep v0.0.0-00010101000000-000000000000
 	example.com/mongodep v0.0.0-00010101000000-000000000000
+	example.com/pubsubdep v0.0.0-00010101000000-000000000000
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.82.3 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.82.3 // indirect
@@ -134,8 +135,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.13.0-dev.1
-	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.13.0-dev.1 // indirect
-	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.13.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/cloudevents/sdk-go.v2/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.13.0-dev.1 // indirect
@@ -575,7 +576,13 @@ require example.com/httprouterdep v0.0.0-00010101000000-000000000000
 
 replace example.com/httprouterdep => ./internal/httprouterdep
 
-require github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev.1 // indirect
+require (
+	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev.1 // indirect
+	go.einride.tech/aip v0.73.0 // indirect
+	go.opentelemetry.io/otel/sdk v1.45.0 // indirect
+)
 
 replace github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 => ../../../contrib/gorilla/mux/otelc
 
@@ -596,6 +603,12 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../../../contrib/labstack/echo.v5/otelc
 
 replace example.com/echodep => ./internal/echodep
+
+replace github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/otelc/v2 => ../../../contrib/cloud.google.com/go/pubsub.v1/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/otelc/v2 => ../../../contrib/cloud.google.com/go/pubsub.v2/otelc
+
+replace example.com/pubsubdep => ./internal/pubsubdep
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../../contrib/aws/aws-sdk-go/otelc
 
