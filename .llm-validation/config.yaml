@@ -11,6 +11,7 @@ instruction_files:
   - orchestrion/AGENTS.md
   - internal/appsec/AGENTS.md
   - internal/civisibility/AGENTS.md
+  - internal/config/AGENTS.md
 
 default_level: gate
 presets:
@@ -25,6 +26,7 @@ presets:
       - dd-trace-go-appsec-purpose                         # internal/appsec/AGENTS.md
       - dd-trace-go-civisibility-close-action-order        # internal/civisibility/AGENTS.md
       - dd-trace-go-orchestrion-build-time-enabled-check   # orchestrion/AGENTS.md
+      - dd-trace-go-internal-config-migration-routing     # internal/config/AGENTS.md
     runs: 3
   # Three cases per monitored file (the gate case plus two additional ones).
   minimum:
@@ -52,6 +54,9 @@ presets:
       - dd-trace-go-orchestrion-build-time-enabled-check
       - dd-trace-go-orchestrion-yml-structure
       - dd-trace-go-orchestrion-template-function-fields
+      - dd-trace-go-internal-config-migration-routing
+      - dd-trace-go-internal-config-implicit-migration-routing
+      - dd-trace-go-internal-config-review-routing
     runs: 3
   full:
     runs: 3
