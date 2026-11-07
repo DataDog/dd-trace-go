@@ -496,8 +496,9 @@ func UnshallowGitRepository() (bool, error) {
 	}
 
 	selected := GetCITags()[constants.GitCommitSHA]
+	validSelected := isGitCommitSHA(selected)
 	selectedMissing := false
-	if isGitCommitSHA(selected) {
+	if validSelected {
 		_, err := execGitString(telemetry.GetHeadCommandsType, "rev-parse", "--verify", selected+"^{commit}")
 		selectedMissing = err != nil
 	}
@@ -509,13 +510,20 @@ func UnshallowGitRepository() (bool, error) {
 
 	// Check whether existing checkout history needs deepening.
 	log.Debug("civisibility.unshallow: checking if there are more than one commit in the logs")
-	hasMoreThanOneCommits, err := hasTheGitLogHaveMoreThanOneCommits()
-	if err != nil {
-		return false, fmt.Errorf("civisibility.unshallow: error checking if the git log has more than one commit: %s", err)
+	hasMoreThanOneCommits := false
+	if !selectedMissing {
+		root := "HEAD"
+		if validSelected {
+			root = selected
+		}
+		hasMoreThanOneCommits, err = hasTheGitLogHaveMoreThanOneCommits(root)
+		if err != nil {
+			return false, fmt.Errorf("civisibility.unshallow: error checking if the git log has more than one commit: %s", err)
+		}
 	}
 
-	// Existing history is sufficient unless the selected revision is missing.
-	if hasMoreThanOneCommits && !selectedMissing {
+	// Existing selected history is sufficient when at least two commits are available.
+	if hasMoreThanOneCommits {
 		log.Debug("civisibility.unshallow: the git log has more than one commits")
 		return false, nil
 	}
@@ -542,7 +550,23 @@ func UnshallowGitRepository() (bool, error) {
 		remoteName = "origin"
 	}
 	log.Debug("civisibility.unshallow: remote name: %s", remoteName)
-	if selectedMissing {
+	headSha := ""
+	if !selectedMissing {
+		// let's get the sha of the HEAD (git rev-parse HEAD)
+		headSha, err = execGitString(telemetry.GetHeadCommandsType, "rev-parse", "HEAD")
+		if err != nil {
+			return false, fmt.Errorf("civisibility.unshallow: error getting the HEAD sha: %s\n%s", err, headSha)
+		}
+		if headSha == "" {
+			// if the HEAD is empty, we fallback to the current branch (git branch --show-current)
+			headSha, err = execGitString(telemetry.GetBranchCommandsType, "branch", "--show-current")
+			if err != nil {
+				return false, fmt.Errorf("civisibility.unshallow: error getting the current branch: %s\n%s", err, headSha)
+			}
+		}
+		log.Debug("civisibility.unshallow: HEAD sha: %s", headSha)
+	}
+	if selectedMissing || (validSelected && !strings.EqualFold(selected, headSha)) {
 		args := []string{"fetch"}
 		if isAShallowClone {
 			args = append(args, "--shallow-since=\"1 month ago\"", "--update-shallow")
@@ -556,22 +580,10 @@ func UnshallowGitRepository() (bool, error) {
 		if err != nil {
 			return false, fmt.Errorf("civisibility.unshallow: error fetching the selected commit: %s | %s", err, out)
 		}
+		tmpso := sync.Once{}
+		isAShallowCloneRepositoryOnce.Store(&tmpso)
 		return true, nil
 	}
-
-	// let's get the sha of the HEAD (git rev-parse HEAD)
-	headSha, err := execGitString(telemetry.GetHeadCommandsType, "rev-parse", "HEAD")
-	if err != nil {
-		return false, fmt.Errorf("civisibility.unshallow: error getting the HEAD sha: %s\n%s", err, headSha)
-	}
-	if headSha == "" {
-		// if the HEAD is empty, we fallback to the current branch (git branch --show-current)
-		headSha, err = execGitString(telemetry.GetBranchCommandsType, "branch", "--show-current")
-		if err != nil {
-			return false, fmt.Errorf("civisibility.unshallow: error getting the current branch: %s\n%s", err, headSha)
-		}
-	}
-	log.Debug("civisibility.unshallow: HEAD sha: %s", headSha)
 
 	// let's fetch the missing commits and trees from the last month
 	// git fetch --shallow-since="1 month ago" --update-shallow --filter="blob:none" --recurse-submodules=no $(git config --default origin --get clone.defaultRemoteName) $(git rev-parse HEAD)
@@ -703,9 +715,8 @@ func isAShallowCloneRepository() (bool, error) {
 }
 
 // hasTheGitLogHaveMoreThanOneCommits checks if the local Git repository has more than one commit.
-func hasTheGitLogHaveMoreThanOneCommits() (bool, error) {
-	// git log --format=oneline -n 2
-	out, err := execGitString(telemetry.CheckShallowCommandsType, "log", "--format=oneline", "-n", "2")
+func hasTheGitLogHaveMoreThanOneCommits(commitSha string) (bool, error) {
+	out, err := execGitString(telemetry.CheckShallowCommandsType, "log", "--format=oneline", "-n", "2", commitSha, "--")
 	if err != nil || out == "" {
 		return false, err
 	}
