@@ -25,7 +25,7 @@ services:
     ports:
       - "9042:9042"
   mysql:
-    image: mysql:26@sha256:7b16ec7caa94ca7e92f4c5ec287de69d2e8738db056ceb629022951a6f6d910b
+    image: mysql:26@sha256:3819b2b23835c4a73c8b022fafc33c8095c0f81c929a8b7a84613d2fba6c52f5
     environment:
       MYSQL_ROOT_PASSWORD: admin
       MYSQL_PASSWORD: test
@@ -131,7 +131,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch6:
-    image: elasticsearch:9.5.5@sha256:52ffd9f66c98b7826a25da2ef7cac6186ecec158d8fb371bff325ad00b6eca93
+    image: elasticsearch:9.5.5@sha256:764a939891119d97e130b4d5da196c330afb2338382ada9e1b9b7943ce6707df
     environment:
       http.port: 9202-9300
       discovery.type: single-node
@@ -149,7 +149,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch7:
-    image: elasticsearch:9.5.5@sha256:52ffd9f66c98b7826a25da2ef7cac6186ecec158d8fb371bff325ad00b6eca93
+    image: elasticsearch:9.5.5@sha256:764a939891119d97e130b4d5da196c330afb2338382ada9e1b9b7943ce6707df
     environment:
       http.port: 9203-9300
       discovery.type: single-node
@@ -167,7 +167,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch8:
-    image: elasticsearch:9.5.5@sha256:52ffd9f66c98b7826a25da2ef7cac6186ecec158d8fb371bff325ad00b6eca93
+    image: elasticsearch:9.5.5@sha256:764a939891119d97e130b4d5da196c330afb2338382ada9e1b9b7943ce6707df
     environment:
       http.port: 9204-9300
       discovery.type: single-node
