@@ -7,6 +7,7 @@ package telemetry
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -32,6 +33,51 @@ func TestDisabledCachesInitialEnv(t *testing.T) {
 
 	// Reset again
 	telemetryEnabledOnce = sync.Once{}
+}
+
+// blockingWriter holds every Flush until release is closed.
+type blockingWriter struct {
+	started  chan struct{}
+	release  chan struct{}
+	once     sync.Once
+	inFlight atomic.Int32
+}
+
+func (w *blockingWriter) Flush(transport.Payload) ([]internal.EndpointRequestResult, error) {
+	w.inFlight.Add(1)
+	defer w.inFlight.Add(-1)
+	w.once.Do(func() { close(w.started) })
+	<-w.release
+	return []internal.EndpointRequestResult{{PayloadByteSize: 1, CallDuration: time.Nanosecond}}, nil
+}
+
+// TestCloseWaitsForStartAppFlush covers tracer.Stop, which closes its
+// telemetry client and then its HTTP client's idle connections. If Close
+// returned while the StartApp flush was still sending, that request's
+// keep-alive connection would go back to the idle pool after the cleanup and
+// leak (goleak reports it in the tracer tests when a real agent is running).
+func TestCloseWaitsForStartAppFlush(t *testing.T) {
+	telemetryEnabledOnce = sync.Once{}
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
+	require.Nil(t, GlobalClient())
+
+	config := defaultConfig(ClientConfig{})
+	config.AgentURL = "http://localhost:8126"
+	config.FlushInterval = internal.Range[time.Duration]{Min: time.Hour, Max: time.Hour}
+	c, err := newClient(internal.TracerConfig{Service: "test-service", Env: "test-env", Version: "1.0.0"}, config)
+	require.NoError(t, err)
+	writer := &blockingWriter{started: make(chan struct{}), release: make(chan struct{})}
+	c.writer = writer
+	t.Cleanup(startAppFlushWg.Wait)
+	t.Cleanup(func() { SwapClient(nil) })
+
+	StartApp(c)
+	<-writer.started
+	time.AfterFunc(50*time.Millisecond, func() { close(writer.release) })
+
+	require.NoError(t, c.Close())
+	assert.Zero(t, writer.inFlight.Load(), "Close returned while the StartApp flush was still sending")
 }
 
 // TestLog_QueuedBeforeStartApp_CapturesCallSiteStacktrace reproduces the bug
