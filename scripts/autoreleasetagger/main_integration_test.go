@@ -1466,3 +1466,192 @@ func assertJSONErrorCode(t *testing.T, stderrOut, wantCode string) {
 		t.Error("JSON error message must not be empty")
 	}
 }
+
+// writeScript writes a shell script at root/scripts/<name> for testing
+func writeScript(t *testing.T, root, name, body string) {
+	t.Helper()
+	dir := filepath.Join(root, "scripts")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("failed to create scripts dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body+"\n"), 0o644); err != nil {
+		t.Fatalf("failed to write script %s: %v", name, err)
+	}
+}
+
+func TestRunScriptsExecutedAndCommitted(t *testing.T) {
+	t.Parallel()
+	testLogger()
+
+	const (
+		branch  = "release-v2.9.x"
+		version = "v2.9.9-rc.1"
+	)
+
+	tmpDir := scaffoldRepo(t, branch)
+
+	writeScript(t, tmpDir, "fix_modules.sh", "echo '// fixmodules ran' >> root.go")
+
+	if err := run(false, "test-remote", true, tmpDir, version, []string{}, []string{}, []string{}); err != nil {
+		t.Fatalf("autoreleasetagger failed: %v", err)
+	}
+
+	// Single-commit invariant is preserved (initial + one release commit).
+	commits, err := runGitCommandWithOutput(tmpDir, "log", "--oneline")
+	if err != nil {
+		t.Fatalf("failed to read commits: %v", err)
+	}
+	if n := len(nonEmptyLines(commits)); n != 2 {
+		t.Errorf("expected 2 commits, got %d:\n%s", n, commits)
+	}
+
+	// The tracked-file change made by fix_modules.sh is in the release commit.
+	show, err := runGitCommandWithOutput(tmpDir, "show", "--stat", "--oneline", "HEAD")
+	if err != nil {
+		t.Fatalf("failed to git show HEAD: %v", err)
+	}
+	if !strings.Contains(show, "root.go") {
+		t.Errorf("release commit does not include root.go change:\n%s", show)
+	}
+}
+
+func TestRunScriptsSkippedDryRun(t *testing.T) {
+	t.Parallel()
+	testLogger()
+
+	const (
+		branch  = "release-v2.9.x"
+		version = "v2.9.9-rc.1"
+	)
+
+	tmpDir := scaffoldRepo(t, branch)
+	writeScript(t, tmpDir, "fix_modules.sh", "echo ran >> ran.txt")
+	writeScript(t, tmpDir, "generate.sh", "echo ran >> ran.txt")
+
+	if err := run(true, "test-remote", true, tmpDir, version, []string{}, []string{}, []string{}); err != nil {
+		t.Fatalf("dry-run failed: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(tmpDir, "ran.txt")); !os.IsNotExist(err) {
+		t.Errorf("scripts ran during dry-run (ran.txt exists); err=%v", err)
+	}
+}
+
+func TestRunScriptsMissingSkipped(t *testing.T) {
+	t.Parallel()
+	testLogger()
+
+	dir := t.TempDir()
+	if err := runScripts(false, dir); err != nil {
+		t.Fatalf("runScripts with no scripts present should succeed, got: %v", err)
+	}
+}
+
+func TestRunScriptsPropagatesFailure(t *testing.T) {
+	t.Parallel()
+	testLogger()
+
+	dir := t.TempDir()
+	writeScript(t, dir, "fix_modules.sh", "exit 3")
+
+	err := runScripts(false, dir)
+	if err == nil {
+		t.Fatal("expected runScripts to fail when a script exits non-zero")
+	}
+	if !strings.Contains(err.Error(), "scripts/fix_modules.sh") {
+		t.Errorf("error should name the failing script, got: %v", err)
+	}
+}
+
+func TestRunScriptsCommitsGeneratedFiles(t *testing.T) {
+	t.Parallel()
+	testLogger()
+
+	const (
+		branch  = "release-v2.9.x"
+		version = "v2.9.9-rc.1"
+	)
+
+	tmpDir := scaffoldRepo(t, branch)
+
+	writeScript(t, tmpDir, "generate.sh", "printf 'package root\\n\\nconst Generated = true\\n' > generated.go")
+
+	if err := run(false, "test-remote", true, tmpDir, version, []string{}, []string{}, []string{}); err != nil {
+		t.Fatalf("autoreleasetagger failed: %v", err)
+	}
+
+	if _, err := runGitCommandWithOutput(tmpDir, "cat-file", "-e", "HEAD:generated.go"); err != nil {
+		t.Errorf("generated.go was not committed at HEAD: %v", err)
+	}
+
+	status, err := runGitCommandWithOutput(tmpDir, "status", "--porcelain")
+	if err != nil {
+		t.Fatalf("git status failed: %v", err)
+	}
+	if strings.TrimSpace(status) != "" {
+		t.Errorf("working tree not clean after run:\n%s", status)
+	}
+
+	commits, err := runGitCommandWithOutput(tmpDir, "log", "--oneline")
+	if err != nil {
+		t.Fatalf("failed to read commits: %v", err)
+	}
+	if n := len(nonEmptyLines(commits)); n != 2 {
+		t.Errorf("expected 2 commits, got %d:\n%s", n, commits)
+	}
+}
+
+func TestNewlyQualifiedModuleTaggedAfterFix(t *testing.T) {
+	t.Parallel()
+	testLogger()
+
+	const (
+		branch  = "release-v2.9.x"
+		version = "v2.9.9-rc.1"
+	)
+
+	tmpDir := scaffoldRepo(t, branch)
+
+	modDir := filepath.Join(tmpDir, "moduleD")
+	if err := os.MkdirAll(modDir, 0o755); err != nil {
+		t.Fatalf("failed to create moduleD dir: %v", err)
+	}
+	goMod := "module example.com/root/moduleD/v2\n\ngo 1.26.0\n\nreplace example.com/root/v2 => ./..\n"
+	if err := os.WriteFile(filepath.Join(modDir, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatalf("failed to write moduleD go.mod: %v", err)
+	}
+	src := "package moduleD\n\nimport \"example.com/root/v2\"\n\nvar _ = root.HelloRoot\n"
+	if err := os.WriteFile(filepath.Join(modDir, "d.go"), []byte(src), 0o644); err != nil {
+		t.Fatalf("failed to write moduleD source: %v", err)
+	}
+	if err := runGitCommand(tmpDir, "add", "."); err != nil {
+		t.Fatalf("git add moduleD failed: %v", err)
+	}
+	if err := runGitCommand(tmpDir, "commit", "-m", "add moduleD"); err != nil {
+		t.Fatalf("git commit moduleD failed: %v", err)
+	}
+
+	writeScript(t, tmpDir, "fix_modules.sh", "cd moduleD && go mod tidy")
+
+	if err := run(false, "test-remote", true, tmpDir, version, []string{}, []string{}, []string{}); err != nil {
+		t.Fatalf("autoreleasetagger failed: %v", err)
+	}
+
+	tagsAtHead, err := runGitCommandWithOutput(tmpDir, "tag", "--points-at", "HEAD")
+	if err != nil {
+		t.Fatalf("failed to list tags at HEAD: %v", err)
+	}
+	wantTag := "moduleD/" + version
+	if !containsLine(tagsAtHead, wantTag) {
+		t.Errorf("newly-qualified module tag %q not found in tags at HEAD:\n%s", wantTag, tagsAtHead)
+	}
+
+	got, err := os.ReadFile(filepath.Join(modDir, "go.mod"))
+	if err != nil {
+		t.Fatalf("failed to read moduleD go.mod after run: %v", err)
+	}
+	wantReq := "example.com/root/v2 " + version
+	if !strings.Contains(string(got), wantReq) {
+		t.Errorf("moduleD go.mod missing pinned requirement %q:\n%s", wantReq, got)
+	}
+}

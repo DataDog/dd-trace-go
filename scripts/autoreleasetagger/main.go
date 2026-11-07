@@ -283,17 +283,6 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 		return err
 	}
 
-	modules, err := findModules(root, excludedDirs)
-	if err != nil {
-		return fmt.Errorf("failed to find modules: %w", err)
-	}
-	slog.Info("Found modules:", "count", len(modules))
-	moduleKeys := make([]string, 0, len(modules))
-	for k := range modules {
-		moduleKeys = append(moduleKeys, k)
-	}
-	slog.Debug("Found modules", "modules", moduleKeys)
-
 	// Assumption: There is a go module in the root directory.
 	rootModule, err := readModule(filepath.Join(root, "go.mod"))
 	if err != nil {
@@ -301,24 +290,11 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 	}
 	slog.Info("Root module", "module", rootModule.Module.Path)
 
-	// Filter modules to only include those that depend on the root module.
-	filteredModules := filterModules(modules, rootModule.Module.Path, excludedModules)
-	slog.Info("Filtered modules:", "count", len(filteredModules))
-	filteredKeys := make([]string, 0, len(filteredModules))
-	for k := range filteredModules {
-		filteredKeys = append(filteredKeys, k)
-	}
-	slog.Debug("Filtered modules", "modules", filteredKeys)
-
-	sortedModules, err := topologicalSort(buildDependencyGraph(filteredModules))
+	// Re-discover the modules to release and the tags to create.
+	filteredModules, sortedModules, allTags, err := collectModules(root, rootModule, version, excludedModules, excludedDirs, untaggedModules)
 	if err != nil {
-		return fmt.Errorf("failed to topologically sort modules: %w", err)
+		return err
 	}
-
-	// Build the complete expected tag list now (root + every contrib) so we can
-	// use it for both the idempotency check and the pre-mutation guard below.
-	// allTags is also used in Phase 3; computing it once avoids a second walk.
-	allTags := buildTagList(root, rootModule, filteredModules, sortedModules, version, untaggedModules)
 
 	// Idempotency check: if the version file already matches AND every expected
 	// tag already points at HEAD, the tool has fully run — treat as a no-op.
@@ -376,12 +352,23 @@ func run(dryRun bool, remote string, disablePush bool, root, version string, exc
 			return fmt.Errorf("failed to update version file: %w", err)
 		}
 
-		for _, modulePath := range sortedModules {
-			mod := filteredModules[modulePath]
-			slog.Info("Updating dependencies", "module", mod.Module.Path)
-			if err := updateDependencies(dryRun, rootModule, mod, version); err != nil {
-				return fmt.Errorf("failed to update dependencies for %s: %w", mod.Module.Path, err)
-			}
+		if err := pinInternalDependencies(dryRun, rootModule, filteredModules, sortedModules, version); err != nil {
+			return err
+		}
+
+		if err := runScripts(dryRun, root); err != nil {
+			return err
+		}
+
+		filteredModules, sortedModules, allTags, err = collectModules(root, rootModule, version, excludedModules, excludedDirs, untaggedModules)
+		if err != nil {
+			return err
+		}
+		if err := pinInternalDependencies(dryRun, rootModule, filteredModules, sortedModules, version); err != nil {
+			return err
+		}
+		if err := checkTagsExist(root, remote, allTags); err != nil {
+			return err
 		}
 	}
 
@@ -807,38 +794,31 @@ func commitAll(dryRun bool, root, version string) error {
 		return nil
 	}
 
-	// Check if there is anything to commit, counting only tracked changes.
-	// Untracked files ("??") and ignored files ("+!!") are skipped — the same
-	// logic as checkDirtyTree — so that stray editor/build artefacts present
-	// during a repair run (version already committed, some tags missing) do not
-	// cause a spurious "nothing to commit" decision or a failed git commit.
+	// Check if there is anything to commit. Ignored files ("!!") are skipped;
+	// every other entry counts, including untracked files ("??").
 	status, err := runCommandWithOutput(root, "git", "status", "--porcelain")
 	if err != nil {
 		return fmt.Errorf("git status failed: %w", err)
 	}
-	hasTrackedChanges := false
+	hasChanges := false
 	for _, line := range strings.Split(status, "\n") {
 		if len(line) < 2 {
 			continue
 		}
-		xy := line[:2]
-		if xy == "??" || xy == "!!" {
+		if line[:2] == "!!" {
 			continue
 		}
-		hasTrackedChanges = true
+		hasChanges = true
 		break
 	}
-	if !hasTrackedChanges {
+	if !hasChanges {
 		slog.Debug("Nothing to commit")
 		return nil
 	}
 
-	// Stage only modifications to already-tracked files (and deletions).
-	// Using --update instead of --all ensures that untracked files (editor
-	// swap files, stray build artefacts) are never swept into the release
-	// commit. The dirty-tree guard already rejected any tracked dirt before
-	// mutations ran, so only the files the tool itself wrote are staged here.
-	if err := runCommand(root, "git", "add", "--update"); err != nil {
+	// Stage every change from the repo root, including new files written by the
+	// generate script.
+	if err := runCommand(root, "git", "add", "--all"); err != nil {
 		return fmt.Errorf("git add failed: %w", err)
 	}
 	return runCommand(root, "git", "commit", "-m", msg)
@@ -939,6 +919,31 @@ func syncDependencies(dryRun bool, mod GoMod) error {
 	return runCommand(mod.dir, "go", "mod", "tidy")
 }
 
+// runScripts runs generate.sh and then fix_modules.sh from the root directory.
+func runScripts(dryRun bool, root string) error {
+	if dryRun {
+		slog.Debug("Skipping generate.sh and fix_modules.sh in dry-run mode")
+		return nil
+	}
+	for _, script := range []string{"scripts/generate.sh", "scripts/fix_modules.sh"} {
+		// Skip a script that is not present in this checkout. A real release
+		// checkout always carries both scripts; the skip keeps the tool usable
+		// against a --root that lacks them (for example in tests).
+		if _, err := os.Stat(filepath.Join(root, script)); err != nil {
+			if os.IsNotExist(err) {
+				slog.Warn("Script not found; skipping", "script", script)
+				continue
+			}
+			return fmt.Errorf("failed to stat %s: %w", script, err)
+		}
+		slog.Info("Running script", "script", script)
+		if err := runCommand(root, "bash", "-e", script); err != nil {
+			return fmt.Errorf("failed to run %s: %w", script, err)
+		}
+	}
+	return nil
+}
+
 // runCommandWithOutput runs a command in the specified directory and returns any output.
 func runCommandWithOutput(dir string, name string, args ...string) (string, error) {
 	cmd := exec.Command(name, args...)
@@ -961,6 +966,41 @@ func runCommand(dir string, name string, args ...string) error {
 
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to run command %q: %w", cmd.String(), err)
+	}
+	return nil
+}
+
+// collectModules discovers every module under root, keeps those that depend on
+// the root module, orders them so dependencies precede dependents, and builds
+// the ordered release tag list.
+func collectModules(root string, rootModule GoMod, version string, excludedModules, excludedDirs, untaggedModules []string) (map[string]GoMod, []string, []string, error) {
+	modules, err := findModules(root, excludedDirs)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to find modules: %w", err)
+	}
+	slog.Info("Found modules:", "count", len(modules))
+
+	filteredModules := filterModules(modules, rootModule.Module.Path, excludedModules)
+	slog.Info("Filtered modules:", "count", len(filteredModules))
+
+	sortedModules, err := topologicalSort(buildDependencyGraph(filteredModules))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to topologically sort modules: %w", err)
+	}
+
+	allTags := buildTagList(root, rootModule, filteredModules, sortedModules, version, untaggedModules)
+	return filteredModules, sortedModules, allTags, nil
+}
+
+// pinInternalDependencies updates every internal dd-trace-go require directive
+// of each module in sortedModules to version and tidies that module.
+func pinInternalDependencies(dryRun bool, rootModule GoMod, filteredModules map[string]GoMod, sortedModules []string, version string) error {
+	for _, modulePath := range sortedModules {
+		mod := filteredModules[modulePath]
+		slog.Info("Updating dependencies", "module", mod.Module.Path)
+		if err := updateDependencies(dryRun, rootModule, mod, version); err != nil {
+			return fmt.Errorf("failed to update dependencies for %s: %w", mod.Module.Path, err)
+		}
 	}
 	return nil
 }
