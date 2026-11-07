@@ -15,6 +15,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/harness"
 )
 
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
 func TestNewCluster(t *testing.T) {
 	harness.Run(t, new(TestCaseNewCluster))
 }
