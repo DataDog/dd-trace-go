@@ -16,6 +16,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
 
 func TestIntegrationEnabled(t *testing.T) {
@@ -320,6 +322,77 @@ func TestNoTracerServiceName(t *testing.T) {
 			"All contrib packages should use instrumentation.ServiceNameWithSource instead, "+
 			"which provides service name source information for better precedence handling.\n"+
 			"Offending locations:\n  %s",
+			len(offending), strings.Join(offending, "\n  "))
+	}
+}
+
+// TestManifestNameMatchesTracedPackage fails when the top-level name of a contrib manifest.yaml
+// is not the TracedPackage of a package registered in packages.go. The manifest name identifies
+// the integration (the instrumented library), whereas packages[].name lists the published
+// packages and may legitimately differ.
+//
+// Origin: reviewers repeatedly had to ask for a new manifest's name to be changed to the
+// integration's TracedPackage, "like every other manifest", which is mechanical to check.
+func TestManifestNameMatchesTracedPackage(t *testing.T) {
+	root, err := filepath.Abs("../contrib")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	packagesMu.RLock()
+	traced := make(map[string]struct{}, len(packages))
+	for _, info := range packages {
+		if info.TracedPackage != "" {
+			traced[info.TracedPackage] = struct{}{}
+		}
+	}
+	packagesMu.RUnlock()
+
+	var offending []string
+	var found int
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			base := filepath.Base(path)
+			if strings.HasPrefix(base, ".") || base == "vendor" || base == "testdata" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() != "manifest.yaml" {
+			return nil
+		}
+		found++
+		relPath, _ := filepath.Rel(root, path)
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var m struct {
+			Name string `yaml:"name"`
+		}
+		if err := yaml.Unmarshal(raw, &m); err != nil {
+			return fmt.Errorf("%s: %w", relPath, err)
+		}
+		if _, ok := traced[m.Name]; !ok {
+			offending = append(offending, fmt.Sprintf("%s: name %q", relPath, m.Name))
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found == 0 {
+		t.Fatal("no contrib manifest.yaml files found; the walk root is probably wrong")
+	}
+
+	if len(offending) > 0 {
+		slices.Sort(offending)
+		t.Errorf("Found %d contrib manifest(s) whose name is not the TracedPackage of a package in "+
+			"instrumentation/packages.go. Set name to the integration's TracedPackage value "+
+			"(the published packages belong under packages[].name).\nOffending manifests:\n  %s",
 			len(offending), strings.Join(offending, "\n  "))
 	}
 }
