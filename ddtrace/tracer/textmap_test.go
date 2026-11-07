@@ -2913,10 +2913,9 @@ func edgeRequestHeaders() map[string]string {
 	}
 }
 
-// baggageHeaderValue includes a "+"/"%" escape so url.QueryUnescape actually
-// does work, instead of returning its input unchanged as it would for an
-// all-clean value.
-const baggageHeaderValue = "userId=amelie,session.id=789,serverNode=DF+28,region=us1"
+// baggageHeaderValue contains a "%" escape. The escape forces
+// url.PathUnescape to do real work. An all-clean value returns unchanged.
+const baggageHeaderValue = "userId=amelie,session.id=789,serverNode=DF%2028,region=us1"
 
 func BenchmarkExtractBaggage(b *testing.B) {
 	b.Setenv(envPropagationStyleExtract, "baggage")
@@ -3397,7 +3396,7 @@ func TestInjectBaggagePropagatorEncoding(t *testing.T) {
 	actualBaggage := headers.Get("baggage")
 	// Instead of checking equality of the whole string, assert that both key/value pairs are present.
 	assert.Contains(actualBaggage, "userId=Am%C3%A9lie")
-	assert.Contains(actualBaggage, "serverNode=DF+28")
+	assert.Contains(actualBaggage, "serverNode=DF%2028")
 }
 
 func TestInjectBaggagePropagatorEncodingSpecialCharacters(t *testing.T) {
@@ -3414,14 +3413,16 @@ func TestInjectBaggagePropagatorEncodingSpecialCharacters(t *testing.T) {
 
 	root := tracer.StartSpan("web.request")
 	ctx := root.Context()
-	root.SetBaggageItem(",;\\()/:<=>?@[]{}", ",;\\")
+	// The W3C injector drops keys outside the RFC 7230 token set, so use a
+	// token key and keep the special characters in the value.
+	root.SetBaggageItem("key", ",;\\()/:<=>?@[]{}")
 	headers := http.Header{}
 
 	carrier := HTTPHeadersCarrier(headers)
 	err = tracer.Inject(ctx, carrier)
 	assert.Nil(err)
 
-	assert.Equal(headers.Get("baggage"), "%2C%3B%5C%28%29%2F%3A%3C%3D%3E%3F%40%5B%5D%7B%7D=%2C%3B%5C")
+	assert.Equal(headers.Get("baggage"), "key=%2C%3B%5C()/:<%3D>?@[]{}")
 }
 
 func TestExtractBaggagePropagatorDecoding(t *testing.T) {
@@ -3431,7 +3432,7 @@ func TestExtractBaggagePropagatorDecoding(t *testing.T) {
 	headers := TextMapCarrier{
 		DefaultTraceIDHeader:  "4",
 		DefaultParentIDHeader: "1",
-		DefaultBaggageHeader:  "userId=Am%C3%A9lie,serverNode=DF+28",
+		DefaultBaggageHeader:  "userId=Am%C3%A9lie,serverNode=DF%2028,room5=DF+28",
 	}
 	s, err := tracer.Extract(headers)
 	assert.NoError(t, err)
@@ -3440,9 +3441,10 @@ func TestExtractBaggagePropagatorDecoding(t *testing.T) {
 		got[k] = v
 		return true
 	})
-	assert.Len(t, got, 2)
+	assert.Len(t, got, 3)
 	assert.Equal(t, "Amélie", got["userId"])
 	assert.Equal(t, "DF 28", got["serverNode"])
+	assert.Equal(t, "DF+28", got["room5"]) // '+' is a literal, not a space
 }
 
 func TestInjectBaggageMaxItems(t *testing.T) {
