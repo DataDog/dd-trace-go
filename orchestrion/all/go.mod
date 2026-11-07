@@ -45,6 +45,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.13.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/riverqueue/river/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.13.0-dev.1
@@ -129,7 +130,7 @@ require (
 	github.com/dave/dst v0.27.4 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/eapache/go-resiliency v1.7.0 // indirect
 	github.com/eapache/go-xerial-snappy v0.0.0-20230731223053-c322873962e3 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
@@ -183,8 +184,8 @@ require (
 	github.com/hashicorp/vault/sdk v0.15.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/pgx/v5 v5.9.2 // indirect
-	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/jackc/pgx/v5 v5.11.0 // indirect
+	github.com/jackc/puddle/v2 v2.2.3 // indirect
 	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
 	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect
 	github.com/jcmturner/gofork v1.7.6 // indirect
@@ -235,6 +236,7 @@ require (
 	github.com/redis/go-redis/v9 v9.7.3 // indirect
 	github.com/redis/rueidis v1.0.74 // indirect
 	github.com/richardartoul/molecule v1.0.1-0.20240531184615-7ca0df43c0b3 // indirect
+	github.com/riverqueue/river/rivertype v0.51.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/rs/zerolog v1.35.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
@@ -358,6 +360,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 => ../../contrib/opensearch-project/opensearch-go.v4
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 => ../../contrib/redis/go-redis.v9
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 => ../../contrib/redis/rueidis
+	github.com/DataDog/dd-trace-go/contrib/riverqueue/river/v2 => ../../contrib/riverqueue/river
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 => ../../contrib/rs/zerolog
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 => ../../contrib/segmentio/kafka-go
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 => ../../contrib/sirupsen/logrus

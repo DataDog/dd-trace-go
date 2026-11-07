@@ -76,6 +76,7 @@
 //   - [contrib/opensearch-project/opensearch-go.v4/v2]
 //   - [contrib/redis/go-redis.v9/v2]
 //   - [contrib/redis/rueidis/v2]
+//   - [contrib/riverqueue/river/v2]
 //   - [contrib/rs/zerolog/v2]
 //   - [contrib/segmentio/kafka-go/v2]
 //   - [contrib/sirupsen/logrus/v2]
@@ -147,6 +148,7 @@
 // [contrib/opensearch-project/opensearch-go.v4/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2
 // [contrib/redis/go-redis.v9/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2
 // [contrib/redis/rueidis/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2
+// [contrib/riverqueue/river/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/riverqueue/river/v2
 // [contrib/rs/zerolog/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2
 // [contrib/segmentio/kafka-go/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2
 // [contrib/sirupsen/logrus/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2
