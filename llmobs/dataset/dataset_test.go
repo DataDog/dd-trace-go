@@ -993,9 +993,9 @@ func TestPull_MissingBackendRecordIDs_LogsLocallyWithoutReporting(t *testing.T) 
 			return
 		}
 
-		// The literal response verifies that malformed backend records are
-		// dropped at ingress. Both empty IDs must result in one local log and
-		// neither record may reach the Dataset.
+		// The literal response verifies that ingress drops malformed backend
+		// records. Both empty IDs must result in one local log. Neither record
+		// reaches the Dataset.
 		const recordsResponse = `{
 			"data": [
 				{"id": "record-1", "type": "dataset_records", "attributes": {"input": "valid"}},
@@ -1035,6 +1035,7 @@ func TestPull_MissingBackendRecordIDs_LogsLocallyWithoutReporting(t *testing.T) 
 	logs := tp.Logs()
 	require.Len(t, logs, 1)
 	assert.Contains(t, logs[0], "llmobs: backend returned dataset records without IDs; discarding malformed records")
+
 	assert.Empty(t, rt.LogMessages(), "Pull is a caller request path and must not report to Error Tracking")
 }
 
