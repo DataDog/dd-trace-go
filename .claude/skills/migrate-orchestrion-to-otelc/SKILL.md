@@ -138,9 +138,10 @@ wrap its call sites with `wrap_call` instead (see "Rules" under "Cautions").
      it.
    - Rule files live in this directory, named `otelc.yaml` or `*.otelc.yaml` (`.yml` works too).
      Each rule's `path:` is this package.
-   - Comment each rule, or the first rule of a group of similar ones, with what it does and why:
-     what it targets and excludes, and why it uses this rule kind when another looks more natural.
-     Do not add a file header that restates the rules or says the file ports `orchestrion.yml`.
+   - Comment a rule, or the first rule of a group of similar ones, only with what a reader would
+     not expect: why it uses this rule kind and not a hook, a non-obvious exclusion, a known gap
+     (`FIXME`, `TODO`). Keep it to a few lines, directly above the rule, never in a file header.
+     Do not explain what otelc or the rule kind does, and do not mention Orchestrion.
    - Do not add the file-level `version:` key. It rejects pseudo-versions, and `OTELC_VERSION` is
      a `main` commit, so there is nothing valid to declare.
    - Not under `internal/`. otelc blank-imports the packages it reads rules from into the
