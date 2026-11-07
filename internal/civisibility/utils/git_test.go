@@ -6,15 +6,20 @@
 package utils
 
 import (
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -157,9 +162,168 @@ func TestGetLocalGitData(t *testing.T) {
 	assert.NotEmpty(t, data.CommitMessage)
 }
 
+func TestLocalGitTagRequiresAnUnambiguousDetachedCheckout(t *testing.T) {
+	for _, tc := range []struct{ name, branch, tags, want string }{
+		{"attached", "main", "v1", ""},
+		{"unique", "HEAD", "v1", "v1"},
+		{"ambiguous", "HEAD", "v1\nstable", ""},
+		{"none", "HEAD", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setupFakeGitForUnshallow(t, false)
+			t.Setenv("DD_TEST_GIT_LOCAL_METADATA", "1")
+			t.Setenv("DD_TEST_GIT_LOCAL_BRANCH", tc.branch)
+			t.Setenv("DD_TEST_GIT_LOCAL_TAGS", tc.tags)
+			data, err := getLocalGitData()
+			assert.NoError(t, err)
+			assert.Equal(t, tc.want, data.Tag)
+			assert.Equal(t, "author\",\"name", data.AuthorName)
+			assert.Equal(t, "message [\"a\",\"b\"]", data.CommitMessage)
+		})
+	}
+}
+
 func TestGetLastLocalGitCommitShas(t *testing.T) {
 	shas := GetLastLocalGitCommitShas()
 	assert.NotEmpty(t, shas)
+}
+
+func TestSelectedCommitHistoryAndPackExcludeUnrelatedHead(t *testing.T) {
+	isolateFixtureGit(t)
+	resetGitCommandCachesForTesting(t)
+	t.Chdir(t.TempDir())
+	run := func(input string, args ...string) string {
+		cmd := exec.Command("git", args...)
+		cmd.Stdin = strings.NewReader(input)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git command failed: %s: %s", err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	run("", "init")
+	tree := run("", "hash-object", "-w", "-t", "tree", "--stdin")
+	selected := run(fmt.Sprintf("tree %s\nauthor Test <test@example.com> 1 +0000\ncommitter Test <test@example.com> 1 +0000\n\nselected\n", tree), "hash-object", "-w", "-t", "commit", "--stdin")
+	now := time.Now().Unix()
+	head := run(fmt.Sprintf("tree %s\nauthor Test <test@example.com> %d +0000\ncommitter Test <test@example.com> %d +0000\n\nother\n", tree, now, now), "hash-object", "-w", "-t", "commit", "--stdin")
+	run("", "update-ref", "HEAD", head)
+	t.Setenv("DD_GIT_COMMIT_SHA", strings.ToUpper(selected))
+	ResetCITags()
+	t.Cleanup(ResetCITags)
+	assert.Equal(t, selected, GetCITags()[constants.GitCommitSHA])
+
+	commits := GetLastLocalGitCommitShas()
+	assert.Equal(t, []string{selected}, commits)
+	objects := getObjectsSha(commits, nil)
+	assert.Contains(t, objects, selected)
+	assert.NotContains(t, objects, head)
+	packFiles := CreatePackFiles(commits, nil)
+	t.Cleanup(func() { RemovePackFiles(packFiles) })
+	if !assert.NotEmpty(t, packFiles) {
+		return
+	}
+	var packedObjects strings.Builder
+	for _, packFile := range packFiles {
+		packedObjects.WriteString(run("", "verify-pack", "-v", strings.TrimSuffix(packFile, ".pack")+".idx"))
+	}
+	assert.Contains(t, packedObjects.String(), selected+" commit ")
+	assert.NotContains(t, packedObjects.String(), head+" commit ")
+}
+
+func TestUnshallowRecoversSelectedHistory(t *testing.T) {
+	for _, tc := range []struct {
+		depth  string
+		recent bool
+	}{{"1", false}, {"2", false}, {"full", false}, {"1", true}, {"2", true}, {"full", true}, {"boundary", true}} {
+		for _, available := range []bool{true, false} {
+			t.Run(fmt.Sprintf("depth=%s/recent=%t/remote=%t", tc.depth, tc.recent, available), func(t *testing.T) {
+				isolateFixtureGit(t)
+				remote, checkout := t.TempDir(), filepath.Join(t.TempDir(), "checkout")
+				run := func(dir, input string, args ...string) string {
+					cmd := exec.Command("git", args...)
+					cmd.Dir, cmd.Stdin = dir, strings.NewReader(input)
+					out, err := cmd.CombinedOutput()
+					require.NoError(t, err, "%s", out)
+					return strings.TrimSpace(string(out))
+				}
+				run(remote, "", "init")
+				tree := run(remote, "", "hash-object", "-w", "-t", "tree", "--stdin")
+				now := time.Now().Unix()
+				parent, parentLine, selectedTime := "", "", int64(1)
+				if tc.recent {
+					parent = run(remote, fmt.Sprintf("tree %s\nauthor Test <test@example.com> %d +0000\ncommitter Test <test@example.com> %d +0000\n\nparent\n", tree, now-60, now-60), "hash-object", "-w", "-t", "commit", "--stdin")
+					parentLine, selectedTime = "parent "+parent+"\n", now-30
+				}
+				selected := run(remote, fmt.Sprintf("tree %s\n%sauthor Test <test@example.com> %d +0000\ncommitter Test <test@example.com> %d +0000\n\nselected\n", tree, parentLine, selectedTime, selectedTime), "hash-object", "-w", "-t", "commit", "--stdin")
+				root := run(remote, fmt.Sprintf("tree %s\nauthor Test <test@example.com> %d +0000\ncommitter Test <test@example.com> %d +0000\n\nroot\n", tree, now, now), "hash-object", "-w", "-t", "commit", "--stdin")
+				if tc.depth == "boundary" {
+					root = selected
+				}
+				head := run(remote, fmt.Sprintf("tree %s\nparent %s\nauthor Test <test@example.com> %d +0000\ncommitter Test <test@example.com> %d +0000\n\nhead\n", tree, root, now, now), "hash-object", "-w", "-t", "commit", "--stdin")
+				run(remote, "", "update-ref", "refs/heads/juan-fernandez/tip", head)
+				run(remote, "", "update-ref", "refs/heads/juan-fernandez/selected", selected)
+				cloneArgs := []string{"clone", "--no-local", "--single-branch", "--branch", "juan-fernandez/tip"}
+				if tc.depth != "full" {
+					depth := tc.depth
+					if depth == "boundary" {
+						depth = "2"
+					}
+					cloneArgs = append(cloneArgs, "--depth="+depth)
+				}
+				run(remote, "", append(cloneArgs, remote, checkout)...)
+				if !available {
+					run(checkout, "", "remote", "set-url", "origin", filepath.Join(t.TempDir(), "unavailable"))
+				}
+				t.Chdir(checkout)
+				resetGitCommandCachesForTesting(t)
+				t.Setenv("DD_GIT_COMMIT_SHA", selected)
+				ResetCITags()
+				t.Cleanup(ResetCITags)
+				before := run(checkout, "", "rev-list", "--count", "HEAD")
+				shallowBefore := run(checkout, "", "rev-parse", "--is-shallow-repository")
+				if tc.depth == "boundary" {
+					require.Equal(t, []string{selected}, GetLastLocalGitCommitShas())
+				} else {
+					require.Empty(t, GetLastLocalGitCommitShas())
+				}
+
+				recovered, err := UnshallowGitRepository()
+
+				if available {
+					require.NoError(t, err)
+					assert.True(t, recovered)
+					expected := []string{selected}
+					if parent != "" {
+						expected = append(expected, parent)
+					}
+					assert.Equal(t, expected, GetLastLocalGitCommitShas())
+					objects := getObjectsSha(expected, nil)
+					for _, commit := range expected {
+						assert.Contains(t, objects, commit)
+					}
+					assert.NotContains(t, objects, head)
+				} else {
+					assert.Error(t, err)
+					assert.False(t, recovered)
+					if tc.depth == "boundary" {
+						assert.Equal(t, []string{selected}, GetLastLocalGitCommitShas())
+					} else {
+						assert.Empty(t, GetLastLocalGitCommitShas())
+					}
+				}
+				assert.Equal(t, head, run(checkout, "", "rev-parse", "HEAD"))
+				if tc.depth == "boundary" && available {
+					assert.Equal(t, "3", run(checkout, "", "rev-list", "--count", "HEAD"))
+				} else {
+					assert.Equal(t, before, run(checkout, "", "rev-list", "--count", "HEAD"))
+					assert.Equal(t, shallowBefore, run(checkout, "", "rev-parse", "--is-shallow-repository"))
+				}
+				shallow, shallowErr := isAShallowCloneRepository()
+				assert.NoError(t, shallowErr)
+				assert.Equal(t, run(checkout, "", "rev-parse", "--is-shallow-repository") == "true", shallow)
+			})
+		}
+	}
 }
 
 func TestUnshallowGitRepository(t *testing.T) {
@@ -288,6 +452,25 @@ func TestFakeGitForUnshallowHelperProcess(t *testing.T) {
 		os.Exit(0)
 	}
 
+	if os.Getenv("DD_TEST_GIT_LOCAL_METADATA") == "1" {
+		switch args[0] {
+		case "rev-parse":
+			if len(args) > 1 && args[1] == "--abbrev-ref" {
+				_, _ = os.Stdout.WriteString(os.Getenv("DD_TEST_GIT_LOCAL_BRANCH") + "\n")
+			} else {
+				_, _ = os.Stdout.WriteString(filepath.Dir(os.Getenv("DD_TEST_GIT_COMMANDS")) + "\n")
+			}
+		case "tag":
+			_, _ = os.Stdout.WriteString(os.Getenv("DD_TEST_GIT_LOCAL_TAGS") + "\n")
+		case "log":
+			fields := []string{"local-sha", "1", "author\",\"name", "author@example.com", "2", "committer", "committer@example.com", "message [\"a\",\"b\"]"}
+			_, _ = os.Stdout.WriteString(strings.Join(fields, "\x00") + "\n")
+		case "--version":
+			_, _ = os.Stdout.WriteString("git version 2.43.0\n")
+		}
+		os.Exit(0)
+	}
+
 	switch args[0] {
 	case "--version":
 		_, _ = os.Stdout.WriteString("git version 2.39.0\n")
@@ -327,7 +510,9 @@ func resetGitCommandCachesForTesting(t *testing.T) {
 	t.Helper()
 	originalGitExecutable := gitExecutable
 	originalGitExecutableArgs := append([]string(nil), gitExecutableArgs...)
+	originalProvider := getProviderTagsFunc
 	reset := func() {
+		ResetCITags()
 		gitFinderOnce = sync.Once{}
 		gitExecutable = originalGitExecutable
 		gitExecutableArgs = append([]string(nil), originalGitExecutableArgs...)
@@ -340,7 +525,11 @@ func resetGitCommandCachesForTesting(t *testing.T) {
 		isAShallowCloneRepositoryValue = false
 	}
 	reset()
-	t.Cleanup(reset)
+	getProviderTagsFunc = func() map[string]string { return map[string]string{} }
+	t.Cleanup(func() {
+		getProviderTagsFunc = originalProvider
+		reset()
+	})
 }
 
 func countFakeGitFetches(t *testing.T, fetchesFile string) int {
