@@ -14,6 +14,20 @@ import (
 	internaltelemetry "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
+// markAdditionalFeaturesInitializedForTesting pre-consumes the Once without
+// racing asynchronous initialization or publishing the lock-free fast path.
+func markAdditionalFeaturesInitializedForTesting() {
+	additionalFeaturesResetting.Store(true)
+	additionalFeaturesInitializationMu.Lock()
+	defer func() {
+		additionalFeaturesResetting.Store(false)
+		additionalFeaturesInitializationMu.Unlock()
+	}()
+
+	additionalFeaturesInitializationOnce = sync.Once{}
+	additionalFeaturesInitializationOnce.Do(func() {})
+}
+
 func resetCIVisibilityStateForTesting() {
 	stopCIVisibilitySignalHandler()
 
