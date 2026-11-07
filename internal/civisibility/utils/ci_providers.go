@@ -340,7 +340,7 @@ func normalizeTags(tags map[string]string) {
 		tags[constants.GitCommitSHA] = strings.ToLower(sha)
 	}
 	if tag, ok := tags[constants.GitBranch]; ok && tag != "" {
-		if strings.Contains(tag, "refs/tags") || strings.Contains(tag, "origin/tags") || strings.Contains(tag, "refs/heads/tags") {
+		if isTagRef(tag) {
 			tags[constants.GitTag] = normalizeRef(tag)
 		}
 		tags[constants.GitBranch] = normalizeRef(tag)
@@ -363,6 +363,10 @@ func normalizeTags(tags map[string]string) {
 	if tag, ok := tags[constants.CIEnvVars]; ok && tag != "" {
 		tags[constants.CIEnvVars] = filterSensitiveInfo(tag)
 	}
+}
+
+func isTagRef(ref string) bool {
+	return strings.Contains(ref, "refs/tags") || strings.Contains(ref, "origin/tags") || strings.Contains(ref, "refs/heads/tags")
 }
 
 // replaceWithUserSpecificTags replaces certain tags with user-specific environment variable values.

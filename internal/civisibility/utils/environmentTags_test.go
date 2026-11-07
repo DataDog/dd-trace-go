@@ -464,6 +464,46 @@ func TestGetCITagsDoesNotAddBazelProviderOutsideBazelMode(t *testing.T) {
 	assert.NotContains(t, tags, constants.CIProviderName)
 }
 
+func TestShaOverrideDoesNotRestoreInferredProviderTag(t *testing.T) {
+	for _, tc := range []struct{ name, tag, branch, wantTag string }{
+		{name: "inferred"},
+		{name: "explicit-tag", tag: "explicit-tag", wantTag: "explicit-tag"},
+		{name: "explicit-branch", branch: "refs/tags/explicit-tag", wantTag: "explicit-tag"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ResetCITags()
+			t.Cleanup(ResetCITags)
+			bazel.ResetForTesting()
+			t.Cleanup(bazel.ResetForTesting)
+			t.Setenv("DD_GIT_COMMIT_SHA", strings.Repeat("c", 40))
+			t.Setenv("DD_GIT_TAG", tc.tag)
+			t.Setenv("DD_GIT_BRANCH", tc.branch)
+			originalProvider, originalGit, originalFetch, originalEnvironmental := getProviderTagsFunc, getLocalGitDataFunc, fetchCommitDataFunc, applyEnvironmentalDataIfRequiredFunc
+			t.Cleanup(func() {
+				getProviderTagsFunc, getLocalGitDataFunc, fetchCommitDataFunc, applyEnvironmentalDataIfRequiredFunc = originalProvider, originalGit, originalFetch, originalEnvironmental
+			})
+			getProviderTagsFunc = func() map[string]string {
+				return map[string]string{constants.GitCommitSHA: strings.Repeat("b", 40), constants.GitBranch: "refs/tags/provider-tag", constants.GitTag: "provider-tag", constants.CIJobName: "tests", constants.GitHeadCommit: "pr-head"}
+			}
+			getLocalGitDataFunc = func() (localGitData, error) { return localGitData{}, errors.New("checkout unavailable") }
+			fetchCommitDataFunc = func(sha string) (localCommitData, error) { return localCommitData{CommitSha: sha}, nil }
+			applyEnvironmentalDataIfRequiredFunc = func(map[string]string) {}
+			tags := GetCITags()
+			assert.Equal(t, strings.Repeat("c", 40), tags[constants.GitCommitSHA])
+			if tc.wantTag == "" {
+				assert.NotContains(t, tags, constants.GitTag)
+			} else {
+				assert.Equal(t, tc.wantTag, tags[constants.GitTag])
+			}
+			if tc.branch == "" {
+				assert.NotContains(t, tags, constants.GitBranch)
+			}
+			assert.Equal(t, "tests", tags[constants.CIJobName])
+			assert.Equal(t, "pr-head", tags[constants.GitHeadCommit])
+		})
+	}
+}
+
 func TestGitMetadataPrecedence(t *testing.T) {
 	for _, source := range []string{"git", "provider", "override", "partial", "sha-only", "uppercase-sha"} {
 		t.Run(source, func(t *testing.T) {

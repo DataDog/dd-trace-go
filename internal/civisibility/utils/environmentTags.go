@@ -284,6 +284,9 @@ func createCITagsMap() map[string]string {
 
 		if commitSha := env.Get("DD_GIT_COMMIT_SHA"); commitSha != "" {
 			if !strings.EqualFold(commitSha, localTags[constants.GitCommitSHA]) {
+				if isTagRef(localTags[constants.GitBranch]) {
+					delete(localTags, constants.GitBranch)
+				}
 				for key := range localTags {
 					if key == constants.GitTag || (strings.HasPrefix(key, "git.commit.") && key != constants.GitCommitSHA && !strings.HasPrefix(key, "git.commit.head.")) {
 						delete(localTags, key)
