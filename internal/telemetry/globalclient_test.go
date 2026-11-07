@@ -142,3 +142,56 @@ func TestLog_DisabledSkipsStacktraceCapture(t *testing.T) {
 	assert.Less(t, disabledAllocs, enabledNotStartedAllocs,
 		"a disabled Log(..., WithStacktrace()) call must do less work than an enabled-but-not-started one — it must not capture a stacktrace it will immediately discard")
 }
+
+// flushGateClient blocks in Flush until releaseFlush closes. It lets a test
+// hold the app-started flush open while StartApp has already returned.
+type flushGateClient struct {
+	Client
+	releaseFlush chan struct{}
+}
+
+func (c *flushGateClient) AppStart()    {}
+func (c *flushGateClient) Close() error { return nil }
+func (c *flushGateClient) Flush()       { <-c.releaseFlush }
+
+// TestWaitForStartAppFlushBlocksUntilStartupFlushReturns pins the contract
+// tracer.Stop relies on: the wait returns only after every flush goroutine
+// launched by StartApp finishes. Stop waits before CloseIdleConnections, so a
+// late flush cannot strand a keep-alive connection in the idle pool.
+func TestWaitForStartAppFlushBlocksUntilStartupFlushReturns(t *testing.T) {
+	// Force telemetry enabled; an earlier test may have cached the env var as
+	// disabled. Consume the lazy init first so the cache below sticks.
+	_ = Disabled()
+	savedEnabled := telemetryClientEnabled
+	telemetryClientEnabled = true
+	defer func() { telemetryClientEnabled = savedEnabled }()
+
+	// Reset the global slot and the recorders, as MockClient does.
+	SwapClient(nil)
+	globalClientRecorder.Clear()
+	metricsHandleSwappablePointers.Clear()
+	defer SwapClient(nil)
+
+	client := &flushGateClient{releaseFlush: make(chan struct{})}
+	StartApp(client)
+
+	waitDone := make(chan struct{})
+	go func() {
+		WaitForStartAppFlush()
+		close(waitDone)
+	}()
+
+	select {
+	case <-waitDone:
+		t.Fatal("WaitForStartAppFlush returned while the startup flush was in flight")
+	case <-time.After(10 * time.Millisecond):
+	}
+
+	close(client.releaseFlush)
+
+	select {
+	case <-waitDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("WaitForStartAppFlush did not return after the startup flush finished")
+	}
+}
