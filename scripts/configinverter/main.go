@@ -149,7 +149,9 @@ func generate(input, output string) error {
 //   - SupportedConfigurations: exact key-set match (no missing, no extra)
 //   - SensitiveConfigurations: exact key-set match (no missing, no extra)
 //   - keyAliases: exact alias-set match per key (no missing, no extra)
-//   - JSON sort order: the JSON file must be byte-identical to its canonical form
+//   - JSON format: the JSON file must be byte-identical to its canonical form
+//     (sort order, indentation, and exact file ending, including the absence of
+//     any trailing newline or trailing whitespace beyond the canonical one)
 func check(input string) error {
 	rawJSON, err := os.ReadFile(input)
 	if err != nil {
@@ -234,22 +236,16 @@ func check(input string) error {
 	}
 
 	// --- JSON sort and format ---
-	// Re-encode the parsed config with the canonical settings used by generate/add.
-	// If the file was not sorted or was otherwise modified by hand, the bytes will differ.
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(cfg); err != nil {
+	// isCanonicalFormat re-encodes cfg with the canonical settings used by
+	// generate/add and compares the result, byte for byte, against rawJSON. If
+	// the file was not sorted, was otherwise modified by hand, or has stray
+	// trailing whitespace/newlines, the bytes will differ.
+	ok, err := isCanonicalFormat(rawJSON, cfg)
+	if err != nil {
 		return fmt.Errorf("error re-encoding JSON for sort check: %w", err)
 	}
-	normalized := bytes.TrimRight(buf.Bytes(), "\n")
-	// Normalize CRLF to LF before comparing: on Windows the file may be checked out
-	// with CRLF line endings (git core.autocrlf), but the canonical encoding always
-	// uses LF. We validate content and sort order, not platform-specific line endings.
-	rawNormalized := bytes.ReplaceAll(rawJSON, []byte("\r\n"), []byte("\n"))
-	if !bytes.Equal(bytes.TrimRight(rawNormalized, "\n"), normalized) {
-		failures = append(failures, "JSON is not sorted or not in canonical format; run `go run ./scripts/configinverter/main.go generate` to fix")
+	if !ok {
+		failures = append(failures, "JSON is not sorted, not in canonical format, or has extra trailing whitespace/newline; run `go run ./scripts/configinverter/main.go generate` to fix")
 	}
 
 	if len(failures) > 0 {
@@ -376,6 +372,38 @@ func getSupportedConfigurations(input string) (*supportedConfiguration, error) {
 	}
 
 	return &cfg, nil
+}
+
+// isCanonicalFormat reports whether rawJSON is byte-identical to the canonical
+// encoding of cfg: sorted map keys, two-space indentation, HTML escaping
+// disabled, and no trailing newline.
+//
+// json.Encoder.Encode always appends exactly one trailing "\n" after the
+// top-level value. addSupportedConfigurationsKeys (the "add" command) strips
+// that trailing newline before writing the file (see its own TrimRight), so
+// the canonical on-disk format has no trailing newline. Comparing rawJSON
+// against that exact canonical form, rather than a further-trimmed one, is
+// what makes this check catch a stray trailing newline or trailing whitespace
+// that a hand edit adds to the file. A prior version of this check trimmed
+// trailing "\n" from both sides before comparing, which silently accepted
+// such edits; a human reviewer had to catch one by hand on a PR that added a
+// trailing newline to supported_configurations.json.
+func isCanonicalFormat(rawJSON []byte, cfg *supportedConfiguration) (bool, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(cfg); err != nil {
+		return false, err
+	}
+	canonical := bytes.TrimRight(buf.Bytes(), "\n")
+	// Normalize CRLF to LF before comparing: on Windows the file may be checked
+	// out with CRLF line endings (git core.autocrlf), but the canonical
+	// encoding always uses LF. We validate content, sort order, and exact file
+	// ending (no extra trailing newline or whitespace), not platform-specific
+	// line endings.
+	rawNormalized := bytes.ReplaceAll(rawJSON, []byte("\r\n"), []byte("\n"))
+	return bytes.Equal(rawNormalized, canonical), nil
 }
 
 // addSupportedConfigurationsKeys adds new keys to the supported configurations JSON
