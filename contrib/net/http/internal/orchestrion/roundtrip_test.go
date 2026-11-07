@@ -38,7 +38,7 @@ func setOTelSemantics(t *testing.T, enabled bool) {
 	})
 }
 
-func resetRoundTripperConfig(t *testing.T) {
+func resetRoundTripperConfigForTesting(t *testing.T) {
 	t.Helper()
 	cfg = nil
 	cfgOnce = sync.Once{}
@@ -52,7 +52,7 @@ func TestDefaultRoundTripperConfigUsesOTelSemanticDefaults(t *testing.T) {
 	setOTelSemantics(t, true)
 
 	t.Run("uses default status range and resource names", func(t *testing.T) {
-		resetRoundTripperConfig(t)
+		resetRoundTripperConfigForTesting(t)
 		t.Setenv("DD_TRACE_HTTP_CLIENT_RESOURCE_NAME_QUANTIZE", "true")
 		got := defaultRoundTripperConfig()
 		require.True(t, got.OTelSemanticsEnabled)
@@ -65,7 +65,7 @@ func TestDefaultRoundTripperConfigUsesOTelSemanticDefaults(t *testing.T) {
 	})
 
 	t.Run("custom error statuses override default range", func(t *testing.T) {
-		resetRoundTripperConfig(t)
+		resetRoundTripperConfigForTesting(t)
 		t.Setenv("DD_TRACE_HTTP_CLIENT_ERROR_STATUSES", "500-510")
 		got := defaultRoundTripperConfig()
 		assert.False(t, got.IsStatusError(400))
@@ -76,7 +76,7 @@ func TestDefaultRoundTripperConfigUsesOTelSemanticDefaults(t *testing.T) {
 
 func TestDefaultRoundTripperConfigPreservesLegacyDefaults(t *testing.T) {
 	setOTelSemantics(t, false)
-	resetRoundTripperConfig(t)
+	resetRoundTripperConfigForTesting(t)
 
 	got := defaultRoundTripperConfig()
 	assert.False(t, got.OTelSemanticsEnabled)

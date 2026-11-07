@@ -17,11 +17,14 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
+func resetTelemetryEnabledOnceForTesting() {
+	telemetryEnabledOnce = sync.Once{}
+}
+
 // Ensure that DD_INSTRUMENTATION_TELEMETRY_ENABLED is read once and cached,
 // matching the expectation that env vars are set before telemetry is first used.
 func TestDisabledCachesInitialEnv(t *testing.T) {
-	// Reset lazy init state
-	telemetryEnabledOnce = sync.Once{}
+	resetTelemetryEnabledOnceForTesting()
 
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "0")
 	require.True(t, Disabled())
@@ -30,8 +33,7 @@ func TestDisabledCachesInitialEnv(t *testing.T) {
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
 	require.True(t, Disabled())
 
-	// Reset again
-	telemetryEnabledOnce = sync.Once{}
+	resetTelemetryEnabledOnceForTesting()
 }
 
 // TestLog_QueuedBeforeStartApp_CapturesCallSiteStacktrace reproduces the bug
@@ -43,9 +45,9 @@ func TestDisabledCachesInitialEnv(t *testing.T) {
 // asserts the rendered stack reflects that: no replay-machinery frames
 // (SwapClient/Replay/globalClientCall), just this test function.
 func TestLog_QueuedBeforeStartApp_CapturesCallSiteStacktrace(t *testing.T) {
-	telemetryEnabledOnce = sync.Once{}
+	resetTelemetryEnabledOnceForTesting()
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
-	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
+	t.Cleanup(resetTelemetryEnabledOnceForTesting)
 
 	globalClientRecorder.Clear()
 	require.Nil(t, GlobalClient(), "no client must be installed yet for this test to exercise the queued path")
@@ -119,8 +121,8 @@ func TestLog_DisabledSkipsStacktraceCapture(t *testing.T) {
 	record := NewRecord(LogError, "should be a no-op when disabled")
 
 	measure := func(disabled bool) float64 {
-		telemetryEnabledOnce = sync.Once{}
-		t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
+		resetTelemetryEnabledOnceForTesting()
+		t.Cleanup(resetTelemetryEnabledOnceForTesting)
 		if disabled {
 			t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "0")
 		} else {
