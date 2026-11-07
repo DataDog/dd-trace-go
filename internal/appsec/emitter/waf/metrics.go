@@ -186,10 +186,11 @@ type ContextMetrics struct {
 	// SumRASPCalls is the sum of all the RASP calls made by the WAF whatever the rasp rule type it is.
 	SumRASPCalls atomic.Uint32
 	// WAFErrorCode is the closest-to-zero (least-negative) ddwaf_run error code seen in the WAF scope.
-	// Zero means no error occurred. See RFC-1012.
+	// Zero means no error occurred. Timeouts are not errors and are not recorded here. See RFC-1012.
 	WAFErrorCode atomic.Int32
 	// RASPErrorCodes holds the closest-to-zero ddwaf_run error code per RASP rule type.
-	// Zero means no error occurred for that rule type. See RFC-1012.
+	// Zero means no error occurred for that rule type. Timeouts are not errors and are not recorded here.
+	// See RFC-1012.
 	RASPErrorCodes [len(addresses.RASPRuleTypes)]atomic.Int32
 
 	// exceptionOnce + exception store the first exception atomically.
@@ -415,12 +416,19 @@ func (m *ContextMetrics) RegisterWafRun(addrs addresses.RunAddressData, timerSta
 // It registers the metrics:
 // - `waf.error`
 // - `rasp.error`
+//
+// A timeout is not counted here: [ContextMetrics.RegisterWafRun] counts it.
 func (m *ContextMetrics) IncWafError(addrs addresses.RunAddressData, in error) {
 	if in == nil {
 		return
 	}
 
-	if !errors.Is(in, waferrors.ErrTimeout) {
+	// A timeout is not an error. RegisterWafRun counts it: rasp.timeout for RASP,
+	// waf.requests{waf_timeout:true} for the WAF scope. Do not count it again in
+	// rasp.error or waf.error. The scope and rule type checks below still apply.
+	timeout := errors.Is(in, waferrors.ErrTimeout)
+
+	if !timeout {
 		switch addrs.TimerKey {
 		case addresses.RASPScope:
 			m.RecordException(ExceptionTypeRASP, in)
@@ -436,9 +444,13 @@ func (m *ContextMetrics) IncWafError(addrs addresses.RunAddressData, in error) {
 			m.RecordException(ExceptionTypeInstrumentation, fmt.Errorf("unknown RASP rule type for addresses %v: %w", addrs, in))
 			return
 		}
-		m.raspError(in, ruleType)
+		if !timeout {
+			m.raspError(in, ruleType)
+		}
 	case addresses.WAFScope, "":
-		m.wafError(in)
+		if !timeout {
+			m.wafError(in)
+		}
 	default:
 		m.RecordException(ExceptionTypeInstrumentation, fmt.Errorf("unexpected WAF error scope %q: %w", addrs.TimerKey, in))
 	}
