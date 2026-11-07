@@ -54,6 +54,8 @@ var errResponseTooLarge = errors.New("response exceeds maximum size")
 type agentlessSource struct {
 	// endpoint is the full request URL. SENSITIVE: may embed credentials; never log.
 	endpoint string
+	// selectionSent reports whether endpoint carries a flag selection.
+	selectionSent bool
 	// apiKey is sent as DD-API-KEY; empty unless endpoint is the managed one.
 	apiKey string
 	// env is the effective DD_ENV, logged so a customer can spot an
@@ -78,12 +80,14 @@ type agentlessSource struct {
 	stopOnce sync.Once
 }
 
-// newAgentlessSource builds a poller for settings. It performs no I/O.
-func newAgentlessSource(settings internalffe.Settings, apply func(*universalFlagsConfiguration)) (*agentlessSource, error) {
+// newAgentlessSource builds a poller for settings that sends selection when it
+// can. It performs no I/O.
+func newAgentlessSource(settings internalffe.Settings, selection *FlagSelection, apply func(*universalFlagsConfiguration)) (*agentlessSource, error) {
 	endpoint, err := buildAgentlessEndpoint(settings.AgentlessBaseURL, settings.Site, settings.Env, settings.APIKey)
 	if err != nil {
 		return nil, err
 	}
+	requestURL, selectionSent := requestURLWithFlagSelection(endpoint.url, selection)
 
 	apiKey := ""
 	if endpoint.managed {
@@ -91,10 +95,11 @@ func newAgentlessSource(settings internalffe.Settings, apply func(*universalFlag
 	}
 
 	s := &agentlessSource{
-		endpoint:       endpoint.url,
+		endpoint:       requestURL,
 		apiKey:         apiKey,
 		env:            settings.Env,
 		managed:        endpoint.managed,
+		selectionSent:  selectionSent,
 		pollInterval:   settings.PollInterval,
 		requestTimeout: settings.RequestTimeout,
 		// We build our own transport rather than use http.DefaultTransport so
@@ -354,6 +359,11 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 	etag := strings.TrimSpace(resp.Header.Get("ETag"))
 	s.apply(config)
 	s.setETag(etag)
+	if s.selectionSent {
+		if ignored := resp.Header.Get(flagSelectionIgnoredHeader); ignored != "" {
+			reportFlagSelectionIgnored(ignored)
+		}
+	}
 	if log.DebugEnabled() {
 		logOnboarding("agentless configuration applied successfully (%d flag(s), %d rejected, sdk_env=%s, requested_env=%s, config_env=%s, created_at=%s, etag=%s)",
 			len(config.Flags), len(config.invalidFlags),
