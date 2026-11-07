@@ -231,9 +231,12 @@ func TestSelectedCommitHistoryAndPackExcludeUnrelatedHead(t *testing.T) {
 }
 
 func TestUnshallowRecoversUnrelatedSelectedCommit(t *testing.T) {
-	for _, depth := range []string{"1", "2"} {
+	for _, tc := range []struct {
+		depth  string
+		recent bool
+	}{{"1", false}, {"2", false}, {"full", false}, {"1", true}, {"2", true}, {"full", true}} {
 		for _, available := range []bool{true, false} {
-			t.Run(fmt.Sprintf("depth=%s/remote=%t", depth, available), func(t *testing.T) {
+			t.Run(fmt.Sprintf("depth=%s/recent=%t/remote=%t", tc.depth, tc.recent, available), func(t *testing.T) {
 				isolateFixtureGit(t)
 				remote, checkout := t.TempDir(), filepath.Join(t.TempDir(), "checkout")
 				run := func(dir, input string, args ...string) string {
@@ -245,13 +248,22 @@ func TestUnshallowRecoversUnrelatedSelectedCommit(t *testing.T) {
 				}
 				run(remote, "", "init")
 				tree := run(remote, "", "hash-object", "-w", "-t", "tree", "--stdin")
-				selected := run(remote, fmt.Sprintf("tree %s\nauthor Test <test@example.com> 1 +0000\ncommitter Test <test@example.com> 1 +0000\n\nselected\n", tree), "hash-object", "-w", "-t", "commit", "--stdin")
 				now := time.Now().Unix()
+				parent, parentLine, selectedTime := "", "", int64(1)
+				if tc.recent {
+					parent = run(remote, fmt.Sprintf("tree %s\nauthor Test <test@example.com> %d +0000\ncommitter Test <test@example.com> %d +0000\n\nparent\n", tree, now-60, now-60), "hash-object", "-w", "-t", "commit", "--stdin")
+					parentLine, selectedTime = "parent "+parent+"\n", now-30
+				}
+				selected := run(remote, fmt.Sprintf("tree %s\n%sauthor Test <test@example.com> %d +0000\ncommitter Test <test@example.com> %d +0000\n\nselected\n", tree, parentLine, selectedTime, selectedTime), "hash-object", "-w", "-t", "commit", "--stdin")
 				root := run(remote, fmt.Sprintf("tree %s\nauthor Test <test@example.com> %d +0000\ncommitter Test <test@example.com> %d +0000\n\nroot\n", tree, now, now), "hash-object", "-w", "-t", "commit", "--stdin")
 				head := run(remote, fmt.Sprintf("tree %s\nparent %s\nauthor Test <test@example.com> %d +0000\ncommitter Test <test@example.com> %d +0000\n\nhead\n", tree, root, now, now), "hash-object", "-w", "-t", "commit", "--stdin")
 				run(remote, "", "update-ref", "refs/heads/juan-fernandez/tip", head)
 				run(remote, "", "update-ref", "refs/heads/juan-fernandez/selected", selected)
-				run(remote, "", "clone", "--no-local", "--depth="+depth, "--branch", "juan-fernandez/tip", remote, checkout)
+				cloneArgs := []string{"clone", "--no-local", "--single-branch", "--branch", "juan-fernandez/tip"}
+				if tc.depth != "full" {
+					cloneArgs = append(cloneArgs, "--depth="+tc.depth)
+				}
+				run(remote, "", append(cloneArgs, remote, checkout)...)
 				if !available {
 					run(checkout, "", "remote", "set-url", "origin", filepath.Join(t.TempDir(), "unavailable"))
 				}
@@ -261,6 +273,7 @@ func TestUnshallowRecoversUnrelatedSelectedCommit(t *testing.T) {
 				ResetCITags()
 				t.Cleanup(ResetCITags)
 				before := run(checkout, "", "rev-list", "--count", "HEAD")
+				shallowBefore := run(checkout, "", "rev-parse", "--is-shallow-repository")
 				require.Empty(t, GetLastLocalGitCommitShas())
 
 				recovered, err := UnshallowGitRepository()
@@ -268,7 +281,16 @@ func TestUnshallowRecoversUnrelatedSelectedCommit(t *testing.T) {
 				if available {
 					require.NoError(t, err)
 					assert.True(t, recovered)
-					assert.Equal(t, []string{selected}, GetLastLocalGitCommitShas())
+					expected := []string{selected}
+					if parent != "" {
+						expected = append(expected, parent)
+					}
+					assert.Equal(t, expected, GetLastLocalGitCommitShas())
+					objects := getObjectsSha(expected, nil)
+					for _, commit := range expected {
+						assert.Contains(t, objects, commit)
+					}
+					assert.NotContains(t, objects, head)
 				} else {
 					assert.Error(t, err)
 					assert.False(t, recovered)
@@ -276,6 +298,7 @@ func TestUnshallowRecoversUnrelatedSelectedCommit(t *testing.T) {
 				}
 				assert.Equal(t, head, run(checkout, "", "rev-parse", "HEAD"))
 				assert.Equal(t, before, run(checkout, "", "rev-list", "--count", "HEAD"))
+				assert.Equal(t, shallowBefore, run(checkout, "", "rev-parse", "--is-shallow-repository"))
 			})
 		}
 	}

@@ -485,7 +485,7 @@ func GetLastLocalGitCommitShas() []string {
 	return commits
 }
 
-// UnshallowGitRepository converts a shallow clone into a complete clone by fetching all missing commits without git content (only commits and tree objects).
+// UnshallowGitRepository fetches missing selected history or bounded shallow checkout history without blobs.
 func UnshallowGitRepository() (bool, error) {
 
 	// let's do a first check to see if the repository is a shallow clone
@@ -495,24 +495,23 @@ func UnshallowGitRepository() (bool, error) {
 		return false, fmt.Errorf("civisibility.unshallow: error checking if the repository is a shallow clone: %s", err)
 	}
 
-	// if the git repo is not a shallow clone, we can return early
-	if !isAShallowClone {
-		log.Debug("civisibility.unshallow: the repository is not a shallow clone")
-		return false, nil
-	}
-
-	// the git repo is a shallow clone, we need to double check if there are more than just 1 commit in the logs.
-	log.Debug("civisibility.unshallow: the repository is a shallow clone, checking if there are more than one commit in the logs")
-	hasMoreThanOneCommits, err := hasTheGitLogHaveMoreThanOneCommits()
-	if err != nil {
-		return false, fmt.Errorf("civisibility.unshallow: error checking if the git log has more than one commit: %s", err)
-	}
-
 	selected := GetCITags()[constants.GitCommitSHA]
 	selectedMissing := false
 	if isGitCommitSHA(selected) {
 		_, err := execGitString(telemetry.GetHeadCommandsType, "rev-parse", "--verify", selected+"^{commit}")
 		selectedMissing = err != nil
+	}
+
+	if !isAShallowClone && !selectedMissing {
+		log.Debug("civisibility.unshallow: the repository is not a shallow clone")
+		return false, nil
+	}
+
+	// Check whether existing checkout history needs deepening.
+	log.Debug("civisibility.unshallow: checking if there are more than one commit in the logs")
+	hasMoreThanOneCommits, err := hasTheGitLogHaveMoreThanOneCommits()
+	if err != nil {
+		return false, fmt.Errorf("civisibility.unshallow: error checking if the git log has more than one commit: %s", err)
 	}
 
 	// Existing history is sufficient unless the selected revision is missing.
@@ -533,9 +532,6 @@ func UnshallowGitRepository() (bool, error) {
 		return false, nil
 	}
 
-	// after asking for 2 logs lines, if the git log command returns just one commit sha, we reconfigure the repo
-	// to ask for git commits and trees of the last month (no blobs)
-
 	// let's get the remote name
 	remoteName, err := getRemoteName()
 	if err != nil {
@@ -547,7 +543,16 @@ func UnshallowGitRepository() (bool, error) {
 	}
 	log.Debug("civisibility.unshallow: remote name: %s", remoteName)
 	if selectedMissing {
-		out, err := execGitString(telemetry.UnshallowCommandsType, "fetch", "--depth=1", "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", remoteName, selected)
+		args := []string{"fetch"}
+		if isAShallowClone {
+			args = append(args, "--shallow-since=\"1 month ago\"", "--update-shallow")
+		}
+		args = append(args, "--filter=blob:none", "--recurse-submodules=no", remoteName, selected)
+		out, err := execGitString(telemetry.UnshallowCommandsType, args...)
+		if err != nil && isAShallowClone {
+			// Old selected commits can precede the bounded history window.
+			out, err = execGitString(telemetry.UnshallowCommandsType, "fetch", "--depth=1", "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", remoteName, selected)
+		}
 		if err != nil {
 			return false, fmt.Errorf("civisibility.unshallow: error fetching the selected commit: %s | %s", err, out)
 		}
