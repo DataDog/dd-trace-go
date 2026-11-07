@@ -99,6 +99,7 @@ type config struct {
 	hostname             string
 	statsd               StatsdClient
 	httpClient           *http.Client
+	udsClient            *http.Client // udsClient is the client installed by WithUDS
 	tags                 immutable.StringSlice
 	customProfilerLabels []string
 	types                map[ProfileType]struct{}
@@ -260,8 +261,13 @@ func defaultConfig() (*config, error) {
 type Option func(*config)
 
 // WithAgentAddr specifies the address to use when reaching the Datadog Agent.
+// It replaces the UDS client set up by WithUDS or a unix:// DD_TRACE_AGENT_URL
+// with the default TCP client.
 func WithAgentAddr(hostport string) Option {
 	return func(cfg *config) {
+		if cfg.udsClient != nil && cfg.httpClient == cfg.udsClient {
+			cfg.httpClient = defaultClient
+		}
 		cfg.agentURL = "http://" + hostport + "/profiling/v1/input"
 	}
 }
@@ -428,13 +434,14 @@ func WithUDS(socketPath string) Option {
 		u := internal.UnixDataSocketURL(socketPath)
 		u.Path = "/profiling/v1/input"
 		c.agentURL = u.String()
-		WithHTTPClient(&http.Client{
+		c.udsClient = &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
 					return net.Dial("unix", socketPath)
 				},
 			},
-		})(c)
+		}
+		WithHTTPClient(c.udsClient)(c)
 	}
 }
 
