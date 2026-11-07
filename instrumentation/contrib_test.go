@@ -318,8 +318,115 @@ func TestNoTracerServiceName(t *testing.T) {
 	if len(offending) > 0 {
 		t.Errorf("Found %d file(s) using tracer.ServiceName directly. "+
 			"All contrib packages should use instrumentation.ServiceNameWithSource instead, "+
-			"which provides service name source information for better precedence handling.\n"+
+			"which provides service name source information for better precedence.\n"+
 			"Offending locations:\n  %s",
 			len(offending), strings.Join(offending, "\n  "))
+	}
+}
+
+// legacyNamingPackages lists every Package key in packages.go that still carries a
+// naming field (the legacy DD_TRACE_SPAN_ATTRIBUTE_SCHEMA table). It is the
+// closed set grandfathered in before contrib/INTEGRATIONS.md started directing new
+// integrations away from naming: new entries must use the global DD_SERVICE and a
+// hardcoded operation name literal instead, as the comment on PackageInfo.naming
+// explains. See TestNoNewNamingMapEntries.
+var legacyNamingPackages = map[Package]bool{
+	Package99DesignsGQLGen:           true,
+	PackageAWSDatadogLambdaGo:        true,
+	PackageAWSSDKGo:                  true,
+	PackageAWSSDKGoV2:                true,
+	PackageAerospikeClientGoV7:       true,
+	PackageBradfitzGoMemcache:        true,
+	PackageChi:                       true,
+	PackageChiV5:                     true,
+	PackageConfluentKafkaGo:          true,
+	PackageConfluentKafkaGoV2:        true,
+	PackageDatabaseSQL:               true,
+	PackageDimfeldHTTPTreeMuxV5:      true,
+	PackageEmickleiGoRestful:         true,
+	PackageEmickleiGoRestfulV3:       true,
+	PackageGCPPubsub:                 true,
+	PackageGCPPubsubV2:               true,
+	PackageGRPC:                      true,
+	PackageGaryburdRedigo:            true,
+	PackageGin:                       true,
+	PackageGlobalsignMgo:             true,
+	PackageGoCQL:                     true,
+	PackageGoElasticSearchV6:         true,
+	PackageGoFiberV2:                 true,
+	PackageGoPGV10:                   true,
+	PackageGoRedis:                   true,
+	PackageGoRedisV7:                 true,
+	PackageGoRedisV8:                 true,
+	PackageGojiV1Web:                 true,
+	PackageGoogleAPI:                 true,
+	PackageGorillaMux:                true,
+	PackageGormIOGormV1:              true,
+	PackageGraphGophersGraphQLGo:     true,
+	PackageGraphQLGoGraphQL:          true,
+	PackageHashicorpConsulAPI:        true,
+	PackageHashicorpVaultAPI:         true,
+	PackageIBMSarama:                 true,
+	PackageJackcPGXV5:                true,
+	PackageJulienschmidtHTTPRouter:   true,
+	PackageLabstackEcho:              true,
+	PackageLabstackEchoV4:            true,
+	PackageLabstackEchoV5:            true,
+	PackageMark3LabsMCPGo:            true,
+	PackageModelContextProtocolGoSDK: true,
+	PackageMongoDriver:               true,
+	PackageMongoDriverV2:             true,
+	PackageNetHTTP:                   true,
+	PackageOlivereElasticV5:          true,
+	PackageRedigo:                    true,
+	PackageRedisGoRedisV9:            true,
+	PackageRedisRueidis:              true,
+	PackageSegmentioKafkaGo:          true,
+	PackageShopifySarama:             true,
+	PackageSyndtrGoLevelDB:           true,
+	PackageTidwallBuntDB:             true,
+	PackageTwitchTVTwirp:             true,
+	PackageTwmbFranzGo:               true,
+	PackageUptraceBun:                true,
+	PackageUrfaveNegroni:             true,
+	PackageValkeyIoValkeyGo:          true,
+	PackageValyalaFastHTTP:           true,
+}
+
+// TestNoNewNamingMapEntries guards the recurring review feedback from PR #3280
+// (opensearch-go.v4) and PR #5296 (go-kratos/kratos.v3): a new integration's
+// entry in instrumentation/packages.go should not set the legacy naming field.
+// New integrations use the global DD_SERVICE (instr.ServiceName with no naming
+// entry) and a hardcoded operation name literal, per contrib/INTEGRATIONS.md
+// section 5 ("Service name" / "Operation name"). naming is the
+// DD_TRACE_SPAN_ATTRIBUTE_SCHEMA table kept only for packages that had it
+// before that convention existed; legacyNamingPackages is that closed,
+// enumerated set. Any package key with a non-nil naming map that is not in
+// legacyNamingPackages is a new integration repeating the reviewed mistake.
+func TestNoNewNamingMapEntries(t *testing.T) {
+	packagesMu.RLock()
+	defer packagesMu.RUnlock()
+
+	var offending []string
+	for pkg, info := range packages {
+		if info.naming == nil {
+			continue
+		}
+		if legacyNamingPackages[pkg] {
+			continue
+		}
+		offending = append(offending, string(pkg))
+	}
+	slices.Sort(offending)
+
+	if len(offending) > 0 {
+		t.Errorf("Found %d package(s) in instrumentation/packages.go with a new naming map entry: %s.\n"+
+			"New integrations must not set PackageInfo.naming: use the global DD_SERVICE "+
+			"(instr.ServiceName(instrumentation.ComponentDefault, nil), no naming entry) and a "+
+			"hardcoded operation name string literal instead. See contrib/INTEGRATIONS.md section 5 "+
+			"(\"Service name\" / \"Operation name\") and the naming field's doc comment on PackageInfo.\n"+
+			"If this package genuinely needs the legacy per-component naming-schema table, add it to "+
+			"legacyNamingPackages in instrumentation/contrib_test.go with a comment explaining why.",
+			len(offending), strings.Join(offending, ", "))
 	}
 }
