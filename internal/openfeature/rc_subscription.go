@@ -62,7 +62,7 @@ func SubscribeRC() error {
 		return nil
 	}
 
-	if _, err := remoteconfig.Subscribe(FFEProductName, forwardingCallback, remoteconfig.FFEFlagEvaluation); err != nil {
+	if _, err := remoteconfig.Subscribe(FFEProductName, forwardingCallback, remoteConfigCapabilities(EvaluatorCapabilities())...); err != nil {
 		return err
 	}
 
@@ -147,7 +147,7 @@ func SubscribeProvider(cb remoteconfig.ProductCallback) (tracerOwnsSubscription 
 		return false, fmt.Errorf("RC product %s already subscribed", FFEProductName)
 	}
 
-	if _, err := remoteconfig.Subscribe(FFEProductName, cb, remoteconfig.FFEFlagEvaluation); err != nil {
+	if _, err := remoteconfig.Subscribe(FFEProductName, cb, remoteConfigCapabilities(EvaluatorCapabilities())...); err != nil {
 		return false, err
 	}
 
