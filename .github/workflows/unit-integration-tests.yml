@@ -145,14 +145,15 @@ jobs:
              "modules":${{ toJson(matrix.chunk) }},
              "tags":${{ toJSON(inputs.build_tags || 'standard') }},
              "coverage":"contrib"}
-          # Default-branch seed set: the nightly main run of this workflow
-          # (Go 1.27) saves these keys in all three build-tag variants —
-          # standard, and the debug and deadlock families the nightly
-          # dynamic-checks runs use; every other run, including all PR
-          # and merge-queue runs, restores only. The seed comparison uses
-          # the raw input: pass the alias ("1.27"), not a resolved
-          # version ("1.27.2"), or the job stops seeding.
-          seed: ${{ inputs.go-version == '1.27' }}
+          # Default-branch seed set: the nightly main runs of this
+          # workflow (Go 1.26 and 1.27) save these keys in all three
+          # build-tag variants — standard, and the debug and deadlock
+          # families the nightly dynamic-checks runs use; every other
+          # run, including all PR and merge-queue runs, restores only.
+          # The seed comparison uses the raw input: pass the alias
+          # ("1.27"), not a resolved version ("1.27.2"), or the job
+          # stops seeding.
+          seed: ${{ inputs.go-version == '1.26' || inputs.go-version == '1.27' }}
 
       - name: Restore and install development tools
         id: tools
@@ -255,7 +256,11 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: trace-check-results-${{ strategy.job-index }}
+          # The Go version is part of the name: callers run one matrix of
+          # this workflow per version, and a job index alone would collide
+          # across versions in the same run, silently dropping one
+          # version's results (continue-on-error above would hide it).
+          name: trace-check-results-${{ inputs.go-version }}-${{ strategy.job-index }}
           path: /tmp/trace-check-results/
           retention-days: 1
           if-no-files-found: ignore
@@ -278,7 +283,9 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: /tmp/trace-check-results
-          pattern: trace-check-results-*
+          # Scoped to this version's artifacts: the merge would otherwise
+          # overwrite the same job-index files across versions.
+          pattern: trace-check-results-${{ inputs.go-version }}-*
           merge-multiple: true
 
       - name: Aggregate Trace Check Results
@@ -375,7 +382,7 @@ jobs:
              "modules":["core"],
              "tags":${{ toJSON(inputs.build_tags || 'standard') }},
              "coverage":"core"}
-          seed: ${{ inputs.go-version == '1.27' }}
+          seed: ${{ inputs.go-version == '1.26' || inputs.go-version == '1.27' }}
 
       - name: Restore and install development tools
         id: tools
@@ -521,7 +528,7 @@ jobs:
             {"runner":"APM Larger Runners",
              "modules":["internal/apps/telemetry-errors"],
              "coverage":"none"}
-          seed: ${{ inputs.go-version == '1.27' }}
+          seed: ${{ inputs.go-version == '1.26' || inputs.go-version == '1.27' }}
 
       - name: Restore and install development tools
         id: tools
