@@ -592,6 +592,37 @@ func TestConvertSpanAttributesPriorityOrder(t *testing.T) {
 	assert.Equal(t, maxAttributesCount, len(attrs))
 }
 
+// TestConvertSpanAttributesKeepsDatadogKeysAtLimit guards against the
+// maxAttributesCount cap dropping Datadog keys that ingestion depends on when a
+// span carries more tags than fit (e.g. AAP spans with many request headers).
+func TestConvertSpanAttributesKeepsDatadogKeysAtLimit(t *testing.T) {
+	for _, otelSemantics := range []bool{false, true} {
+		t.Run(fmt.Sprintf("otelSemantics=%t", otelSemantics), func(t *testing.T) {
+			s := newBasicSpan("op")
+			for i := range 150 {
+				s.meta.Set(fmt.Sprintf("user.meta-%d", i), "val")
+				s.metrics[fmt.Sprintf("user.metric-%d", i)] = float64(i)
+			}
+			s.meta.Set("_dd.appsec.json", `{"triggers":[]}`)
+			s.meta.Set("_dd.p.dm", "-4")
+			s.metrics["_dd.appsec.enabled"] = 1
+			s.metrics[keySamplingPriority] = 2
+
+			// Map iteration order is random; repeat to make a regression likely to surface.
+			for range 20 {
+				attrs := convertSpanAttributes(s, "", otelSemantics, nil)
+				m := keyValuesToMap(attrs)
+				assert.Len(t, attrs, maxAttributesCount)
+				assert.Len(t, m, maxAttributesCount, "no key should be emitted twice")
+				assert.Equal(t, `{"triggers":[]}`, m["_dd.appsec.json"])
+				assert.Equal(t, "-4", m["_dd.p.dm"])
+				assert.EqualValues(t, 1, m["_dd.appsec.enabled"])
+				assert.EqualValues(t, 2, m[keySamplingPriority])
+			}
+		})
+	}
+}
+
 func TestConvertSpanAttributesServiceNameOverride(t *testing.T) {
 	t.Run("same as default - no attribute", func(t *testing.T) {
 		s := newSpan("op", "my-service", "res", 1, 1, 0)
