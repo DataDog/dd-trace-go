@@ -193,10 +193,10 @@ func TestRunWAFTimeoutIsNotAnError(t *testing.T) {
 			supported: sqliSupportedAddresses,
 			err:       waferrors.ErrInternal,
 			check: func(t *testing.T, client *telemetrytest.RecordClient, metrics *ContextMetrics) {
-				require.Equal(t, 1.0, sumMetric(client, "rasp.error", "waf_error:1", sqliRuleTypeTag))
+				require.Equal(t, 1.0, sumMetric(client, "rasp.error", "waf_error:-3", sqliRuleTypeTag))
 				require.Equal(t, 1.0, sumMetric(client, "rasp.error"))
 				require.Zero(t, sumMetric(client, "rasp.timeout"))
-				require.EqualValues(t, 1, metrics.RASPErrorCodes[addresses.RASPRuleTypeSQLI].Load())
+				require.EqualValues(t, -3, metrics.RASPErrorCodes[addresses.RASPRuleTypeSQLI].Load())
 				require.Equal(t, ExceptionTypeRASP, metrics.ExceptionType())
 			},
 		},
@@ -205,10 +205,10 @@ func TestRunWAFTimeoutIsNotAnError(t *testing.T) {
 			addrs: wafScopeAddresses,
 			err:   waferrors.ErrInternal,
 			check: func(t *testing.T, client *telemetrytest.RecordClient, metrics *ContextMetrics) {
-				require.Equal(t, 1.0, sumMetric(client, "waf.error", "waf_error:1"))
+				require.Equal(t, 1.0, sumMetric(client, "waf.error", "waf_error:-3"))
 				require.Equal(t, 1.0, sumMetric(client, "waf.error"))
 				require.Equal(t, 1.0, sumMetric(client, "waf.requests", "waf_timeout:false", "waf_error:true"))
-				require.EqualValues(t, 1, metrics.WAFErrorCode.Load())
+				require.EqualValues(t, -3, metrics.WAFErrorCode.Load())
 				require.Equal(t, ExceptionTypeWAF, metrics.ExceptionType())
 			},
 		},
@@ -219,7 +219,7 @@ func TestRunWAFTimeoutIsNotAnError(t *testing.T) {
 			check: func(t *testing.T, client *telemetrytest.RecordClient, metrics *ContextMetrics) {
 				require.Equal(t, 1.0, sumMetric(client, "waf.error", "waf_error:-127"))
 				require.Equal(t, 1.0, sumMetric(client, "waf.error"))
-				require.EqualValues(t, defaultWafErrorCode, metrics.WAFErrorCode.Load())
+				require.EqualValues(t, -127, metrics.WAFErrorCode.Load())
 			},
 		},
 	} {
@@ -256,10 +256,10 @@ func TestRunWAFErrorAndTimeoutOrder(t *testing.T) {
 			}
 			metrics.Submit(libddwaf.Truncations{}, nil)
 
-			require.Equal(t, 1.0, sumMetric(client, "rasp.error", "waf_error:1", sqliRuleTypeTag))
+			require.Equal(t, 1.0, sumMetric(client, "rasp.error", "waf_error:-3", sqliRuleTypeTag))
 			require.Equal(t, 1.0, sumMetric(client, "rasp.error"))
 			require.Equal(t, 1.0, sumMetric(client, "rasp.timeout", sqliRuleTypeTag))
-			require.EqualValues(t, 1, metrics.RASPErrorCodes[addresses.RASPRuleTypeSQLI].Load())
+			require.EqualValues(t, -3, metrics.RASPErrorCodes[addresses.RASPRuleTypeSQLI].Load())
 		})
 
 		t.Run("waf/"+order.name, func(t *testing.T) {
@@ -272,10 +272,10 @@ func TestRunWAFErrorAndTimeoutOrder(t *testing.T) {
 			}
 			metrics.Submit(libddwaf.Truncations{}, nil)
 
-			require.Equal(t, 1.0, sumMetric(client, "waf.error", "waf_error:1"))
+			require.Equal(t, 1.0, sumMetric(client, "waf.error", "waf_error:-3"))
 			require.Equal(t, 1.0, sumMetric(client, "waf.error"))
 			require.Equal(t, 1.0, sumMetric(client, "waf.requests", "waf_timeout:true", "waf_error:true"))
-			require.EqualValues(t, 1, metrics.WAFErrorCode.Load())
+			require.EqualValues(t, -3, metrics.WAFErrorCode.Load())
 			require.EqualValues(t, 1, metrics.SumWAFTimeouts.Load())
 		})
 	}
