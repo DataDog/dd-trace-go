@@ -302,6 +302,8 @@ func TestFakeGitForUnshallowHelperProcess(t *testing.T) {
 		}
 	case "log":
 		_, _ = os.Stdout.WriteString("0123456789012345678901234567890123456789 first commit\n")
+	case "show":
+		_, _ = os.Stdout.WriteString("commit message\n--- FAIL: TestPhantom\n")
 	case "remote", "config":
 		_, _ = os.Stdout.WriteString("origin\n")
 	case "fetch":
@@ -360,7 +362,7 @@ func countFakeGitFetches(t *testing.T, fetchesFile string) int {
 }
 
 func TestFetchCommitData(t *testing.T) {
-	log.SetLevel(log.LevelDebug)
+	recordGitDebugLogs(t)
 	commits := GetLastLocalGitCommitShas()
 	for _, sha := range commits[:min(len(commits), 3)] {
 		if gitData, err := fetchCommitData(sha); err == nil {
@@ -377,6 +379,40 @@ func TestFetchCommitData(t *testing.T) {
 			t.Errorf("Failed to fetch commit data for SHA: %s, error: %v", sha, err)
 		}
 	}
+}
+
+func recordGitDebugLogs(t *testing.T) *log.RecordLogger {
+	t.Helper()
+	recorder := new(log.RecordLogger)
+	t.Cleanup(log.UseLogger(recorder))
+	previousLevel := log.GetLevel()
+	t.Cleanup(func() { log.SetLevel(previousLevel) })
+	log.SetLevel(log.LevelDebug)
+	return recorder
+}
+
+func TestGitDebugLoggingIsolated(t *testing.T) {
+	setupFakeGitForUnshallow(t, false)
+	previousLevel := log.GetLevel()
+	t.Cleanup(func() { log.SetLevel(previousLevel) })
+	log.SetLevel(log.LevelWarn)
+	outerLogger := new(log.RecordLogger)
+	t.Cleanup(log.UseLogger(outerLogger))
+
+	t.Run("commit message", func(t *testing.T) {
+		recorder := recordGitDebugLogs(t)
+		out, err := execGitString(telemetry.GetGitCommitInfoCommandType, "show", "HEAD")
+		assert.NoError(t, err)
+		assert.Contains(t, out, "\n--- FAIL: TestPhantom")
+		logs := strings.Join(recorder.Logs(), "\n")
+		assert.Contains(t, logs, "civisibility.git.command")
+		assert.Contains(t, logs, "\n--- FAIL: TestPhantom")
+	})
+
+	assert.Equal(t, log.LevelWarn, log.GetLevel())
+	assert.Empty(t, outerLogger.Logs(), "git debug output must stay in the test recorder")
+	log.Warn("logger restored after git debug logging")
+	assert.Len(t, outerLogger.Logs(), 1)
 }
 
 // Tests for base branch detection functions
