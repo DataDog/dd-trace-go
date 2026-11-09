@@ -69,14 +69,22 @@ func init() {
 // the request context between them) gives no new parameters, only the route, and
 // the outer middlewares that it finds through the writer chain or the request
 // context then report only their route too, because they cannot know what it gave.
-// The protection covers the baseline input only: the WAF keeps the match of a
-// condition between its runs, so a rule can still match a predicted value and a
-// final value that no single input has together. A block or a redirect at that
-// time replaces the response only if the response is not sent yet: it never stops
-// the handler, which already ran. If the response is sent, it does not change;
-// AppSec reports a failed block (a redirect is not counted as a block). A flush
-// that returns an error does not itself mark the response as sent: if it wrote
-// part of the response, a block can add its body after that output.
+// The protection covers the baseline input that is already known when a late
+// update happens. The WAF keeps the match of a condition between its runs, so a
+// rule can still match a predicted value and a final value that no single input
+// has together, and a later middleware that replaces the baseline input cannot
+// undo a match that the WAF kept before. A middleware that is hidden from the
+// outer ones through both the writer chain and the request context (for example a
+// middleware that keeps the WAF operation of the request but drops the context
+// value of this middleware, with a writer without Unwrap()) cannot flag the outer
+// ones, and an outer report can then replace a value that it kept. Other AppSec
+// integrations that give path parameters to the same request are not covered. A
+// block or a redirect at that time replaces the response only if the response is
+// not sent yet: it never stops the handler, which already ran. If the response is
+// sent, it does not change; AppSec reports a failed block (a redirect is not
+// counted as a block). A flush that returns an error does not itself mark the
+// response as sent: if it wrote part of the response, a block can add its body
+// after that output.
 //
 // The middlewares between this middleware and the handler must send the response
 // through the writer that they get, and return it from Unwrap(). When this

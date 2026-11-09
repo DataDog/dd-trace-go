@@ -98,10 +98,13 @@ func withAppsec(next http.Handler, span trace.TagSetter, cfg *config, cache *syn
 			// contradict it (another value for a name that a tracer gave), only the
 			// route is reported. The same when a tracer that shares the WAF context
 			// could not share the set (shared.uncertain). So the WAF keeps the baseline
-			// input, and no rule can match a mix of the baseline value and a final value.
-			// This protects the baseline input only: a predicted value that the WAF got
-			// early can still combine with a final value in a rule across the 2 runs
-			// (a documented limit, see TestPredictionPhaseCombination).
+			// input, and no rule can match a mix of a baseline value and a final value
+			// of this update. The guard protects the baseline input that is already known
+			// when the late update happens: it cannot undo a match that the WAF kept
+			// earlier, when a later tracer replaces the baseline input or sets the flag
+			// (TestSequentialRouterCombination), and a predicted value that the WAF got
+			// early can still combine with a final value across the 2 runs
+			// (TestPredictionPhaseCombination). These are documented limits.
 			var finalParams map[string]string
 			if complete && !shared.uncertain {
 				if merged, ok := addPrediction(shared.get(), routeParams(rc)); ok {

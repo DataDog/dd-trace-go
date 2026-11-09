@@ -19,6 +19,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 )
 
 // TestExistingPathBlocks checks requests that AppSec blocked before the route
@@ -396,4 +398,84 @@ func TestPredictionPhaseCombination(t *testing.T) {
 	w := httptest.NewRecorder()
 	root.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/items/alpha/read", nil))
 	assert.Equal(t, http.StatusForbidden, w.Code, "documented limit: the code before the lookup returned 200")
+}
+
+// TestSequentialRouterCombination documents a limit of the guard on the baseline
+// input: it protects the baseline input that is already known when a late update
+// happens. It cannot undo a match that the WAF already kept when a later tracer
+// replaces the baseline input (or sets the uncertain flag). Here a first router
+// reports id = beta and op = read after its handler (no input was known, and the
+// trailing slash makes its lookup miss). Then a later tracer gives its known
+// parameters id = alpha and op = delete. No single input has id = beta and
+// op = delete, but the WAF kept the earlier match of the id condition. The
+// expectation is the result of this change (403), not of the code before the lookup
+// existed (200).
+func TestSequentialRouterCombination(t *testing.T) {
+	startAppSecRules(t, fmt.Sprintf(`{"id":"sequential","name":"sequential","tags":{"type":"sequential-test","category":"attack_attempt"},
+		"conditions":[%s],"on_match":["block"]}`, pathCondition("id", "beta")+","+pathCondition("op", "delete")))
+	first, second := chi.NewRouter(), chi.NewRouter()
+	first.Use(Middleware(), middleware.StripSlashes)
+	first.Get("/items/{id}/{op}", func(http.ResponseWriter, *http.Request) {})
+	second.With(Middleware()).Get("/items/{id}/{op}", func(http.ResponseWriter, *http.Request) {})
+
+	outer := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// No parameters are known at entry, and the trailing slash makes the first
+		// lookup miss: the first tracer can only send beta/read in its late run.
+		firstContext := chi.NewRouteContext()
+		firstContext.Routes = first
+		first.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, firstContext)))
+
+		saved := r.Context()
+		later := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next := r.Clone(saved)
+			next.URL.Path = "/items/alpha/delete"
+			// The writer includes the later tracer, but the context is restored to the
+			// outer one: the endpoint tracer cannot share the baseline input.
+			secondContext := chi.NewRouteContext()
+			secondContext.Routes = second
+			second.ServeHTTP(w, next.WithContext(context.WithValue(next.Context(), chi.RouteCtxKey, secondContext)))
+		}))
+		later.ServeHTTP(w, r)
+	}))
+	// A middleware used outside a router needs a route context for its span.
+	entry := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		outer.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, chi.NewRouteContext())))
+	})
+	w := httptest.NewRecorder()
+	entry.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/items/beta/read/", nil))
+	assert.Equal(t, http.StatusForbidden, w.Code, "documented limit: the code before the lookup returned 200")
+}
+
+// TestBothLinksHiddenLimit documents the limit of the visibility of the tracers:
+// a middleware keeps the WAF operation but drops the context value of the tracer
+// and hides the writer chain. The inner tracer then cannot find the outer one
+// (neither through the writer chain nor through the context), so it cannot mark
+// it as uncertain, and the outer late run replaces the value that the inner tracer
+// kept. The expectation is the result of this change (200); the code before the
+// lookup existed returned 403 for this request.
+func TestBothLinksHiddenLimit(t *testing.T) {
+	startAppSecRules(t, fmt.Sprintf(`{"id":"hidden-links","name":"hidden-links","tags":{"type":"hidden-links-test","category":"attack_attempt"},
+		"conditions":[%s],"on_match":["block"]}`, headerCondition("x-stage", "ready")+","+pathCondition("id", "alpha")))
+	root, child := chi.NewRouter(), chi.NewRouter()
+	root.Use(Middleware())
+	root.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			op, ok := dyngo.FindOperation[httpsec.HandlerOperation](r.Context())
+			if !ok {
+				t.Error("no outer operation")
+				return
+			}
+			ctx := context.WithValue(context.Background(), chi.RouteCtxKey, chi.RouteContext(r.Context()))
+			ctx = dyngo.RegisterOperation(ctx, op) // keep the WAF operation, not the tracer value
+			next.ServeHTTP(opaqueWriter{w}, r.WithContext(ctx))
+			w.Header().Set("X-Stage", "ready")
+		})
+	}, middleware.StripSlashes)
+	child.Use(Middleware())
+	child.Get("/items/{id}", func(http.ResponseWriter, *http.Request) {})
+	root.Mount("/tenant/{id}", child)
+
+	w := httptest.NewRecorder()
+	root.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/tenant/alpha/items/beta/", nil))
+	assert.Equal(t, http.StatusOK, w.Code, "documented limit: the code before the lookup returned 403")
 }
