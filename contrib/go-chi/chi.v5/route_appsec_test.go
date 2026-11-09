@@ -89,6 +89,8 @@ func TestLookupRoute(t *testing.T) {
 		{name: "already routed: the whole path of the request", target: "/api/users/7",
 			prepare:   func(rctx *chi.Context) { rctx.RoutePath, rctx.RoutePatterns = "/users/7", []string{"/api/*"} },
 			wantRoute: "/api/users/{id}", wantParams: map[string]string{"*": "", "id": "7"}, wantFound: true},
+		{name: "contradicts the routes that chi matched", target: "/api/users/7",
+			prepare: func(rctx *chi.Context) { rctx.RoutePatterns = []string{"/other/*"} }, wantFound: false},
 		{name: "route is final", target: "/items/42", prepare: func(rctx *chi.Context) { rctx.RoutePatterns = []string{"/items/{id}"} }, wantFound: false},
 		{name: "raw path", target: "/items/a%2Fb", wantRoute: "/items/{id}", wantParams: map[string]string{"id": "a%2Fb"}, wantFound: true},
 		{name: "empty path", target: "", wantRoute: "/", wantFound: true},
@@ -180,17 +182,4 @@ func BenchmarkLookupRoute(b *testing.B) {
 			}
 		})
 	}
-}
-
-func TestMergeKnown(t *testing.T) {
-	assert.Nil(t, mergeKnown(nil, nil))
-	assert.Equal(t, map[string]string{"a": "1"}, mergeKnown(map[string]string{"a": "1"}, nil))
-	assert.Equal(t, map[string]string{"a": "1"}, mergeKnown(nil, map[string]string{"a": "1"}))
-	// A known parameter wins over the prediction, and the prediction adds its own.
-	assert.Equal(t, map[string]string{"id": "known", "x": "2"},
-		mergeKnown(map[string]string{"id": "predicted", "x": "2"}, map[string]string{"id": "known"}))
-	// ... except "*": chi blanks the one of a mount when it enters the mount.
-	assert.Equal(t, map[string]string{"*": ""}, mergeKnown(map[string]string{"*": ""}, map[string]string{"*": "rest/of/path"}))
-	assert.Equal(t, map[string]string{"*": "rest"}, mergeKnown(nil, map[string]string{"*": "rest"}),
-		"a known * is kept when the lookup has none")
 }

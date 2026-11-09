@@ -39,13 +39,18 @@ func init() {
 // other parameters than the handler gets when a middleware changes the path, the
 // method or the route path (before or after this middleware), or when a mount
 // does not give the request to a chi router that chi can search (for example a
-// router behind a handler wrapper, or an ordinary handler). The parameters that
-// chi already knows when this middleware runs are never replaced by the early
-// check. When the early check is wrong, a detection-only rule that matches the
-// wrong parameters can also hide a detection-only rule of the same type that
-// matches the correct parameters later (also from a r.With(Middleware()) on the
-// endpoint). AppSec cannot remove parameters that it already has: if chi finally
-// selects a route without parameters, the early parameters stay.
+// router behind a handler wrapper, or an ordinary handler). If the early check
+// does not extend the route that chi already matched when this middleware runs
+// (for example after a middleware changed the route path of a parent mount), it
+// is dropped, and AppSec keeps the parameters that chi matched. When the early
+// check is wrong, a detection-only rule that matches the wrong parameters can
+// also hide a detection-only rule of the same type that matches the correct
+// parameters later (also from a r.With(Middleware()) on the endpoint). The
+// early check does not send the "*" of a mount that this middleware wraps
+// (r.With(Middleware()).Mount), and AppSec cannot clear parameters: if chi
+// finally selects a route without parameters, the early parameters stay. When
+// a parameter name is used at several levels of mounts, AppSec reports the last
+// value, the one that chi.URLParam returns.
 //
 // After the handler returns, AppSec gets the route and the path parameters that
 // chi selected. A block or a redirect at that time replaces the response only if

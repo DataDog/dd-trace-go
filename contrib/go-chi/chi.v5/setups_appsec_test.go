@@ -185,16 +185,18 @@ func TestAppSecRouteSetups(t *testing.T) {
 		{fixtureReplacedContext(),
 			clean{[]string{"/users/{id}"}, nil, 0},
 			attack{route: "/users/{id}", events: pathBlock, failure: true}},
+		// chi matched "/api/*" (the parent rewrote the route path); the lookup of the
+		// URL of the request gives "/*", which does not extend it: it is dropped.
 		{fixtureParentRewrite(),
-			clean{[]string{"/api/files/{id}"}, []string{"wildcard-value"}, 0},
-			attack{route: "/api/files/{id}", events: []string{"wildcard-value"},
-				earlyRoute: "/*", earlyParams: pp("*", "old/attack-1")}},
-		// chi knows "id" (the parent routed the mount with a parameter): the lookup
-		// does not replace it, so the request is blocked as before the lookup existed.
+			clean{[]string{"/api/files/{id}"}, nil, 0},
+			attack{route: "/api/files/{id}", earlyRoute: "/api/*", earlyParams: pp("*", "")}},
+		// chi matched "/api/{id}/*" with "id" (the parent routed the mount with a
+		// parameter): the lookup does not extend it, so it is dropped and the request is
+		// blocked as before the lookup existed.
 		{fixtureNamedMountRewrite(),
-			clean{[]string{"/api/{id}/items/{item}"}, []string{"wildcard-value"}, 0},
-			attack{early: true, route: "/*", events: pathBlock, spanRoute: "/api/{id}/*",
-				earlyRoute: "/*", earlyParams: pp("*", "old/attack-1", "id", "attack-1")}},
+			clean{[]string{"/api/{id}/items/{item}"}, nil, 0},
+			attack{early: true, route: "/api/{id}/*", events: pathBlock, spanRoute: "/api/{id}/*",
+				earlyRoute: "/api/{id}/*", earlyParams: pp("*", "", "id", "attack-1")}},
 	}
 
 	for _, c := range cases {

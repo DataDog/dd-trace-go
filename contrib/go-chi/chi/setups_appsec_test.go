@@ -183,16 +183,18 @@ func TestAppSecRouteSetups(t *testing.T) {
 		{fixtureReplacedContext(),
 			clean{[]string{"/users/{id}"}, nil, 0},
 			attack{route: "/users/{id}", events: pathBlock, failure: true}},
+		// chi matched "/api/*" (the parent rewrote the route path); the lookup of the
+		// URL of the request gives "/*", which does not extend it: it is dropped.
 		{fixtureParentRewrite(),
-			clean{[]string{"/api/files/{id}"}, []string{"wildcard-value"}, 0},
-			attack{route: "/api/files/{id}", events: []string{"wildcard-value"},
-				earlyRoute: "/*", earlyParams: pp("*", "old/attack-1")}},
-		// chi knows "id" (the parent routed the mount with a parameter): the lookup
-		// does not replace it, so the request is blocked as before the lookup existed.
+			clean{[]string{"/api/files/{id}"}, nil, 0},
+			attack{route: "/api/files/{id}", earlyRoute: "/api/*", earlyParams: pp("*", "")}},
+		// chi matched "/api/{id}/*" with "id" (the parent routed the mount with a
+		// parameter): the lookup does not extend it, so it is dropped and the request is
+		// blocked as before the lookup existed.
 		{fixtureNamedMountRewrite(),
-			clean{[]string{"/api/{id}/items/{item}"}, []string{"wildcard-value"}, 0},
-			attack{early: true, route: "/*", events: pathBlock, spanRoute: "/api/{id}/*",
-				earlyRoute: "/*", earlyParams: pp("*", "old/attack-1", "id", "attack-1")}},
+			clean{[]string{"/api/{id}/items/{item}"}, nil, 0},
+			attack{early: true, route: "/api/{id}/*", events: pathBlock, spanRoute: "/api/{id}/*",
+				earlyRoute: "/api/{id}/*", earlyParams: pp("*", "", "id", "attack-1")}},
 	}
 
 	for _, c := range cases {
@@ -386,6 +388,55 @@ func TestAppSecHandlerPanic(t *testing.T) {
 	assert.Equal(t, []string{""}, capture.routes(), "no late run: the route is the early route")
 	assert.Zero(t, count(rec.since(before), "waf.requests", "request_blocked:true"))
 	assert.Zero(t, count(rec.since(before), "waf.requests", "block_failure:true"))
+}
+
+// TestAppSecSameTypeMonitorRules documents the detection loss of the early
+// lookup: the WAF does not report a second rule of the same tags.type that has
+// no action. When the early lookup gives wrong parameters that match a detection
+// rule, the event of the rule that matches the correct parameters is hidden. A
+// rule with a block action is not hidden.
+func TestAppSecSameTypeMonitorRules(t *testing.T) {
+	fixtures := []routerFixture{
+		fixtureStripSlashes(true), fixtureWrappedMount(), fixtureRewrite("id"), fixtureWrappedEndpoint(),
+	}
+	t.Run("same type", func(t *testing.T) {
+		rec := startAppSecRules(t, pathRule("mon-wild", "mon-test", "*", ""), pathRule("mon-id", "mon-test", "id", ""))
+		capture := newOpCapture()
+		for _, f := range fixtures {
+			t.Run(f.name, func(t *testing.T) {
+				o := serveFixtureWith(t, rec, capture, f, "attack-1", false)
+				assert.Equal(t, []string{"mon-wild"}, o.events, "mon-id is hidden by the event on the early data")
+			})
+		}
+	})
+
+	t.Run("different types", func(t *testing.T) {
+		rec := startAppSecRules(t, pathRule("mon-wild", "mon-wild-test", "*", ""), pathRule("mon-id", "mon-test", "id", ""))
+		capture := newOpCapture()
+		for _, f := range fixtures {
+			t.Run(f.name, func(t *testing.T) {
+				o := serveFixtureWith(t, rec, capture, f, "attack-1", false)
+				assert.Equal(t, []string{"mon-id", "mon-wild"}, o.events)
+			})
+		}
+	})
+
+	t.Run("blocking rule of the same type", func(t *testing.T) {
+		rec := startAppSecRules(t, pathRule("mon-wild", "mon-test", "*", ""), pathRule("blk-id", "mon-test", "id", "block"))
+		capture := newOpCapture()
+		for _, f := range fixtures {
+			t.Run(f.name, func(t *testing.T) {
+				o := serveFixtureWith(t, rec, capture, f, "attack-1", false)
+				assert.Equal(t, http.StatusForbidden, o.status, "blk-id still matches")
+				assert.Contains(t, o.events, "blk-id")
+				assert.Contains(t, o.events, "mon-wild", "the early data matched the detection rule")
+				// The block replaces the response after the handler (nothing was
+				// sent), except when the endpoint has its own tracer: it gets "id"
+				// before its handler.
+				assert.Equal(t, !strings.HasPrefix(f.name, "14"), o.ran)
+			})
+		}
+	})
 }
 
 // TestAppSecConcurrentRequests sends concurrent requests through one middleware

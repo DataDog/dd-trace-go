@@ -55,12 +55,6 @@ func withAppsec(next http.Handler, span trace.TagSetter) http.Handler {
 		if complete {
 			route, params, found = lookupRoute(rctx, r)
 		}
-		if found {
-			// The lookup adds to what chi already knows (for example the parameters of
-			// a parent mount that a middleware before this one routed); it never
-			// replaces it.
-			params = mergeKnown(params, routeParams(rctx))
-		}
 		if !found {
 			// The values that chi knows now (for example with r.With(Middleware())).
 			route, params = rctx.RoutePattern(), routeParams(rctx)
@@ -128,7 +122,8 @@ func routeParams(rctx *chi.Context) map[string]string {
 // matched (or does not need to be): the caller then uses the values that chi
 // knows.
 //
-// The result is a prediction. It can differ from the route that chi selects when
+// The result is a prediction, and it extends the routes that chi already matched.
+// It can differ from the route that chi selects when
 // a middleware changes the path, the method or the route path after the tracer
 // (or before a tracer in a sub-router), or when a mount hides its child router
 // behind a handler wrapper (chi.Routes.Match stops at the mount).
@@ -161,29 +156,13 @@ func lookupRoute(rctx *chi.Context, r *http.Request) (route string, params map[s
 	if !rctx.Routes.Match(tmp, method, path) {
 		return "", nil, false
 	}
+	// chi may already have routed part of the request (a parent mount), possibly
+	// with a changed route path. A prediction that does not extend the routes that
+	// chi matched contradicts chi: drop it, and keep what chi matched.
+	if known := rctx.RoutePatterns; len(known) > 0 && !slices.Equal(known, tmp.RoutePatterns[:min(len(known), len(tmp.RoutePatterns))]) {
+		return "", nil, false
+	}
 	return tmp.RoutePattern(), lookupParams(tmp), true
-}
-
-// mergeKnown adds the parameters that chi already knows to the parameters of the
-// lookup. A known parameter wins: it is what chi matched, not a prediction. So the
-// lookup never removes data that AppSec got before the lookup existed. The
-// exception is "*": chi blanks the "*" that connects a mount when it enters the
-// mount, and the lookup does the same, but a tracer that wraps the mount handler
-// (r.With(Middleware()).Mount) runs before chi does it.
-func mergeKnown(looked, known map[string]string) map[string]string {
-	if len(known) == 0 {
-		return looked
-	}
-	if looked == nil {
-		looked = make(map[string]string, len(known))
-	}
-	for key, value := range known {
-		if _, found := looked[key]; key == "*" && found {
-			continue
-		}
-		looked[key] = value
-	}
-	return looked
 }
 
 // lookupParams returns the URL parameters that a successful Match left in tmp.
