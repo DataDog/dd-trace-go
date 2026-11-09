@@ -100,14 +100,14 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 	}
 
 	if metrics != nil {
-		metrics.IncWafError(addrs, err)
+		errCode := metrics.IncWafError(addrs, err)
 		metrics.RegisterWafRun(addrs, result.TimerStats, RequestMilestones{
 			requestBlocked: blocking,
 			blockFailure:   blockFailure,
 			ruleTriggered:  result.HasEvents(),
 			wafTimeout:     wafTimeout,
 			rateLimited:    rateLimited,
-			wafError:       err != nil && !wafTimeout,
+			wafError:       errCode != 0, // a real error is reported also when the run timed out
 		})
 	}
 }

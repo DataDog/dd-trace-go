@@ -6,7 +6,6 @@
 package waf
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -419,18 +418,22 @@ func (m *ContextMetrics) RegisterWafRun(addrs addresses.RunAddressData, timerSta
 // - `waf.error`
 // - `rasp.error`
 //
-// A timeout is not counted here: [ContextMetrics.RegisterWafRun] counts it.
-func (m *ContextMetrics) IncWafError(addrs addresses.RunAddressData, in error) {
+// It returns the error code to report ([waferrors.ToWafReturnCode]), which is zero when there is no
+// error to report. A timeout is not counted here: [ContextMetrics.RegisterWafRun] counts it.
+func (m *ContextMetrics) IncWafError(addrs addresses.RunAddressData, in error) int {
 	if in == nil {
-		return
+		return 0
 	}
 
 	// A timeout is not an error. RegisterWafRun counts it: rasp.timeout for RASP,
 	// waf.requests{waf_timeout:true} for the WAF scope. Do not count it again in
-	// rasp.error or waf.error. The scope and rule type checks below still apply.
-	timeout := errors.Is(in, waferrors.ErrTimeout)
+	// rasp.error or waf.error. The code is 0 only when the error tree holds no
+	// real error (only timeouts): a real error is reported even when the tree
+	// also holds a timeout. The scope and rule type checks below still apply.
+	code := waferrors.ToWafReturnCode(in)
+	noErrorToReport := code == 0
 
-	if !timeout {
+	if !noErrorToReport {
 		switch addrs.TimerKey {
 		case addresses.RASPScope:
 			m.RecordException(ExceptionTypeRASP, in)
@@ -444,23 +447,20 @@ func (m *ContextMetrics) IncWafError(addrs addresses.RunAddressData, in error) {
 		ruleType, ok := addresses.RASPRuleTypeFromAddressSet(addrs)
 		if !ok {
 			m.RecordException(ExceptionTypeInstrumentation, fmt.Errorf("unknown RASP rule type for addresses %v: %w", addrs, in))
-			return
+			return code
 		}
-		if !timeout {
-			m.raspError(in, ruleType)
+		if !noErrorToReport {
+			m.raspError(code, ruleType)
 		}
 	case addresses.WAFScope, "":
-		if !timeout {
-			m.wafError(in)
+		if !noErrorToReport {
+			m.wafError(code)
 		}
 	default:
 		m.RecordException(ExceptionTypeInstrumentation, fmt.Errorf("unexpected WAF error scope %q: %w", addrs.TimerKey, in))
 	}
+	return code
 }
-
-// defaultWafErrorCode is the error code (RFC-1012) of an error that has no ddwaf_run return code
-// ([waferrors.ToWafReturnCode] returns zero): an error from the bindings, not from the WAF itself.
-const defaultWafErrorCode = -127
 
 // updateClosestToZero atomically sets target to the closer-to-zero of its current
 // value and code. Codes are always < 0; a code >= 0 is ignored. Zero is the sentinel "no error".
@@ -523,11 +523,7 @@ func (m *ContextMetrics) ExceptionMsg() string {
 	}
 	return ""
 }
-func (m *ContextMetrics) wafError(in error) {
-	errCode := defaultWafErrorCode
-	if code := waferrors.ToWafReturnCode(in); code != 0 {
-		errCode = code
-	}
+func (m *ContextMetrics) wafError(errCode int) {
 	updateClosestToZero(&m.WAFErrorCode, int32(errCode))
 
 	handle, _ := m.wafErrorCount.LoadOrCompute(errCode, func() (telemetry.MetricHandle, bool) {
@@ -550,11 +546,7 @@ func (m *ContextMetrics) SkipRASPRule(ruleType addresses.RASPRuleType, reason st
 	handle.Submit(1)
 }
 
-func (m *ContextMetrics) raspError(in error, ruleType addresses.RASPRuleType) {
-	errCode := defaultWafErrorCode
-	if code := waferrors.ToWafReturnCode(in); code != 0 {
-		errCode = code
-	}
+func (m *ContextMetrics) raspError(errCode int, ruleType addresses.RASPRuleType) {
 	updateClosestToZero(&m.RASPErrorCodes[ruleType], int32(errCode))
 
 	handle, _ := m.raspErrorCount.LoadOrCompute(raspMetricKey[int]{typ: ruleType, additionalTag: errCode}, func() (telemetry.MetricHandle, bool) {

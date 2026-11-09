@@ -183,9 +183,9 @@ var wafErrorCodeCases = []struct {
 }{
 	{"internal", waferrors.ErrInternal, -3},
 	{"invalid_object", waferrors.ErrInvalidObject, -2},
-	{"invalid_argument", waferrors.ErrInvalidArgument, -1},
-	{"run_error_without_return_code", waferrors.ErrOutOfMemory, -127},
 	{"bindings", errors.New("bindings"), -127},
+	{"joined_codes", errors.Join(waferrors.ErrInternal, waferrors.ErrInvalidArgument), -1},
+	{"timeout_and_internal", errors.Join(waferrors.ErrTimeout, waferrors.ErrInternal), -3},
 }
 
 // TestIncWafErrorCodes checks that waf.error and rasp.error get the ddwaf_run code in the waf_error tag,
@@ -199,8 +199,9 @@ func TestIncWafErrorCodes(t *testing.T) {
 			handleMetrics := NewMetricsInstance(nil, "test")
 			metrics := handleMetrics.NewContextMetrics()
 
-			metrics.IncWafError(wafScopeAddresses(), tc.err)
+			got := metrics.IncWafError(wafScopeAddresses(), tc.err)
 
+			require.Equal(t, tc.want, got)
 			require.Equal(t, 1.0, sumMetric(client, "waf.error", code))
 			require.Equal(t, 1.0, sumMetric(client, "waf.error"))
 			require.Zero(t, sumMetric(client, "rasp.error"))
@@ -213,8 +214,9 @@ func TestIncWafErrorCodes(t *testing.T) {
 			handleMetrics := NewMetricsInstance(nil, "test")
 			metrics := handleMetrics.NewContextMetrics()
 
-			metrics.IncWafError(sqliAddresses(), tc.err)
+			got := metrics.IncWafError(sqliAddresses(), tc.err)
 
+			require.Equal(t, tc.want, got)
 			require.Equal(t, 1.0, sumMetric(client, "rasp.error", code, sqliRuleTypeTag))
 			require.Equal(t, 1.0, sumMetric(client, "rasp.error"))
 			require.Zero(t, sumMetric(client, "waf.error"))
@@ -332,43 +334,64 @@ func TestSubmitIncludesBlockOutcomeReportedDuringSubmit(t *testing.T) {
 	}
 }
 
+// asTimeoutError is an error that only has an As method: it gives waferrors.ErrTimeout to errors.As.
+// errors.Is does not find the timeout.
+type asTimeoutError struct{}
+
+func (asTimeoutError) Error() string { return "as timeout" }
+
+func (asTimeoutError) As(target any) bool {
+	if p, ok := target.(*waferrors.RunError); ok {
+		*p = waferrors.ErrTimeout
+		return true
+	}
+	return false
+}
+
 // TestIncWafErrorTimeout checks that IncWafError does not count a timeout as an
 // error, and that it still reports the broken scopes and rule types.
 func TestIncWafErrorTimeout(t *testing.T) {
-	timeout := fmt.Errorf("encode: %w", waferrors.ErrTimeout)
-
-	for _, tc := range []struct {
-		name          string
-		addrs         addresses.RunAddressData
-		wantException string
+	for _, timeout := range []struct {
+		name string
+		err  error
 	}{
-		{name: "waf-scope", addrs: wafScopeAddresses()},
-		{name: "rasp-sqli", addrs: sqliAddresses()},
-		{
-			name:          "rasp-without-rule-address",
-			addrs:         addresses.RunAddressData{TimerKey: addresses.RASPScope},
-			wantException: ExceptionTypeInstrumentation,
-		},
-		{
-			name:          "unknown-scope",
-			addrs:         addresses.RunAddressData{TimerKey: "unknown"},
-			wantException: ExceptionTypeInstrumentation,
-		},
+		{name: "wrapped-timeout", err: fmt.Errorf("encode: %w", waferrors.ErrTimeout)},
+		{name: "as-timeout", err: asTimeoutError{}},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			client := new(telemetrytest.RecordClient)
-			defer telemetry.MockClient(client)()
-			handleMetrics := NewMetricsInstance(nil, "test")
-			metrics := handleMetrics.NewContextMetrics()
+		for _, tc := range []struct {
+			name          string
+			addrs         addresses.RunAddressData
+			wantException string
+		}{
+			{name: "waf-scope", addrs: wafScopeAddresses()},
+			{name: "rasp-sqli", addrs: sqliAddresses()},
+			{
+				name:          "rasp-without-rule-address",
+				addrs:         addresses.RunAddressData{TimerKey: addresses.RASPScope},
+				wantException: ExceptionTypeInstrumentation,
+			},
+			{
+				name:          "unknown-scope",
+				addrs:         addresses.RunAddressData{TimerKey: "unknown"},
+				wantException: ExceptionTypeInstrumentation,
+			},
+		} {
+			t.Run(timeout.name+"/"+tc.name, func(t *testing.T) {
+				client := new(telemetrytest.RecordClient)
+				defer telemetry.MockClient(client)()
+				handleMetrics := NewMetricsInstance(nil, "test")
+				metrics := handleMetrics.NewContextMetrics()
 
-			metrics.IncWafError(tc.addrs, timeout)
+				got := metrics.IncWafError(tc.addrs, timeout.err)
 
-			require.Zero(t, sumMetric(client, "waf.error"))
-			require.Zero(t, sumMetric(client, "rasp.error"))
-			require.Zero(t, metrics.WAFErrorCode.Load())
-			requireNoRASPErrorCodes(t, metrics)
-			require.Equal(t, tc.wantException, metrics.ExceptionType())
-			require.Equal(t, tc.wantException != "", hasExceptionLog(client), "logs: %v", client.Logs)
-		})
+				require.Zero(t, got)
+				require.Zero(t, sumMetric(client, "waf.error"))
+				require.Zero(t, sumMetric(client, "rasp.error"))
+				require.Zero(t, metrics.WAFErrorCode.Load())
+				requireNoRASPErrorCodes(t, metrics)
+				require.Equal(t, tc.wantException, metrics.ExceptionType())
+				require.Equal(t, tc.wantException != "", hasExceptionLog(client), "logs: %v", client.Logs)
+			})
+		}
 	}
 }
