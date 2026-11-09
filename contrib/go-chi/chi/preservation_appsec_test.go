@@ -83,3 +83,28 @@ func TestExistingPathBlocks(t *testing.T) {
 // existingDuplicateBlock: chi read the last value of a name that is used at
 // several levels before the lookup existed, so it did not block here.
 const existingDuplicateBlock = false
+
+// TestNoCombinedPathParams checks that the early check never mixes the values of
+// the lookup with the values that chi matched: the rule needs id = attack (the
+// mount) AND op = danger (the endpoint), but the endpoint has its own "id" = clean.
+// No request has this combination, so it must not be blocked.
+func TestNoCombinedPathParams(t *testing.T) {
+	startAppSecRules(t, `{"id":"combined","name":"combined","tags":{"type":"combined-test","category":"attack_attempt"},
+		"conditions":[
+			{"operator":"match_regex","parameters":{"inputs":[{"address":"server.request.path_params","key_path":["id"]}],"regex":"^attack$"}},
+			{"operator":"match_regex","parameters":{"inputs":[{"address":"server.request.path_params","key_path":["op"]}],"regex":"^danger$"}}],
+		"on_match":["block"]}`)
+	root, child := chi.NewRouter(), chi.NewRouter()
+	ran := false
+	child.Use(Middleware())
+	child.Get("/users/{id}/{op}", func(w http.ResponseWriter, _ *http.Request) {
+		ran = true
+		w.WriteHeader(http.StatusOK)
+	})
+	root.Mount("/tenants/{id}", child)
+
+	w := httptest.NewRecorder()
+	root.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/tenants/attack/users/clean/danger", nil))
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.True(t, ran)
+}
