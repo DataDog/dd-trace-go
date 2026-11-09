@@ -6,7 +6,6 @@
 package chi
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -41,7 +40,10 @@ const benchRules = `{
 
 // BenchmarkMiddlewareAppSec measures a request through Use(Middleware()) with
 // AppSec enabled, for 0, 4 and 16 writers with Unwrap() under chi's writer.
-// "root" has the route lookup, the commit tracker, the context value and the late run.
+// The request has the route lookup, the commit tracker, the context value and,
+// when chi selects another route, the late run. Path parameters are new WAF
+// input: "no-params" shows the cost without them. A chain of 16 writers is too
+// long for the tracker (it is not complete, and does not run the lookup).
 func BenchmarkMiddlewareAppSec(b *testing.B) {
 	rules := filepath.Join(b.TempDir(), "rules.json")
 	require.NoError(b, os.WriteFile(rules, []byte(benchRules), 0o600))
@@ -60,10 +62,24 @@ func BenchmarkMiddlewareAppSec(b *testing.B) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	for _, depth := range []int{0, 4, 16} {
-		b.Run(fmt.Sprintf("depth=%d", depth), func(b *testing.B) {
+	router.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	for _, c := range []struct {
+		name   string
+		target string
+		depth  int
+	}{
+		{"depth=0", "/users/42/orders/7", 0},
+		{"depth=4", "/users/42/orders/7", 4},
+		{"depth=16", "/users/42/orders/7", 16},
+		{"no-params", "/health", 0},
+	} {
+		depth := c.depth
+		b.Run(c.name, func(b *testing.B) {
 			b.ReportAllocs()
-			req := httptest.NewRequest(http.MethodGet, "/users/42/orders/7", nil)
+			req := httptest.NewRequest(http.MethodGet, c.target, nil)
 			for i := 0; i < b.N; i++ {
 				var w http.ResponseWriter = httptest.NewRecorder()
 				for d := 0; d < depth; d++ {
