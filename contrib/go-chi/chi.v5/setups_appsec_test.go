@@ -175,10 +175,13 @@ func TestAppSecRouteSetups(t *testing.T) {
 			clean{[]string{"/api/users/{id}", "/api/users/{id}"}, nil, 0},
 			attack{early: true, route: "/api/users/{id}", events: pathBlock, spanRoute: "",
 				earlyRoute: "/api/users/{id}", earlyParams: pp("*", "", "id", "attack-1")}},
+		// The tracer wraps the mount handler: chi has not reset the "*" of the mount
+		// yet. The known value stays (a rule on "*" blocked this request before the
+		// lookup existed); the lookup adds "id".
 		{fixtureWithMount(),
-			clean{[]string{"/api/users/{id}"}, nil, 0},
+			clean{[]string{"/api/users/{id}"}, []string{"wildcard-value"}, 0},
 			attack{early: true, route: "/api/users/{id}", events: pathBlock, spanRoute: "/api/*",
-				earlyRoute: "/api/users/{id}", earlyParams: pp("*", "", "id", "attack-1")}},
+				earlyRoute: "/api/users/{id}", earlyParams: pp("*", "users/attack-1", "id", "attack-1")}},
 		{fixtureLiteralLeaf(),
 			clean{[]string{"/api/attack"}, nil, 0},
 			attack{route: "/api/attack", earlyRoute: "/api/attack", earlyParams: pp("*", "")}},
@@ -393,6 +396,7 @@ func TestAppSecHandlerPanic(t *testing.T) {
 	assert.Equal(t, []string{""}, capture.routes(), "no late run: the route is the early route")
 	assert.Zero(t, count(rec.since(before), "waf.requests", "request_blocked:true"))
 	assert.Zero(t, count(rec.since(before), "waf.requests", "block_failure:true"))
+	assert.Zero(t, count(rec.since(before), "api_security.missing_route"), "not a 2xx response")
 }
 
 // TestAppSecModifyResourceName checks that AppSec reports the same route as the

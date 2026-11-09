@@ -53,13 +53,19 @@ func withAppsec(next http.Handler, span trace.TagSetter, cfg *config, cache *syn
 		// Without a complete tracker, the WAF gets no newly discovered data.
 		complete := ct != nil && ct.complete
 
+		// What chi knows now (for example with r.With(Middleware())): the early input
+		// that AppSec had before the lookup existed. The lookup never changes it.
+		known := knownParams(rctx)
+
 		route, params, found := "", map[string]string(nil), false
 		if complete {
 			route, params, found = lookupRoute(rctx, r, cfg)
 		}
+		if found {
+			params, found = addPrediction(known, params)
+		}
 		if !found {
-			// The values that chi knows now (for example with r.With(Middleware())).
-			route, params = cfg.modifyResourceName(rctx.RoutePattern()), routeParams(rctx)
+			route, params = cfg.modifyResourceName(rctx.RoutePattern()), known
 		}
 		appsecCfg.Route, appsecCfg.RouteParams = route, params
 		early := snapshotEarly(route, params)
@@ -103,6 +109,47 @@ func snapshotEarly(route string, params map[string]string) earlyData {
 // nil map and an empty map are the same.
 func (e earlyData) sameAs(route string, params map[string]string) bool {
 	return e.route == route && maps.Equal(e.params, params)
+}
+
+// knownParams returns the parameters that chi matched so far, as AppSec read them
+// before the lookup existed: the first value of a name that is used at several
+// levels wins.
+func knownParams(rctx *chi.Context) map[string]string {
+	keys, values := rctx.URLParams.Keys, rctx.URLParams.Values
+	if len(keys) == 0 || len(keys) != len(values) {
+		return nil
+	}
+	params := make(map[string]string, len(keys))
+	for i, key := range keys {
+		if _, found := params[key]; !found {
+			params[key] = values[i]
+		}
+	}
+	return params
+}
+
+// addPrediction adds the parameters of the lookup to the parameters that chi
+// already matched, and never changes one of them: it keeps every block that works
+// without the lookup. It reports false when the prediction contradicts chi (a
+// name has another value, for example when a name is used at several levels of
+// mounts): then only what chi matched is used. The "*" is the exception to the
+// contradiction: a tracer that wraps a mount (r.With(Middleware()).Mount) runs
+// before chi resets the "*" of the mount, so the known value is kept.
+func addPrediction(known, predicted map[string]string) (map[string]string, bool) {
+	if len(known) == 0 {
+		return predicted, true
+	}
+	merged := maps.Clone(predicted)
+	if merged == nil {
+		merged = make(map[string]string, len(known))
+	}
+	for key, value := range known {
+		if other, found := merged[key]; found && other != value && key != "*" {
+			return nil, false
+		}
+		merged[key] = value
+	}
+	return merged, true
 }
 
 // routeParams returns the URL parameters of rctx as a new map, or nil when there

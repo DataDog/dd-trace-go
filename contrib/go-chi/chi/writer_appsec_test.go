@@ -13,6 +13,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/middleware"
@@ -279,7 +280,9 @@ func (f fakeChi) Status() int                 { return 0 }
 func (f fakeChi) BytesWritten() int           { return 0 }
 func (f fakeChi) Unwrap() http.ResponseWriter { return nil }
 
-// TestCommitTrackerGeneratedTypes builds each of the 24 generated types.
+// TestCommitTrackerGeneratedTypes builds each of the 24 generated types, and calls
+// each method that the type declares: it must reach the chi writer, and the
+// tracker must record the state.
 func TestCommitTrackerGeneratedTypes(t *testing.T) {
 	n := 0
 	for flags := range uint8(32) {
@@ -287,7 +290,8 @@ func TestCommitTrackerGeneratedTypes(t *testing.T) {
 			continue // no FlushError next to a Flush
 		}
 		n++
-		ct := &commitTracker{WrapResponseWriter: fakeChi{fakeRaw: newFakeRaw()}, complete: true}
+		raw := newFakeRaw()
+		ct := &commitTracker{WrapResponseWriter: fakeChi{fakeRaw: raw}, complete: true}
 		w := wrapCommitTracker(ct, flags)
 		assert.Equal(t, ifaces{
 			flusher:    flags&hasFlusher != 0,
@@ -299,6 +303,37 @@ func TestCommitTrackerGeneratedTypes(t *testing.T) {
 		_, ok := w.(trackerCarrier)
 		assert.True(t, ok)
 		assert.Same(t, ct, w.(trackerCarrier).tracker())
+
+		// ReadFrom and Push reach the chi writer and do not change the state.
+		if rf, ok := w.(io.ReaderFrom); ok {
+			count, err := rf.ReadFrom(strings.NewReader("body"))
+			assert.NoError(t, err, "flags=%05b", flags)
+			assert.EqualValues(t, 4, count)
+			assert.Equal(t, "body", raw.body.String(), "flags=%05b", flags)
+			assert.False(t, ct.flushed || ct.hijacked, "flags=%05b", flags)
+		}
+		if p, ok := w.(http.Pusher); ok {
+			assert.NoError(t, p.Push("/x", nil), "flags=%05b", flags)
+			assert.False(t, ct.flushed || ct.hijacked, "flags=%05b", flags)
+		}
+		// Flush, FlushError and Hijack reach the chi writer and are recorded.
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+			assert.Equal(t, 1, raw.flushes, "flags=%05b", flags)
+			assert.True(t, ct.flushed, "flags=%05b", flags)
+			assert.Equal(t, http.StatusOK, ct.flushStatus)
+		}
+		if fe, ok := w.(interface{ FlushError() error }); ok {
+			assert.NoError(t, fe.FlushError(), "flags=%05b", flags)
+			assert.Equal(t, 1, raw.flushes, "flags=%05b", flags)
+			assert.True(t, ct.flushed, "flags=%05b", flags)
+		}
+		if h, ok := w.(http.Hijacker); ok {
+			_, _, err := h.Hijack()
+			assert.NoError(t, err)
+			assert.Equal(t, 1, raw.hijacks, "flags=%05b", flags)
+			assert.True(t, ct.hijacked, "flags=%05b", flags)
+		}
 	}
 	assert.Equal(t, 24, n)
 	assert.Panics(t, func() { wrapCommitTracker(&commitTracker{}, hasFlusher|hasFlushError) })

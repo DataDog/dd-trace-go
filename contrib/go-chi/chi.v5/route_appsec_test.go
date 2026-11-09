@@ -198,3 +198,40 @@ func BenchmarkLookupRoute(b *testing.B) {
 		})
 	}
 }
+
+func TestKnownParams(t *testing.T) {
+	rctx := chi.NewRouteContext()
+	assert.Nil(t, knownParams(rctx))
+	rctx.URLParams.Keys, rctx.URLParams.Values = []string{"id", "*", "id"}, []string{"parent", "x", "child"}
+	assert.Equal(t, map[string]string{"id": "parent", "*": "x"}, knownParams(rctx))
+	assert.Equal(t, map[string]string{"id": "child", "*": "x"}, routeParams(rctx), "the final report: the last value wins")
+	rctx.URLParams.Values = rctx.URLParams.Values[:2]
+	assert.Nil(t, knownParams(rctx), "the lengths differ")
+}
+
+func TestAddPrediction(t *testing.T) {
+	// Nothing known: the prediction.
+	got, ok := addPrediction(nil, map[string]string{"id": "1"})
+	assert.True(t, ok)
+	assert.Equal(t, map[string]string{"id": "1"}, got)
+
+	// The prediction adds names, and keeps the known values.
+	got, ok = addPrediction(map[string]string{"tid": "t"}, map[string]string{"tid": "t", "id": "1"})
+	assert.True(t, ok)
+	assert.Equal(t, map[string]string{"tid": "t", "id": "1"}, got)
+
+	// Another value for a known name: the prediction contradicts chi.
+	_, ok = addPrediction(map[string]string{"id": "attack"}, map[string]string{"id": "clean"})
+	assert.False(t, ok)
+
+	// The "*" of a mount that the tracer wraps is not reset yet: the known value stays.
+	got, ok = addPrediction(map[string]string{"*": "rest"}, map[string]string{"*": "", "id": "1"})
+	assert.True(t, ok)
+	assert.Equal(t, map[string]string{"*": "rest", "id": "1"}, got)
+
+	// The input maps do not change.
+	known, predicted := map[string]string{"a": "1"}, map[string]string{"b": "2"}
+	_, _ = addPrediction(known, predicted)
+	assert.Equal(t, map[string]string{"a": "1"}, known)
+	assert.Equal(t, map[string]string{"b": "2"}, predicted)
+}

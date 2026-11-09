@@ -66,6 +66,21 @@ func BenchmarkMiddlewareAppSec(b *testing.B) {
 		w.WriteHeader(http.StatusOK)
 	})
 
+	// 4 routers in 3 levels of mounts, each with the tracer (what Orchestrion
+	// does), and a long path: every tracer searches the route from the root.
+	nested := chi.NewRouter()
+	nested.Use(Middleware())
+	level := nested
+	for _, prefix := range []string{"/a/{x}", "/b/{y}", "/c/{z}"} {
+		child := chi.NewRouter()
+		child.Use(Middleware())
+		level.Mount(prefix, child)
+		level = child
+	}
+	level.Get("/items/{id}/orders/{order}", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
 	for _, c := range []struct {
 		name   string
 		target string
@@ -75,8 +90,13 @@ func BenchmarkMiddlewareAppSec(b *testing.B) {
 		{"depth=4", "/users/42/orders/7", 4},
 		{"depth=16", "/users/42/orders/7", 16},
 		{"no-params", "/health", 0},
+		{"nested-4-tracers", "/a/1/b/2/c/3/items/42/orders/7", 0},
 	} {
 		depth := c.depth
+		handler := http.Handler(router)
+		if c.name == "nested-4-tracers" {
+			handler = nested
+		}
 		b.Run(c.name, func(b *testing.B) {
 			b.ReportAllocs()
 			req := httptest.NewRequest(http.MethodGet, c.target, nil)
@@ -85,7 +105,7 @@ func BenchmarkMiddlewareAppSec(b *testing.B) {
 				for range depth {
 					w = benchUnwrapper{w}
 				}
-				router.ServeHTTP(w, req)
+				handler.ServeHTTP(w, req)
 				if i%1000 == 0 {
 					mt.Reset()
 				}
