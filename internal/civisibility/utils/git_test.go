@@ -6,9 +6,11 @@
 package utils
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -969,24 +971,11 @@ func TestGetBaseBranchShaInShallowClones(t *testing.T) {
 			}
 			t.Run(tt.name+"/"+mode, func(t *testing.T) {
 				isolateFixtureGit(t)
-				root := t.TempDir()
-				origin := filepath.Join(root, "origin")
-				require.NoError(t, os.Mkdir(origin, 0o755))
-				runFixtureGit(t, origin, "init", "--initial-branch=main")
 				firstAge := tt.firstAge
 				if firstAge == 0 {
 					firstAge = tt.baseAge + day
 				}
-				commitFixtureAt(t, origin, "first", firstAge)
-				commitFixtureAt(t, origin, "base", tt.baseAge)
-				base := runFixtureGit(t, origin, "rev-parse", "HEAD")
-				runFixtureGit(t, origin, "switch", "-c", "feature")
-				commitFixtureAt(t, origin, "feature", tt.featureAge)
-				feature := runFixtureGit(t, origin, "rev-parse", "HEAD")
-				runFixtureGit(t, origin, "switch", "main")
-				commitFixtureAt(t, origin, "main moved on", tt.mainAge)
-				main := runFixtureGit(t, origin, "rev-parse", "HEAD")
-
+				root, origin, base, feature, main := newBaseBranchOrigin(t, firstAge, tt.baseAge, tt.featureAge, tt.mainAge)
 				checkout := filepath.Join(root, "checkout")
 				tt.checkout(t, origin, checkout, feature, main)
 				require.Equal(t, "true", runFixtureGit(t, checkout, "rev-parse", "--is-shallow-repository"))
@@ -1009,6 +998,92 @@ func TestGetBaseBranchShaInShallowClones(t *testing.T) {
 			})
 		}
 	}
+}
+
+// newBaseBranchOrigin creates an origin repository whose main and feature
+// branches leave a base commit, with commits as old as the given ages. main
+// moves on after feature leaves it.
+func newBaseBranchOrigin(t *testing.T, firstAge, baseAge, featureAge, mainAge time.Duration) (root, origin, base, feature, main string) {
+	t.Helper()
+	root = t.TempDir()
+	origin = filepath.Join(root, "origin")
+	require.NoError(t, os.Mkdir(origin, 0o755))
+	runFixtureGit(t, origin, "init", "--initial-branch=main")
+	commitFixtureAt(t, origin, "first", firstAge)
+	commitFixtureAt(t, origin, "base", baseAge)
+	base = runFixtureGit(t, origin, "rev-parse", "HEAD")
+	runFixtureGit(t, origin, "switch", "-c", "feature")
+	commitFixtureAt(t, origin, "feature", featureAge)
+	feature = runFixtureGit(t, origin, "rev-parse", "HEAD")
+	runFixtureGit(t, origin, "switch", "main")
+	commitFixtureAt(t, origin, "main moved on", mainAge)
+	main = runFixtureGit(t, origin, "rev-parse", "HEAD")
+	return root, origin, base, feature, main
+}
+
+// The Git upload can complete the history while base branch detection runs,
+// between its first comparison and its own deepening.
+func TestGetBaseBranchShaAfterTheGitUploadCompletesTheHistory(t *testing.T) {
+	isolateFixtureGit(t)
+	root, origin, base, feature, main := newBaseBranchOrigin(t, 24*time.Hour, 0, 0, 0)
+	checkout := filepath.Join(root, "checkout")
+	pushCheckout(t, origin, checkout, feature, main)
+	t.Chdir(checkout)
+	resetGitCommandCachesForTesting(t)
+	ResetCITags()
+	t.Cleanup(ResetCITags)
+	AddCITags(constants.GitPrBaseBranch, "")
+
+	require.True(t, isGitFound())
+	testBinary, err := os.Executable()
+	require.NoError(t, err)
+	t.Setenv("DD_TEST_GIT_COMPLETING_UPLOAD", "1")
+	t.Setenv("DD_TEST_REAL_GIT", gitExecutable)
+	t.Setenv("DD_TEST_GIT_UPLOAD_DONE", filepath.Join(root, "upload-done"))
+	gitExecutable = testBinary
+	gitExecutableArgs = []string{"-test.run=^TestFakeGitCompletingUploadHelperProcess$", "--"}
+
+	sha, err := GetBaseBranchSha("")
+	require.NoError(t, err)
+	assert.Equal(t, base, sha)
+	assert.FileExists(t, filepath.Join(root, "upload-done"), "the first merge-base must run before the upload completes")
+}
+
+// TestFakeGitCompletingUploadHelperProcess runs git. Before the first
+// merge-base, it completes the history as the Git upload would, then fails it
+// as the shallow history did.
+func TestFakeGitCompletingUploadHelperProcess(t *testing.T) {
+	if os.Getenv("DD_TEST_GIT_COMPLETING_UPLOAD") != "1" {
+		return
+	}
+	args := os.Args
+	for len(args) > 0 && args[0] != "--" {
+		args = args[1:]
+	}
+	if len(args) > 0 {
+		args = args[1:]
+	}
+	realGit := os.Getenv("DD_TEST_REAL_GIT")
+	done := os.Getenv("DD_TEST_GIT_UPLOAD_DONE")
+	if slices.Contains(args, "merge-base") {
+		if _, err := os.Stat(done); os.IsNotExist(err) {
+			if out, err := exec.Command(realGit, "fetch", "--unshallow", "origin").CombinedOutput(); err != nil {
+				_, _ = os.Stderr.Write(out)
+				os.Exit(2)
+			}
+			_ = os.WriteFile(done, nil, 0o644)
+			os.Exit(1)
+		}
+	}
+	cmd := exec.Command(realGit, args...)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+			os.Exit(exitErr.ExitCode())
+		}
+		os.Exit(2)
+	}
+	os.Exit(0)
 }
 
 // The Git upload and base branch detection check and invalidate the shallow

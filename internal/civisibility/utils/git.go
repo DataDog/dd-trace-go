@@ -959,12 +959,16 @@ func GetBaseBranchSha(defaultBranch string) (string, error) {
 	// merge base; the full history only while none has one, as a candidate that
 	// never meets the source, such as an independent prod branch, would
 	// otherwise fetch it on every run. The month can cut older history short;
-	// if that loses every merge base, the full history brings it back.
+	// if that loses every merge base, the full history brings it back. Each
+	// step compares again even when it fetched nothing: the Git upload, which
+	// can still be running, may have deepened the clone meanwhile.
 	baseSha, complete, err := findBaseBranchSha(candidateBranches, source, detectedDefaultBranch, remoteName)
-	if !complete && deepenShallowClone(remoteName, unshallowSince, "--update-shallow") {
+	if !complete {
+		deepenShallowClone(remoteName, unshallowSince, "--update-shallow")
 		baseSha, _, err = findBaseBranchSha(candidateBranches, source, detectedDefaultBranch, remoteName)
 	}
-	if baseSha == "" && deepenShallowClone(remoteName, "--unshallow") {
+	if baseSha == "" {
+		deepenShallowClone(remoteName, "--unshallow")
 		baseSha, _, err = findBaseBranchSha(candidateBranches, source, detectedDefaultBranch, remoteName)
 	}
 	return baseSha, err
@@ -1003,35 +1007,31 @@ func findBaseBranchSha(candidateBranches []string, sourceBranch, defaultBranch, 
 // them the source branch's even when HEAD is a local commit that the remote
 // lacks. Each one is fetched alone, so a commit that the remote no longer has,
 // such as the tip of a deleted branch, leaves the others alone; it stops once
-// the clone is complete. Only commits and trees are fetched. It reports whether
-// any history was fetched.
-func deepenShallowClone(remoteName string, depth ...string) bool {
+// the clone is complete. Only commits and trees are fetched.
+func deepenShallowClone(remoteName string, depth ...string) {
 	isAShallowClone, err := isAShallowCloneRepository()
 	if err != nil || !isAShallowClone {
-		return false
+		return
 	}
 	shallowFile, err := execGitString(telemetry.NotSpecifiedCommandsType, "rev-parse", "--git-path", "shallow")
 	if err != nil {
-		return false
+		return
 	}
 	boundaries, err := os.ReadFile(shallowFile)
 	if err != nil {
-		return false
+		return
 	}
-	deepened := false
 	for commit := range strings.FieldsSeq(string(boundaries)) {
 		args := append(append([]string{"fetch"}, depth...), "--filter=blob:none", "--recurse-submodules=no", remoteName, commit)
 		if _, err := execGitString(telemetry.UnshallowCommandsType, args...); err != nil {
 			log.Debug("civisibility.git: failed to deepen the shallow clone at %s: %s", commit, err.Error())
 			continue
 		}
-		deepened = true
 		invalidateShallowCloneCache()
 		if isAShallowClone, err := isAShallowCloneRepository(); err == nil && !isAShallowClone {
-			break
+			return
 		}
 	}
-	return deepened
 }
 
 // getRemoteName determines the remote name using the algorithm from algorithm.md
