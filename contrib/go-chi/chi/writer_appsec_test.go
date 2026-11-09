@@ -192,10 +192,18 @@ func (w plain) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 // opaque is a wrapper without Unwrap().
 type opaque struct{ http.ResponseWriter }
 
-// cyclic returns itself from Unwrap().
-type cyclic struct{ http.ResponseWriter }
+// cyclic returns itself from Unwrap(), for a bounded number of calls.
+type cyclic struct {
+	http.ResponseWriter
+	calls int
+}
 
-func (w *cyclic) Unwrap() http.ResponseWriter { return w }
+func (w *cyclic) Unwrap() http.ResponseWriter {
+	if w.calls++; w.calls > 10000 {
+		return nil
+	}
+	return w
+}
 
 // hijackOnly can hijack and has Unwrap(), but the chi writer over a plain
 // wrapper of it is not a Hijacker.
@@ -353,6 +361,32 @@ func TestCommitTrackerState(t *testing.T) {
 		assert.Equal(t, 200, ct.Status())
 	})
 
+	t.Run("flush then WriteHeader", func(t *testing.T) {
+		// The controller flush sends the implicit 200 and bypasses chi: a later
+		// WriteHeader changes chi's status, but not the response.
+		f := newFakeRaw()
+		tw, ct, _ := track(t, flushErrorOnly{f}, 1, nil)
+		require.NoError(t, http.NewResponseController(tw).Flush())
+		tw.WriteHeader(404)
+		assert.Equal(t, 200, ct.Status())
+		assert.Equal(t, 200, tw.(middleware.WrapResponseWriter).Status())
+
+		// A status that was sent before the flush stays.
+		tw, ct, _ = track(t, flushErrorOnly{f}, 1, nil)
+		tw.WriteHeader(201)
+		require.NoError(t, http.NewResponseController(tw).Flush())
+		tw.WriteHeader(404)
+		assert.Equal(t, 201, ct.Status())
+
+		// A child tracker reads the same status from its parent.
+		tw, ct, _ = track(t, flushErrorOnly{f}, 1, nil)
+		ctx := context.WithValue(context.Background(), trackerCtxKey{}, ct)
+		_, child, _ := track(t, plain{tw}, 1, ctx)
+		require.NoError(t, http.NewResponseController(tw).Flush())
+		tw.WriteHeader(404)
+		assert.Equal(t, 200, child.Status())
+	})
+
 	t.Run("flush error", func(t *testing.T) {
 		f := newFakeRaw()
 		f.flushErr = errors.New("flush failed")
@@ -432,7 +466,7 @@ func TestCommitTrackerState(t *testing.T) {
 			"15 plain wrappers":        {func() http.ResponseWriter { return wrapN(rawWith(newFakeRaw(), 0), 15) }, true},
 			"16 plain wrappers":        {func() http.ResponseWriter { return wrapN(rawWith(newFakeRaw(), 0), 16) }, false},
 			"17 plain wrappers":        {func() http.ResponseWriter { return wrapN(rawWith(newFakeRaw(), 0), 17) }, false},
-			"Unwrap returns itself":    {func() http.ResponseWriter { return &cyclic{rawWith(newFakeRaw(), 0)} }, false},
+			"Unwrap returns itself":    {func() http.ResponseWriter { return &cyclic{ResponseWriter: rawWith(newFakeRaw(), 0)} }, false},
 			"opaque (no Unwrap)":       {func() http.ResponseWriter { return opaque{newFakeRaw()} }, true},
 			"hijacker, chi can hijack": {func() http.ResponseWriter { return rawWith(newFakeRaw(), rawHijacker) }, true},
 		} {
@@ -550,7 +584,7 @@ func TestCommitTrackerParent(t *testing.T) {
 
 	t.Run("incomplete parent", func(t *testing.T) {
 		f := newFakeRaw()
-		otw, oct, _ := track(t, &cyclic{f}, 1, nil)
+		otw, oct, _ := track(t, &cyclic{ResponseWriter: f}, 1, nil)
 		require.False(t, oct.complete)
 		ctx := context.WithValue(context.Background(), trackerCtxKey{}, oct)
 		_, ict, _ := track(t, plain{otw}, 1, ctx)

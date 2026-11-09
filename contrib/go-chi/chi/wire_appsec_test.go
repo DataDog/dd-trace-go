@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -71,10 +72,9 @@ func (r wireResult) blockFailure() float64 {
 // wireServer is the server of one request: the router, and a function that
 // decorates the writer that net/http gives (nil: none).
 type wireServer struct {
-	router  http.Handler
-	wrap    func(http.ResponseWriter, *http.Request) (http.ResponseWriter, *http.Request)
-	http2   bool
-	rawMode bool // the response is raw bytes from a hijacked connection
+	router http.Handler
+	wrap   func(http.ResponseWriter, *http.Request) (http.ResponseWriter, *http.Request)
+	http2  bool
 }
 
 // do sends one GET (or the method) request to the server and waits for the
@@ -111,6 +111,9 @@ func (s wireServer) do(t *testing.T, rec *metricsRecorder, capture *opCapture, m
 	require.NoError(t, err)
 	res, err := client.Do(req)
 	require.NoError(t, err)
+	if s.http2 {
+		require.Equal(t, 2, res.ProtoMajor, "the request must use HTTP/2")
+	}
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
 	res.Body.Close()
@@ -150,10 +153,20 @@ func (w flushErrorWriter) FlushError() error {
 	return http.NewResponseController(w.ResponseWriter).Flush()
 }
 
-// cyclicWriter returns itself from Unwrap().
-type cyclicWriter struct{ http.ResponseWriter }
+// cyclicWriter returns itself from Unwrap(). After many calls it returns nil, so
+// that a loop over Unwrap() that does not stop (it exists in code that the
+// tracker does not control) ends and fails the test, instead of hanging it.
+type cyclicWriter struct {
+	http.ResponseWriter
+	calls *atomic.Int64
+}
 
-func (w *cyclicWriter) Unwrap() http.ResponseWriter { return w }
+func (w *cyclicWriter) Unwrap() http.ResponseWriter {
+	if w.calls.Add(1) > 10000 {
+		return nil
+	}
+	return w
+}
 
 // unwrapOnly hides the optional interfaces and keeps Unwrap(), so that
 // http.ResponseController reaches the connection (a Hijacker) only through it.
@@ -466,7 +479,7 @@ func TestAppSecWireSpecial(t *testing.T) {
 				w.WriteHeader(200)
 				_, _ = io.WriteString(w, appBody)
 			}))
-			return wireServer{router: r, wrap: wrapWriter(func(w http.ResponseWriter) http.ResponseWriter { return &cyclicWriter{w} })}, target
+			return wireServer{router: r, wrap: wrapWriter(func(w http.ResponseWriter) http.ResponseWriter { return &cyclicWriter{w, new(atomic.Int64)} })}, target
 		})
 		t.Run("wire", func(t *testing.T) {
 			assert.True(t, res.ran)
@@ -666,6 +679,30 @@ func TestAppSecWireHiddenParent(t *testing.T) {
 		assert.Contains(t, res.body, `{"errors":`, "documented limit")
 		assert.EqualValues(t, 1, res.requestBlocked(), "a false report")
 	})
+}
+
+// TestAppSecWireStaleParams documents that AppSec cannot remove path parameters
+// that it already has. The early lookup gave "id" to the WAF; a middleware after
+// the tracer then routes the request to a route without parameters. The late run
+// has nothing to give (the WAF ignores an empty set of parameters), so the
+// response rule can still match with the early "id".
+func TestAppSecWireStaleParams(t *testing.T) {
+	res := wireOnce(t, []string{ruleMixedBlockHeaderFirst}, func(c *opCapture, ran *bool) (wireServer, string) {
+		r := chi.NewRouter()
+		r.Use(c.middleware, Middleware(), func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				chi.RouteContext(req.Context()).RoutePath = "/health"
+				next.ServeHTTP(w, req)
+			})
+		})
+		r.Get("/items/{id}", func(http.ResponseWriter, *http.Request) {})
+		r.Get("/health", readyHandler(ran, nil))
+		return wireServer{router: r}, "/items/attack"
+	})
+	assert.True(t, res.ran, "the handler of /health ran")
+	assert.Equal(t, 403, res.status, "documented limit: blocked with the early parameter")
+	assert.Equal(t, []string{"mixed-block"}, res.events)
+	assert.Equal(t, []string{"/health"}, res.routes, "the route is the route that chi selected")
 }
 
 // TestAppSecWireCompress uses the real chi v1.5.5 middleware.Compress as the

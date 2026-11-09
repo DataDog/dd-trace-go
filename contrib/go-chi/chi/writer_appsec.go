@@ -5,7 +5,10 @@
 
 package chi
 
-//go:generate sh -c "go run make_writer_appsec.go | gofmt > writer_appsec_gen.go"
+// The generator output goes through a temporary file, so that a failure of the
+// generator fails go generate.
+//
+//go:generate sh -c "set -e; trap 'rm -f writer_appsec_gen.go.tmp' EXIT; go run make_writer_appsec.go > writer_appsec_gen.go.tmp; gofmt writer_appsec_gen.go.tmp > writer_appsec_gen.go"
 
 import (
 	"bufio"
@@ -47,6 +50,11 @@ type commitTracker struct {
 	flushed  bool
 	hijacked bool
 
+	// flushStatus is the status of the response at the first successful flush: the
+	// status that chi had, or 200 (what the client got). A later WriteHeader does
+	// not change it: the wire already has the status.
+	flushStatus int
+
 	// complete is false when the tracker cannot see every way the response can
 	// start, so the WAF gets no newly discovered path parameters for it.
 	complete bool
@@ -78,21 +86,29 @@ func (t *commitTracker) Status() int {
 			return s
 		}
 	}
+	if t.flushStatus != 0 {
+		return t.flushStatus
+	}
 	if s := t.WrapResponseWriter.Status(); s != 0 {
 		return s
-	}
-	if t.hijacked {
-		return 0
-	}
-	if t.flushed {
-		return http.StatusOK
 	}
 	return 0
 }
 
+// markFlushed records a successful flush.
+func (t *commitTracker) markFlushed() {
+	t.flushed = true
+	if t.flushStatus == 0 {
+		t.flushStatus = t.WrapResponseWriter.Status()
+		if t.flushStatus == 0 {
+			t.flushStatus = http.StatusOK
+		}
+	}
+}
+
 func (t *commitTracker) flush() {
 	t.WrapResponseWriter.(http.Flusher).Flush()
-	t.flushed = true
+	t.markFlushed()
 }
 
 // flushError is the FlushError method of the trackers whose chi writer has no
@@ -101,7 +117,7 @@ func (t *commitTracker) flush() {
 func (t *commitTracker) flushError() error {
 	err := http.NewResponseController(t.WrapResponseWriter).Flush()
 	if err == nil {
-		t.flushed = true
+		t.markFlushed()
 	}
 	return err
 }

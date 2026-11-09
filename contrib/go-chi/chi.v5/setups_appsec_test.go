@@ -6,12 +6,15 @@
 package chi
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -31,6 +34,9 @@ type outcome struct {
 	spanCode  any      // http.status_code of the outermost span
 	events    []string // rule ids in the _dd.appsec.json tags of all spans
 	metrics   map[string]float64
+
+	earlyRoute  string            // the route that the first operation started with
+	earlyParams map[string]string // the path parameters that it started with
 }
 
 // serveFixture sends a request through the router of f. value replaces ATTACK.
@@ -65,6 +71,12 @@ func serveFixtureWith(t *testing.T, rec *metricsRecorder, capture *opCapture, f 
 
 	o.status, o.body = w.Code, w.Body.String()
 	o.routes = capture.routes()
+	if len(capture.args) > 0 {
+		o.earlyRoute = capture.args[0].RequestRoute
+		if len(capture.args[0].PathParams) > 0 {
+			o.earlyParams = capture.args[0].PathParams
+		}
+	}
 	spans := mt.FinishedSpans()
 	require.NotEmpty(t, spans)
 	outer := spans[len(spans)-1]
@@ -109,9 +121,17 @@ func TestAppSecRouteSetups(t *testing.T) {
 		events      []string // rule ids
 		failure     bool     // the late block could not replace the response
 		spanRoute   string   // http.route of the outer span, when the request is blocked early
-		skipEvents  bool
-		wantsStatus int
+		earlyRoute  string   // the route that the first operation started with
+		earlyParams map[string]string
 	}
+	pp := func(kv ...string) map[string]string {
+		m := map[string]string{}
+		for i := 0; i < len(kv); i += 2 {
+			m[kv[i]] = kv[i+1]
+		}
+		return m
+	}
+	pathBlock := []string{"path-block"}
 	cases := []struct {
 		f      routerFixture
 		clean  clean
@@ -119,46 +139,62 @@ func TestAppSecRouteSetups(t *testing.T) {
 	}{
 		{fixtureRootUse(),
 			clean{[]string{"/users/{id}"}, nil, 0},
-			attack{early: true, route: "/users/{id}", events: []string{"path-block"}, spanRoute: ""}},
+			attack{early: true, route: "/users/{id}", events: pathBlock, spanRoute: "",
+				earlyRoute: "/users/{id}", earlyParams: pp("id", "attack-1")}},
 		{fixtureSubRouterUse(),
 			clean{[]string{"/api/users/{id}"}, nil, 0},
-			attack{early: true, route: "/api/users/{id}", events: []string{"path-block"}, spanRoute: "/api/*"}},
+			attack{early: true, route: "/api/users/{id}", events: pathBlock, spanRoute: "/api/*",
+				earlyRoute: "/api/users/{id}", earlyParams: pp("*", "", "id", "attack-1")}},
 		{fixtureWith(),
 			clean{[]string{"/users/{id}"}, nil, 0},
-			attack{early: true, route: "/users/{id}", events: []string{"path-block"}, spanRoute: "/users/{id}"}},
+			attack{early: true, route: "/users/{id}", events: pathBlock, spanRoute: "/users/{id}",
+				earlyRoute: "/users/{id}", earlyParams: pp("id", "attack-1")}},
 		{fixtureStripSlashes(false),
 			clean{[]string{"/users/{id}"}, nil, 0},
-			attack{route: "/users/{id}", events: []string{"path-block"}, failure: true}},
+			attack{route: "/users/{id}", events: pathBlock, failure: true}},
 		{fixtureStripSlashes(true),
 			clean{[]string{"/users/{id}"}, []string{"wildcard-value"}, 0},
-			attack{route: "/users/{id}", events: []string{"path-block", "wildcard-value"}, failure: true}},
+			attack{route: "/users/{id}", events: []string{"path-block", "wildcard-value"}, failure: true,
+				earlyRoute: "/*", earlyParams: pp("*", "users/attack-1/")}},
 		{fixtureGetHead(),
 			clean{[]string{"/users/{id}"}, nil, 0},
-			attack{route: "/users/{id}", events: []string{"path-block"}, failure: true}},
+			attack{route: "/users/{id}", events: pathBlock, failure: true}},
 		{fixtureDirectMount(),
 			clean{[]string{"/api/users/{id}"}, nil, 0},
-			attack{early: true, route: "/api/users/{id}", events: []string{"path-block"}, spanRoute: ""}},
+			attack{early: true, route: "/api/users/{id}", events: pathBlock, spanRoute: "",
+				earlyRoute: "/api/users/{id}", earlyParams: pp("*", "", "id", "attack-1")}},
 		{fixtureWrappedMount(),
 			clean{[]string{"/api/users/{id}"}, []string{"wildcard-value"}, 0},
-			attack{route: "/api/users/{id}", events: []string{"path-block", "wildcard-value"}, failure: true}},
+			attack{route: "/api/users/{id}", events: []string{"path-block", "wildcard-value"}, failure: true,
+				earlyRoute: "/api/*", earlyParams: pp("*", "users/attack-1")}},
 		{fixtureRewrite("name"),
 			clean{[]string{"/files/{name}"}, []string{"wildcard-value"}, 0},
-			attack{route: "/files/{name}", events: []string{"wildcard-value"}}},
+			attack{route: "/files/{name}", events: []string{"wildcard-value"},
+				earlyRoute: "/*", earlyParams: pp("*", "old/attack-1")}},
 		{fixtureTwoTracers(),
 			clean{[]string{"/api/users/{id}", "/api/users/{id}"}, nil, 0},
-			attack{early: true, route: "/api/users/{id}", events: []string{"path-block"}, spanRoute: ""}},
+			attack{early: true, route: "/api/users/{id}", events: pathBlock, spanRoute: "",
+				earlyRoute: "/api/users/{id}", earlyParams: pp("*", "", "id", "attack-1")}},
 		{fixtureWithMount(),
 			clean{[]string{"/api/users/{id}"}, nil, 0},
-			attack{early: true, route: "/api/users/{id}", events: []string{"path-block"}, spanRoute: "/api/*"}},
+			attack{early: true, route: "/api/users/{id}", events: pathBlock, spanRoute: "/api/*",
+				earlyRoute: "/api/users/{id}", earlyParams: pp("*", "", "id", "attack-1")}},
 		{fixtureLiteralLeaf(),
 			clean{[]string{"/api/attack"}, nil, 0},
-			attack{route: "/api/attack"}},
+			attack{route: "/api/attack", earlyRoute: "/api/attack", earlyParams: pp("*", "")}},
 		{fixtureReplacedContext(),
 			clean{[]string{"/users/{id}"}, nil, 0},
-			attack{route: "/users/{id}", events: []string{"path-block"}, failure: true}},
+			attack{route: "/users/{id}", events: pathBlock, failure: true}},
 		{fixtureParentRewrite(),
 			clean{[]string{"/api/files/{id}"}, []string{"wildcard-value"}, 0},
-			attack{route: "/api/files/{id}", events: []string{"wildcard-value"}}},
+			attack{route: "/api/files/{id}", events: []string{"wildcard-value"},
+				earlyRoute: "/*", earlyParams: pp("*", "old/attack-1")}},
+		// chi knows "id" (the parent routed the mount with a parameter): the lookup
+		// does not replace it, so the request is blocked as before the lookup existed.
+		{fixtureNamedMountRewrite(),
+			clean{[]string{"/api/{id}/items/{item}"}, []string{"wildcard-value"}, 0},
+			attack{early: true, route: "/*", events: pathBlock, spanRoute: "/api/{id}/*",
+				earlyRoute: "/*", earlyParams: pp("*", "old/attack-1", "id", "attack-1")}},
 	}
 
 	for _, c := range cases {
@@ -181,6 +217,8 @@ func TestAppSecRouteSetups(t *testing.T) {
 				a := c.attack
 				assert.Equal(t, []string{a.route}, o.routes[len(o.routes)-1:])
 				assert.Equal(t, a.events, o.events)
+				assert.Equal(t, a.earlyRoute, o.earlyRoute, "the route that the WAF operation started with")
+				assert.Equal(t, a.earlyParams, o.earlyParams, "the path parameters that the WAF got before the handler")
 				switch {
 				case a.early:
 					assert.Equal(t, http.StatusForbidden, o.status)
@@ -222,6 +260,7 @@ func TestAppSecRouteSetupsAnyParam(t *testing.T) {
 		{fixtureStripSlashes(true), "/*"},
 		{fixtureWrappedMount(), "/api/*"},
 		{fixtureRewrite("name"), "/*"},
+		{fixtureOrdinaryMount(), "/files/*"},
 	} {
 		t.Run(c.f.name, func(t *testing.T) {
 			o := serveFixture(t, rec, capture, c.f, "attack-1")
@@ -310,8 +349,10 @@ func TestAppSecSchemaPerEndpoint(t *testing.T) {
 	assert.NotContains(t, third, "_dd.appsec.s.req.headers", "the same endpoint is sampled once in the delay")
 }
 
-// TestAppSecHandlerPanic checks that the late WAF run does not run in a panic
-// and that the panic reaches the recovering middleware unchanged.
+// TestAppSecHandlerPanic checks that the late WAF run does not run in a panic,
+// and that the panic reaches the recovering middleware unchanged. The request
+// is one that the lookup cannot match (StripSlashes removes the slash after the
+// tracer), so a late run would have given the route and the attack to the WAF.
 func TestAppSecHandlerPanic(t *testing.T) {
 	rec := startAppSecRules(t, rulePathBlock)
 	capture := newOpCapture()
@@ -328,19 +369,23 @@ func TestAppSecHandlerPanic(t *testing.T) {
 			}()
 			next.ServeHTTP(w, r)
 		})
-	}, Middleware())
+	}, Middleware(), middleware.StripSlashes)
 	router.Get("/users/{id}", func(http.ResponseWriter, *http.Request) { panic(sentinel) })
 
 	mt := mocktracer.Start()
 	defer mt.Stop()
 	before := rec.snapshot()
 	w := httptest.NewRecorder()
-	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/ok-1", nil))
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/attack-1/", nil))
 
 	assert.Equal(t, sentinel, recovered)
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
-	assert.Len(t, mt.FinishedSpans(), 1)
-	assert.Zero(t, count(rec.since(before), "api_security.missing_route"), "not a 2xx response")
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Empty(t, eventRules(spans[0].Tag("_dd.appsec.json")), "no late run: the WAF never got the parameter")
+	assert.Equal(t, []string{""}, capture.routes(), "no late run: the route is the early route")
+	assert.Zero(t, count(rec.since(before), "waf.requests", "request_blocked:true"))
+	assert.Zero(t, count(rec.since(before), "waf.requests", "block_failure:true"))
 }
 
 // TestAppSecModifyResourceName checks that AppSec reports the same route as the
@@ -437,6 +482,7 @@ func TestAppSecSameTypeMonitorRules(t *testing.T) {
 				o := serveFixtureWith(t, rec, capture, f, "attack-1", false)
 				assert.Equal(t, http.StatusForbidden, o.status, "blk-id still matches")
 				assert.Contains(t, o.events, "blk-id")
+				assert.Contains(t, o.events, "mon-wild", "the early data matched the detection rule")
 				// The block replaces the response after the handler (nothing was
 				// sent), except when the endpoint has its own tracer: it gets "id"
 				// before its handler.
@@ -444,4 +490,56 @@ func TestAppSecSameTypeMonitorRules(t *testing.T) {
 			})
 		}
 	})
+}
+
+// TestAppSecConcurrentRequests sends concurrent requests through one middleware
+// instance: each request must have its own parameters, route and tracker.
+func TestAppSecConcurrentRequests(t *testing.T) {
+	startAppSecRules(t, rulePathBlock)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	router := chi.NewRouter()
+	router.Use(Middleware())
+	router.Get("/users/{id}/orders/{order}", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(chi.URLParam(r, "id") + "/" + chi.URLParam(r, "order")))
+	})
+
+	const workers, requests = 16, 40
+	type result struct {
+		attack bool
+		id     string
+		status int
+		body   string
+	}
+	results := make([]result, workers*requests)
+	var wg sync.WaitGroup
+	for worker := range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range requests {
+				id := fmt.Sprintf("u%d-%d", worker, i)
+				attack := (worker+i)%4 == 0
+				if attack {
+					id = "attack-" + id
+				}
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/"+id+"/orders/7", nil))
+				results[worker*requests+i] = result{attack, id, w.Code, w.Body.String()}
+			}
+		}()
+	}
+	wg.Wait()
+
+	for _, r := range results {
+		if r.attack {
+			assert.Equal(t, http.StatusForbidden, r.status, r.id)
+			assert.Contains(t, r.body, `"errors"`, r.id)
+		} else {
+			assert.Equal(t, http.StatusOK, r.status, r.id)
+			assert.Equal(t, r.id+"/7", r.body)
+		}
+	}
 }

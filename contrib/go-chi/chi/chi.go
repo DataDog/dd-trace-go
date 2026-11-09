@@ -38,16 +38,22 @@ func init() {
 // rule on path parameters can block before the handler. This early check can use
 // other parameters than the handler gets when a middleware changes the path, the
 // method or the route path (before or after this middleware), or when a mount
-// hides its child router behind a handler wrapper. When it does, a
-// detection-only rule that matches the wrong parameters can also hide a
-// detection-only rule of the same type that matches the correct parameters later
-// (also from a r.With(Middleware()) on the endpoint).
+// does not give the request to a chi router that chi can search (for example a
+// router behind a handler wrapper, or an ordinary handler). The parameters that
+// chi already knows when this middleware runs are never replaced by the early
+// check. When the early check is wrong, a detection-only rule that matches the
+// wrong parameters can also hide a detection-only rule of the same type that
+// matches the correct parameters later (also from a r.With(Middleware()) on the
+// endpoint). AppSec cannot remove parameters that it already has: if chi finally
+// selects a route without parameters, the early parameters stay.
 //
 // After the handler returns, AppSec gets the route and the path parameters that
 // chi selected. A block or a redirect at that time replaces the response only if
 // the response is not sent yet: it never stops the handler, which already ran. If
 // the response is sent, it does not change; AppSec reports a failed block (a
-// redirect is not counted as a block).
+// redirect is not counted as a block). A flush that returns an error does not
+// itself mark the response as sent: if it wrote part of the response, a block can
+// add its body after that output.
 //
 // The middlewares between this middleware and the handler must send the response
 // through the writer that they get, and return it from Unwrap(). When this

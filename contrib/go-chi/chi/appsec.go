@@ -55,6 +55,12 @@ func withAppsec(next http.Handler, span trace.TagSetter) http.Handler {
 		if complete {
 			route, params, found = lookupRoute(rctx, r)
 		}
+		if found {
+			// The lookup adds to what chi already knows (for example the parameters of
+			// a parent mount that a middleware before this one routed); it never
+			// replaces it.
+			params = mergeKnown(params, routeParams(rctx))
+		}
 		if !found {
 			// The values that chi knows now (for example with r.With(Middleware())).
 			route, params = rctx.RoutePattern(), routeParams(rctx)
@@ -156,6 +162,28 @@ func lookupRoute(rctx *chi.Context, r *http.Request) (route string, params map[s
 		return "", nil, false
 	}
 	return tmp.RoutePattern(), lookupParams(tmp), true
+}
+
+// mergeKnown adds the parameters that chi already knows to the parameters of the
+// lookup. A known parameter wins: it is what chi matched, not a prediction. So the
+// lookup never removes data that AppSec got before the lookup existed. The
+// exception is "*": chi blanks the "*" that connects a mount when it enters the
+// mount, and the lookup does the same, but a tracer that wraps the mount handler
+// (r.With(Middleware()).Mount) runs before chi does it.
+func mergeKnown(looked, known map[string]string) map[string]string {
+	if len(known) == 0 {
+		return looked
+	}
+	if looked == nil {
+		looked = make(map[string]string, len(known))
+	}
+	for key, value := range known {
+		if _, found := looked[key]; key == "*" && found {
+			continue
+		}
+		looked[key] = value
+	}
+	return looked
 }
 
 // lookupParams returns the URL parameters that a successful Match left in tmp.

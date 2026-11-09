@@ -222,3 +222,41 @@ func fixtureWrappedEndpoint() routerFixture {
 		return r
 	}}
 }
+
+// rewriteToNamedMount rewrites the route path of "/old/<x>" to
+// "/api/<x>/items/clean": the parent routes it to a mount with a parameter.
+func rewriteToNamedMount(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if rctx := chi.RouteContext(r.Context()); rctx != nil && strings.HasPrefix(r.URL.Path, "/old/") {
+			rctx.RoutePath = "/api/" + strings.TrimPrefix(r.URL.Path, "/old/") + "/items/clean"
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// fixtureNamedMountRewrite is setup 15: the parent rewrites the route path to a
+// mount with a parameter, and the child router has the tracer. chi knows the
+// parameter "id" of the mount when the tracer runs, but the URL of the request
+// matches the catch-all route of the parent.
+func fixtureNamedMountRewrite() routerFixture {
+	return routerFixture{"15 parent rewrites to a mount with a parameter", "GET", "/old/ATTACK", func(first func(http.Handler) http.Handler, h http.HandlerFunc) http.Handler {
+		r := chi.NewRouter()
+		r.Use(first, rewriteToNamedMount)
+		child := chi.NewRouter()
+		child.Use(Middleware())
+		child.Get("/items/{item}", h)
+		r.Mount("/api/{id}", child)
+		r.HandleFunc("/*", okHandler)
+		return r
+	}}
+}
+
+// fixtureOrdinaryMount is a mount of a handler that is not a chi router.
+func fixtureOrdinaryMount() routerFixture {
+	return routerFixture{"16 ordinary handler in a mount", "GET", "/files/ATTACK", func(first func(http.Handler) http.Handler, h http.HandlerFunc) http.Handler {
+		r := chi.NewRouter()
+		r.Use(first, Middleware())
+		r.Mount("/files", h)
+		return r
+	}}
+}
