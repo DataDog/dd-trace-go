@@ -1107,6 +1107,53 @@ func TestFakeGitCompletingUploadHelperProcess(t *testing.T) {
 	os.Exit(0)
 }
 
+// After a pull request's head is fetched without a depth limit, the clone can
+// end at many commits that neither the source nor a candidate reaches: only
+// theirs may cost a fetch.
+func TestGetBaseBranchShaDeepensOnlyTheComparedHistory(t *testing.T) {
+	isolateFixtureGit(t)
+	// History older than the month keeps the clone shallow throughout.
+	root, origin, base, feature, main := newBaseBranchOrigin(t, 90*24*time.Hour, 0, 0, 0)
+	const unrelated = 20
+	for i := range unrelated {
+		// Two commits, so that fetching the tip alone leaves a boundary.
+		name := "topic-" + strconv.Itoa(i)
+		runFixtureGit(t, origin, "switch", "--orphan", name)
+		runFixtureGit(t, origin, "commit", "--allow-empty", "-m", name)
+		runFixtureGit(t, origin, "commit", "--allow-empty", "-m", name+" tip")
+	}
+	runFixtureGit(t, origin, "switch", "main")
+	checkout := filepath.Join(root, "checkout")
+	pushCheckout(t, origin, checkout, feature, main)
+	// One depth-limited fetch, which keeps a boundary at every tip.
+	fetch := []string{"fetch", "--no-tags", "--depth=1", "origin", "+" + feature + ":refs/remotes/origin/feature"}
+	for i := range unrelated {
+		name := "topic-" + strconv.Itoa(i)
+		fetch = append(fetch, "+refs/heads/"+name+":refs/remotes/origin/"+name)
+	}
+	runFixtureGit(t, checkout, fetch...)
+	shallow, err := os.ReadFile(filepath.Join(checkout, ".git", "shallow"))
+	require.NoError(t, err)
+	require.Len(t, strings.Fields(string(shallow)), unrelated+1)
+	t.Chdir(checkout)
+	resetGitCommandCachesForTesting(t)
+	ResetCITags()
+	t.Cleanup(ResetCITags)
+	AddCITags(constants.GitPrBaseBranch, "")
+	AddCITags(constants.GitHeadCommit, "")
+	trace := filepath.Join(root, "trace.log")
+	t.Setenv("GIT_TRACE", trace)
+
+	sha, err := GetBaseBranchSha("")
+	require.NoError(t, err)
+	assert.Equal(t, base, sha)
+	logged, err := os.ReadFile(trace)
+	require.NoError(t, err)
+	fetches := strings.Count(string(logged), "built-in: git fetch '--shallow-since")
+	assert.LessOrEqual(t, fetches, 2, "only the feature and main boundaries need history")
+	assert.Equal(t, "true", runFixtureGit(t, checkout, "rev-parse", "--is-shallow-repository"))
+}
+
 // Fetching a base branch must not fetch the submodule commits that its history
 // names: base branch detection reads only the repository's own history.
 func TestCheckAndFetchBranchLeavesSubmodulesAlone(t *testing.T) {
