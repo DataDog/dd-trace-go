@@ -41,7 +41,7 @@ jobs:
 
           # This workflow should only be re-run if the first run failed, but IF for some reason the first run succeeded
           # and we re-run anyways, we should not publish the event twice.
-          status=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+          status=$(curl --silent --retry 5 --retry-delay 2 --retry-connrefused --output /dev/null --write-out '%{http_code}' \
             -H "DD-API-KEY: ${DD_API_KEY}" \
             -H "DD-APPLICATION-KEY: ${DD_APP_KEY}" \
             "https://api.datadoghq.com/api/v2/dora/deployments/${DEPLOYMENT_ID}")
@@ -50,7 +50,10 @@ jobs:
             exit 0
           fi
 
-          curl --fail --silent --show-error --retry 3 --retry-delay 5 -X POST "https://api.datadoghq.com/api/v2/dora/deployment" \
+          # No retry on this POST: it is not idempotent, and a retry after a lost response
+          # publishes the deployment twice. Re-running the workflow is the retry boundary;
+          # the GET above skips a deployment that already exists.
+          curl --fail --silent --show-error -X POST "https://api.datadoghq.com/api/v2/dora/deployment" \
             -H "Accept: application/json" \
             -H "Content-Type: application/json" \
             -H "DD-API-KEY: ${DD_API_KEY}" \
