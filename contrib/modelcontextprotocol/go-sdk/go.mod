@@ -4,8 +4,8 @@ go 1.26.0
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
-	github.com/google/jsonschema-go v0.4.3
-	github.com/modelcontextprotocol/go-sdk v1.8.0
+	github.com/google/jsonschema-go v0.4.2
+	github.com/modelcontextprotocol/go-sdk v1.4.1
 	github.com/stretchr/testify v1.11.1
 )
 

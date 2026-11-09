@@ -191,7 +191,9 @@ func processAndRemoveTelemetryToolMiddlewareFor(enabled func(context.Context) bo
 						instr.Logger().Warn("mcp-go intent capture: telemetry value is not a map")
 					}
 					delete(m, instrmcp.TelemetryKey)
-					request.Params.RawArguments = removeTelemetryFromRawArguments(request.Params.RawArguments)
+					if params, ok := paramsWithoutTelemetry(request.Params); ok {
+						request.Params = params
+					}
 				}
 			}
 			return next(ctx, request)
@@ -199,25 +201,37 @@ func processAndRemoveTelemetryToolMiddlewareFor(enabled func(context.Context) bo
 	}
 }
 
-// removeTelemetryFromRawArguments removes the telemetry parameter from the wire
-// bytes that mcp-go keeps for BindArguments, GetRawArguments, and MarshalJSON.
-// Other values keep their exact encoding, so large integers keep their precision.
-// It returns nil when the bytes cannot be parsed, so mcp-go falls back to the
-// already-stripped Arguments map.
-func removeTelemetryFromRawArguments(raw json.RawMessage) json.RawMessage {
-	if len(raw) == 0 {
-		return raw
+// paramsWithoutTelemetry re-decodes params without the telemetry argument.
+// mcp-go v1 keeps the wire bytes of the arguments in a field that BindArguments
+// and MarshalJSON read, so deleting the key from the Arguments map is not enough.
+// Going through JSON drops the key from those bytes on v1 and still compiles
+// against v0, which has no such field. Other argument values keep their exact
+// encoding, so large integers keep their precision.
+func paramsWithoutTelemetry(params mcp.CallToolParams) (mcp.CallToolParams, bool) {
+	encoded, err := json.Marshal(params)
+	if err != nil {
+		return params, false
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(encoded, &fields) != nil {
+		return params, false
 	}
 	var args map[string]json.RawMessage
-	if json.Unmarshal(raw, &args) != nil {
-		return nil
+	if json.Unmarshal(fields["arguments"], &args) != nil {
+		return params, false
 	}
 	delete(args, instrmcp.TelemetryKey)
-	stripped, err := json.Marshal(args)
-	if err != nil {
-		return nil
+	if fields["arguments"], err = json.Marshal(args); err != nil {
+		return params, false
 	}
-	return stripped
+	if encoded, err = json.Marshal(fields); err != nil {
+		return params, false
+	}
+	var stripped mcp.CallToolParams
+	if json.Unmarshal(encoded, &stripped) != nil {
+		return params, false
+	}
+	return stripped, true
 }
 
 // extractIntent pulls the intent string out of the telemetry map supplied by
