@@ -133,6 +133,8 @@ type tracer struct {
 
 	// stopOnce ensures the tracer is stopped exactly once.
 	stopOnce sync.Once
+	// telemetryStopOnce ensures telemetry shutdown runs once across concurrent Stop calls.
+	telemetryStopOnce sync.Once
 
 	// wg waits for all goroutines to exit when stopping.
 	wg sync.WaitGroup
@@ -295,7 +297,7 @@ func start(ciVisibilityBootstrap bool, opts ...StartOption) error {
 	if t.config.otelRuntimeMetricsShouldBeEnabled {
 		installed, err := otelmetricsinstall.StartHook(gocontext.Background())
 		if err != nil {
-			log.Error("Failed to start OTel runtime metrics: %v", err.Error())
+			reportOtelRuntimeMetricsStartError(err)
 			t.config.otelRuntimeMetricsShouldBeEnabled = false
 		} else {
 			log.Debug("OTel runtime metrics enabled.")
@@ -313,7 +315,7 @@ func start(ciVisibilityBootstrap bool, opts ...StartOption) error {
 			// configuration conflict rather than a tracer failure.
 			l.Warn("Failed to enable runtime metrics v2: another runtime metrics emitter is already running in this process; the tracer will not emit runtime metrics v2 (set DD_RUNTIME_METRICS_V2_ENABLED=false to silence)", "err", err.Error())
 		} else {
-			l.Error("Failed to enable runtime metrics v2", "err", err.Error())
+			l.Error("Failed to enable runtime metrics v2", "err", err.Error()) //errtrack:ignore duplicate runtime-metrics emitter is application process state
 		}
 	}
 
@@ -414,7 +416,7 @@ func (t *tracer) startAppSec() {
 			if errors.Is(err, remoteconfig.ErrClientNotStarted) {
 				log.Debug("remoteconfig: client not started, remote configuration is disabled")
 			} else {
-				log.Warn("Remote config startup error: %s", err.Error())
+				reportRemoteConfigStartupError(err)
 			}
 		}
 	}
@@ -463,7 +465,7 @@ func storeConfig(c *config) {
 		// condition, not an actionable SDK defect, and reporting it would create
 		// fleet-wide false positives for hardened deployments (e.g. gVisor,
 		// locked-down seccomp profiles).
-		log.Error("failed to store the configuration: %s", err.Error())
+		log.Error("failed to store the configuration: %s", err.Error()) //errtrack:ignore runtime environment can deny memfd creation
 	}
 
 	err = otelprocesscontext.PublishProcessContext(metadata.toProcessContext())
@@ -565,7 +567,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	}
 	statsd, err := newStatsdClient(c)
 	if err != nil {
-		log.Error("Runtime and health metrics disabled: %s", err.Error())
+		log.Error("Runtime and health metrics disabled: %s", err.Error()) //errtrack:ignore StatsD configuration or network failure
 		// We are not failing here because the error could be cause by
 		// a transitory issue.
 	}
@@ -606,7 +608,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 	if v := c.internalConfig.LogDirectory(); v != "" {
 		logFile, err = log.OpenFileAtPath(v)
 		if err != nil {
-			log.Warn("%s", err.Error())
+			log.Warn("%s", err.Error()) //errtrack:ignore user-selected log path failure
 			c.internalConfig.SetLogDirectory("", telemetry.OriginCalculated)
 		}
 	}
@@ -688,6 +690,20 @@ func buildSharedAttrs(c *config, base, mainSvc *traceinternal.SpanAttributes) {
 // defaultAgentInfoPollInterval is the default interval at which the tracer
 // polls the agent's /info endpoint for capability updates.
 const defaultAgentInfoPollInterval = 5 * time.Second
+
+func reportOtelRuntimeMetricsStartError(err error) {
+	if registrationErr, ok := errors.AsType[*otelmetricsinstall.RuntimeRegistrationError](err); ok {
+		log.Error("Failed to start OTel runtime metrics: %v", err.Error()) //errtrack:ignore reported by ReportError below
+		telemetrylog.ReportError("Failed to start OTel runtime metrics", registrationErr.Err)
+		return
+	}
+	log.Error("Failed to start OTel runtime metrics: %v", err.Error()) //errtrack:ignore metrics exporter configuration or environment failure
+}
+
+func reportRemoteConfigStartupError(err error) {
+	log.Warn("Remote config startup error: %s", err.Error()) //errtrack:ignore reported by ReportError below
+	telemetrylog.ReportError("Remote config startup error", err)
+}
 
 // newTracer creates a new tracer and starts it.
 // NOTE: This function does NOT set the global tracer, which is required for
@@ -1008,7 +1024,7 @@ func (t *tracer) pushChunk(trace *chunk) {
 	select {
 	case <-t.logDroppedTraces.C:
 		if t := atomic.SwapUint32(&t.totalTracesDropped, 0); t > 0 {
-			log.Error("%d traces dropped through payload queue", t)
+			log.Error("%d traces dropped through payload queue", t) //errtrack:ignore expected queue capacity already reported as a count
 		}
 	default:
 	}
@@ -1085,6 +1101,7 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	span.start = startTime
 	span.integration = "manual"
 	span.meta.SwapSharedAttrs(sharedAttrs) // COW: shared until a per-span field is set
+	span.meta.ReserveIfLargeEnough(len(opts.Tags))
 
 	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
 
@@ -1241,7 +1258,7 @@ func (t *tracer) startSpan(operationName, ciVisibilityTracerType string, options
 		case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(span, false):
 			// ok
 		default:
-			log.Error("Abandoned spans channel full, disregarding span.")
+			log.Error("Abandoned spans channel full, disregarding span.") //errtrack:ignore per-span queue capacity limit
 		}
 	}
 	if span.metrics[keyTopLevel] == 1 {
@@ -1353,7 +1370,7 @@ func (t *tracer) Stop() {
 		ctx, cancel := gocontext.WithTimeout(gocontext.Background(), 5*time.Second)
 		defer cancel()
 		if err := otelmetricsinstall.ShutdownHook(ctx); err != nil {
-			log.Error("Failed to shut down OTel meter provider: %v", err.Error())
+			log.Error("Failed to shut down OTel meter provider: %v", err.Error()) //errtrack:ignore exporter or network shutdown failure
 		}
 	}
 	t.statsd.Close()
@@ -1362,12 +1379,42 @@ func (t *tracer) Stop() {
 	}
 	appsec.Stop()
 	remoteconfig.Stop()
+	// Flush telemetry before closing the log file so StopApp diagnostics still land.
+	// Interim tracer/profiler ownership handshake for the global telemetry client;
+	// to be superseded by shared client control (see TODO at newTracer, APMAPI-1771).
+	t.telemetryStopOnce.Do(func() {
+		client := t.telemetry
+		t.telemetry = nil
+		if client == nil {
+			return
+		}
+		telemetry.ProductStopped(telemetry.NamespaceTracers)
+		if telemetry.GlobalClient() != client {
+			// StartApp ignored this client because another product already owns
+			// the global one. Close the leftover so its ticker does not leak.
+			client.Close()
+			return
+		}
+		if traceprof.ProfilerEnabled() {
+			// Profiler started after us and still shares this client. Mark the
+			// tracer product stopped and flush, but leave the app running.
+			// TODO: profiler.Stop() never stops telemetry, so when the profiler is
+			// the last product to stop, app-stopped is never sent and the client's
+			// ticker goroutine lives until process exit. Follow-up: profiler.Stop()
+			// should send ProductStopped(NamespaceProfilers) and StopApp() when it
+			// owns the global client.
+			client.Flush()
+			return
+		}
+		telemetry.StopApp()
+	})
+	// StartApp sends the app-started payload from a background goroutine. An
+	// in-flight flush can park its keep-alive connection in the idle pool after
+	// CloseIdleConnections runs, so wait for the flush first.
+	telemetry.WaitForStartAppFlush()
 	// Close log file last to account for any logs from the above calls
 	if t.logFile != nil {
 		t.logFile.Close()
-	}
-	if t.telemetry != nil {
-		t.telemetry.Close()
 	}
 	t.config.httpClient.CloseIdleConnections()
 }
@@ -1508,7 +1555,7 @@ func (t *tracer) submitAbandonedSpan(s *Span, finished bool) {
 	case t.abandonedSpansDebugger.In <- newAbandonedSpanCandidate(s, finished):
 		// ok
 	default:
-		log.Error("Abandoned spans channel full, disregarding span.")
+		log.Error("Abandoned spans channel full, disregarding span.") //errtrack:ignore per-span queue capacity limit
 	}
 }
 

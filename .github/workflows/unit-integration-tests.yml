@@ -19,6 +19,17 @@ on:
         required: false
         type: string
         default: ""
+      test-timeout:
+        description: >-
+          Per-binary go test -timeout for the core test suite. Empty keeps
+          Go's 10m default. Set only by the dynamic-analysis lanes, because
+          -race plus debug/deadlock instrumented binaries run several times
+          slower on a degraded runner and blow the 10m budget; gotestsum
+          --rerun-fails cannot rescue a whole-binary timeout (rerun aborted,
+          suspected panic).
+        required: false
+        type: string
+        default: ""
       contrib-modules:
         description: >-
           Space-separated contrib/instrumentation module directories to test, or
@@ -326,7 +337,10 @@ jobs:
       group: "APM Larger Runners"
     # Without this the job inherits GitHub's 360-minute default, so a hang burns
     # six hours of a larger runner. A healthy run is well under 20 minutes.
-    timeout-minutes: 45
+    # The cap rises only when test-timeout is set (dynamic-analysis lanes),
+    # where healthy runs are 8-13m but a degraded runner absorbs the raised
+    # per-binary budget (30m) before finishing.
+    timeout-minutes: ${{ inputs.test-timeout != '' && 75 || 45 }}
     env:
       INTEGRATION: true
       COMPOSE_FILE: .github/testservices/docker-compose.yaml
@@ -370,6 +384,11 @@ jobs:
           go-version: ${{ steps.setup-go.outputs.go-version }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
+      # The gotesting fixture tests invoke this binary directly; without it
+      # they pay `go run` module resolution inside their per-test timeouts.
+      - name: Install orchestrion binary
+        uses: ./.github/actions/install-orchestrion
+
       # Containers were started (non-blocking) before Go setup above, so most of
       # the wait time already overlapped with it; this just waits out whatever's left.
       - name: Wait for CI service containers
@@ -381,6 +400,7 @@ jobs:
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
           BUILD_TAGS: ${{ inputs.build_tags }}
           RERUN_FAILS: ${{ inputs.rerun-fails }}
+          GO_TEST_TIMEOUT: ${{ inputs.test-timeout }}
         run: |
           set -euo pipefail
           export PATH="${{ github.workspace }}/bin:${PATH}"
