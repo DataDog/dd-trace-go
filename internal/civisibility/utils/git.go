@@ -56,6 +56,10 @@ type gitVersionData struct {
 	err   error
 }
 
+// unshallowSince is how much history a shallow clone gets back: commits and
+// trees, without blobs, from the last month.
+const unshallowSince = "--shallow-since=\"1 month ago\""
+
 var (
 	// gitCommandMutex is a mutex used to synchronize access to Git commands to prevent lock errors in git
 	gitCommandMutex sync.Mutex
@@ -538,7 +542,7 @@ func UnshallowGitRepository() (bool, error) {
 	// let's fetch the missing commits and trees from the last month
 	// git fetch --shallow-since="1 month ago" --update-shallow --filter="blob:none" --recurse-submodules=no $(git config --default origin --get clone.defaultRemoteName) $(git rev-parse HEAD)
 	log.Debug("civisibility.unshallow: fetching the missing commits and trees from the last month")
-	fetchOutput, err := execGitString(telemetry.UnshallowCommandsType, "fetch", "--shallow-since=\"1 month ago\"", "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", remoteName, headSha)
+	fetchOutput, err := execGitString(telemetry.UnshallowCommandsType, "fetch", unshallowSince, "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", remoteName, headSha)
 
 	// let's check if the last command was unsuccessful
 	if err != nil {
@@ -556,7 +560,7 @@ func UnshallowGitRepository() (bool, error) {
 		if err == nil {
 			// let's try the alternative: git fetch --shallow-since="1 month ago" --update-shallow --filter="blob:none" --recurse-submodules=no $(git config --default origin --get clone.defaultRemoteName) $(git rev-parse --abbrev-ref --symbolic-full-name @{upstream})
 			log.Debug("civisibility.unshallow: fetching the missing commits and trees from the last month using the remote branch name")
-			fetchOutput, err = execGitString(telemetry.UnshallowCommandsType, "fetch", "--shallow-since=\"1 month ago\"", "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", remoteName, remoteBranchName)
+			fetchOutput, err = execGitString(telemetry.UnshallowCommandsType, "fetch", unshallowSince, "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", remoteName, remoteBranchName)
 		}
 	}
 
@@ -571,7 +575,7 @@ func UnshallowGitRepository() (bool, error) {
 
 		// let's try the last fallback: git fetch --shallow-since="1 month ago" --update-shallow --filter="blob:none" --recurse-submodules=no $(git config --default origin --get clone.defaultRemoteName)
 		log.Debug("civisibility.unshallow: fetching the missing commits and trees from the last month using the origin name")
-		fetchOutput, err = execGitString(telemetry.UnshallowCommandsType, "fetch", "--shallow-since=\"1 month ago\"", "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", remoteName)
+		fetchOutput, err = execGitString(telemetry.UnshallowCommandsType, "fetch", unshallowSince, "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", remoteName)
 	}
 
 	if err != nil {
@@ -912,7 +916,14 @@ func GetBaseBranchSha(defaultBranch string) (string, error) {
 		// Step 2b - we have git.pull_request.base_branch
 		log.Debug("civisibility.git: using git.pull_request.base_branch from CI: %s", gitPrBaseBranch)
 		checkAndFetchBranch(gitPrBaseBranch, remoteName)
-		candidateBranches = []string{gitPrBaseBranch}
+		// The fetch updates the remote-tracking ref: a pull request's checkout
+		// usually has no local branch of that name. Without telemetry, so git
+		// metrics stay those of the SDK.
+		candidate := gitPrBaseBranch
+		if _, err := execGitString(telemetry.NotSpecifiedCommandsType, "show-ref", "--verify", "--quiet", "refs/remotes/"+remoteName+"/"+gitPrBaseBranch); err == nil {
+			candidate = remoteName + "/" + gitPrBaseBranch
+		}
+		candidateBranches = []string{candidate}
 	} else {
 		// Step 2a - we don't have git.pull_request.base_branch
 		// Fetch all possible base branches from remote
@@ -938,6 +949,8 @@ func GetBaseBranchSha(defaultBranch string) (string, error) {
 	}
 
 	// Step 3 - find the best base branch
+	deepenShallowCloneForMergeBase(remoteName, candidateBranches)
+
 	if len(candidateBranches) == 1 {
 		// Step 3a - single candidate
 		baseSha, err := execGitString(telemetry.MergeBaseCommandType, "merge-base", candidateBranches[0], sourceBranch)
@@ -959,6 +972,34 @@ func GetBaseBranchSha(defaultBranch string) (string, error) {
 	}
 
 	return baseSha, nil
+}
+
+// deepenShallowCloneForMergeBase fetches the history that merge-base needs in
+// a shallow clone, the default checkout of most CI providers. With one commit
+// of the source branch and one of each candidate, git cannot see where they
+// meet, so no base commit is found and impacted tests see no modified files.
+// UnshallowGitRepository does not help here: it runs only for the Git upload,
+// and only deepens HEAD. This fetches the same window for HEAD and the
+// candidates; without HEAD, which a local commit can lack on the remote, it
+// still deepens the candidates.
+func deepenShallowCloneForMergeBase(remoteName string, candidateBranches []string) {
+	isAShallowClone, err := isAShallowCloneRepository()
+	if err != nil || !isAShallowClone {
+		return
+	}
+	branches := make([]string, 0, len(candidateBranches))
+	for _, branch := range candidateBranches {
+		branches = append(branches, removeRemotePrefix(branch, remoteName))
+	}
+	args := []string{"fetch", unshallowSince, "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", remoteName}
+	if headSha, err := execGitString(telemetry.GetHeadCommandsType, "rev-parse", "HEAD"); err == nil && headSha != "" {
+		if _, err := execGitString(telemetry.UnshallowCommandsType, append(append(args, headSha), branches...)...); err == nil {
+			return
+		}
+	}
+	if _, err := execGitString(telemetry.UnshallowCommandsType, append(args, branches...)...); err != nil {
+		log.Debug("civisibility.git: failed to deepen the shallow clone for the merge base: %s", err.Error())
+	}
 }
 
 // getRemoteName determines the remote name using the algorithm from algorithm.md

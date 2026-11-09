@@ -13,8 +13,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -887,6 +889,47 @@ func TestGetBaseBranchShaWithCIBaseBranch(t *testing.T) {
 		assert.Len(t, sha, 40, "SHA should be 40 characters long")
 		assert.Regexp(t, "^[a-f0-9]{40}$", sha, "SHA should be valid hex string")
 		t.Logf("GetBaseBranchSha without CI tags returned valid SHA: %s", sha)
+	}
+}
+
+// CI providers check out one commit by default. The base commit must still be
+// where the source branch left main, after main moved on.
+func TestGetBaseBranchShaDeepensShallowClone(t *testing.T) {
+	for name, prBaseBranch := range map[string]string{"detected base branch": "", "pull request base branch": "main"} {
+		t.Run(name, func(t *testing.T) {
+			isolateFixtureGit(t)
+			root := t.TempDir()
+			origin := filepath.Join(root, "origin")
+			require.NoError(t, os.Mkdir(origin, 0o755))
+			runFixtureGit(t, origin, "init", "--initial-branch=main")
+			runFixtureGit(t, origin, "commit", "--allow-empty", "-m", "first")
+			runFixtureGit(t, origin, "commit", "--allow-empty", "-m", "base")
+			base := runFixtureGit(t, origin, "rev-parse", "HEAD")
+			runFixtureGit(t, origin, "switch", "-c", "feature")
+			runFixtureGit(t, origin, "commit", "--allow-empty", "-m", "feature")
+			feature := runFixtureGit(t, origin, "rev-parse", "HEAD")
+			runFixtureGit(t, origin, "switch", "main")
+			runFixtureGit(t, origin, "commit", "--allow-empty", "-m", "main moved on")
+
+			// As actions/checkout does for a push: one commit, then a local branch.
+			checkout := filepath.Join(root, "checkout")
+			require.NoError(t, os.Mkdir(checkout, 0o755))
+			runFixtureGit(t, checkout, "init")
+			runFixtureGit(t, checkout, "remote", "add", "origin", origin)
+			runFixtureGit(t, checkout, "fetch", "--no-tags", "--depth=1", "origin", "+"+feature+":refs/remotes/origin/feature")
+			runFixtureGit(t, checkout, "checkout", "--force", "-B", "feature", "refs/remotes/origin/feature")
+			require.Equal(t, "true", runFixtureGit(t, checkout, "rev-parse", "--is-shallow-repository"))
+
+			t.Chdir(checkout)
+			resetGitCommandCachesForTesting(t)
+			ResetCITags()
+			t.Cleanup(ResetCITags)
+			AddCITags(constants.GitPrBaseBranch, prBaseBranch)
+
+			sha, err := GetBaseBranchSha("")
+			require.NoError(t, err)
+			assert.Equal(t, base, sha)
+		})
 	}
 }
 
