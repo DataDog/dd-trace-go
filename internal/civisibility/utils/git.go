@@ -1138,7 +1138,8 @@ func checkAndFetchBranches(branches []string, remoteName string) {
 		}
 	}
 	for _, branch := range missing {
-		if onRemote["refs/heads/"+branch] {
+		// An earlier fetch can have written this ref, through the remote's configured refspec.
+		if onRemote["refs/heads/"+branch] && len(missingRemoteTrackingBranches([]string{branch}, remoteName)) > 0 {
 			fetchBranch(branch, remoteName)
 		}
 	}

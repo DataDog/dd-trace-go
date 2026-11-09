@@ -939,7 +939,14 @@ func TestGetBaseBranchShaInShallowClones(t *testing.T) {
 			runFixtureGit(t, origin, "switch", "main")
 			pushCheckout(t, origin, checkout, feature, main)
 			runFixtureGit(t, checkout, "fetch", "--no-tags", "--depth=1", "origin", "+refs/heads/release/old:refs/remotes/origin/release/old")
+			release := runFixtureGit(t, origin, "rev-parse", "release/old")
 			runFixtureGit(t, origin, "branch", "-D", "release/old")
+			// Without its commit, the remote rejects a fetch that names it.
+			runFixtureGit(t, origin, "reflog", "expire", "--expire=now", "--all")
+			runFixtureGit(t, origin, "gc", "--prune=now", "--quiet")
+			cmd := exec.Command("git", "cat-file", "-e", release)
+			cmd.Dir = origin
+			require.Error(t, cmd.Run())
 		}},
 		// actions/checkout on a pull_request event checks out the merge commit.
 		{name: "pull request merge checkout", pullRequest: true,
@@ -1272,6 +1279,25 @@ func TestGetBaseBranchShaAsksTheRemoteOnce(t *testing.T) {
 	assert.Equal(t, base, sha)
 	assert.Equal(t, 1, count("ls-remote --heads"))
 	assert.Equal(t, 2, count("fetch --recurse-submodules=no --depth 1"), "main and dev")
+}
+
+// A fetch can write the remote-tracking ref of a later candidate through the
+// remote's configured refspec: that candidate is then not fetched again.
+func TestGetBaseBranchShaKeepsRefsWrittenByAnEarlierFetch(t *testing.T) {
+	isolateFixtureGit(t)
+	root, origin, base, feature, main := newBaseBranchOrigin(t, 24*time.Hour, 0, 0, 0)
+	runFixtureGit(t, origin, "switch", "-c", "dev", main)
+	runFixtureGit(t, origin, "commit", "--allow-empty", "-m", "dev")
+	runFixtureGit(t, origin, "switch", "main")
+	checkout := filepath.Join(root, "checkout")
+	pushCheckout(t, origin, checkout, feature, main)
+	runFixtureGit(t, checkout, "config", "--add", "remote.origin.fetch", "+refs/heads/main:refs/remotes/origin/dev")
+	useBaseBranchCheckout(t, checkout, "")
+
+	sha, err := GetBaseBranchSha("")
+	require.NoError(t, err)
+	assert.Equal(t, base, sha)
+	assert.Equal(t, main, runFixtureGit(t, checkout, "rev-parse", "refs/remotes/origin/dev"))
 }
 
 // The boundaries that need history are deepened in one fetch.
