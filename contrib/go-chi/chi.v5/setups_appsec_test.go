@@ -516,9 +516,7 @@ func TestAppSecConcurrentRequests(t *testing.T) {
 	results := make([]result, workers*requests)
 	var wg sync.WaitGroup
 	for worker := range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for i := range requests {
 				id := fmt.Sprintf("u%d-%d", worker, i)
 				attack := (worker+i)%4 == 0
@@ -529,7 +527,7 @@ func TestAppSecConcurrentRequests(t *testing.T) {
 				router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/"+id+"/orders/7", nil))
 				results[worker*requests+i] = result{attack, id, w.Code, w.Body.String()}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 
