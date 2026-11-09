@@ -1126,7 +1126,8 @@ func TestGetBaseBranchShaDeepensOnlyTheComparedHistory(t *testing.T) {
 	checkout := filepath.Join(root, "checkout")
 	pushCheckout(t, origin, checkout, feature, main)
 	// One depth-limited fetch, which keeps a boundary at every tip.
-	fetch := []string{"fetch", "--no-tags", "--depth=1", "origin", "+" + feature + ":refs/remotes/origin/feature"}
+	fetch := make([]string, 0, 5+unrelated)
+	fetch = append(fetch, "fetch", "--no-tags", "--depth=1", "origin", "+"+feature+":refs/remotes/origin/feature")
 	for i := range unrelated {
 		name := "topic-" + strconv.Itoa(i)
 		fetch = append(fetch, "+refs/heads/"+name+":refs/remotes/origin/"+name)
