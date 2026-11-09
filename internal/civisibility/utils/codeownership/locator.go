@@ -14,21 +14,17 @@ import (
 	"strings"
 )
 
-// Locations supplies explicit repository context. No environment is read.
-// SourceRoot is a directory; Workspace is the base of paths used by callers.
-type Locations struct{ Workspace, SourceRoot, Repository, Provider string }
+// Locations supplies explicit repository context used to select the dialect.
+// No environment is read.
+type Locations struct{ Repository, Provider string }
 
-// Resolver owns a selected file and rebases workspace paths when the workspace
-// is a subdirectory of the Git root. Its decision is stable for a test session.
+// Resolver owns a selected file and matches paths relative to the directory
+// given to DiscoverIn. Its decision is stable for a test session.
 type Resolver struct {
-	rules          *CodeOwners
-	root, filename string
-	dialect        Dialect
-	prefix         string
+	rules    *CodeOwners
+	filename string
+	dialect  Dialect
 }
-
-// Root is the repository directory used to locate CODEOWNERS.
-func (r *Resolver) Root() string { return r.root }
 
 // File is the selected CODEOWNERS path.
 func (r *Resolver) File() string { return r.filename }
@@ -39,112 +35,56 @@ func (r *Resolver) Dialect() Dialect { return r.dialect }
 // Diagnostics reports invalid input without exposing mutable parsed state.
 func (r *Resolver) Diagnostics() int { return r.rules.Diagnostics() }
 
-// Match resolves a logical file path relative to the supplied workspace.
+// Ignored reports whether the selected file was ignored for its size.
+func (r *Resolver) Ignored() bool { return r.rules.Ignored() }
+
+// Match resolves a file path relative to the directory given to DiscoverIn.
 func (r *Resolver) Match(value string) (*Ownership, bool) {
 	if r == nil {
 		return nil, false
 	}
-	value, ok := r.repositoryPath(value)
-	if !ok {
-		return nil, false
-	}
-	return r.rules.Match(value)
-}
-
-func (r *Resolver) repositoryPath(value string) (string, bool) {
 	value = normalizePath(value)
-	if value == "" {
-		return "", false
-	}
-	// Compiler paths are resolved by the caller. Reject traversal before Clean
-	// can hide it, including attempts to leave the workspace but stay in the repo.
+	// Reject traversal before Clean can hide it: such a path leaves the
+	// directory whose CODEOWNERS file was selected.
 	for segment := range strings.SplitSeq(value, "/") {
 		if segment == ".." {
-			return "", false
+			return nil, false
 		}
 	}
-	if r.prefix != "" {
-		value = "/" + r.prefix + value
-	}
-	return path.Clean(value), true
+	return r.rules.Match(path.Clean(value))
 }
 
-// Discover finds the nearest Git root (directory or worktree .git file), then
-// selects the host's first existing CODEOWNERS location. An unreadable selected
-// file returns an error; it never silently switches ownership to another file.
-func Discover(locations Locations) (*Resolver, error) {
-	workspace, err := absoluteDirectory(locations.Workspace)
-	if err != nil {
-		return nil, err
-	}
-	source, err := absoluteDirectory(locations.SourceRoot)
-	if err != nil {
-		return nil, err
-	}
-	root := findGitRoot(source)
-	if root == "" {
-		root = findGitRoot(workspace)
-	}
-	if root != "" {
-		return discoverAt(root, workspace, locations)
-	}
-	// A repository-less standalone binary can still use its explicit workspace.
-	if workspace != "" {
-		result, err := discoverAt(workspace, workspace, locations)
-		if err != nil || result != nil {
-			return result, err
-		}
-	}
-	if source != "" && source != workspace {
-		return discoverAt(source, source, locations)
-	}
-	return nil, nil
-}
-
-// DiscoverIn selects the host's first CODEOWNERS location in directory itself,
-// without looking for a Git root, and matches paths relative to directory.
+// DiscoverIn selects the host's first existing CODEOWNERS location in
+// directory itself, without looking for a Git root, and matches paths relative
+// to directory. An unreadable selected file returns an error; it never
+// silently switches ownership to another file.
 func DiscoverIn(directory string, locations Locations) (*Resolver, error) {
 	directory, err := absoluteDirectory(directory)
 	if err != nil || directory == "" {
 		return nil, err
 	}
-	return discoverAt(directory, directory, locations)
-}
-
-func discoverAt(root, workspace string, locations Locations) (*Resolver, error) {
-	dialect := detectDialect(root, locations.Repository, locations.Provider)
+	dialect, err := detectDialect(directory, locations.Repository, locations.Provider)
+	if err != nil {
+		return nil, err
+	}
 	folders := []string{".github", "", "docs"}
 	if dialect == GitLab {
 		folders = []string{"", "docs", ".gitlab"}
 	}
 	for _, folder := range folders {
-		filename := filepath.Join(root, folder, "CODEOWNERS")
-		info, err := os.Stat(filename)
-		if errors.Is(err, os.ErrNotExist) {
-			continue
-		}
+		filename := filepath.Join(directory, folder, "CODEOWNERS")
+		ok, err := candidate(directory, filename)
 		if err != nil {
 			return nil, err
 		}
-		if info.IsDir() {
+		if !ok {
 			continue
 		}
 		rules, err := Load(filename, dialect)
 		if err != nil {
 			return nil, err
 		}
-		if workspace == "" {
-			workspace = root
-		}
-		relative, err := filepath.Rel(root, workspace)
-		if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-			return nil, nil
-		}
-		prefix := filepath.ToSlash(relative)
-		if prefix == "." {
-			prefix = ""
-		}
-		return &Resolver{rules: rules, root: root, filename: filename, dialect: dialect, prefix: prefix}, nil
+		return &Resolver{rules: rules, filename: filename, dialect: dialect}, nil
 	}
 	return nil, nil
 }
@@ -161,20 +101,11 @@ func absoluteDirectory(value string) (string, error) {
 	}
 	return value, nil
 }
-func findGitRoot(start string) string {
-	for start != "" {
-		if info, err := os.Stat(filepath.Join(start, ".git")); err == nil && (info.IsDir() || info.Mode().IsRegular()) {
-			return start
-		}
-		parent := filepath.Dir(start)
-		if parent == start {
-			break
-		}
-		start = parent
-	}
-	return ""
-}
-func detectDialect(root, repository, provider string) Dialect {
+
+// detectDialect picks the host from the repository URL, then the CI provider,
+// then a lone .gitlab/CODEOWNERS. An error reading those markers is returned,
+// so discovery is retried instead of settling on the wrong host.
+func detectDialect(root, repository, provider string) (Dialect, error) {
 	host := ""
 	if u, err := url.Parse(repository); err == nil {
 		host = u.Hostname()
@@ -188,23 +119,56 @@ func detectDialect(root, repository, provider string) Dialect {
 	}
 	host = strings.ToLower(host)
 	if host == "gitlab.com" || strings.HasPrefix(host, "gitlab.") || strings.Contains(host, ".gitlab.") {
-		return GitLab
+		return GitLab, nil
 	}
 	if host == "github.com" {
-		return GitHub
+		return GitHub, nil
 	}
 	if provider == "gitlab" {
-		return GitLab
+		return GitLab, nil
 	}
 	if provider == "github" {
-		return GitHub
+		return GitHub, nil
 	}
-	if regularFile(filepath.Join(root, ".gitlab", "CODEOWNERS")) && !regularFile(filepath.Join(root, ".github", "CODEOWNERS")) {
-		return GitLab
+	// Only files discovery would read count, so a skipped file cannot select a
+	// dialect whose locations then hold nothing to read.
+	gitLab, err := candidate(root, filepath.Join(root, ".gitlab", "CODEOWNERS"))
+	if err != nil {
+		return GitHub, err
 	}
-	return GitHub
+	gitHub, err := candidate(root, filepath.Join(root, ".github", "CODEOWNERS"))
+	if err != nil {
+		return GitHub, err
+	}
+	if gitLab && !gitHub {
+		return GitLab, nil
+	}
+	return GitHub, nil
 }
-func regularFile(filename string) bool {
+
+// candidate reports whether discovery may read filename: a regular file that
+// resolves inside directory, which absoluteDirectory already resolved. A
+// device or named pipe could block or never end, and a committed symlink can
+// point anywhere, including files such as /proc/kmsg that look regular but
+// block. Missing and skipped files are not errors; Load checks the type again.
+func candidate(directory, filename string) (bool, error) {
 	info, err := os.Stat(filename)
-	return err == nil && !info.IsDir()
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if !info.Mode().IsRegular() {
+		return false, nil
+	}
+	resolved, err := filepath.EvalSymlinks(filename)
+	if err != nil {
+		return false, err
+	}
+	return inside(directory, resolved), nil
+}
+func inside(directory, filename string) bool {
+	relative, err := filepath.Rel(directory, filename)
+	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
 }

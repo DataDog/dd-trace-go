@@ -314,7 +314,7 @@ func findEmail(token []rune, search int) (int, int, bool) {
 			continue
 		}
 		local, length := at, 0
-		for local > search && length < 100 {
+		for local > search && length < maximumEmailLocalLength {
 			r := token[local-1]
 			if r == '@' || unicode.IsSpace(r) {
 				break
@@ -326,7 +326,7 @@ func findEmail(token []rune, search int) (int, int, bool) {
 			continue
 		}
 		end, lastWord := at+1, -1
-		limit := min(len(token), end+255)
+		limit := min(len(token), end+maximumEmailDomainLength)
 		for end < limit {
 			if token[end] == '@' || unicode.IsSpace(rune(token[end])) {
 				break

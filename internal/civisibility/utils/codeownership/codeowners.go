@@ -9,6 +9,23 @@
 //
 // The rules and file discovery follow dd-trace-dotnet's implementation:
 // https://github.com/DataDog/dd-trace-dotnet/tree/843640c32bae5fe6dcdf790906f6431fe15f6973/tracer/src/Datadog.Trace/Ci/CodeOwnership
+// The rule test cases were ported from its test suite at the same commit.
+// Upstream is not tracked automatically; those tests pin behavioral parity.
+// Deliberate divergences:
+//   - GitLab section headers and role owners are scanned instead of matched
+//     with upstream's regular expressions.
+//   - A rooted GitHub filename prefix such as "/src/ci_*" also owns files
+//     below a matching directory, as gitignore does; upstream adds
+//     descendants only to directory patterns.
+//   - "?" and character classes match one Unicode code point, not one UTF-16
+//     code unit, so "?.go" matches "😀.go".
+//   - Discovery reads only the given directory instead of searching for a Git
+//     root, and reads only regular files that resolve inside it.
+//   - Tag leaves out owners beyond MaximumTagLength.
+//
+// As upstream, a GitLab line starting with "[" is a section header, so a
+// pattern such as "[0-9]*.md @team" starts a malformed section "0-9" instead
+// of adding a rule; the rules after it belong to that section.
 package codeownership
 
 import (
@@ -20,6 +37,7 @@ import (
 	"slices"
 	"strings"
 	"sync/atomic"
+	"unicode/utf8"
 )
 
 // Dialect selects the repository host's CODEOWNERS rules.
@@ -33,6 +51,17 @@ const (
 // GitHubMaximumFileSize is GitHub's three MiB CODEOWNERS limit.
 // GitLab does not apply this limit.
 const GitHubMaximumFileSize = 3 * 1024 * 1024
+
+// MaximumTagLength is the most characters CI Visibility keeps in a tag value
+// (ciVisibilityMetaValueMaxChars in internal/civisibility/integrations).
+const MaximumTagLength = 5000
+
+// Email owner limits, in characters, ported from dd-trace-dotnet. GitHub
+// accepts only ASCII owners, so there they are also byte counts.
+const (
+	maximumEmailLocalLength  = 100
+	maximumEmailDomainLength = 255
+)
 
 // Ownership is immutable. Callers can obtain a defensive owner list, the first
 // owner, or the test.codeowners value.
@@ -64,6 +93,7 @@ func (o *Ownership) FirstOwner() string {
 }
 
 // Tag returns the JSON owner array used by test.codeowners, or an empty string.
+// Owners that would make it longer than MaximumTagLength are left out.
 func (o *Ownership) Tag() string {
 	if o == nil || len(o.owners) == 0 {
 		return ""
@@ -71,11 +101,41 @@ func (o *Ownership) Tag() string {
 	if tag := o.tag.Load(); tag != nil {
 		return *tag
 	}
-	data, _ := json.Marshal(o.owners)
-	tag := string(data)
+	tag := encodeTag(o.owners)
 	// Concurrent first readers encode the same value; one is kept.
 	o.tag.CompareAndSwap(nil, &tag)
 	return *o.tag.Load()
+}
+
+// encodeTag returns owners as a JSON array of at most MaximumTagLength
+// characters, keeping the owners that fit in declaration order, or an empty
+// string if none fits. CI Visibility cuts longer tag values, which would leave
+// the array unterminated.
+func encodeTag(owners []string) string {
+	var tag strings.Builder
+	length := len("[]")
+	for _, owner := range owners {
+		data, _ := json.Marshal(owner)
+		size := utf8.RuneCount(data)
+		if tag.Len() > 0 {
+			size++ // separator
+		}
+		if length+size > MaximumTagLength {
+			break
+		}
+		if tag.Len() == 0 {
+			tag.WriteByte('[')
+		} else {
+			tag.WriteByte(',')
+		}
+		tag.Write(data)
+		length += size
+	}
+	if tag.Len() == 0 {
+		return ""
+	}
+	tag.WriteByte(']')
+	return tag.String()
 }
 
 // CodeOwners holds compiled rules. Matching is safe for concurrent readers.
@@ -84,6 +144,7 @@ type CodeOwners struct {
 	rules       []rule
 	sections    []section
 	diagnostics int
+	ignored     bool
 }
 type rule struct {
 	glob      globPattern
@@ -105,26 +166,38 @@ func (c *CodeOwners) Diagnostics() int {
 	return c.diagnostics
 }
 
-// Load reads one selected file. Invalid lines are diagnosed and skipped;
-// I/O failures return an error. An oversized GitHub file yields empty rules.
+// Ignored reports whether the file was ignored, as GitHub ignores a file above
+// GitHubMaximumFileSize. An ignored file has no rules.
+func (c *CodeOwners) Ignored() bool {
+	return c != nil && c.ignored
+}
+
+// Load reads one selected file. Invalid lines are diagnosed: GitHub skips
+// them, while GitLab keeps the rule with the owners it could extract.
+// I/O failures and files that are not regular, such as devices or named
+// pipes, return an error. An oversized GitHub file yields empty rules and
+// Ignored reports true.
 func Load(filename string, dialect Dialect) (*CodeOwners, error) {
 	if filename == "" {
 		return nil, errors.New("CODEOWNERS path is empty")
+	}
+	// Check before opening: opening a named pipe blocks until it has a writer,
+	// and a device such as /dev/zero reports size 0 and never ends.
+	info, err := os.Stat(filename)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("CODEOWNERS is not a regular file: " + filename)
+	}
+	if dialect == GitHub && info.Size() > GitHubMaximumFileSize {
+		return &CodeOwners{dialect: dialect, ignored: true}, nil
 	}
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
 	}
 	defer file.Close()
-	if dialect == GitHub {
-		info, err := file.Stat()
-		if err != nil {
-			return nil, err
-		}
-		if info.Size() > GitHubMaximumFileSize {
-			return &CodeOwners{dialect: dialect}, nil
-		}
-	}
 	return parseFile(file, dialect)
 }
 

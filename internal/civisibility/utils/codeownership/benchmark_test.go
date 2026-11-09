@@ -6,10 +6,14 @@
 package codeownership
 
 import (
+	"encoding/binary"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf16"
 )
 
 // Synthetic rules keep performance checks reproducible without publishing a
@@ -33,6 +37,37 @@ func BenchmarkParse(b *testing.B) {
 				b.ReportAllocs()
 				for b.Loop() {
 					owners, err := Parse(strings.NewReader(text), dialect)
+					if err != nil || owners.Diagnostics() != 0 {
+						b.Fatal(err, owners.Diagnostics())
+					}
+				}
+			})
+		}
+	}
+}
+
+// Load covers the cold path: the size check, the file read and, for UTF-16,
+// the decode before parsing.
+func BenchmarkLoad(b *testing.B) {
+	for _, dialect := range []Dialect{GitHub, GitLab} {
+		text := benchmarkRules(dialect, 2000)
+		units := append([]uint16{0xfeff}, utf16.Encode([]rune(text))...)
+		utf16Data := make([]byte, len(units)*2)
+		for i, unit := range units {
+			binary.LittleEndian.PutUint16(utf16Data[i*2:], unit)
+		}
+		for _, encoding := range []struct {
+			name string
+			data []byte
+		}{{"utf8", []byte(text)}, {"utf16", utf16Data}} {
+			b.Run(fmt.Sprintf("%d/%s", dialect, encoding.name), func(b *testing.B) {
+				filename := filepath.Join(b.TempDir(), "CODEOWNERS")
+				if err := os.WriteFile(filename, encoding.data, 0600); err != nil {
+					b.Fatal(err)
+				}
+				b.ReportAllocs()
+				for b.Loop() {
+					owners, err := Load(filename, dialect)
 					if err != nil || owners.Diagnostics() != 0 {
 						b.Fatal(err, owners.Diagnostics())
 					}

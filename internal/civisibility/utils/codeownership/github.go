@@ -91,7 +91,9 @@ func validGitHubOwner(owner string) bool {
 		return true
 	}
 	at := strings.IndexByte(owner, '@')
-	if at < 1 || at > 100 || len(owner)-at-1 < 1 || len(owner)-at-1 > 255 || strings.ContainsRune(owner[at+1:], '@') {
+	domain := len(owner) - at - 1
+	if at < 1 || at > maximumEmailLocalLength || domain < 1 || domain > maximumEmailDomainLength ||
+		strings.ContainsRune(owner[at+1:], '@') {
 		return false
 	}
 	for i := range at {

@@ -6,7 +6,9 @@
 package codeownership
 
 import (
+	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,6 +21,7 @@ import (
 	"testing"
 	"time"
 	"unicode/utf16"
+	"unicode/utf8"
 )
 
 func TestTheoryAndBoundaryCases(t *testing.T) {
@@ -165,6 +168,32 @@ func TestOwnershipTagOnFirstUse(t *testing.T) {
 type failingReader struct{}
 
 func (failingReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+
+// Tag keeps whole owners within MaximumTagLength characters, so a cut value
+// never leaves an unterminated JSON array.
+func TestTagFitsTheTagLength(t *testing.T) {
+	owners := make([]string, 0, 400)
+	for i := range 400 {
+		owners = append(owners, fmt.Sprintf("@org/équipe-%03d", i))
+	}
+	tag := newOwnership(owners).Tag()
+	var decoded []string
+	if err := json.Unmarshal([]byte(tag), &decoded); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if n := utf8.RuneCountInString(tag); n > MaximumTagLength {
+		t.Fatalf("tag has %d characters", n)
+	}
+	if len(decoded) == 0 || !slices.Equal(decoded, owners[:len(decoded)]) {
+		t.Fatalf("owners: %v", decoded)
+	}
+	if next, _ := json.Marshal(append(decoded, owners[len(decoded)])); utf8.RuneCount(next) <= MaximumTagLength {
+		t.Fatalf("left out an owner that fits: %d owners", len(decoded))
+	}
+	if tag := newOwnership([]string{"@" + strings.Repeat("a", MaximumTagLength)}).Tag(); tag != "" {
+		t.Fatalf("oversized owner: %d characters", len(tag))
+	}
+}
 func TestReadFailuresAndFileLimit(t *testing.T) {
 	if c, err := Parse(io.MultiReader(strings.NewReader("* @first\n"), failingReader{}), GitHub); c != nil || !errors.Is(err, io.ErrUnexpectedEOF) {
 		t.Fatalf("partial parse: %v %v", c, err)
@@ -273,6 +302,26 @@ func FuzzMatch(f *testing.F) {
 	})
 }
 
+// The file decoder must accept any bytes: odd-length UTF-16, truncated UTF-32,
+// surrogates and runes above U+10FFFF become replacement characters.
+func FuzzParseFile(f *testing.F) {
+	for _, bom := range []string{"", "\xef\xbb\xbf", "\xff\xfe", "\xfe\xff", "\xff\xfe\x00\x00", "\x00\x00\xfe\xff"} {
+		f.Add([]byte(bom + "* @team\n"))
+		f.Add([]byte(bom + "* @team\r\n*.go @go\r"))
+		f.Add([]byte(bom + "\x00"))
+		f.Add([]byte(bom + "\xff\xff\xff"))
+	}
+	f.Fuzz(func(t *testing.T, data []byte) {
+		if len(data) > 65536 {
+			t.Skip()
+		}
+		for _, dialect := range []Dialect{GitHub, GitLab} {
+			if _, err := parseFile(bytes.NewReader(data), dialect); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+}
 func TestPathologicalMatchingAndLargeOwnerLists(t *testing.T) {
 	pattern := strings.Repeat("*a", 32) + "b"
 	c, _ := Parse(strings.NewReader("* @global\n"+pattern+" @slow"), GitHub)

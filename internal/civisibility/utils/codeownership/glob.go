@@ -10,6 +10,8 @@ import (
 	"unicode/utf8"
 )
 
+// Work bounds ported from dd-trace-dotnet's CodeOwners.cs (MaximumPatternLength
+// and MaximumMatchSteps); see the package doc for the pinned upstream commit.
 const maximumPatternLength = 1024
 const maximumMatchSteps = 65536
 
@@ -283,28 +285,28 @@ func compileClass(pattern []rune, start int) (segmentToken, int, int) {
 	if atom < len(pattern) && pattern[atom] == ']' {
 		return token, 0, -1
 	}
-	close := -1
+	closeIndex := -1
 	for i := atom; i < len(pattern); i++ {
 		if pattern[i] == '\\' && i+1 < len(pattern) {
 			i++
 		} else if pattern[i] == ']' {
-			close = i
+			closeIndex = i
 			break
 		}
 	}
-	if close < 0 {
+	if closeIndex < 0 {
 		return token, 0, 0
 	}
-	if atom == close {
+	if atom == closeIndex {
 		return token, 0, -1
 	}
-	for atom < close {
-		a, _, next := classAtom(pattern, atom, close)
+	for atom < closeIndex {
+		a, _, next := classAtom(pattern, atom, closeIndex)
 		atom = next
-		if atom < close {
-			sep, escaped, end := classAtom(pattern, atom, close)
-			if sep == '-' && !escaped && end < close {
-				b, _, end := classAtom(pattern, end, close)
+		if atom < closeIndex {
+			sep, escaped, end := classAtom(pattern, atom, closeIndex)
+			if sep == '-' && !escaped && end < closeIndex {
+				b, _, end := classAtom(pattern, end, closeIndex)
 				if a > b {
 					return token, 0, -1
 				}
@@ -315,10 +317,10 @@ func compileClass(pattern []rune, start int) (segmentToken, int, int) {
 		}
 		token.ranges = append(token.ranges, runeRange{a, a})
 	}
-	return token, close, 1
+	return token, closeIndex, 1
 }
-func classAtom(pattern []rune, index, close int) (rune, bool, int) {
-	escaped := pattern[index] == '\\' && index+1 < close
+func classAtom(pattern []rune, index, closeIndex int) (rune, bool, int) {
+	escaped := pattern[index] == '\\' && index+1 < closeIndex
 	if escaped {
 		index++
 	}

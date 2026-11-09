@@ -8,6 +8,7 @@ package codeownership
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -39,7 +40,7 @@ func TestOfficialLocationPriority(t *testing.T) {
 				writeRules(t, root, folder, "* @owner"+string(rune('a'+i)))
 			}
 			for i, folder := range tc.folders {
-				resolver, err := Discover(Locations{Workspace: workspace, Provider: tc.provider})
+				resolver, err := DiscoverIn(workspace, Locations{Provider: tc.provider})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -54,7 +55,7 @@ func TestOfficialLocationPriority(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			resolver, err := Discover(Locations{Workspace: workspace, Provider: tc.provider})
+			resolver, err := DiscoverIn(workspace, Locations{Provider: tc.provider})
 			if err != nil || resolver != nil {
 				t.Fatalf("%v %v", resolver, err)
 			}
@@ -71,18 +72,18 @@ func TestDetectDialect(t *testing.T) {
 		{"https://unknown.example/org/repo", "gitlab", GitLab}, {"https://unknown.example/org/repo", "github", GitHub},
 	} {
 		t.Run(tc.repository, func(t *testing.T) {
-			if got := detectDialect(t.TempDir(), tc.repository, tc.provider); got != tc.dialect {
-				t.Fatalf("got=%v want=%v", got, tc.dialect)
+			if got, err := detectDialect(t.TempDir(), tc.repository, tc.provider); err != nil || got != tc.dialect {
+				t.Fatalf("got=%v want=%v err=%v", got, tc.dialect, err)
 			}
 		})
 	}
 	root := t.TempDir()
 	writeRules(t, root, ".gitlab", "[Go] @team\n*.go")
-	if detectDialect(root, "", "jenkins") != GitLab {
+	if got, err := detectDialect(root, "", "jenkins"); err != nil || got != GitLab {
 		t.Fatal("GitLab-specific location was ignored")
 	}
 	writeRules(t, root, ".github", "* @team")
-	if detectDialect(root, "", "jenkins") != GitHub {
+	if got, err := detectDialect(root, "", "jenkins"); err != nil || got != GitHub {
 		t.Fatal("ambiguous locations changed default")
 	}
 }
@@ -90,51 +91,10 @@ func TestOtherDialectLocationIsIgnored(t *testing.T) {
 	for _, tc := range []struct{ provider, folder string }{{"github", ".gitlab"}, {"gitlab", ".github"}} {
 		root := t.TempDir()
 		writeRules(t, root, tc.folder, "* @wrong")
-		resolver, err := Discover(Locations{Workspace: root, Provider: tc.provider})
+		resolver, err := DiscoverIn(root, Locations{Provider: tc.provider})
 		if err != nil || resolver != nil {
 			t.Fatalf("other dialect file loaded: %v %v", resolver, err)
 		}
-	}
-}
-func TestRepositoryRootAndWorkspaceRebasing(t *testing.T) {
-	for _, gitFile := range []bool{false, true} {
-		t.Run(map[bool]string{false: "directory", true: "worktree-file"}[gitFile], func(t *testing.T) {
-			workspaceRoot := t.TempDir()
-			root, err := filepath.EvalSymlinks(workspaceRoot)
-			if err != nil {
-				t.Fatal(err)
-			}
-			gitPath := filepath.Join(root, ".git")
-			if gitFile {
-				if err := os.WriteFile(gitPath, []byte("gitdir: outside"), 0600); err != nil {
-					t.Fatal(err)
-				}
-			} else {
-				if err := os.Mkdir(gitPath, 0700); err != nil {
-					t.Fatal(err)
-				}
-			}
-			workspace := filepath.Join(workspaceRoot, "src")
-			if err := os.Mkdir(workspace, 0700); err != nil {
-				t.Fatal(err)
-			}
-			writeRules(t, root, "", "* @repository\n/src/pkg/ @package")
-			writeRules(t, workspace, "", "* @nested")
-			resolver, err := Discover(Locations{Workspace: workspace})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if resolver == nil || resolver.Root() != root {
-				t.Fatalf("root: %+v", resolver)
-			}
-			got, _ := resolver.Match("/pkg/main.go")
-			if got.FirstOwner() != "@package" {
-				t.Fatal(got.Tag())
-			}
-			if _, ok := resolver.Match("../outside.go"); ok {
-				t.Fatal("outside repository match")
-			}
-		})
 	}
 }
 func TestDiscoveryDoesNotSwitchAfterReadError(t *testing.T) {
@@ -148,15 +108,33 @@ func TestDiscoveryDoesNotSwitchAfterReadError(t *testing.T) {
 	if err := os.Symlink("CODEOWNERS", file); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	if resolver, err := Discover(Locations{Workspace: root, Provider: "github"}); resolver != nil || err == nil {
+	if resolver, err := DiscoverIn(root, Locations{Provider: "github"}); resolver != nil || err == nil {
 		t.Fatalf("read error changed selection: %v %v", resolver, err)
+	}
+}
+
+// An unreadable marker used to pick the dialect is a read error too: discovery
+// fails, to be retried, rather than settling on the other host's locations.
+func TestDialectMarkerReadErrorIsReturned(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".gitlab"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("CODEOWNERS", filepath.Join(root, ".gitlab", "CODEOWNERS")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if resolver, err := DiscoverIn(root, Locations{Provider: "jenkins"}); resolver != nil || err == nil {
+		t.Fatalf("marker error ignored: %v %v", resolver, err)
+	}
+	if resolver, err := DiscoverIn(root, Locations{Provider: "github"}); resolver != nil || err != nil {
+		t.Fatalf("marker read although the provider decides: %v %v", resolver, err)
 	}
 }
 func TestDiscoverySnapshotAndOversizedSelection(t *testing.T) {
 	root := t.TempDir()
 	writeRules(t, root, "", "* @fallback")
 	writeRules(t, root, ".github", "* @first")
-	resolver, err := Discover(Locations{Workspace: root})
+	resolver, err := DiscoverIn(root, Locations{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,11 +151,11 @@ func TestDiscoverySnapshotAndOversizedSelection(t *testing.T) {
 		t.Fatal(err)
 	}
 	file.Close()
-	resolver, err = Discover(Locations{Workspace: root})
+	resolver, err = DiscoverIn(root, Locations{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resolver == nil || resolver.Diagnostics() != 0 {
+	if resolver == nil || resolver.Diagnostics() != 0 || !resolver.Ignored() {
 		t.Fatalf("oversized selection: %v", resolver)
 	}
 	if _, ok := resolver.Match("/a.go"); ok {
@@ -201,11 +179,115 @@ func TestDiscoverInUsesOnlyTheDirectory(t *testing.T) {
 	if got, _ := resolver.Match("/pkg/a_test.go"); got.FirstOwner() != "@specific" {
 		t.Fatalf("owner %q", got.FirstOwner())
 	}
+	if _, ok := resolver.Match("/../pkg/a_test.go"); ok {
+		t.Fatal("path outside the directory matched")
+	}
 	empty := filepath.Join(root, "empty")
 	if err := os.Mkdir(empty, 0700); err != nil {
 		t.Fatal(err)
 	}
 	if resolver, err := DiscoverIn(empty, Locations{}); err != nil || resolver != nil {
 		t.Fatalf("parent file selected: %v %v", resolver, err)
+	}
+}
+
+// A device or named pipe in a CODEOWNERS location could block discovery or
+// never end, so discovery skips it and Load rejects it.
+func TestNonRegularFilesAreNotRead(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no device file to link to")
+	}
+	link := func(t *testing.T, root, folder string) string {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Join(root, folder), 0700); err != nil {
+			t.Fatal(err)
+		}
+		filename := filepath.Join(root, folder, "CODEOWNERS")
+		if err := os.Symlink(os.DevNull, filename); err != nil {
+			t.Skipf("symlinks unavailable: %v", err)
+		}
+		return filename
+	}
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeRules(t, root, "", "* @root")
+	device := link(t, root, ".github")
+	if _, err := Load(device, GitHub); err == nil {
+		t.Fatal("device file loaded")
+	}
+	resolver, err := DiscoverIn(root, Locations{Provider: "github"})
+	if err != nil || resolver == nil || resolver.File() != filepath.Join(root, "CODEOWNERS") {
+		t.Fatalf("%v %v", resolver, err)
+	}
+	if got, _ := resolver.Match("/a.go"); got.FirstOwner() != "@root" {
+		t.Fatalf("owner %q", got.FirstOwner())
+	}
+	other := t.TempDir()
+	link(t, other, ".gitlab")
+	if got, err := detectDialect(other, "", "jenkins"); err != nil || got != GitHub {
+		t.Fatal("device file selected the GitLab dialect")
+	}
+}
+
+// A symlink is followed only while it stays inside the directory: a file
+// outside it could be anything readable, such as /proc/kmsg, which blocks.
+func TestSymlinksStayInsideTheDirectory(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeRules(t, root, "", "* @root")
+	writeRules(t, root, "owners", "* @inside")
+	outside := t.TempDir()
+	writeRules(t, outside, "", "* @outside")
+	if err := os.Mkdir(filepath.Join(root, ".github"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, ".github", "CODEOWNERS")
+	if err := os.Symlink(filepath.Join(outside, "CODEOWNERS"), link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	resolver, err := DiscoverIn(root, Locations{Provider: "github"})
+	if err != nil || resolver == nil {
+		t.Fatalf("%v %v", resolver, err)
+	}
+	if got, _ := resolver.Match("/a.go"); got.FirstOwner() != "@root" {
+		t.Fatalf("outside file selected: %q", got.FirstOwner())
+	}
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("..", "owners", "CODEOWNERS"), link); err != nil {
+		t.Fatal(err)
+	}
+	resolver, err = DiscoverIn(root, Locations{Provider: "github"})
+	if err != nil || resolver == nil {
+		t.Fatalf("%v %v", resolver, err)
+	}
+	if got, _ := resolver.Match("/a.go"); got.FirstOwner() != "@inside" {
+		t.Fatalf("inside link not followed: %q", got.FirstOwner())
+	}
+
+	// A skipped link does not select the dialect either: the GitLab file is
+	// the only one discovery can read.
+	gitLab, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeRules(t, gitLab, ".gitlab", "* @gitlab")
+	if err := os.Mkdir(filepath.Join(gitLab, ".github"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "CODEOWNERS"), filepath.Join(gitLab, ".github", "CODEOWNERS")); err != nil {
+		t.Fatal(err)
+	}
+	resolver, err = DiscoverIn(gitLab, Locations{Provider: "jenkins"})
+	if err != nil || resolver == nil || resolver.Dialect() != GitLab {
+		t.Fatalf("%v %v", resolver, err)
+	}
+	if got, _ := resolver.Match("/a.go"); got.FirstOwner() != "@gitlab" {
+		t.Fatalf("owner %q", got.FirstOwner())
 	}
 }

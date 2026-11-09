@@ -11,9 +11,22 @@ import (
 	"testing"
 )
 
+// fileTest expects owners for path. Nil owners expect no match; an empty,
+// non-nil list expects a matching ownerless rule.
 type fileTest struct {
 	path   string
 	owners []string
+}
+
+func checkFile(t *testing.T, c *CodeOwners, file fileTest) {
+	t.Helper()
+	got, matched := c.Match(file.path)
+	if !slices.Equal(got.Owners(), file.owners) {
+		t.Errorf("path=%q owners=%v want=%v", file.path, got.Owners(), file.owners)
+	}
+	if want := file.owners != nil; matched != want {
+		t.Errorf("path=%q matched=%v want=%v", file.path, matched, want)
+	}
 }
 
 type ruleTest struct {
@@ -34,10 +47,7 @@ func checkRules(t *testing.T, dialect Dialect, cases []ruleTest) {
 				t.Fatalf("diagnostics=%d want=%d", c.Diagnostics(), tc.diagnostics)
 			}
 			for _, file := range tc.files {
-				got, _ := c.Match(file.path)
-				if !slices.Equal(got.Owners(), file.owners) {
-					t.Errorf("path=%q owners=%v want=%v", file.path, got.Owners(), file.owners)
-				}
+				checkFile(t, c, file)
 			}
 		})
 	}

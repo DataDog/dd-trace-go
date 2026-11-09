@@ -10,7 +10,7 @@ import "testing"
 func TestGitLabRules(t *testing.T) {
 	cases := []ruleTest{
 		{
-			name:  "GitLab Terminal Globstar Matches One Path Segment",
+			name:  "GitLab Terminal Globstar Matches One Path Segment (/archive/** @single-segment)",
 			rules: "/archive/** @single-segment\n",
 			files: []fileTest{
 				{"/archive", nil},
@@ -19,7 +19,7 @@ func TestGitLabRules(t *testing.T) {
 			},
 		},
 		{
-			name:  "GitLab Terminal Globstar Matches One Path Segment",
+			name:  "GitLab Terminal Globstar Matches One Path Segment (/archive/**/* @recursive)",
 			rules: "/archive/**/* @recursive\n",
 			files: []fileTest{
 				{"/archive/deep/file.txt", []string{"@recursive"}},
@@ -64,7 +64,7 @@ func TestGitLabRules(t *testing.T) {
 			},
 		},
 		{
-			name:  "Git Lab Sections Are Evaluated Independently And Combined",
+			name:  "GitLab Sections Are Evaluated Independently And Combined",
 			rules: "* @admin\n\n[README Owners]\nREADME.md @user1 @user2\ninternal/README.md @user4\n\n[README other owners]\nREADME.md @user3",
 			files: []fileTest{
 				{"/README.md", []string{"@admin", "@user1", "@user2", "@user3"}},
@@ -72,7 +72,7 @@ func TestGitLabRules(t *testing.T) {
 			},
 		},
 		{
-			name:  "Git Lab Section Defaults Apply Only After ARule Matches",
+			name:  "GitLab Section Defaults Apply Only After A Rule Matches",
 			rules: "[Section] @team\n/src/ @owner\n",
 			files: []fileTest{
 				{"/src/code.go", []string{"@owner"}},
@@ -146,35 +146,35 @@ func TestGitLabRules(t *testing.T) {
 			},
 		},
 		{
-			name:  "Git Lab Last Duplicate Pattern Replaces Earlier Entries Including Exclusions",
+			name:  "GitLab Last Duplicate Pattern Replaces Earlier Entries Including Exclusions ([Ruby])",
 			rules: "[Ruby]\n*.rb @old\n!*.rb\n*.rb @new\n",
 			files: []fileTest{
 				{"/model.rb", []string{"@new"}},
 			},
 		},
 		{
-			name:  "Git Lab Last Duplicate Pattern Replaces Earlier Entries Including Exclusions",
+			name:  "GitLab Last Duplicate Pattern Replaces Earlier Entries Including Exclusions (* @old)",
 			rules: "* @old\n!/**/*\n* @new\n",
 			files: []fileTest{
 				{"/nested/file.go", []string{"@new"}},
 			},
 		},
 		{
-			name:  "Git Lab Duplicate Normalization Unescapes Leading Hash Before Replacement",
+			name:  "GitLab Duplicate Normalization Unescapes Leading Hash Before Replacement (!#file)",
 			rules: "!#file\n\\#file @new\n",
 			files: []fileTest{
 				{"/#file", []string{"@new"}},
 			},
 		},
 		{
-			name:  "Git Lab Duplicate Normalization Unescapes Leading Hash Before Replacement",
+			name:  "GitLab Duplicate Normalization Unescapes Leading Hash Before Replacement (\\#file @old)",
 			rules: "\\#file @old\n!#file\n",
 			files: []fileTest{
 				{"/#file", nil},
 			},
 		},
 		{
-			name:  "Git Lab Character Classes Support Sets Ranges And Negation Without Crossing Directories",
+			name:  "GitLab Character Classes Support Sets Ranges And Negation Without Crossing Directories",
 			rules: "digit[0-9].txt     @digit\nletter[ab].txt     @letter\nnon-digit[!0-9].txt @non-digit\npath[!x]file       @same-segment\n",
 			files: []fileTest{
 				{"/digit7.txt", []string{"@digit"}},
@@ -187,7 +187,7 @@ func TestGitLabRules(t *testing.T) {
 			},
 		},
 		{
-			name:        "Git Lab Malformed Character Classes Cannot Abort Parser Initialization",
+			name:        "GitLab Malformed Character Classes Cannot Abort Parser Initialization",
 			rules:       "*               @fallback\nfile[z-a].txt   @invalid-range\nbroken\\\nfile[---!].txt  @punctuation\n",
 			diagnostics: 2,
 			files: []fileTest{
@@ -197,7 +197,7 @@ func TestGitLabRules(t *testing.T) {
 			},
 		},
 		{
-			name:        "Git Lab Character Classes Cannot Start With Closing Bracket",
+			name:        "GitLab Character Classes Cannot Start With Closing Bracket",
 			rules:       "*              @fallback\nfile[]a].txt   @positive\nfile[!]].txt   @negated\n",
 			diagnostics: 2,
 			files: []fileTest{
@@ -207,7 +207,7 @@ func TestGitLabRules(t *testing.T) {
 			},
 		},
 		{
-			name:  "Git Lab Backslash Escapes Glob Metacharacters And Ordinary Characters",
+			name:  "GitLab Backslash Escapes Glob Metacharacters And Ordinary Characters",
 			rules: "file\\?.txt @question\nliteral\\*.txt @star\nletter\\a.txt @ordinary\nbracket[\\]].txt @closing-bracket\nhyphen[\\-].txt @hyphen",
 			files: []fileTest{
 				{"/file?.txt", []string{"@question"}},
@@ -237,7 +237,7 @@ func TestGitLabRules(t *testing.T) {
 			},
 		},
 		{
-			name:        "Git Lab Malformed Section Suffix Cannot Leak Default Owners",
+			name:        "GitLab Malformed Section Suffix Cannot Leak Default Owners ([Docs]] @leaked)",
 			rules:       "[Docs]] @leaked\nREADME.md\n",
 			diagnostics: 2,
 			files: []fileTest{
@@ -245,7 +245,7 @@ func TestGitLabRules(t *testing.T) {
 			},
 		},
 		{
-			name:        "Git Lab Malformed Section Suffix Cannot Leak Default Owners",
+			name:        "GitLab Malformed Section Suffix Cannot Leak Default Owners ([Docs][x] @leaked)",
 			rules:       "[Docs][x] @leaked\nREADME.md\n",
 			diagnostics: 2,
 			files: []fileTest{
@@ -253,7 +253,7 @@ func TestGitLabRules(t *testing.T) {
 			},
 		},
 		{
-			name:        "Git Lab Permissive Section Parsing Keeps Only The Recognized Owner Span",
+			name:        "GitLab Permissive Section Parsing Keeps Only The Recognized Owner Span",
 			rules:       "[Docs][2]@owner\nREADME.md\n",
 			diagnostics: 1,
 			files: []fileTest{
@@ -261,49 +261,49 @@ func TestGitLabRules(t *testing.T) {
 			},
 		},
 		{
-			name:  "Git Lab Recognized Roles Are Kept As Owners",
+			name:  "GitLab Recognized Roles Are Kept As Owners (*.go @@developer)",
 			rules: "*.go @@developer\n",
 			files: []fileTest{
 				{"/file.go", []string{"@@developer"}},
 			},
 		},
 		{
-			name:  "Git Lab Recognized Roles Are Kept As Owners",
+			name:  "GitLab Recognized Roles Are Kept As Owners (*.go @@developers)",
 			rules: "*.go @@developers\n",
 			files: []fileTest{
 				{"/file.go", []string{"@@developers"}},
 			},
 		},
 		{
-			name:  "Git Lab Recognized Roles Are Kept As Owners",
+			name:  "GitLab Recognized Roles Are Kept As Owners (*.go @@maintainer)",
 			rules: "*.go @@maintainer\n",
 			files: []fileTest{
 				{"/file.go", []string{"@@maintainer"}},
 			},
 		},
 		{
-			name:  "Git Lab Recognized Roles Are Kept As Owners",
+			name:  "GitLab Recognized Roles Are Kept As Owners (*.go @@maintainers)",
 			rules: "*.go @@maintainers\n",
 			files: []fileTest{
 				{"/file.go", []string{"@@maintainers"}},
 			},
 		},
 		{
-			name:  "Git Lab Recognized Roles Are Kept As Owners",
+			name:  "GitLab Recognized Roles Are Kept As Owners (*.go @@owner)",
 			rules: "*.go @@owner\n",
 			files: []fileTest{
 				{"/file.go", []string{"@@owner"}},
 			},
 		},
 		{
-			name:  "Git Lab Recognized Roles Are Kept As Owners",
+			name:  "GitLab Recognized Roles Are Kept As Owners (*.go @@OwNeRs)",
 			rules: "*.go @@OwNeRs\n",
 			files: []fileTest{
 				{"/file.go", []string{"@@OwNeRs"}},
 			},
 		},
 		{
-			name:        "Git Lab Unknown Roles Are Ignored",
+			name:        "GitLab Unknown Roles Are Ignored",
 			rules:       "*.go @@banana @valid\n",
 			diagnostics: 1,
 			files: []fileTest{
@@ -332,7 +332,7 @@ func TestGitLabRules(t *testing.T) {
 			},
 		},
 		{
-			name:  "Git Lab Namespace References May End With Hyphens",
+			name:  "GitLab Namespace References May End With Hyphens",
 			rules: "*.go @team-\n*.proto (@group-/subgroup-)\n",
 			files: []fileTest{
 				{"/file.go", []string{"@team-"}},
@@ -340,7 +340,7 @@ func TestGitLabRules(t *testing.T) {
 			},
 		},
 		{
-			name:  "Git Lab Reference Extraction Scans Names Roles And Emails Independently",
+			name:  "GitLab Reference Extraction Scans Names Roles And Emails Independently",
 			rules: "*.go docs@example.com,@alice\n*.proto alice@example.com!alias\n*.yaml (@@maintainer\n",
 			files: []fileTest{
 				{"/file.go", []string{"@alice", "docs@example.com"}},
@@ -349,14 +349,14 @@ func TestGitLabRules(t *testing.T) {
 			},
 		},
 		{
-			name:  "Git Lab Exclusions Ignore Owner Text For Diagnostics",
+			name:  "GitLab Exclusions Ignore Owner Text For Diagnostics",
 			rules: "!*.go definitely-not-an-owner\n",
 			files: []fileTest{
 				{"/file.go", nil},
 			},
 		},
 		{
-			name:        "Git Lab Ownerless Entries Are Diagnosed Without Changing Matching Semantics",
+			name:        "GitLab Ownerless Entries Are Diagnosed Without Changing Matching Semantics",
 			rules:       "*.md\n",
 			diagnostics: 1,
 			files: []fileTest{
@@ -373,7 +373,7 @@ func TestGitLabRules(t *testing.T) {
 			},
 		},
 		{
-			name:  "Git Lab Duplicate Sections Are Combined Case Insensitively",
+			name:  "GitLab Duplicate Sections Are Combined Case Insensitively",
 			rules: "[Docs]\n*.md @old\n[DOCS]\nREADME.md @new\n",
 			files: []fileTest{
 				{"/README.md", []string{"@new"}},
@@ -381,7 +381,7 @@ func TestGitLabRules(t *testing.T) {
 			},
 		},
 		{
-			name:  "Git Lab Duplicate Section Exclusions Are Sticky Across Occurrences",
+			name:  "GitLab Duplicate Section Exclusions Are Sticky Across Occurrences",
 			rules: "[Ruby]\n*.rb @ruby-team\n[RUBY]\n!/config/**/*.rb\n/config/routes.rb @ops\n",
 			files: []fileTest{
 				{"/lib/model.rb", []string{"@ruby-team"}},
@@ -389,7 +389,7 @@ func TestGitLabRules(t *testing.T) {
 			},
 		},
 		{
-			name:  "Git Lab Duplicate Section Defaults Apply To Entries Under Each Header",
+			name:  "GitLab Duplicate Section Defaults Apply To Entries Under Each Header",
 			rules: "[Docs] @old-default\n*.md\n[DOCS] @new-default\nREADME.md\n",
 			files: []fileTest{
 				{"/guide.md", []string{"@old-default"}},
@@ -406,6 +406,19 @@ func TestGitLabRules(t *testing.T) {
 				{"/workhorse/Makefile", []string{"@gitlab-org/maintainers/gitlab-workhorse"}},
 				{"/spec/lib/gitlab/background_migration/foo_spec.rb", []string{"@gitlab-org/maintainers/rails-backend", "@gitlab-org/maintainers/database"}},
 				{"/patches/foo.diff", []string{"@gl-dx/maintainers", "@gitlab-org/maintainers/rails-backend", "@markrian", "@xanf", "@thutterer"}},
+			},
+		},
+		{
+			// As upstream, a line starting with "[" is a section header: the
+			// pattern starts a malformed section "0-9", and the rules after it
+			// lose the Docs section's default owners.
+			name:        "GitLab Leading Character Class Parses As A Malformed Section Header",
+			rules:       "[Docs] @docs\n[0-9]*.md @docs-team\nGUIDE.md @guide\nREADME.md\n",
+			diagnostics: 2,
+			files: []fileTest{
+				{"/1.md", nil},
+				{"/GUIDE.md", []string{"@guide"}},
+				{"/README.md", nil},
 			},
 		},
 	}

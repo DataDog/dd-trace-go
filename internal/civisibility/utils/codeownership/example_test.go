@@ -8,7 +8,6 @@ package codeownership
 import (
 	"fmt"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 )
@@ -37,7 +36,7 @@ func TestRepositoryExamples(t *testing.T) {
 			{"pkg/api/server_test.go", []string{"@api-team"}},
 			{"pkg/api/internal/auth.go", []string{"@security-team", "@api-team"}},
 			{"docs/setup.md", []string{"@docs-team", "docs@example.com"}},
-			{"generated/client.go", nil},
+			{"generated/client.go", []string{}},
 			{"README.md", []string{"@platform"}},
 		}},
 		{"gitlab", GitLab, []fileTest{
@@ -57,10 +56,7 @@ func TestRepositoryExamples(t *testing.T) {
 				t.Fatal(rules.Diagnostics())
 			}
 			for _, file := range tc.files {
-				owners, _ := rules.Match(file.path)
-				if !slices.Equal(owners.Owners(), file.owners) {
-					t.Errorf("path=%q owners=%v want=%v", file.path, owners.Owners(), file.owners)
-				}
+				checkFile(t, rules, file)
 			}
 		})
 	}

@@ -100,7 +100,7 @@ func TestGitHubRules(t *testing.T) {
 			},
 		},
 		{
-			name:  "GitHub Rooted Versus Unrooted Patterns",
+			name:  "GitHub Rooted Versus Unrooted Patterns (/apps/ @root-apps)",
 			rules: "/apps/ @root-apps",
 			files: []fileTest{
 				{"/apps/a.go", []string{"@root-apps"}},
@@ -108,7 +108,7 @@ func TestGitHubRules(t *testing.T) {
 			},
 		},
 		{
-			name:  "GitHub Rooted Versus Unrooted Patterns",
+			name:  "GitHub Rooted Versus Unrooted Patterns (apps/ @anywhere)",
 			rules: "apps/ @anywhere",
 			files: []fileTest{
 				{"/x/apps/a.go", []string{"@anywhere"}},
@@ -141,8 +141,8 @@ func TestGitHubRules(t *testing.T) {
 			name:  "Ownerless Entry Leaves Subtree Unowned",
 			rules: "*            @global-owner1 @global-owner2\n*.go         docs@example.com\n/apps/       @octocat\n/apps/github\n",
 			files: []fileTest{
-				{"/apps/github", nil},
-				{"/apps/github/proj/main.go", nil},
+				{"/apps/github", []string{}},
+				{"/apps/github/proj/main.go", []string{}},
 				{"/other.go", []string{"docs@example.com"}},
 			},
 		},
@@ -164,7 +164,7 @@ func TestGitHubRules(t *testing.T) {
 			},
 		},
 		{
-			name:        "Git Lab Section Syntax Does Not Scope Git Hub Rules",
+			name:        "GitLab Section Syntax Does Not Scope Git Hub Rules",
 			rules:       "*.js          @first\n[Docs]        @ignored\n*.md          @docs\n*.js          @second\n",
 			diagnostics: 1,
 			files: []fileTest{
@@ -296,14 +296,14 @@ func TestGitHubRules(t *testing.T) {
 			},
 		},
 		{
-			name:  "Double Star Is Globstar Only As AWhole Segment",
+			name:  "Double Star Is Globstar Only As A Whole Segment (foo**bar @stars)",
 			rules: "foo**bar @stars\n",
 			files: []fileTest{
 				{"/fooXbar", []string{"@stars"}},
 			},
 		},
 		{
-			name:  "Double Star Is Globstar Only As AWhole Segment",
+			name:  "Double Star Is Globstar Only As A Whole Segment (/foo**/bar @component-stars)",
 			rules: "/foo**/bar @component-stars\n",
 			files: []fileTest{
 				{"/foo/bar", []string{"@component-stars"}},
@@ -313,7 +313,7 @@ func TestGitHubRules(t *testing.T) {
 			},
 		},
 		{
-			name:  "Double Star Is Globstar Only As AWhole Segment",
+			name:  "Double Star Is Globstar Only As A Whole Segment (**/index.md @index)",
 			rules: "**/index.md @index\n",
 			files: []fileTest{
 				{"/docs/index.md", []string{"@index"}},
