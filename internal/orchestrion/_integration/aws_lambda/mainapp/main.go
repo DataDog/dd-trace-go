@@ -8,6 +8,9 @@
 // what the handler does. Every handler tags the active span with
 // lambda_variant and makes one GET to LAMBDA_HTTP_URL, so each invocation
 // should report an aws.lambda span with one http.request child.
+//
+// The default build doesn't import ddlambda, as a customer's function
+// wouldn't, so the tests show that Orchestrion links it in on its own.
 package main
 
 import (
@@ -21,7 +24,6 @@ import (
 	"strings"
 	"time"
 
-	ddlambda "github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2"
 	"github.com/aws/aws-lambda-go/lambda"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -31,6 +33,9 @@ var (
 	variant = os.Getenv("LAMBDA_VARIANT")  //nolint:forbidigo // set by the test, not a tracer setting
 	httpURL = os.Getenv("LAMBDA_HTTP_URL") //nolint:forbidigo // set by the test, not a tracer setting
 )
+
+// taggedVariants holds the variants that are only built with a build tag.
+var taggedVariants = map[string]func(){}
 
 type ctxKey struct{}
 
@@ -153,14 +158,11 @@ func main() {
 			}
 			return "ok", nil
 		})
-	case "Metric":
-		lambda.Start(func(ctx context.Context) (string, error) {
-			markInvocation(ctx)
-			// No context argument: ddlambda finds the invocation through its global.
-			ddlambda.Metric("lambda.test.metric", 1, "variant:metric")
-			return "ok", nil
-		})
 	default:
-		panic("unknown LAMBDA_VARIANT " + variant)
+		start, ok := taggedVariants[variant]
+		if !ok {
+			panic("unknown LAMBDA_VARIANT " + variant)
+		}
+		start()
 	}
 }

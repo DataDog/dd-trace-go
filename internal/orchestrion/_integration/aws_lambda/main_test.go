@@ -67,7 +67,6 @@ func TestLambda(t *testing.T) {
 		{variant: "Error", invokes: []invocation{{event: `{}`, err: true}}},
 		{variant: "DecodeError", invokes: []invocation{{event: `{"N":"not a number"}`, err: true}}, skipsHandler: true},
 		{variant: "ErrorThenOK", invokes: []invocation{{event: `{}`, err: true}, {event: `{}`, body: `"ok"`}}},
-		{variant: "Metric", invokes: []invocation{{event: `{}`, body: `"ok"`}}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.variant, func(t *testing.T) {
@@ -75,13 +74,22 @@ func TestLambda(t *testing.T) {
 			run := runLambda(t, bin, tc.variant, tc.invokes)
 			require.False(t, run.exited, "the app exited:\n%s", run.output)
 			requireInvocations(t, run, tc.variant, tc.invokes, !tc.skipsHandler)
-			if tc.variant == "Metric" {
-				m := run.metrics("lambda.test.metric")
-				require.Len(t, m, 1, run.output)
-				require.Contains(t, m[0].Tags, "variant:metric")
-			}
 		})
 	}
+}
+
+// TestLambdaMetric checks that ddlambda.Metric works without a context
+// argument. It builds the Metric variant, which imports ddlambda, separately
+// so that the other tests run against a build without the import.
+func TestLambdaMetric(t *testing.T) {
+	bin := maintest.BuildWithOrchestrion(t, "./aws_lambda/mainapp", "-tags", "lambda_metric")
+	invokes := []invocation{{event: `{}`, body: `"ok"`}}
+	run := runLambda(t, bin, "Metric", invokes)
+	require.False(t, run.exited, "the app exited:\n%s", run.output)
+	requireInvocations(t, run, "Metric", invokes, true)
+	m := run.metrics("lambda.test.metric")
+	require.Len(t, m, 1, run.output)
+	require.Contains(t, m[0].Tags, "variant:metric")
 }
 
 func TestLambdaNoRPC(t *testing.T) {
