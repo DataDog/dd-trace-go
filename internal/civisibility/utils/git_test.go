@@ -1155,6 +1155,139 @@ func TestGetBaseBranchShaDeepensOnlyTheComparedHistory(t *testing.T) {
 	assert.Equal(t, "true", runFixtureGit(t, checkout, "rev-parse", "--is-shallow-repository"))
 }
 
+// useBaseBranchCheckout changes to checkout and resets what base branch
+// detection caches, with prBaseBranch as the CI's pull request base branch and
+// no head commit. It returns a function that counts, in git's trace of the
+// commands that follow, the commands that start with prefix.
+func useBaseBranchCheckout(t *testing.T, checkout, prBaseBranch string) (count func(prefix string) int) {
+	t.Helper()
+	t.Chdir(checkout)
+	resetGitCommandCachesForTesting(t)
+	ResetCITags()
+	t.Cleanup(ResetCITags)
+	AddCITags(constants.GitPrBaseBranch, prBaseBranch)
+	AddCITags(constants.GitHeadCommit, "")
+	trace := filepath.Join(t.TempDir(), "trace.log")
+	t.Setenv("GIT_TRACE", trace)
+	return func(prefix string) int {
+		logged, err := os.ReadFile(trace)
+		require.NoError(t, err)
+		return strings.Count(string(logged), "built-in: git "+prefix)
+	}
+}
+
+// Every boundary in the compared history must be deepened before comparing: a
+// merge base found through one side can be older than the one through another.
+func TestGetBaseBranchShaFindsTheBestMergeBase(t *testing.T) {
+	isolateFixtureGit(t)
+	const day = 24 * time.Hour
+	root := t.TempDir()
+	origin := filepath.Join(root, "origin")
+	require.NoError(t, os.Mkdir(origin, 0o755))
+	runFixtureGit(t, origin, "init", "--initial-branch=main")
+	commitFixtureAt(t, origin, "first", 90*day)
+	commitFixtureAt(t, origin, "old base", 20*day)
+	runFixtureGit(t, origin, "branch", "p")
+	commitFixtureAt(t, origin, "new base", 10*day)
+	newBase := runFixtureGit(t, origin, "rev-parse", "HEAD")
+	runFixtureGit(t, origin, "branch", "q")
+	commitFixtureAt(t, origin, "main tip", day)
+	// p, on the old base, is newer than q, on the new one: it is deepened first.
+	runFixtureGit(t, origin, "switch", "q")
+	commitFixtureAt(t, origin, "q", 5*day)
+	runFixtureGit(t, origin, "switch", "p")
+	commitFixtureAt(t, origin, "p", 3*day)
+	runFixtureGit(t, origin, "switch", "-c", "feature")
+	runFixtureGit(t, origin, "merge", "--no-ff", "-m", "merge q", "q")
+	feature := runFixtureGit(t, origin, "rev-parse", "HEAD")
+	runFixtureGit(t, origin, "switch", "main")
+
+	checkout := filepath.Join(root, "checkout")
+	require.NoError(t, os.Mkdir(checkout, 0o755))
+	runFixtureGit(t, checkout, "init")
+	runFixtureGit(t, checkout, "remote", "add", "origin", fileURL(origin))
+	runFixtureGit(t, checkout, "fetch", "--no-tags", "--depth=2", "origin", "+"+feature+":refs/remotes/origin/feature")
+	runFixtureGit(t, checkout, "checkout", "--force", "-B", "feature", "refs/remotes/origin/feature")
+	useBaseBranchCheckout(t, checkout, "main")
+
+	sha, err := GetBaseBranchSha("")
+	require.NoError(t, err)
+	assert.Equal(t, newBase, sha)
+}
+
+// A pull request's base branch is fetched without asking the remote first; a
+// local branch of that name still serves when the remote doesn't have it.
+func TestGetBaseBranchShaFetchesThePullRequestBaseBranchDirectly(t *testing.T) {
+	t.Run("on the remote", func(t *testing.T) {
+		isolateFixtureGit(t)
+		root, origin, base, feature, main := newBaseBranchOrigin(t, 24*time.Hour, 0, 0, 0)
+		checkout := filepath.Join(root, "checkout")
+		pushCheckout(t, origin, checkout, feature, main)
+		count := useBaseBranchCheckout(t, checkout, "main")
+
+		sha, err := GetBaseBranchSha("")
+		require.NoError(t, err)
+		assert.Equal(t, base, sha)
+		assert.Zero(t, count("ls-remote --heads"))
+	})
+	t.Run("only local", func(t *testing.T) {
+		isolateFixtureGit(t)
+		root, origin, base, _, _ := newBaseBranchOrigin(t, 24*time.Hour, 0, 0, 0)
+		checkout := filepath.Join(root, "checkout")
+		runFixtureGit(t, root, "clone", "--single-branch", "--branch=feature", fileURL(origin), checkout)
+		runFixtureGit(t, checkout, "branch", "main", base)
+		runFixtureGit(t, origin, "branch", "-m", "main", "trunk")
+		useBaseBranchCheckout(t, checkout, "main")
+
+		sha, err := GetBaseBranchSha("")
+		require.NoError(t, err)
+		assert.Equal(t, base, sha)
+	})
+	t.Run("nowhere", func(t *testing.T) {
+		isolateFixtureGit(t)
+		root, origin, _, feature, main := newBaseBranchOrigin(t, 24*time.Hour, 0, 0, 0)
+		checkout := filepath.Join(root, "checkout")
+		pushCheckout(t, origin, checkout, feature, main)
+		runFixtureGit(t, origin, "branch", "-m", "main", "trunk")
+		useBaseBranchCheckout(t, checkout, "main")
+
+		sha, err := GetBaseBranchSha("")
+		assert.Error(t, err)
+		assert.Empty(t, sha)
+	})
+}
+
+// The detected base branch candidates are looked up on the remote in one
+// request, and only the ones it has are fetched.
+func TestGetBaseBranchShaAsksTheRemoteOnce(t *testing.T) {
+	isolateFixtureGit(t)
+	root, origin, base, feature, main := newBaseBranchOrigin(t, 24*time.Hour, 0, 0, 0)
+	runFixtureGit(t, origin, "branch", "dev", main)
+	checkout := filepath.Join(root, "checkout")
+	pushCheckout(t, origin, checkout, feature, main)
+	count := useBaseBranchCheckout(t, checkout, "")
+
+	sha, err := GetBaseBranchSha("")
+	require.NoError(t, err)
+	assert.Equal(t, base, sha)
+	assert.Equal(t, 1, count("ls-remote --heads"))
+	assert.Equal(t, 2, count("fetch --recurse-submodules=no --depth 1"), "main and dev")
+}
+
+// The boundaries that need history are deepened in one fetch.
+func TestGetBaseBranchShaDeepensInOneFetch(t *testing.T) {
+	isolateFixtureGit(t)
+	root, origin, base, feature, main := newBaseBranchOrigin(t, 90*24*time.Hour, 0, 0, 0)
+	checkout := filepath.Join(root, "checkout")
+	pushCheckout(t, origin, checkout, feature, main)
+	count := useBaseBranchCheckout(t, checkout, "main")
+
+	sha, err := GetBaseBranchSha("")
+	require.NoError(t, err)
+	assert.Equal(t, base, sha)
+	assert.Equal(t, 1, count("fetch '--shallow-since"), "the feature and main boundaries in one fetch")
+}
+
 // Fetching a base branch must not fetch the submodule commits that its history
 // names: base branch detection reads only the repository's own history.
 func TestCheckAndFetchBranchLeavesSubmodulesAlone(t *testing.T) {

@@ -917,7 +917,11 @@ func GetBaseBranchSha(defaultBranch string) (string, error) {
 	if gitPrBaseBranch != "" {
 		// Step 2b - we have git.pull_request.base_branch
 		log.Debug("civisibility.git: using git.pull_request.base_branch from CI: %s", gitPrBaseBranch)
-		checkAndFetchBranch(gitPrBaseBranch, remoteName)
+		// A pull request's base branch nearly always exists, so it is fetched without asking
+		// the remote first. A fetch that fails leaves it out, as an empty ls-remote did.
+		if len(missingRemoteTrackingBranches([]string{gitPrBaseBranch}, remoteName)) > 0 {
+			fetchBranch(gitPrBaseBranch, remoteName)
+		}
 		// The fetch updates the remote-tracking ref: a pull request's checkout
 		// usually has no local branch of that name. Without telemetry, so git
 		// metrics stay those of the SDK.
@@ -929,9 +933,7 @@ func GetBaseBranchSha(defaultBranch string) (string, error) {
 	} else {
 		// Step 2a - we don't have git.pull_request.base_branch
 		// Fetch all possible base branches from remote
-		for _, branch := range possibleBaseBranches {
-			checkAndFetchBranch(branch, remoteName)
-		}
+		checkAndFetchBranches(possibleBaseBranches, remoteName)
 
 		// Get the list of remote branches present in local repo and see which ones are base-like
 		remoteBranches, err := getRemoteBranches(remoteName)
@@ -967,10 +969,7 @@ func GetBaseBranchSha(defaultBranch string) (string, error) {
 	// the clone meanwhile.
 	baseSha, complete, err := findBaseBranchSha(candidateBranches, source, detectedDefaultBranch, remoteName)
 	if !complete {
-		deepenShallowClone(remoteName, append([]string{"HEAD", source}, candidateBranches...), func() bool {
-			baseSha, complete, err = findBaseBranchSha(candidateBranches, source, detectedDefaultBranch, remoteName)
-			return complete
-		})
+		deepenShallowClone(remoteName, append([]string{"HEAD", source}, candidateBranches...))
 		baseSha, _, err = findBaseBranchSha(candidateBranches, source, detectedDefaultBranch, remoteName)
 	}
 	return baseSha, err
@@ -1009,12 +1008,12 @@ func findBaseBranchSha(candidateBranches []string, sourceBranch, defaultBranch, 
 // among them the source branch's even when HEAD is a local commit that the
 // remote lacks. Only those commits are fetched: after a pull request's head is
 // fetched without a depth limit, as fetchCommitData does, a clone can end at
-// hundreds of commits that no candidate reaches, at a fetch each. Each one is
-// fetched alone, so a commit that the remote no longer has, such as the tip of
-// a deleted branch, leaves the others alone. After each fetch it stops once
-// found reports success, or the clone is complete. Only commits and trees are
-// fetched.
-func deepenShallowClone(remoteName string, revisions []string, found func() bool) {
+// hundreds of commits that no candidate reaches. Every one of them is fetched,
+// so a merge base found before the last one is not mistaken for the best one.
+// One fetch takes them all; if it fails, such as for the tip of a deleted
+// branch that the remote no longer has, each one is fetched alone, until the
+// clone is complete. Only commits and trees are fetched.
+func deepenShallowClone(remoteName string, revisions []string) {
 	isAShallowClone, err := isAShallowCloneRepository()
 	if err != nil || !isAShallowClone {
 		return
@@ -1035,18 +1034,30 @@ func deepenShallowClone(remoteName string, revisions []string, found func() bool
 	if err != nil {
 		return
 	}
+	var commits []string
 	for commit := range strings.FieldsSeq(history) {
-		if !isBoundary[commit] {
-			continue
+		if isBoundary[commit] {
+			commits = append(commits, commit)
 		}
-		if _, err := execGitString(telemetry.UnshallowCommandsType, "fetch", unshallowSince, "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", remoteName, commit); err != nil {
+	}
+	if len(commits) == 0 {
+		return
+	}
+	fetch := func(commits ...string) error {
+		args := append([]string{"fetch", unshallowSince, "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", remoteName}, commits...)
+		_, err := execGitString(telemetry.UnshallowCommandsType, args...)
+		return err
+	}
+	if err := fetch(commits...); err == nil {
+		invalidateShallowCloneCache()
+		return
+	}
+	for _, commit := range commits {
+		if err := fetch(commit); err != nil {
 			log.Debug("civisibility.git: failed to deepen the shallow clone at %s: %s", commit, err.Error())
 			continue
 		}
 		invalidateShallowCloneCache()
-		if found() {
-			return
-		}
 		if isAShallowClone, err := isAShallowCloneRepository(); err == nil && !isAShallowClone {
 			return
 		}
@@ -1098,26 +1109,59 @@ func removeRemotePrefix(branchName, remoteName string) string {
 	return branchName
 }
 
-// checkAndFetchBranch checks if a branch exists and fetches it if needed
+// checkAndFetchBranch fetches branch when it has no remote-tracking ref and the remote has it.
 func checkAndFetchBranch(branch, remoteName string) {
-	// Check if branch exists locally (as remote ref)
-	_, err := execGitString(telemetry.ShowRefCommandType, "show-ref", "--verify", "--quiet", "refs/remotes/"+remoteName+"/"+branch)
-	if err == nil {
-		return // branch exists locally
-	}
+	checkAndFetchBranches([]string{branch}, remoteName)
+}
 
-	// Check if branch exists in remote
-	remoteHeads, err := execGitString(telemetry.LsRemoteHeadsCommandType, "ls-remote", "--heads", remoteName, branch)
+// checkAndFetchBranches fetches, in order, each branch that has no remote-tracking ref but
+// exists on the remote. One ls-remote lists all of the missing branches instead of one round
+// trip per branch. Its patterns and output are matched as exact refs/heads/<name> refs: an
+// ls-remote pattern also matches longer names such as refs/heads/feature/main.
+func checkAndFetchBranches(branches []string, remoteName string) {
+	missing := missingRemoteTrackingBranches(branches, remoteName)
+	if len(missing) == 0 {
+		return
+	}
+	args := []string{"ls-remote", "--heads", remoteName}
+	for _, branch := range missing {
+		args = append(args, "refs/heads/"+branch)
+	}
+	remoteHeads, err := execGitString(telemetry.LsRemoteHeadsCommandType, args...)
 	if err != nil || remoteHeads == "" {
-		return // branch doesn't exist in remote
+		return // no branch exists in remote
 	}
+	onRemote := make(map[string]bool, len(missing))
+	for line := range strings.SplitSeq(remoteHeads, "\n") {
+		if _, ref, found := strings.Cut(strings.TrimSpace(line), "\t"); found {
+			onRemote[strings.TrimSpace(ref)] = true
+		}
+	}
+	for _, branch := range missing {
+		if onRemote["refs/heads/"+branch] {
+			fetchBranch(branch, remoteName)
+		}
+	}
+}
 
-	// Fetch the branch from remote (without creating local branch). The explicit refspec
-	// writes the remote-tracking ref even in a single-branch clone, whose configured refspec
-	// would leave the commit in FETCH_HEAD only. Only a shallow clone fetches its latest
-	// commit alone: in a complete clone, a depth-limited fetch would hide the ancestry that
-	// the clone already has, such as an old merge base. Without knowing which, it doesn't
-	// fetch. Submodules are not fetched: base branch detection reads only this history.
+// missingRemoteTrackingBranches returns, in order, the branches without a remote-tracking ref.
+func missingRemoteTrackingBranches(branches []string, remoteName string) []string {
+	var missing []string
+	for _, branch := range branches {
+		if _, err := execGitString(telemetry.ShowRefCommandType, "show-ref", "--verify", "--quiet", "refs/remotes/"+remoteName+"/"+branch); err != nil {
+			missing = append(missing, branch)
+		}
+	}
+	return missing
+}
+
+// fetchBranch fetches branch from remote into its remote-tracking ref, without creating a
+// local branch. The explicit refspec writes the remote-tracking ref even in a single-branch
+// clone, whose configured refspec would leave the commit in FETCH_HEAD only. Only a shallow
+// clone fetches its latest commit alone: in a complete clone, a depth-limited fetch would hide
+// the ancestry that the clone already has, such as an old merge base. Without knowing which,
+// it doesn't fetch. Submodules are not fetched: base branch detection reads only this history.
+func fetchBranch(branch, remoteName string) {
 	isAShallowClone, err := isAShallowCloneRepository()
 	if err != nil {
 		log.Debug("civisibility.git: not fetching branch %s: %v", branch, err.Error())
@@ -1128,8 +1172,7 @@ func checkAndFetchBranch(branch, remoteName string) {
 		args = append(args, "--depth", "1")
 	}
 	args = append(args, remoteName, "+refs/heads/"+branch+":refs/remotes/"+remoteName+"/"+branch)
-	_, err = execGitString(telemetry.FetchCommandType, args...)
-	if err != nil {
+	if _, err := execGitString(telemetry.FetchCommandType, args...); err != nil {
 		log.Debug("civisibility.git: failed to fetch branch %s: %v", branch, err.Error())
 		return
 	}
