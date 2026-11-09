@@ -86,6 +86,18 @@ func TestDetectDialect(t *testing.T) {
 	if got, err := detectDialect(root, "", "jenkins"); err != nil || got != GitHub {
 		t.Fatal("ambiguous locations changed default")
 	}
+
+	// A directory reached through a symlink, as macOS's /var is, still
+	// contains its markers.
+	linked := filepath.Join(t.TempDir(), "linked")
+	target := t.TempDir()
+	writeRules(t, target, ".gitlab", "[Go] @team\n*.go")
+	if err := os.Symlink(target, linked); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	if got, err := detectDialect(linked, "", "jenkins"); err != nil || got != GitLab {
+		t.Fatalf("marker behind a linked directory ignored: %v %v", got, err)
+	}
 }
 func TestOtherDialectLocationIsIgnored(t *testing.T) {
 	for _, tc := range []struct{ provider, folder string }{{"github", ".gitlab"}, {"gitlab", ".github"}} {

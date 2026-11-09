@@ -147,10 +147,12 @@ func detectDialect(root, repository, provider string) (Dialect, error) {
 }
 
 // candidate reports whether discovery may read filename: a regular file that
-// resolves inside directory, which absoluteDirectory already resolved. A
-// device or named pipe could block or never end, and a committed symlink can
-// point anywhere, including files such as /proc/kmsg that look regular but
-// block. Missing and skipped files are not errors; Load checks the type again.
+// resolves inside directory. A device or named pipe could block or never end,
+// and a committed symlink can point anywhere, including files such as
+// /proc/kmsg that look regular but block. Both paths are resolved, so a
+// directory reached through a symlink, as macOS's /var is, or a Windows short
+// name still contains its files. Missing and skipped files are not errors;
+// Load checks the type again.
 func candidate(directory, filename string) (bool, error) {
 	info, err := os.Stat(filename)
 	if errors.Is(err, os.ErrNotExist) {
@@ -166,7 +168,11 @@ func candidate(directory, filename string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return inside(directory, resolved), nil
+	root, err := filepath.EvalSymlinks(directory)
+	if err != nil {
+		return false, err
+	}
+	return inside(root, resolved), nil
 }
 func inside(directory, filename string) bool {
 	relative, err := filepath.Rel(directory, filename)
