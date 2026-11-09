@@ -82,7 +82,7 @@ func BenchmarkMiddlewareAppSec(b *testing.B) {
 			req := httptest.NewRequest(http.MethodGet, c.target, nil)
 			for i := 0; i < b.N; i++ {
 				var w http.ResponseWriter = httptest.NewRecorder()
-				for d := 0; d < depth; d++ {
+				for range depth {
 					w = benchUnwrapper{w}
 				}
 				router.ServeHTTP(w, req)

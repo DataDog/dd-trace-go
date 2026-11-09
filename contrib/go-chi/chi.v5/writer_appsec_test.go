@@ -231,7 +231,7 @@ func ifacesOf(w any) ifaces {
 // AppSec), plus FlushError() only when http.ResponseController would otherwise
 // bypass the tracker.
 func TestCommitTrackerInterfaces(t *testing.T) {
-	for set := 0; set < 16; set++ {
+	for set := range 16 {
 		for _, flushUnder := range []bool{false, true} {
 			for _, proto := range []int{1, 2} {
 				f := newFakeRaw()
@@ -274,7 +274,7 @@ func (f fakeChi) Unwrap() http.ResponseWriter { return nil }
 // TestCommitTrackerGeneratedTypes builds each of the 24 generated types.
 func TestCommitTrackerGeneratedTypes(t *testing.T) {
 	n := 0
-	for flags := uint8(0); flags < 32; flags++ {
+	for flags := range uint8(32) {
 		if flags&hasFlusher != 0 && flags&hasFlushError != 0 {
 			continue // no FlushError next to a Flush
 		}
@@ -450,7 +450,7 @@ func TestCommitTrackerState(t *testing.T) {
 
 // wrapN wraps w n times in plain wrappers.
 func wrapN(w http.ResponseWriter, n int) http.ResponseWriter {
-	for i := 0; i < n; i++ {
+	for range n {
 		w = plain{w}
 	}
 	return w

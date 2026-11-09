@@ -106,7 +106,7 @@ func startAppSecRules(t *testing.T, rules ...string) *metricsRecorder {
 
 // metricsRecorder reads the telemetry metrics that AppSec recorded.
 type metricsRecorder struct {
-	rec interface{}
+	rec any
 }
 
 // snapshot returns the value of each metric that has one, by "name{tags}".
@@ -182,7 +182,7 @@ func (c *opCapture) middleware(next http.Handler) http.Handler {
 func (c *opCapture) reset() { c.ops, c.args = nil, nil }
 
 func (c *opCapture) routes() []string {
-	var routes []string
+	routes := make([]string, 0, len(c.ops))
 	for _, op := range c.ops {
 		routes = append(routes, op.Route())
 	}

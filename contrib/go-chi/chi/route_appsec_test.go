@@ -141,7 +141,7 @@ func BenchmarkLookupRoute(b *testing.B) {
 	child := chi.NewRouter()
 	child.Get("/users/{id}/orders/{order}", handler)
 	root := chi.NewRouter()
-	for i := 0; i < 18; i++ {
+	for i := range 18 {
 		root.Get(fmt.Sprintf("/resource%d/{id}/items/{item}", i), handler)
 	}
 	root.Mount("/api", child)

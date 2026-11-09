@@ -337,7 +337,7 @@ func TestAppSecWire(t *testing.T) {
 		modes []string
 	}
 	four := []string{"write", "flush-only", "hijack", "none"}
-	var all []string
+	all := make([]string, 0, len(wireModes()))
 	for _, m := range wireModes() {
 		all = append(all, m.name)
 	}

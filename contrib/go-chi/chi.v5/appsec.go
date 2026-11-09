@@ -9,6 +9,7 @@ import (
 	"context"
 	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 
@@ -176,8 +177,8 @@ func lookupParams(tmp *chi.Context) map[string]string {
 	}
 	keep := -1
 	if n := len(tmp.RoutePatterns); n > 0 && strings.HasSuffix(tmp.RoutePatterns[n-1], "*") {
-		for i := len(keys) - 1; i >= 0; i-- {
-			if keys[i] == "*" {
+		for i, key := range slices.Backward(keys) {
+			if key == "*" {
 				keep = i
 				break
 			}
