@@ -215,7 +215,7 @@ func (w *exposureWriter) start() {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				telemetrylog.LogAndReportPanic("openfeature: exposure writer recovered panic", r)
+				containLoggerPanic(func() { telemetrylog.LogAndReportPanic("openfeature: exposure writer recovered panic", r) })
 			}
 			w.stop()
 		}()
@@ -344,5 +344,5 @@ func (w *exposureWriter) stop() {
 		w.ticker.Stop()
 	}
 
-	log.Debug("openfeature: exposure writer stopped")
+	containLoggerPanic(func() { log.Debug("openfeature: exposure writer stopped") })
 }

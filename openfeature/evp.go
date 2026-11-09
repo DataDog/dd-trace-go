@@ -269,7 +269,8 @@ func (c *evpClient) send(
 		req.Header.Set(evpSubdomainHeader, evpSubdomainValue)
 	}
 
-	log.Debug("openfeature: sending %s events to %s", eventName, requestURL)
+	// send runs on the writers' and the shutdown goroutines.
+	containLoggerPanic(func() { log.Debug("openfeature: sending %s events to %s", eventName, requestURL) })
 
 	resp, err := client.Do(req)
 	if err != nil {
