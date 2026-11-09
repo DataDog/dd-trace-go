@@ -56,14 +56,20 @@ func init() {
 // without parameters, the early parameters stay.
 //
 // After the handler returns, AppSec gets the route that chi selected, and its path
-// parameters when they do not contradict the parameters that chi matched when this
-// middleware started (otherwise only the route: the WAF keeps its input for the
-// response, and no rule can match a mix of the two). A block or a redirect at that
-// time replaces the response only if the response is not sent yet: it never stops
-// the handler, which already ran. If the response is sent, it does not change;
-// AppSec reports a failed block (a redirect is not counted as a block). A flush
-// that returns an error does not itself mark the response as sent: if it wrote
-// part of the response, a block can add its body after that output.
+// parameters when they do not contradict the parameters that the middlewares of
+// the request gave to AppSec as its baseline input (otherwise only the route: the
+// WAF keeps its input for the response, and no rule can match a mix of the two).
+// All the middlewares of one request share that baseline input: each one adds new
+// names to it, and none changes a value that another one gave, for example when
+// the outer middleware reports its parameters after the inner one returned. A
+// middleware that cannot reach the baseline input of the outer ones (for example
+// because a middleware replaced the request context between them) gives no new
+// parameters, only the route. A block or a redirect at that time replaces the
+// response only if the response is not sent yet: it never stops the handler, which
+// already ran. If the response is sent, it does not change; AppSec reports a
+// failed block (a redirect is not counted as a block). A flush that returns an
+// error does not itself mark the response as sent: if it wrote part of the
+// response, a block can add its body after that output.
 //
 // The middlewares between this middleware and the handler must send the response
 // through the writer that they get, and return it from Unwrap(). When this

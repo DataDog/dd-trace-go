@@ -642,3 +642,63 @@ func TestCommitTrackerParent(t *testing.T) {
 		assert.Equal(t, 202, ict.Status())
 	})
 }
+
+// TestCommitTrackerSharedInput checks which tracker shares the baseline input of
+// the WAF with which.
+func TestCommitTrackerSharedInput(t *testing.T) {
+	outer := func() (http.ResponseWriter, *commitTracker, context.Context) {
+		tw, ct, _ := track(t, rawWith(newFakeRaw(), rawFlusher|rawHijacker), 1, nil)
+		return tw, ct, context.WithValue(context.Background(), trackerCtxKey{}, ct)
+	}
+
+	t.Run("first tracer", func(t *testing.T) {
+		_, ct, _ := track(t, newFakeRaw(), 1, context.Background())
+		require.NotNil(t, ct.shared)
+		assert.True(t, ct.complete)
+	})
+
+	t.Run("through the writer chain and the context", func(t *testing.T) {
+		otw, oct, ctx := outer()
+		_, ict, _ := track(t, plain{otw}, 1, ctx)
+		assert.Same(t, oct.shared, ict.shared)
+		assert.True(t, ict.complete)
+
+		// 3 tracers: the third one shares it with the first.
+		itw, ict, _ := track(t, plain{otw}, 1, ctx)
+		ctx2 := context.WithValue(context.Background(), trackerCtxKey{}, ict)
+		_, third, _ := track(t, plain{itw}, 1, ctx2)
+		assert.Same(t, oct.shared, third.shared)
+	})
+
+	t.Run("the context was replaced: no access", func(t *testing.T) {
+		otw, oct, _ := outer()
+		// The writer chain reaches the outer tracer, but the context has no tracer.
+		_, ict, _ := track(t, plain{otw}, 1, context.Background())
+		assert.Same(t, oct, ict.parent, "the state of the response is still read")
+		assert.NotSame(t, oct.shared, ict.shared)
+		assert.False(t, ict.complete, "no new parameters: only the route")
+
+		// The context has another tracer than the one of the writer chain.
+		_, other, _ := track(t, newFakeRaw(), 1, nil)
+		wrong := context.WithValue(context.Background(), trackerCtxKey{}, other)
+		_, ict, _ = track(t, plain{otw}, 1, wrong)
+		assert.NotSame(t, oct.shared, ict.shared)
+		assert.False(t, ict.complete)
+	})
+
+	t.Run("the writer chain does not reach the outer tracer", func(t *testing.T) {
+		otw, oct, ctx := outer()
+		_, ict, _ := track(t, opaque{otw}, 1, ctx)
+		assert.NotSame(t, oct.shared, ict.shared)
+		assert.False(t, ict.complete)
+	})
+
+	t.Run("get and set", func(t *testing.T) {
+		s := &sharedInput{}
+		assert.Nil(t, s.get())
+		in := map[string]string{"id": "1"}
+		s.set(in)
+		in["id"] = "changed"
+		assert.Equal(t, map[string]string{"id": "1"}, s.get(), "the set owns a copy")
+	})
+}

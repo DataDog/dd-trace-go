@@ -57,18 +57,33 @@ func withAppsec(next http.Handler, span trace.TagSetter, cfg *config, cache *syn
 		// that AppSec had before the lookup existed. The lookup never changes it.
 		known := knownParams(rctx)
 
+		// The baseline input that the WAF has now: the tracers of the request share
+		// it. This tracer replaces it with what it knows, if it knows something
+		// (that is what the WAF gets when the operation starts).
+		shared := &sharedInput{}
+		if ct != nil {
+			shared = ct.shared
+		}
+		current := known
+		if len(known) == 0 {
+			current = shared.get()
+		}
+
 		route, params, found := "", map[string]string(nil), false
 		if complete {
 			route, params, found = lookupRoute(rctx, r, cfg)
 		}
 		if found {
-			params, found = addPrediction(known, params)
+			params, found = addPrediction(current, params)
 		}
 		if !found {
 			route, params = cfg.modifyResourceName(rctx.RoutePattern()), known
 		}
 		appsecCfg.Route, appsecCfg.RouteParams = route, params
 		early := snapshotEarly(route, params)
+		if len(known) > 0 {
+			shared.set(known)
+		}
 
 		late := http.HandlerFunc(func(w http.ResponseWriter, tr *http.Request) {
 			next.ServeHTTP(w, tr)
@@ -78,14 +93,15 @@ func withAppsec(next http.Handler, span trace.TagSetter, cfg *config, cache *syn
 				return
 			}
 			finalRoute := reportedRoute(rc, cfg, cache)
-			// The final parameters (the last value of a name) are added to what the WAF
-			// has. If they contradict it (another value for a name that chi matched
-			// before the handler), only the route is reported: the WAF keeps the input
+			// The final parameters (the last value of a name) are added to the baseline
+			// input of the WAF that all the tracers of the request share. If they
+			// contradict it (another value for a name that a tracer gave), only the
+			// route is reported: the WAF keeps the input
 			// of the response phase that it had before this change, and no rule can
 			// match a mix of the two.
 			var finalParams map[string]string
 			if complete {
-				if merged, ok := addPrediction(known, routeParams(rc)); ok {
+				if merged, ok := addPrediction(shared.get(), routeParams(rc)); ok {
 					finalParams = merged
 				}
 			}
@@ -95,6 +111,9 @@ func withAppsec(next http.Handler, span trace.TagSetter, cfg *config, cache *syn
 			// The error is ignored: afterHandle applies the stored action, and the
 			// commitTracker tells if the response can still be replaced.
 			_ = httpsec.RouteMatched(tr.Context(), finalRoute, finalParams)
+			if finalParams != nil {
+				shared.set(finalParams)
+			}
 		})
 
 		httpsec.WrapHandler(late, span, &appsecCfg).ServeHTTP(tw, r)

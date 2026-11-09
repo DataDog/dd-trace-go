@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi"
+	"github.com/go-chi/chi/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -247,4 +248,69 @@ func mountWithTracerOnEndpoint(route string) func(h http.HandlerFunc) http.Handl
 		root.Mount("/tenant/{id}", child)
 		return root
 	}
+}
+
+// nestedRouter has a tracer on the root router and on a child router that is
+// mounted with a parameter. The root has a middleware that sets the response
+// header after the child returned (or before it, when headerBefore is true), and
+// StripSlashes: with a trailing slash the early lookups do not match.
+func nestedRouter(endpoint string, headerBefore bool, h http.HandlerFunc) http.Handler {
+	root, child := chi.NewRouter(), chi.NewRouter()
+	root.Use(Middleware(), func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if headerBefore {
+				w.Header().Set("X-Stage", "ready")
+			}
+			next.ServeHTTP(w, r)
+			w.Header().Set("X-Stage", "ready") // the outer response-phase check sees it
+		})
+	}, middleware.StripSlashes)
+	child.Use(Middleware())
+	child.Get(endpoint, h)
+	root.Mount("/tenant/{id}", child)
+	return root
+}
+
+// TestNestedResponsePreservation checks 2 tracers of one request, where the outer
+// one evaluates a response rule after the inner one returned. The tracers share
+// the baseline input of the WAF: the outer tracer must not replace the value that
+// the inner tracer kept ("alpha" instead of the final "beta"). Every expectation is
+// the result of the code before the lookup existed.
+func TestNestedResponsePreservation(t *testing.T) {
+	alpha := pathCondition("id", "alpha")
+	stage := headerCondition("x-stage", "ready")
+	for _, tc := range []struct {
+		name         string
+		conditions   []string
+		headerBefore bool
+	}{
+		{"outer-header-after-child", []string{stage, alpha}, false},
+		{"header-before-child-control", []string{stage, alpha}, true},
+		{"path-first-control", []string{alpha, stage}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rule := fmt.Sprintf(`{"id":"nested","name":"nested","tags":{"type":"nested-test","category":"attack_attempt"},
+				"conditions":[%s],"on_match":["block"]}`, strings.Join(tc.conditions, ","))
+			startAppSecRules(t, rule)
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			router := nestedRouter("/items/{id}", tc.headerBefore, func(http.ResponseWriter, *http.Request) {})
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/tenant/alpha/items/beta/", nil))
+			assert.Equal(t, http.StatusForbidden, w.Code)
+		})
+	}
+}
+
+// TestNestedNewParams checks that nested tracers still give a new name to the WAF
+// when it does not contradict the shared input: the endpoint has "item" (a name
+// that no tracer knew when it started), and the response rule needs it.
+func TestNestedNewParams(t *testing.T) {
+	rule := fmt.Sprintf(`{"id":"nested-new","name":"nested-new","tags":{"type":"nested-new-test","category":"attack_attempt"},
+		"conditions":[%s],"on_match":["block"]}`, headerCondition("x-stage", "ready")+","+pathCondition("item", "beta"))
+	startAppSecRules(t, rule)
+	router := nestedRouter("/items/{item}", false, func(http.ResponseWriter, *http.Request) {})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/tenant/alpha/items/beta/", nil))
+	assert.Equal(t, http.StatusForbidden, w.Code, "the new name reached the WAF")
 }

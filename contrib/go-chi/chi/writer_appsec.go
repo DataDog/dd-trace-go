@@ -14,6 +14,7 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 
@@ -58,7 +59,29 @@ type commitTracker struct {
 	// complete is false when the tracker cannot see every way the response can
 	// start, so the WAF gets no newly discovered path parameters for it.
 	complete bool
+
+	// shared is the path parameters that the tracers of this request gave to the
+	// WAF as the baseline input (see sharedInput). All the trackers of a request
+	// have the same one: a tracker takes it from its parent, which is reached
+	// through the writer chain and the request context. A tracker that cannot
+	// reach the one of the outer tracers has its own, and is not complete.
+	shared *sharedInput
 }
+
+// sharedInput is the path parameters that AppSec gave to the WAF as its baseline
+// input: what the tracers of the request knew when they started (the input of
+// AppSec before the route lookup existed), and what they reported after the
+// handler. A tracer adds new names to the input of the WAF, but it never changes
+// a value in this set: it would change the result of a rule that the WAF
+// evaluates later, or combine the values of 2 tracers. The tracers of a request
+// run one after the other, so no lock is needed.
+type sharedInput struct {
+	params map[string]string
+}
+
+func (s *sharedInput) get() map[string]string { return s.params }
+
+func (s *sharedInput) set(params map[string]string) { s.params = maps.Clone(params) }
 
 // trackerCarrier is implemented by all the generated tracker types.
 type trackerCarrier interface {
@@ -192,6 +215,11 @@ func newCommitTracker(ww middleware.WrapResponseWriter, ctx context.Context) (ht
 		cur = u.Unwrap()
 	}
 
+	var outer *commitTracker
+	if ctx != nil {
+		outer, _ = ctx.Value(trackerCtxKey{}).(*commitTracker)
+	}
+
 	var flags uint8
 	if _, ok := ww.(http.Flusher); ok {
 		flags |= hasFlusher
@@ -219,11 +247,22 @@ func newCommitTracker(ww middleware.WrapResponseWriter, ctx context.Context) (ht
 		ct.complete = false
 	case ct.parent != nil && !ct.parent.complete:
 		ct.complete = false
-	case ct.parent == nil && ctx != nil && ctx.Value(trackerCtxKey{}) != nil:
+	case ct.parent == nil && outer != nil:
 		// An outer tracer handles this request, but the writer chain does not
 		// reach it: a writer without Unwrap() or another writer was put in
 		// between. They may not write to the same response.
 		ct.complete = false
+	case ct.parent != nil && outer != ct.parent:
+		// The writer chain reaches an outer tracer, but the request context does not
+		// give it (a middleware replaced the context): this tracker cannot reach the
+		// shared input of the outer tracers.
+		ct.complete = false
+	}
+	if ct.parent != nil && outer == ct.parent {
+		ct.shared = ct.parent.shared
+	} else {
+		// The first tracer of the request, or one that cannot reach the shared input.
+		ct.shared = &sharedInput{}
 	}
 
 	return wrapCommitTracker(ct, flags), ct
