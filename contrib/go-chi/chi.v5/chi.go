@@ -32,6 +32,45 @@ func init() {
 }
 
 // Middleware returns middleware that will trace incoming requests.
+//
+// # AppSec and the route
+//
+// With Use before routing, chi selects the route after this middleware starts.
+// Before the handler runs, the middleware asks chi which route matches
+// ([chi.Routes.Match]) and gives the path parameters of that route to AppSec: a
+// rule on path parameters can block before the handler. This early check can use
+// other parameters than the handler gets when a middleware changes the path, the
+// method or the route path (before or after this middleware), or when a mount
+// hides its child router behind a handler wrapper. When it does, a
+// detection-only rule that matches the wrong parameters can also hide a
+// detection-only rule of the same type that matches the correct parameters later
+// (also from a r.With(Middleware()) on the endpoint).
+//
+// After the handler returns, AppSec gets the route and the path parameters that
+// chi selected. A block or a redirect at that time replaces the response only if
+// the response is not sent yet: it never stops the handler, which already ran. If
+// the response is sent, it does not change; AppSec reports a failed block (a
+// redirect is not counted as a block).
+//
+// The middlewares between this middleware and the handler must send the response
+// through the writer that they get, and return it from Unwrap(). When this
+// middleware cannot see every way the response can start (for example a writer
+// that can hijack the connection only through Unwrap(), or a writer without
+// Unwrap() between 2 of these middlewares), it gives no newly discovered path
+// parameters to AppSec for the request: the parameters that chi already knows
+// when it runs still go to AppSec, as before. A middleware that replaces both
+// the writer and the request context between 2 of these middlewares hides the
+// outer one, and the inner one cannot see it. With a writer without Unwrap()
+// between 2 of these middlewares and a flush between them, a block on path
+// parameters and response data can add its body after the response (a block on
+// response data alone does the same before this version).
+//
+// A middleware that writes or flushes the response must come after this
+// middleware: AppSec cannot see a response that was sent before it, and a block
+// can then add its body after that response.
+//
+// With r.With(Middleware()) on the matched endpoint, the route is known before
+// the handler.
 func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 	cfg := new(config)
 	defaults(cfg)
