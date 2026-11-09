@@ -53,6 +53,7 @@ var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandler
 			startOpts = append(startOpts, llmobs.WithSessionID(session.SessionID()))
 		}
 		toolSpan, ctx := llmobs.StartToolSpan(ctx, request.Params.Name, startOpts...)
+		annotateTags(toolSpan, toolCallClientInfoTags(ctx, request))
 
 		var result *mcp.CallToolResult
 		var err error
@@ -161,6 +162,7 @@ func (h *hooks) onBeforeInitialize(ctx context.Context, id any, request *mcp.Ini
 		instrmcp.MCPClientVersionTag: clientName + "_" + clientVersion,
 		instrmcp.MCPMethodTag:        request.Method,
 	}))
+	annotateTags(taskSpan, instrmcp.ClientInfoTagsFromValue(request.Params.ClientInfo))
 
 	h.spanCache.Store(key, taskSpan)
 	tagWithSessionID(ctx, taskSpan)
@@ -196,6 +198,26 @@ func (h *hooks) onError(ctx context.Context, id any, method mcp.MCPMethod, messa
 	}
 	span.AnnotateTextIO(string(inputJSON), err.Error())
 
+}
+
+// toolCallClientInfoTags reads the client's identity from the request's _meta
+// (2026-07-28 protocol), falling back to the session's initialize handshake.
+func toolCallClientInfoTags(ctx context.Context, request mcp.CallToolRequest) map[string]string {
+	if meta := request.Params.Meta; meta != nil {
+		if tags := instrmcp.ClientInfoTagsFromValue(meta.AdditionalFields[instrmcp.MetaKeyClientInfo]); len(tags) > 0 {
+			return tags
+		}
+	}
+	if session, ok := server.ClientSessionFromContext(ctx).(server.SessionWithClientInfo); ok {
+		return instrmcp.ClientInfoTagsFromValue(session.GetClientInfo())
+	}
+	return nil
+}
+
+func annotateTags(span llmobs.Span, tags map[string]string) {
+	if len(tags) > 0 {
+		span.Annotate(llmobs.WithAnnotatedTags(tags))
+	}
 }
 
 func tagWithSessionID(ctx context.Context, span llmobs.Span) {
