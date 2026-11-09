@@ -948,58 +948,89 @@ func GetBaseBranchSha(defaultBranch string) (string, error) {
 		return "", errors.New("no candidate base branches found")
 	}
 
-	// Step 3 - find the best base branch
-	deepenShallowCloneForMergeBase(remoteName, candidateBranches)
+	// Step 3 - find the best base branch. A shallow clone, the default checkout
+	// of most CI providers, can hide where a candidate meets the source branch:
+	// only then is more history fetched, and the branches compared again.
+	baseSha, complete, err := findBaseBranchSha(candidateBranches, sourceBranch, detectedDefaultBranch, remoteName)
+	for _, deepening := range shallowCloneDeepenings {
+		if complete {
+			break
+		}
+		if deepenShallowClone(remoteName, deepening) {
+			baseSha, complete, err = findBaseBranchSha(candidateBranches, sourceBranch, detectedDefaultBranch, remoteName)
+		}
+	}
+	return baseSha, err
+}
 
+// findBaseBranchSha runs Step 3 of the algorithm. complete reports whether
+// every candidate has a merge base with the source branch: without one, the
+// candidate is left out of the comparison.
+func findBaseBranchSha(candidateBranches []string, sourceBranch, defaultBranch, remoteName string) (baseSha string, complete bool, err error) {
 	if len(candidateBranches) == 1 {
 		// Step 3a - single candidate
 		baseSha, err := execGitString(telemetry.MergeBaseCommandType, "merge-base", candidateBranches[0], sourceBranch)
 		if err != nil {
-			return "", fmt.Errorf("failed to find merge base for %s and %s: %w", candidateBranches[0], sourceBranch, err)
+			return "", false, fmt.Errorf("failed to find merge base for %s and %s: %w", candidateBranches[0], sourceBranch, err)
 		}
-		return baseSha, nil
+		return baseSha, true, nil
 	}
 
 	// Step 3b - multiple candidates
 	metrics, err := computeBranchMetrics(candidateBranches, sourceBranch)
 	if err != nil {
-		return "", fmt.Errorf("failed to compute branch metrics: %w", err)
+		return "", false, fmt.Errorf("failed to compute branch metrics: %w", err)
 	}
+	complete = len(metrics) == len(candidateBranches)
 
-	baseSha := findBestBranch(metrics, detectedDefaultBranch, remoteName)
+	baseSha = findBestBranch(metrics, defaultBranch, remoteName)
 	if baseSha == "" {
-		return "", errors.New("failed to find best base branch")
+		return "", complete, errors.New("failed to find best base branch")
 	}
 
-	return baseSha, nil
+	return baseSha, complete, nil
 }
 
-// deepenShallowCloneForMergeBase fetches the history that merge-base needs in
-// a shallow clone, the default checkout of most CI providers. With one commit
-// of the source branch and one of each candidate, git cannot see where they
-// meet, so no base commit is found and impacted tests see no modified files.
-// UnshallowGitRepository does not help here: it runs only for the Git upload,
-// and only deepens HEAD. This fetches the same window for HEAD and the
-// candidates; without HEAD, which a local commit can lack on the remote, it
-// still deepens the candidates.
-func deepenShallowCloneForMergeBase(remoteName string, candidateBranches []string) {
+// shallowCloneDeepenings are the history that base branch detection fetches,
+// in order, while a shallow clone hides a merge base: the month that
+// UnshallowGitRepository fetches for the Git upload, then everything. They run
+// only when the history at hand is not enough. The month can cut older history
+// short, which everything then brings back if a merge base is still missing.
+var shallowCloneDeepenings = [][]string{{unshallowSince, "--update-shallow"}, {"--unshallow"}}
+
+// deepenShallowClone fetches, with the given depth options, the history behind
+// each commit where the shallow clone ends: the tips that it fetched, among
+// them the source branch's even when HEAD is a local commit that the remote
+// lacks. Each one is fetched alone, so a commit that the remote no longer has,
+// such as the tip of a deleted branch, leaves the others alone. Only commits
+// and trees are fetched. It reports whether any history was fetched.
+func deepenShallowClone(remoteName string, depth []string) bool {
 	isAShallowClone, err := isAShallowCloneRepository()
 	if err != nil || !isAShallowClone {
-		return
+		return false
 	}
-	branches := make([]string, 0, len(candidateBranches))
-	for _, branch := range candidateBranches {
-		branches = append(branches, removeRemotePrefix(branch, remoteName))
+	shallowFile, err := execGitString(telemetry.NotSpecifiedCommandsType, "rev-parse", "--git-path", "shallow")
+	if err != nil {
+		return false
 	}
-	args := []string{"fetch", unshallowSince, "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", remoteName}
-	if headSha, err := execGitString(telemetry.GetHeadCommandsType, "rev-parse", "HEAD"); err == nil && headSha != "" {
-		if _, err := execGitString(telemetry.UnshallowCommandsType, append(append(args, headSha), branches...)...); err == nil {
-			return
+	boundaries, err := os.ReadFile(shallowFile)
+	if err != nil {
+		return false
+	}
+	deepened := false
+	for commit := range strings.FieldsSeq(string(boundaries)) {
+		args := append(append([]string{"fetch"}, depth...), "--filter=blob:none", "--recurse-submodules=no", remoteName, commit)
+		if _, err := execGitString(telemetry.UnshallowCommandsType, args...); err != nil {
+			log.Debug("civisibility.git: failed to deepen the shallow clone at %s: %s", commit, err.Error())
+			continue
 		}
+		deepened = true
 	}
-	if _, err := execGitString(telemetry.UnshallowCommandsType, append(args, branches...)...); err != nil {
-		log.Debug("civisibility.git: failed to deepen the shallow clone for the merge base: %s", err.Error())
+	if deepened {
+		// The clone may no longer be shallow.
+		isAShallowCloneRepositoryOnce.Store(&sync.Once{})
 	}
+	return deepened
 }
 
 // getRemoteName determines the remote name using the algorithm from algorithm.md
@@ -1061,8 +1092,10 @@ func checkAndFetchBranch(branch, remoteName string) {
 		return // branch doesn't exist in remote
 	}
 
-	// Fetch the latest commit for this branch from remote (without creating local branch)
-	_, err = execGitString(telemetry.FetchCommandType, "fetch", "--depth", "1", remoteName, branch)
+	// Fetch the latest commit for this branch from remote (without creating local branch).
+	// The explicit refspec writes the remote-tracking ref even in a single-branch clone,
+	// whose configured refspec would leave the commit in FETCH_HEAD only.
+	_, err = execGitString(telemetry.FetchCommandType, "fetch", "--depth", "1", remoteName, "+refs/heads/"+branch+":refs/remotes/"+remoteName+"/"+branch)
 	if err != nil {
 		log.Debug("civisibility.git: failed to fetch branch %s: %v", branch, err.Error())
 	}
