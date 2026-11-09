@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
@@ -104,6 +105,7 @@ func (s wireServer) do(t *testing.T, rec *metricsRecorder, capture *opCapture, m
 	defer srv.Close()
 
 	client := srv.Client()
+	client.Timeout = 10 * time.Second // a server that hangs must fail the test
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	req, err := http.NewRequest(method, srv.URL+target, nil)
 	require.NoError(t, err)
@@ -112,7 +114,11 @@ func (s wireServer) do(t *testing.T, rec *metricsRecorder, capture *opCapture, m
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
 	res.Body.Close()
-	<-done
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the handler did not return")
+	}
 
 	out := wireResult{status: res.StatusCode, body: string(body), location: res.Header.Get("Location"), log: logs.String(),
 		routes: capture.routes(), metrics: rec.since(before)}
