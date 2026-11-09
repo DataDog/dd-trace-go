@@ -23,7 +23,16 @@ experiments:
             # any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a
             # comma-separated GOPROXY falls through on -- since a single flaky fetch here fails
             # the whole benchmark run.
-            GOPROXY="https://proxy.golang.org|direct" go mod download
+            # The fallback doesn't cover checksum verification, which reads sum.golang.org directly
+            # and fails on the same dropped streams, so retry the download too. The benchmarked
+            # revision may predate go-retry.sh: download without retries then (`.` on a missing
+            # file exits a POSIX shell, so check for it first).
+            if [ -f ./.github/workflows/apps/go-retry.sh ]; then
+              . ./.github/workflows/apps/go-retry.sh
+              retry_on_corruption env GOPROXY="https://proxy.golang.org|direct" go mod download
+            else
+              GOPROXY="https://proxy.golang.org|direct" go mod download
+            fi
           fi
 
         cpus: 4-47

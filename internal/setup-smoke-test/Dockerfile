@@ -35,6 +35,12 @@ WORKDIR /src/internal/setup-smoke-test
 ARG build_with_cgo
 RUN go env -w CGO_ENABLED=$build_with_cgo
 
+# "|" makes the go command fall back to `direct` on any proxy error. The
+# image default "," falls back only on 404 and 410. An empty value keeps the
+# image default.
+ARG GOPROXY
+RUN if [ -n "${GOPROXY}" ]; then go env -w GOPROXY="${GOPROXY}"; fi
+
 # GCC and the C library headers are needed for compilation of runtime/cgo with
 # CGO_ENABLED=1 - but the golang:alpine image doesn't provide them out of the box.
 ARG build_env="trixie"
@@ -52,7 +58,17 @@ RUN if [ "${go_libddwaf_ref}" != "" ]; then \
   go get -u github.com/DataDog/go-libddwaf/v5@${go_libddwaf_ref}; \
   fi
 
-RUN go mod tidy
+# go mod tidy relies a lot on github. This retry is not a silver bullet, but will 
+RUN for i in 1 2 3; do \
+      go mod tidy && break || { [ "$i" -lt 3 ] && sleep 5; }; \
+    done
+
+# Download all workspace modules first, so that the vendor and build steps need
+# no network. The module proxy transiently resets HTTP/2 streams and the go
+# command performs no retry of its own.
+RUN for i in 1 2 3; do \
+      go mod download && break || { [ "$i" -lt 3 ] && sleep 5; }; \
+    done
 
 ARG build_with_vendoring
 ARG go

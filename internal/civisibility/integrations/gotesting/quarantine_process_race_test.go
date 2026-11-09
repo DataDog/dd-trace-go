@@ -31,12 +31,21 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/fixtures/subtesthelper"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/net"
 )
 
 const (
 	quarantinedRaceIsolationFixtureEnv = "DD_TEST_QUARANTINED_RACE_ISOLATION"
 	quarantinedRaceIsolationPIDDirEnv  = "DD_TEST_QUARANTINED_RACE_ISOLATION_PID_DIR"
+
+	// Hang limits for scenarios whose regression is a protocol deadlock. They
+	// must not measure instrumentation speed: every per-test coverage snapshot
+	// rewrites and re-parses the whole profile under a process-wide lock, which
+	// takes seconds per snapshot in the gotip gVisor sandbox. There, the first
+	// parallel-atf-sibling invocation alone can exceed 30s.
+	quarantinedRaceHangTimeoutArg     = "-test.timeout=5m"
+	quarantinedRaceProcessHangTimeout = "2m"
 )
 
 func quarantinedRaceIsolationFixtureSelected() bool {
@@ -67,21 +76,14 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	if scenario == "parallel-root-slots" || scenario == "parallel-root-coordination" {
 		requireEnv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, "1")
 	}
-	// These fixture limits detect protocol deadlocks, not instrumentation speed.
-	// Each scenario re-execs the test binary twice (fixture child, then the
-	// quarantine machinery's own grandchild), and that grandchild is race- and
-	// coverage-instrumented, so process startup alone can take several seconds
-	// under load or inside a sandbox (e.g. the gotip gVisor job).
-	if scenario == "parallel-atf-sibling" {
-		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "30s")
-	}
-	if scenario == "parallel-denied" {
-		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "30s")
+	if scenario == "parallel-atf-sibling" || scenario == "parallel-denied" {
+		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, quarantinedRaceProcessHangTimeout)
 	}
 
 	module := "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
 	suite := "quarantine_process_race_test.go"
-	testifySuite := suite + "/quarantinedRaceTestifySuite"
+	testifyModule := reflect.TypeFor[subtesthelper.TestifySuite]().PkgPath()
+	testifySuite := "callback.go/TestifySuite"
 	itrEnabled := scenario == "foreign-suite"
 	var itrData []net.SkippableResponseDataAttributes
 	if itrEnabled {
@@ -199,6 +201,17 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true},
 					},
 				}},
+				"callback.go": {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
+					"TestQuarantinedRaceImportedRootFixture/discovery/root": properties(true),
+					"TestQuarantinedRaceImportedRootFixture/discovery/root/disabled": {
+						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true},
+					},
+					"TestQuarantinedRaceForeignSuiteFixture/root/helper-disabled": {
+						Properties: net.TestManagementTestsResponseDataTestPropertiesAttributes{Disabled: true},
+					},
+				}},
+			}},
+			testifyModule: {Suites: map[string]net.TestManagementTestsResponseDataTests{
 				testifySuite: {Tests: map[string]net.TestManagementTestsResponseDataTestProperties{
 					"TestQuarantinedRaceTestifyFixture/TestSource": properties(false),
 				}},
@@ -327,9 +340,18 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		os.Exit(0)
 	case "parallel-wait-duration":
 		root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelWaitDurationFixture/root", 1)
-		child := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelWaitDurationFixture/root/slow", 1)
-		if root[0].Duration() >= child[0].Duration() {
-			panic(fmt.Sprintf("parallel descendant wait leaked into root duration: root=%s child=%s", root[0].Duration(), child[0].Duration()))
+		checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelWaitDurationFixture/root/slow", 1)
+		// The parallel child's body only runs after the root's body returns, so
+		// a root duration that excludes the wait ends before the child does.
+		// Comparing durations instead depends on the root's own coverage
+		// snapshots being cheaper than the child's work, which fails under the
+		// gotip gVisor sandbox.
+		childFinished, err := strconv.ParseInt(readPID("parallel-wait-duration-child-finished"), 10, 64)
+		if err != nil {
+			panic(err)
+		}
+		if rootFinished := root[0].FinishTime(); !rootFinished.Before(time.Unix(0, childFinished)) {
+			panic(fmt.Sprintf("parallel descendant wait leaked into root duration: root=%s finished %s after the child body", root[0].Duration(), rootFinished.Sub(time.Unix(0, childFinished))))
 		}
 		os.Exit(0)
 	case "dynamic-descendant-finality":
@@ -433,6 +455,27 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		child := checkSpansByResourceName(spans, foreignSuite+".TestQuarantinedRaceForeignSuiteFixture/root/parent/child", 2)
 		checkSpansByTagValue(child, constants.TestIsAttempToFix, "true", 2)
 		checkSpansByTagValue(child, constants.TestIsRetry, "true", 1)
+		helperDisabled := checkSpansByResourceName(spans, "callback.go.TestQuarantinedRaceForeignSuiteFixture/root/helper-disabled", 1)
+		checkSpansByTagValue(helperDisabled, constants.TestModule, module, 1)
+		checkSpansByTagValue(helperDisabled, constants.TestStatus, constants.TestStatusSkip, 1)
+		checkSpansByTagValue(helperDisabled, constants.TestIsDisabled, "true", 1)
+		helperChild := checkSpansByResourceName(spans, "callback.go.TestQuarantinedRaceForeignSuiteFixture/root/parent/helper-child", 2)
+		checkSpansByTagValue(helperChild, constants.TestModule, module, 2)
+		checkSpansByTagValue(helperChild, constants.TestIsRetry, "true", 1)
+		checkSpansByTagValue(helperChild, constants.TestSourceFile, "internal/civisibility/integrations/gotesting/fixtures/subtesthelper/callback.go", 2)
+		os.Exit(0)
+	case "imported-root":
+		for _, name := range []string{"root", "root/child", "root/disabled"} {
+			events := checkSpansByResourceName(spans, "callback.go.TestQuarantinedRaceImportedRootFixture/discovery/"+name, 2)
+			checkSpansByTagValue(events, constants.TestModule, module, 2)
+			if name == "root/disabled" {
+				checkSpansByTagValue(events, constants.TestIsDisabled, "true", 2)
+				checkSpansByTagValue(events, constants.TestStatus, constants.TestStatusSkip, 2)
+			} else {
+				checkSpansByTagValue(events, constants.TestIsAttempToFix, "true", 2)
+				checkSpansByTagValue(events, constants.TestIsQuarantined, "true", 2)
+			}
+		}
 		os.Exit(0)
 	case "ancestor-atf":
 		child := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceAncestorATFFixture/child", 2)
@@ -529,12 +572,19 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 			checkSpansByTagValue(root, ext.ErrorType, "test_panic", 0)
 		}
 		os.Exit(0)
-	case "testify-source":
+	case "testify-source", "testify-identity-without-method":
 		if readPID("testify-source") == parentPID {
 			panic("Testify method did not run in the isolated child")
 		}
 		testifySpans := checkSpansByResourceName(spans, testifySuite+".TestQuarantinedRaceTestifyFixture/TestSource", 1)
-		method := runtime.FuncForPC(reflect.ValueOf((*quarantinedRaceTestifySuite).TestSource).Pointer())
+		checkSpansByTagValue(testifySpans, constants.TestModule, testifyModule, 1)
+		if scenario == "testify-identity-without-method" {
+			if source := fmt.Sprint(testifySpans[0].Tag(constants.TestSourceFile)); !strings.HasSuffix(source, "quarantine_process_race_test.go") {
+				panic(fmt.Sprintf("Testify callback source file = %s", source))
+			}
+			os.Exit(0)
+		}
+		method := runtime.FuncForPC(reflect.ValueOf((*subtesthelper.TestifySuite).TestSource).Pointer())
 		_, sourceLine := method.FileLine(method.Entry())
 		if got := fmt.Sprint(testifySpans[0].Tag(constants.TestSourceStartLine)); got != strconv.Itoa(sourceLine) {
 			panic(fmt.Sprintf("Testify source line = %s, want method line %d", got, sourceLine))
@@ -724,26 +774,26 @@ func TestQuarantinedRaceFailfastEndToEnd(t *testing.T) {
 }
 
 func TestQuarantinedRaceParallelAdmissionEndToEnd(t *testing.T) {
-	runQuarantinedRaceEndToEnd(t, "parallel-admission", "^TestQuarantinedRaceParallelFixture$", "-test.timeout=1m")
+	runQuarantinedRaceEndToEnd(t, "parallel-admission", "^TestQuarantinedRaceParallelFixture$", quarantinedRaceHangTimeoutArg)
 }
 
 func TestQuarantinedRaceParallelDeniedEndToEnd(t *testing.T) {
-	runQuarantinedRaceEndToEnd(t, "parallel-denied", "^TestQuarantinedRaceParallelDeniedFixture$", "-test.timeout=1m")
+	runQuarantinedRaceEndToEnd(t, "parallel-denied", "^TestQuarantinedRaceParallelDeniedFixture$", quarantinedRaceHangTimeoutArg)
 }
 
 func TestQuarantinedRaceParallelRootsReleaseProcessSlotsEndToEnd(t *testing.T) {
-	runQuarantinedRaceEndToEnd(t, "parallel-root-slots", "^TestQuarantinedRaceParallelRootsFixture$", "-test.timeout=1m")
+	runQuarantinedRaceEndToEnd(t, "parallel-root-slots", "^TestQuarantinedRaceParallelRootsFixture$", quarantinedRaceHangTimeoutArg)
 }
 
 func TestQuarantinedRaceParallelRootsCoordinateAfterResumeEndToEnd(t *testing.T) {
-	runQuarantinedRaceEndToEnd(t, "parallel-root-coordination", "^TestQuarantinedRaceParallelRootsFixture$", "-test.timeout=1m")
+	runQuarantinedRaceEndToEnd(t, "parallel-root-coordination", "^TestQuarantinedRaceParallelRootsFixture$", quarantinedRaceHangTimeoutArg)
 }
 
 func TestQuarantinedRaceParallelCoverageEndToEnd(t *testing.T) {
 	if testing.CoverMode() == "" {
 		t.Skip("requires coverage instrumentation")
 	}
-	runQuarantinedRaceEndToEnd(t, "parallel-coverage", "^TestQuarantinedRaceParallelCoverageFixture$", "-test.timeout=1m")
+	runQuarantinedRaceEndToEnd(t, "parallel-coverage", "^TestQuarantinedRaceParallelCoverageFixture$", quarantinedRaceHangTimeoutArg)
 }
 
 func TestQuarantinedRaceNestedAggregateCoverageEndToEnd(t *testing.T) {
@@ -846,7 +896,7 @@ func TestQuarantinedRaceOwnerGenerationFinalityEndToEnd(t *testing.T) {
 }
 
 func TestQuarantinedRaceParallelATFSiblingEndToEnd(t *testing.T) {
-	runQuarantinedRaceEndToEnd(t, "parallel-atf-sibling", "^TestQuarantinedRaceParallelATFFixture$", "-test.timeout=1m")
+	runQuarantinedRaceEndToEnd(t, "parallel-atf-sibling", "^TestQuarantinedRaceParallelATFFixture$", quarantinedRaceHangTimeoutArg)
 }
 
 func TestQuarantinedRaceSerialATFDoesNotRepeatSiblingEndToEnd(t *testing.T) {
@@ -855,6 +905,10 @@ func TestQuarantinedRaceSerialATFDoesNotRepeatSiblingEndToEnd(t *testing.T) {
 
 func TestQuarantinedRacePreservesDescendantSuiteEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "foreign-suite", "^TestQuarantinedRaceForeignSuiteFixture$")
+}
+
+func TestQuarantinedRaceImportedRootModuleEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "imported-root", "^TestQuarantinedRaceImportedRootFixture$")
 }
 
 func TestQuarantinedRacePreservesAncestorATFMetadataEndToEnd(t *testing.T) {
@@ -875,6 +929,10 @@ func TestQuarantinedRaceAncestorPanicEndToEnd(t *testing.T) {
 
 func TestQuarantinedRaceTestifySourceEndToEnd(t *testing.T) {
 	runQuarantinedRaceEndToEnd(t, "testify-source", "^TestQuarantinedRaceTestifyFixture$")
+}
+
+func TestQuarantinedRaceTestifyIdentityWithoutMethodEndToEnd(t *testing.T) {
+	runQuarantinedRaceEndToEnd(t, "testify-identity-without-method", "^TestQuarantinedRaceTestifyFixture$")
 }
 
 func runQuarantinedRaceEndToEnd(t *testing.T, scenario, pattern string, extraArgs ...string) {
@@ -1222,6 +1280,8 @@ func TestQuarantinedRaceParallelWaitDurationFixture(t *testing.T) {
 		t.Run("slow", instrumentTestingTFunc(func(t *testing.T) {
 			(*T)(t).Parallel()
 			runQuarantinedRaceActiveWork()
+			path := filepath.Join(os.Getenv(quarantinedRaceIsolationPIDDirEnv), "parallel-wait-duration-child-finished")
+			require.NoError(t, os.WriteFile(path, []byte(strconv.FormatInt(time.Now().UnixNano(), 10)), 0o600))
 		}))
 	}))
 }
@@ -1465,22 +1525,26 @@ func TestQuarantinedRaceAncestorFailureFixture(t *testing.T) {
 	}
 }
 
-type quarantinedRaceTestifySuite struct {
-	t *testing.T
-}
-
-func (s *quarantinedRaceTestifySuite) TestSource() {
-	writeQuarantinedRaceIsolationPID(s.t, "testify-source")
-}
-
 func TestQuarantinedRaceTestifyFixture(t *testing.T) {
 	if !quarantinedRaceIsolationFixtureSelected() {
 		t.Skip("fixture subprocess only")
 	}
-	suite := &quarantinedRaceTestifySuite{}
+	suite := &subtesthelper.TestifySuite{OnTest: func(t *testing.T) {
+		writeQuarantinedRaceIsolationPID(t, "testify-source")
+	}}
 	instrumentTestifySuiteRun(t, suite)
+	if os.Getenv(quarantinedRaceIsolationFixtureEnv) == "testify-identity-without-method" {
+		parent := reflect.ValueOf(t).UnsafePointer()
+		tests, ok := getTestifyTestsByParentT(parent)
+		require.True(t, ok)
+		for i := range tests {
+			tests[i].methodFunc = nil
+		}
+		setTestifyTestsByParentT(parent, tests)
+	}
 	t.Run("TestSource", instrumentTestingTFunc(func(t *testing.T) {
-		suite.t = t
+		require.Equal(t, reflect.TypeFor[subtesthelper.TestifySuite]().PkgPath(), getTestMetadata(t).identity.ModuleName)
+		suite.T = t
 		suite.TestSource()
 	}))
 }
@@ -1593,13 +1657,29 @@ func TestQuarantinedRaceForeignSuiteFixture(t *testing.T) {
 	}
 	t.Run("root", instrumentTestingTFunc(func(t *testing.T) {
 		t.Run("foreign", instrumentTestingTFunc(quarantinedRaceForeignSuiteCallback))
+		t.Run("helper-disabled", instrumentTestingTFunc(subtesthelper.Disabled))
 		t.Run("itr", instrumentTestingTFunc(quarantinedRaceForeignSuiteITRCallback))
 		t.Run("parent", instrumentTestingTFunc(quarantinedRaceForeignSuiteParentCallback))
 	}))
 }
 
+func TestQuarantinedRaceImportedRootFixture(t *testing.T) {
+	if !quarantinedRaceIsolationFixtureSelected() {
+		t.Skip("fixture subprocess only")
+	}
+	t.Run("discovery", instrumentTestingTFunc(func(t *testing.T) {
+		t.Run("root", instrumentTestingTFunc(subtesthelper.Root(instrumentTestingTFunc, func(t *testing.T) {
+			require.Equal(t, "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting", getTestMetadata(t).identity.ModuleName)
+			if !isProcessRetryChild() {
+				triggerQuarantinedRaceFixture()
+			}
+		})))
+	}))
+}
+
 func quarantinedRaceForeignSuiteParentCallback(t *testing.T) {
 	t.Run("child", instrumentTestingTFunc(quarantinedRaceHomeSuiteCallback))
+	t.Run("helper-child", instrumentTestingTFunc(subtesthelper.Pass))
 }
 
 func TestQuarantinedRaceParallelDeniedFixture(t *testing.T) {

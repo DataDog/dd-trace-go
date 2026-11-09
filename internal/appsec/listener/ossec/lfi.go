@@ -20,7 +20,7 @@ import (
 type Feature struct{}
 
 func (*Feature) String() string {
-	return "LFI Protection"
+	return listener.FeatureLFI
 }
 
 func (*Feature) Stop() {}

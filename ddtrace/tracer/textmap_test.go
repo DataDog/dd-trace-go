@@ -2871,6 +2871,7 @@ func BenchmarkExtractW3C(b *testing.B) {
 		tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 	})
 	b.ResetTimer()
+	defer log.SetLevel(log.GetLevel())
 	log.SetLevel(log.LevelError)
 	for b.Loop() {
 		propagator.Extract(carrier)
@@ -2888,6 +2889,7 @@ func BenchmarkExtractW3CUppercase(b *testing.B) {
 		tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 	})
 	b.ResetTimer()
+	defer log.SetLevel(log.GetLevel())
 	log.SetLevel(log.LevelError)
 	for b.Loop() {
 		propagator.Extract(carrier)
@@ -3034,6 +3036,11 @@ func FuzzComposeTracestate(f *testing.F) {
 			k2: "KeyTwo", v2: "123123",
 			k3: "table", v3: "chair",
 			oldState: "dd=s:-2;o:synthetics___web"},
+		{priority: 1,
+			k1: "0", v1: "0",
+			k2: "0", v2: "=",
+			k3: "1", v3: "0",
+			oldState: "0"},
 	}
 	for _, tc := range testCases {
 		f.Add(tc.priority, tc.k1, tc.v1, tc.k2, tc.v2, tc.k3, tc.v3, tc.oldState)
@@ -3050,7 +3057,14 @@ func FuzzComposeTracestate(f *testing.F) {
 		totalLen := 0
 		for key, val := range tags {
 			k := "_dd.p." + sanitizeTagKey(key)
-			v := sanitizeTagValue(val)
+			// '~' only exists on the wire as the encoding of '=', so a value
+			// survives the round trip once sanitized and decoded back.
+			v := strings.ReplaceAll(sanitizeTagValue(val), "~", "=")
+			// parseTracestate maps any t.dm* key to the decision maker and may
+			// drop it based on the traceparent priority, which isn't set here.
+			if strings.HasPrefix(k, "_dd.p.dm") {
+				t.Skipf("Skipping decision maker tags")
+			}
 			if strings.ContainsAny(k, ":;") {
 				t.Skipf("Skipping invalid tags")
 			}

@@ -128,6 +128,11 @@ func TestFeature_headerCollection(t *testing.T) {
 			span := mt.StartSpan("test")
 			req, _, _ := emitter.StartOperation(ctx, request, span)
 			assert.Equal(t, tc.ExpectedBlocked, blocked)
+			if blocked {
+				// Stand in for the integration applying the blocking response,
+				// which is what marks the request as blocked.
+				req.ContextOperation.SetRequestBlocked()
+			}
 			req.Finish(response)
 			span.Finish()
 

@@ -8,15 +8,26 @@
 #     - `partial`: Cache restored using a key-prefix match instead of an exact match.
 #     - `unknown`: Exact or partial cache restore; reporter lacked `cache_matched_key`.
 #     - `miss`: Cache miss.
-# - `ci.step.cache.restore.disk_size_bytes` (GAUGE).
+# - `ci.cache.disk_size_bytes` (GAUGE).
 #   Value: Filesystem usage in bytes, e.g. `73400320`; actual cache upload is compressed.
+#   Measured near the end of the calling job's main phase, NOT immediately after
+#   restore, so it is tagged `phase:end_of_job`.
+#
+#   Series transition: until this change these values were published as
+#   `ci.step.cache.restore.disk_size_bytes`, whose name wrongly implied they
+#   were restore-time sizes. That series is retired; queries must move to
+#   `ci.cache.disk_size_bytes` with `phase:end_of_job`. Compressed
+#   cache-service storage consumption is measured from the cache API's
+#   `size_in_bytes` by scripts/citiming, not from this action.
 #
 # Common tags:
 # - `repository`: Repository name, e.g. `dd-trace-go`.
 # - `os.platform`: Runner operating system, e.g. `linux`.
 # - `os.architecture`: Runner architecture, e.g. `x64`.
 # - `runtime.name`: Runtime name, e.g. `go`.
-# - `runtime.version`: Runtime version, e.g. `1.25.1`.
+# - `runtime.version`: Resolved runtime version, e.g. `1.25.1`.
+# - `provider`: Cache provider, e.g. `github-cache` or `cloudx`.
+# - `workload`: Logical workload family, e.g. `unit-core`, `multi-os`.
 # - `ci.pipeline.name`: GitHub workflow name, e.g. `unit-integration-tests`.
 # - `ci.job.name`: GitHub job identifier, e.g. `test`.
 # - `ci.trigger`: GitHub event name, e.g. `pull_request`.
@@ -25,6 +36,8 @@
 #
 # Metric submission is best-effort. Call this action with `continue-on-error: true`
 # and `if: always()` so reporting cannot change the calling job's result.
+# Without a Datadog API key the action is a no-op: the structured observation
+# itself is already mirrored into the job log by .github/actions/setup-go.
 name: 'Cache Metrics'
 description: 'Report cache outcomes and filesystem sizes to Datadog'
 inputs:
@@ -36,8 +49,11 @@ inputs:
     default: "false"
     description: Whether to report filesystem usage for supplied cache paths; traversing them may be expensive.
   dd-api-key:
-    required: true
-    description: Datadog API key used to submit the metrics.
+    required: false
+    default: ""
+    description: >-
+      Datadog API key used to submit the metrics. When empty, submission is
+      skipped; the raw observation stays available in the job log.
   dd-site:
     required: false
     default: datadoghq.com
@@ -69,85 +85,12 @@ runs:
           *) printf 'Unsupported Datadog site; skipping cache metrics.\n'; exit 0 ;;
         esac
 
-        normalize_tag() {
-          printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E -e 's/[^a-z0-9_.-]+/_/g' -e 's/^_//' -e 's/_$//'
-        }
-
-        size_bytes() {
-          local path="$1" kb
-          if command -v cygpath >/dev/null 2>&1; then
-            path="$(cygpath -u "$path")"
-          fi
-          [[ -d "$path" ]] || return 0
-          kb="$(du -sk "$path" 2>/dev/null | awk 'NR == 1 {print $1}')"
-          [[ "$kb" =~ ^[0-9]+$ ]] || return 0
-          printf '%s' "$((kb * 1024))"
-        }
-
-        sizes=""
-        if [[ "${MEASURE_SIZES:-false}" == "true" ]]; then
-          while IFS= read -r -d '' name && IFS= read -r -d '' path; do
-            size="$(size_bytes "$path")"
-            [[ -n "$size" ]] && sizes+="${name}"$'\t'"${size}"$'\n'
-          done < <(jq -j '.cache_paths[] | .name, "\u0000", .path, "\u0000"' <<< "$CACHE_METRICS")
-        fi
-
         temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/cache-metrics.XXXXXX")"
         trap 'rm -rf "$temp_dir"' EXIT
         payload_file="$temp_dir/payload.json"
         response_file="$temp_dir/response.txt"
 
-        tags="$(jq -cn \
-          --arg repository "$(normalize_tag "${GITHUB_REPOSITORY##*/}")" \
-          --arg os_platform "$(normalize_tag "${RUNNER_OS:-unknown}")" \
-          --arg os_architecture "$(normalize_tag "${RUNNER_ARCH:-unknown}")" \
-          --arg pipeline "$(normalize_tag "${CI_PIPELINE_NAME:-unknown}")" \
-          --arg job "$(normalize_tag "${CI_JOB_NAME:-unknown}")" \
-          --arg trigger "$(normalize_tag "${CI_TRIGGER:-unknown}")" \
-          '["repository:" + (if $repository == "" then "unknown" else $repository end),
-            "os.platform:" + $os_platform,
-            "os.architecture:" + $os_architecture,
-            "ci.pipeline.name:" + $pipeline,
-            "ci.job.name:" + $job,
-            "ci.trigger:" + $trigger]'
-        )"
-
-        # A cache_matched_key field selects exact/partial/miss classification.
-        # Observations without that field use aggregate hit/miss classification.
-        jq -cn \
-          --argjson metrics "$CACHE_METRICS" \
-          --argjson timestamp "$(date +%s)" \
-          --argjson tags "$tags" \
-          --arg sizes "$sizes" '
-          def runtime_tags:
-            ["runtime.name:" + $metrics.runtime.name,
-             "runtime.version:" + (if $metrics.runtime.version == "" then "unknown" else $metrics.runtime.version end)];
-          def count_series($name; $result):
-            {metric: "ci.step.cache.restore", type: 1, interval: 1,
-             points: [{timestamp: $timestamp, value: 1}],
-             tags: ($tags + runtime_tags + ["cache_name:" + $name,
-                    "outcome:" + $result[0], "hit_type:" + $result[1]])};
-          def size_series($measurement):
-            {metric: "ci.step.cache.restore.disk_size_bytes", type: 3,
-             points: [{timestamp: $timestamp, value: ($measurement[1] | tonumber)}],
-             tags: ($tags + runtime_tags + ["cache_name:" + $measurement[0]])};
-          def restore_result:
-            if .enabled != "true" or .outcome != "success" then empty
-            elif has("cache_matched_key") then
-              if .cache_hit == "true" then ["hit", "exact"]
-              elif .cache_hit == "false" or .cache_hit == "" then
-                if .cache_matched_key != "" then ["hit", "partial"] else ["miss", "miss"] end
-              else empty
-              end
-            elif .cache_hit == "true" then ["hit", "unknown"]
-            elif .cache_hit == "false" then ["miss", "miss"]
-            else empty
-            end;
-          {series: ([$metrics.restores[] as $restore |
-                      $restore | restore_result | count_series($restore.name; .)] +
-                    [$sizes | split("\n")[] | select(length > 0) |
-                      split("\t") | size_series(.)])}
-        ' > "$payload_file"
+        bash "${GITHUB_ACTION_PATH}/payload.sh" > "$payload_file"
 
         count="$(jq '.series | length' "$payload_file")"
         if [[ "$count" == "0" ]]; then
@@ -166,9 +109,13 @@ runs:
           --data-binary "@${payload_file}")" || curl_exit=$?
 
         if [[ "$curl_exit" -ne 0 || "$http_code" != "202" ]]; then
-          diagnostic="$(head -c 512 "$response_file" 2>/dev/null | tr '\r\n' '  ')"
+          diagnostic="$(head -c 512 "$response_file" 2>/dev/null)"
+          diagnostic="$(printf '%s' "$diagnostic" | tr '\r\n' '  ')"
           diagnostic="${diagnostic//"$DD_API_KEY"/[REDACTED]}"
-          printf '%s\n' "Cache metric submission failed (curl ${curl_exit}, HTTP ${http_code:-000})${diagnostic:+: $diagnostic}."; exit 0
+          failure="Cache metric submission failed (curl ${curl_exit}"
+          failure+=", HTTP ${http_code:-000})${diagnostic:+: $diagnostic}."
+          printf '%s\n' "$failure"
+          exit 0
         fi
 
         printf 'Submitted %s cache metric series.\n' "$count"

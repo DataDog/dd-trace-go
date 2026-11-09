@@ -199,6 +199,24 @@ func TestHTTPURLQueryString(t *testing.T) {
 		assert.NotContains(url, "shouldberedacted")
 	})
 
+	t.Run("invalid regexp fails closed", func(t *testing.T) {
+		t.Cleanup(instrhttptrace.ResetCfg)
+		t.Setenv("DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP", `(?<=x)a`)
+		instrhttptrace.ResetCfg()
+
+		addr := startServer(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		resp, err := (&http.Client{}).Get(addr + "/any?token=supersecret&safe=1")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, addr+"/any", spans[0].Tag(ext.HTTPURL))
+	})
+
 	t.Run("allowlist", func(t *testing.T) {
 		t.Cleanup(instrhttptrace.ResetCfg)
 		t.Setenv("DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER", "safe")
@@ -267,6 +285,26 @@ func TestStatusError(t *testing.T) {
 	wantErr := fmt.Sprintf("%d: %s", 500, fasthttp.StatusMessage(500))
 	assert.Equal(wantErr, span.Tag(ext.ErrorMsg))
 	assert.NotContains(span.Tag(ext.ErrorMsg), errMsg, "response body must not be leaked into the error tag")
+}
+
+// A handler panic leaves fasthttp's default status 200 in the response. The
+// span must report the panic as an error, and must not report that status.
+func TestHandlerPanic(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var req fasthttp.Request
+	req.SetRequestURI("http://example.test/")
+	var fctx fasthttp.RequestCtx
+	fctx.Init(&req, &net.TCPAddr{}, nil)
+
+	handler := WrapHandler(func(*fasthttp.RequestCtx) { panic("handler panic") })
+	require.PanicsWithValue(t, "handler panic", func() { handler(&fctx) })
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Nil(t, spans[0].Tag(ext.HTTPCode))
+	assert.Equal(t, errHandlerPanic.Error(), spans[0].Tag(ext.ErrorMsg))
+	assert.Nil(t, fctx.UserValue(handlerScopeKey{}))
 }
 
 // Test that users can customize which HTTP status codes are considered an error

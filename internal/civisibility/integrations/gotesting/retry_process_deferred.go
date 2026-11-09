@@ -89,6 +89,7 @@ type deferredProcessRetryGroup struct {
 	invocationOrdinal     uint64
 	executionIndex        int
 	retryCount            int64
+	initialDuration       time.Duration
 	reservation           *flakyRetryBudgetReservation
 	latest                retryAttemptObservation
 	outcomes              retryOutcomeAccumulator
@@ -954,6 +955,7 @@ func enqueueDeferredProcessRetryGroup(execOpts *executionOptions) bool {
 		invocationOrdinal: ensureProcessRetryInvocationOrdinal(options),
 		executionIndex:    execOpts.executionIndex,
 		retryCount:        execOpts.retryCount,
+		initialDuration:   execOpts.initialDuration,
 		reservation:       execOpts.flakyRetryBudgetReservation,
 		latest: retryAttemptObservation{
 			executionIndex: execOpts.lastObservation.executionIndex,
@@ -1200,7 +1202,7 @@ func (g *deferredProcessRetryGroup) admitEarlyFlakeDetectionContinuationWithTran
 		isFlakyTestRetriesEnabled: g.metadata.isFlakyTestRetriesEnabled,
 		efdFellBackToFlakyRetries: g.metadata.efdFellBackToFlakyRetries,
 	}
-	if retryCount, ok := transitionSuppressedEFDToFlakyRetries(transitionMeta, g.latest.failed, g.outcomes.anyPassed()); ok {
+	if retryCount, ok := transitionSuppressedEFDToFlakyRetries(transitionMeta, g.initialDuration, g.latest.failed, g.outcomes.anyPassed()); ok {
 		g.metadata.efdFellBackToFlakyRetries = transitionMeta.efdFellBackToFlakyRetries
 		g.retryCount = retryCount
 		g.parallelEFD = false

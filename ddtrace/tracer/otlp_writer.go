@@ -33,6 +33,12 @@ type otlpTraceWriter struct {
 	buffSize  int               // +checklocks:mu
 	baseSize  int               // +checklocks:mu
 
+	// resourceAttrs are the resource's string attributes, which convertSpan
+	// does not repeat on spans. Like the resource, they are fixed at startup:
+	// global tags changed later (e.g. through Remote Config) no longer match
+	// and are written on spans.
+	resourceAttrs map[string]string
+
 	// climit bounds the number of concurrent outgoing sends dispatched by flush.
 	climit chan struct{}
 
@@ -46,13 +52,6 @@ type otlpTraceWriter struct {
 
 func newOTLPTraceWriter(c *config) *otlpTraceWriter {
 	resource := buildResource(c.internalConfig)
-	// Signal to the backend that the SDK has computed stats so it does not
-	// recompute them from the trace spans.
-	if c.internalConfig.OTLPSpanMetricsEnabled() {
-		resource.Attributes = append(resource.Attributes,
-			otlpKeyValue("_dd.stats_computed", otlpStringValue("true")),
-		)
-	}
 	scope := &otlpcommon.InstrumentationScope{Name: "dd-trace-go", Version: version.Tag}
 	baseSize := proto.Size(&otlptrace.TracesData{
 		ResourceSpans: []*otlptrace.ResourceSpans{{
@@ -63,14 +62,15 @@ func newOTLPTraceWriter(c *config) *otlpTraceWriter {
 		}},
 	})
 	return &otlpTraceWriter{
-		config:    c,
-		transport: newOTLPTransport(internal.DefaultHTTPClient(c.internalConfig.AgentTimeout(), false), c.internalConfig.OTLPTraceURL(), c.internalConfig.OTLPHeaders()),
-		resource:  resource,
-		scope:     scope,
-		spans:     make([]*otlptrace.Span, 0),
-		buffSize:  baseSize,
-		baseSize:  baseSize,
-		climit:    make(chan struct{}, concurrentConnectionLimit),
+		config:        c,
+		transport:     newOTLPTransport(internal.DefaultHTTPClient(c.internalConfig.AgentTimeout(), false), c.internalConfig.OTLPTraceURL(), c.internalConfig.OTLPTraceHeaders()),
+		resource:      resource,
+		scope:         scope,
+		spans:         make([]*otlptrace.Span, 0),
+		buffSize:      baseSize,
+		baseSize:      baseSize,
+		resourceAttrs: resourceStringAttrs(resource),
+		climit:        make(chan struct{}, concurrentConnectionLimit),
 	}
 }
 
@@ -87,10 +87,11 @@ func (w *otlpTraceWriter) reset() []*otlptrace.Span {
 func (w *otlpTraceWriter) add(spanList []*Span) {
 	defaultServiceName := w.config.internalConfig.ServiceName()
 	otelSemantics := w.config.internalConfig.OTelSemanticsEnabled()
+	resourceAttrs := w.resourceAttrs
 	w.mu.Lock()
 	w.spans = slices.Grow(w.spans, len(spanList))
 	for _, span := range spanList {
-		if otlpSpan := convertSpan(span, defaultServiceName, otelSemantics); otlpSpan != nil {
+		if otlpSpan := convertSpan(span, defaultServiceName, otelSemantics, resourceAttrs); otlpSpan != nil {
 			w.spans = append(w.spans, otlpSpan)
 			w.buffSize += proto.Size(otlpSpan)
 		}
@@ -158,10 +159,10 @@ func (w *otlpTraceWriter) flush() {
 				log.Debug("OTLP: sent traces after %d attempts", attempt+1)
 				return
 			}
-			log.Error("OTLP: failure sending traces (attempt %d of %d): %v", attempt+1, sendRetries+1, sendErr.Error())
+			log.Error("OTLP: failure sending traces (attempt %d of %d): %v", attempt+1, sendRetries+1, sendErr.Error()) //errtrack:ignore exporter or network failure
 			time.Sleep(retryInterval)
 		}
-		log.Error("OTLP: lost %d spans: %v", spanCount, sendErr.Error())
+		log.Error("OTLP: lost %d spans: %v", spanCount, sendErr.Error()) //errtrack:ignore exporter or network failure already reported as a count
 	}()
 }
 

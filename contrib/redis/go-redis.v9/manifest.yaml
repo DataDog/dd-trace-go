@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/redis/go-redis/v9
+display_name: go-redis v9
+description: Instruments Redis connection dialing, individual commands, and command pipelines through go-redis v9 clients,
+  with context parenting and error reporting.
+packages:
+- name: github.com/redis/go-redis/v9
+category:
+- db.client
+systems:
+- redis
+creation_date: '2023-04-28'

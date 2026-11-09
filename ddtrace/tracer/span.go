@@ -118,7 +118,7 @@ func (s *Span) spanEventsAsJSONString() string {
 	}
 	events, err := json.Marshal(s.spanEvents)
 	if err != nil {
-		log.Error("failed to marshal span events: %s", err.Error())
+		log.Error("failed to marshal span events: %s", err.Error()) //errtrack:ignore unsupported user-provided span event value
 		return ""
 	}
 	return string(events)
@@ -460,7 +460,7 @@ func (s *Span) SetMetaStruct(key string, value msgp.Marshaler) bool {
 		return false
 	}
 
-	tracer, hasTracer := getGlobalTracer().(*tracer)
+	tracer, hasTracer := concreteTracerForSpan(getGlobalTracer(), s).(*tracer)
 	if !hasTracer || !tracer.config.agent.load().metaStructAvailable {
 		return false
 	}
@@ -1014,6 +1014,18 @@ func (s *Span) serializeSpanEvents() {
 	s.meta.Set("events", string(b))
 }
 
+// spanFinished reports whether s finished. It is used by github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry
+// via go:linkname, because a borrowed OpenTelemetry span must stop recording when the
+// integration that owns it finishes it.
+func spanFinished(s *Span) bool {
+	if s == nil {
+		return true
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.finished
+}
+
 // recordFFEEvaluation records a feature flag evaluation for FFE span enrichment.
 // Used by github.com/DataDog/dd-trace-go/v2/openfeature via go:linkname.
 //
@@ -1105,7 +1117,7 @@ func (s *Span) Finish(opts ...FinishOption) {
 	}
 
 	if s.Root() == s {
-		if tr, ok := getGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
+		if tr, ok := concreteTracerForSpan(getGlobalTracer(), s).(*tracer); ok && tr.rulesSampling.traces.enabled() {
 			if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
 				tr.rulesSampling.SampleTrace(s)
 			}
@@ -1172,9 +1184,11 @@ func (s *Span) finish(finishTime int64) {
 	}
 
 	keep := true
-	tracer, hasTracer := getGlobalTracer().(*tracer)
+	tracer, hasTracer := concreteTracerForTrace(getGlobalTracer(), s.context.trace, s.spanType).(*tracer)
 	if hasTracer {
 		if !tracer.config.internalConfig.TracingEnabled() {
+			// The tracer drops the span, but the span is finished.
+			s.finished = true
 			return
 		}
 		if tracer.config.canDropP0s() {
@@ -1222,7 +1236,7 @@ func obfuscatedResource(o *obfuscate.Obfuscator, typ, resource string) string {
 	case "sql", "cassandra":
 		oq, err := o.ObfuscateSQLString(resource)
 		if err != nil {
-			log.Error("Error obfuscating stats group resource %q: %v", resource, err.Error())
+			log.Error("Error obfuscating stats group resource %q: %v", resource, err.Error()) //errtrack:ignore unparseable user-provided resource
 			return textNonParsable
 		}
 		return oq.Query
@@ -1312,7 +1326,7 @@ func (s *Span) Format(f fmt.State, c rune) {
 		if svc := globalconfig.ServiceName(); svc != "" {
 			fmt.Fprintf(f, "dd.service=%s ", svc)
 		}
-		if tr := getGlobalTracer(); tr != nil {
+		if tr := concreteTracerForSpanContext(getGlobalTracer(), s.context); tr != nil {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
@@ -1485,6 +1499,10 @@ const (
 	keyBaseService = "_dd.base_service"
 	// keyProcessTags contains a list of process tags to identify the service.
 	keyProcessTags = "_dd.tags.process"
+	// keySDKOTLPExport declares whether traces were exported over OTLP ("true", as a resource
+	// attribute) or the native Datadog encoding ("false": on the first span of each chunk, and
+	// as a v1 payload attribute).
+	keySDKOTLPExport = "_dd.sdk.otlp_export"
 	// keyKnuthSamplingRate holds the propagated Knuth-based sampling rate applied by agent or trace sampling rules.
 	// Value is a string with up to 6 decimal digits and is forwarded unchanged.
 	keyKnuthSamplingRate = "_dd.p.ksr"

@@ -60,7 +60,8 @@ type StartConfig struct {
 	// IsEnabled is a function that determines whether AppSec is enabled or not. When unset, the
 	// default [IsEnabled] function is used.
 	EnablementMode func() (EnablementMode, telemetry.Origin, error)
-	// MetaStructAvailable is true if meta struct is supported by the trace agent.
+	// MetaStructAvailable is true if the span can carry meta_struct to the backend: the agent
+	// supports it and the tracer does not export over OTLP.
 	MetaStructAvailable bool
 
 	APISecOptions []APISecOption
@@ -165,9 +166,15 @@ type Config struct {
 	RC *remoteconfig.ClientConfig
 	// RASP determines whether RASP features are enabled or not.
 	RASP bool
+	// DisabledFeatures is the set of feature names that must not be started, read from [EnvDisableFeatures].
+	DisabledFeatures map[string]struct{}
+	// DisabledAddresses are the WAF addresses of the disabled features, removed from [Config.SupportedAddresses] so
+	// that the WAF never evaluates them. It is set by the appsec package from [Config.DisabledFeatures].
+	DisabledAddresses AddressSet
 	// SupportedAddresses are the addresses that the AppSec listener will bind to.
 	SupportedAddresses AddressSet
-	// MetaStructAvailable is true if meta struct is supported by the trace agent.
+	// MetaStructAvailable is true if the span can carry meta_struct to the backend: the agent
+	// supports it and the tracer does not export over OTLP.
 	MetaStructAvailable bool
 	// BlockingUnavailable is true when the application run in an environment where blocking is not possible
 	BlockingUnavailable bool
@@ -233,6 +240,7 @@ func (c *StartConfig) NewConfig() (*Config, error) {
 		APISec:              NewAPISecConfig(c.APISecOptions...),
 		StackTrace:          NewStackTraceConfig(),
 		RASP:                RASPEnabled(),
+		DisabledFeatures:    DisabledFeaturesFromEnv(),
 		RC:                  c.RC,
 		MetaStructAvailable: c.MetaStructAvailable,
 		BlockingUnavailable: c.BlockingUnavailable,

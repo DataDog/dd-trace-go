@@ -11,6 +11,7 @@ import (
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -19,6 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec/apisec"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 )
 
 // Configuration environment variables
@@ -52,6 +54,8 @@ const (
 	EnvStackTraceEnabled = "DD_APPSEC_STACK_TRACE_ENABLED"
 	// EnvMaxStackTraceDepth is the env var used to configure the maximum AppSec stack trace depth.
 	EnvMaxStackTraceDepth = "DD_APPSEC_MAX_STACK_TRACE_DEPTH"
+	// EnvDisableFeatures is the env var used to disable AppSec features, as a comma-separated list of feature names.
+	EnvDisableFeatures = "DD_APPSEC_DISABLE_FEATURES"
 
 	// envAPISecSampleDelay is the env var used to set the delay for the API Security sampler in system tests.
 	// It is not indended to be set by users.
@@ -200,6 +204,24 @@ func WithProxy() APISecOption {
 // is not set
 func RASPEnabled() bool {
 	return internal.BoolEnv(EnvRASPEnabled, true)
+}
+
+// DisabledFeaturesFromEnv returns the set of feature names listed in [EnvDisableFeatures]. Names are trimmed and
+// lowercased, and empty entries are ignored. It returns nil when no feature is listed.
+func DisabledFeaturesFromEnv() map[string]struct{} {
+	value, _ := stableconfig.String(EnvDisableFeatures, "")
+	var disabled map[string]struct{}
+	for name := range strings.SplitSeq(value, ",") {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name == "" {
+			continue
+		}
+		if disabled == nil {
+			disabled = make(map[string]struct{})
+		}
+		disabled[name] = struct{}{}
+	}
+	return disabled
 }
 
 // NewObfuscatorConfig creates and returns a new WAF obfuscator configuration by reading the env

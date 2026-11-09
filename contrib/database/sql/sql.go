@@ -214,6 +214,13 @@ func (t dsnConnector) Driver() driver.Driver {
 // first be registered using Register. If this did not occur, OpenDB will determine the driver name
 // based on its type.
 func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
+	tc := newTracedConnector(c, opts...)
+	db := sql.OpenDB(tc)
+	tc.startDBStats(db)
+	return db
+}
+
+func newTracedConnector(c driver.Connector, opts ...Option) *tracedConnector {
 	cfg := new(config)
 	var driverName string
 	if name, ok := registeredDrivers.name(c.Driver()); ok {
@@ -229,17 +236,19 @@ func OpenDB(c driver.Connector, opts ...Option) *sql.DB {
 		dsn = dc.dsn
 	}
 	processOptions(cfg, driverName, c.Driver(), dsn, opts...)
-	tc := &tracedConnector{
+	return &tracedConnector{
 		connector:  c,
 		driverName: driverName,
 		cfg:        cfg,
 		dbClose:    make(chan struct{}),
 	}
-	db := sql.OpenDB(tc)
-	if cfg.dbStats && cfg.statsdClient != nil {
-		go pollDBStats(cfg.statsdClient, db, tc.dbClose)
+}
+
+// startDBStats polls db's statistics when the connector's config asks for it.
+func (t *tracedConnector) startDBStats(db *sql.DB) {
+	if t.cfg.dbStats && t.cfg.statsdClient != nil {
+		go pollDBStats(t.cfg.statsdClient, db, t.dbClose)
 	}
-	return db
 }
 
 // Open returns connection to a DB using the traced version of the given driver. The driver may

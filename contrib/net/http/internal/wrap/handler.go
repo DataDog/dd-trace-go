@@ -47,6 +47,12 @@ func Handler(h http.Handler, service, resource string, opts ...internal.Option) 
 				h.ServeHTTP(w, req)
 				return
 			}
+			var route string
+			if cfg.OTelSemanticsEnabled {
+				route = pattern.Path(req.Pattern)
+			} else {
+				route = pattern.Route(req.Pattern)
+			}
 			resc := resource
 			if r := cfg.ResourceNamer(req); r != "" {
 				resc = r
@@ -55,15 +61,16 @@ func Handler(h http.Handler, service, resource string, opts ...internal.Option) 
 			copy(so, cfg.SpanOpts)
 			so = append(so, httptrace.HeaderTagsFromRequest(req, cfg.HeaderTags))
 			TraceAndServe(h, w, req, &httptrace.ServeConfig{
-				Service:       service,
-				ServiceSource: serviceSource,
-				Framework:     "net/http",
-				Resource:      resc,
-				FinishOpts:    cfg.FinishOpts,
-				SpanOpts:      so,
-				IsStatusError: cfg.IsStatusError,
-				Route:         pattern.Route(req.Pattern),
-				RouteParams:   pattern.PathParameters(req.Pattern, req),
+				Service:              service,
+				ServiceSource:        serviceSource,
+				Framework:            "net/http",
+				Resource:             resc,
+				FinishOpts:           cfg.FinishOpts,
+				SpanOpts:             so,
+				IsStatusError:        cfg.IsStatusError,
+				Route:                route,
+				OTelSemanticsEnabled: &cfg.OTelSemanticsEnabled,
+				RouteParams:          pattern.PathParameters(req.Pattern, req),
 			})
 		}),
 	}

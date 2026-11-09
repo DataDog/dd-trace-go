@@ -35,6 +35,20 @@ func IsAPIKeyValid(key string) bool {
 	return true
 }
 
+// IsHTTPTokenChar reports whether c is a valid token character per RFC 7230.
+// token = 1*tchar
+// tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
+//
+//	"^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
+func IsHTTPTokenChar(c byte) bool {
+	return (c >= 'a' && c <= 'z') ||
+		(c >= 'A' && c <= 'Z') ||
+		(c >= '0' && c <= '9') ||
+		c == '!' || c == '#' || c == '$' || c == '%' || c == '&' ||
+		c == '\'' || c == '*' || c == '+' || c == '-' || c == '.' ||
+		c == '^' || c == '_' || c == '`' || c == '|' || c == '~'
+}
+
 // LockMap uses an RWMutex to synchronize map access to allow for concurrent access.
 // This should not be used for cases with heavy write load and performance concerns.
 type LockMap struct {

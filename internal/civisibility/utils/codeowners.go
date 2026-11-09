@@ -153,7 +153,7 @@ func NewCodeOwners(filePath string) (*CodeOwners, error) {
 	defer func() {
 		err = file.Close()
 		if err != nil && !errors.Is(os.ErrClosed, err) {
-			logger.Warn("Error closing codeowners file: %s", err.Error())
+			logger.Warn("Error closing codeowners file: %s", err.Error()) //errtrack:ignore filesystem close failure
 		}
 	}()
 
@@ -287,6 +287,9 @@ func (co *CodeOwners) Match(value string) (*Entry, bool) {
 			if strings.HasSuffix(pattern, "/") {
 				includeAnythingAfter = true
 			} else if strings.HasSuffix(pattern, "/*") {
+				includeAnythingAfter = true
+				finalPattern = finalPattern[:len(finalPattern)-1]
+			} else if strings.HasPrefix(pattern, "/") && strings.HasSuffix(pattern, "*") && !strings.ContainsAny(pattern[:len(pattern)-1], "*?[]\\") {
 				includeAnythingAfter = true
 				finalPattern = finalPattern[:len(finalPattern)-1]
 			} else {

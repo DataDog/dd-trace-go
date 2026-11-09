@@ -29,16 +29,14 @@ import (
 // Enabled returns true when AppSec is up and running. Meaning that the appsec build tag is enabled, the env var
 // DD_APPSEC_ENABLED is set to true, and the tracer is started.
 func Enabled() bool {
-	mu.RLock()
-	defer mu.RUnlock()
-	return activeAppSec != nil && activeAppSec.started.Load()
+	a := activeAppSec.Load()
+	return a != nil && a.started.Load()
 }
 
 // RASPEnabled returns true when DD_APPSEC_RASP_ENABLED=true or is unset. Granted that AppSec is enabled.
 func RASPEnabled() bool {
-	mu.RLock()
-	defer mu.RUnlock()
-	return activeAppSec != nil && activeAppSec.started.Load() && activeAppSec.cfg.RASP
+	a := activeAppSec.Load()
+	return a != nil && a.started.Load() && a.cfg.RASP
 }
 
 // Start AppSec when enabled is enabled by both using the appsec build tag and
@@ -110,7 +108,7 @@ func Start(opts ...config.StartOption) {
 				// ASM is not enabled and can't be enabled through remote configuration. Nothing more can be done.
 				logUnexpectedStartError(err)
 			}
-			appsec.stopRC()
+			appsec.close()
 			return
 		}
 		log.Debug("appsec: awaiting for possible remote activation")
@@ -120,7 +118,7 @@ func Start(opts ...config.StartOption) {
 
 	if err := appsec.start(); err != nil { // AppSec is specifically enabled
 		logUnexpectedStartError(err)
-		appsec.stopRC()
+		appsec.close()
 		return
 	}
 
@@ -143,32 +141,44 @@ func Stop() {
 }
 
 var (
-	activeAppSec *appsec
-	mu           sync.RWMutex
+	activeAppSec atomic.Pointer[appsec]
+	mu           sync.Mutex
 )
 
 func setActiveAppSec(a *appsec) {
 	mu.Lock()
 	defer mu.Unlock()
-	if activeAppSec != nil {
-		activeAppSec.stopRC()
-		activeAppSec.stop()
+	if previous := activeAppSec.Load(); previous != nil {
+		previous.close()
 	}
-	activeAppSec = a
+	activeAppSec.Store(a)
+}
+
+// close stops the remote config client and AppSec, then releases the WAF manager. The instance must not be used
+// afterward.
+func (a *appsec) close() {
+	a.stopRC()
+	a.stop()
+	a.cfg.WAFManager.Close()
 }
 
 type appsec struct {
-	cfg        *config.Config
-	features   []listener.Feature
-	featuresMu sync.Mutex
-	// started is read by Enabled/RASPEnabled (under mu) and written by start()/stop(), which the
-	// remote-config client invokes from its own goroutine without holding mu; it must be atomic.
+	cfg *config.Config
+	// featureBuilders are the constructors of the features to start, i.e. the ones not disabled by the configuration.
+	featureBuilders []listener.NewFeature
+	features        []listener.Feature
+	featuresMu      sync.Mutex
+	// started is read by Enabled/RASPEnabled and written by start()/stop(), which the
+	// remote-config client invokes from its own goroutine; it must be atomic.
 	started atomic.Bool
 }
 
 func newAppSec(cfg *config.Config) *appsec {
+	builders, disabledAddrs := enabledFeatures(cfg.DisabledFeatures)
+	cfg.DisabledAddresses = disabledAddrs
 	return &appsec{
-		cfg: cfg,
+		cfg:             cfg,
+		featureBuilders: builders,
 	}
 }
 
@@ -183,7 +193,7 @@ func (a *appsec) start() error {
 			return fmt.Errorf("error while loading libddwaf: %w", err)
 		}
 		// 2. If there is an error and the loading is ok: log as an informative error where appsec can be used
-		log.Error("appsec: non-critical error while loading libddwaf: %s", err.Error())
+		log.Error("appsec: non-critical error while loading libddwaf: %s", err.Error()) //errtrack:ignore host native-library compatibility failure
 	}
 
 	// Register dyngo listeners

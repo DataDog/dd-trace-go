@@ -90,7 +90,7 @@ func (c *spanCtx) String() string {
 // (e.g. ChildOf) to that call, which is honored as usual.
 func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 	if ctx == nil {
-		log.Warn("ContextWithSpan: received nil context, falling back to context.Background()")
+		log.Warn("ContextWithSpan: received nil context, falling back to context.Background()") //errtrack:ignore caller passed a nil context
 		ctx = context.Background()
 	}
 	// s and its SpanContext snapshot are carried by a single spanCtx node (see
@@ -193,6 +193,17 @@ func SpanFromContext(ctx context.Context) (*Span, bool) {
 		return s, true
 	}
 	return nil, false
+}
+
+// spanContextSnapshot returns the span context that ContextWithSpan stored with the active span
+// in ctx. It returns nil when ctx has no snapshot. The Orchestrion goroutine-local stack never
+// stores the snapshot, so the lookup reads only ctx. The OpenTelemetry bridge uses it.
+func spanContextSnapshot(ctx context.Context) *SpanContext {
+	if ctx == nil {
+		return nil
+	}
+	sc, _ := ctx.Value(activeSpanContextKey{}).(*SpanContext)
+	return sc
 }
 
 // StartSpanFromContext returns a new span with the given operation name and options. If a span

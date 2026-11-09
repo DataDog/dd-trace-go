@@ -461,7 +461,7 @@ func (l *LLMObs) batchSend(params batchSendParams) {
 				}
 			}
 			if err := l.Transport.PushSpanEvents(ctx, events); err != nil {
-				log.Error("llmobs: failed to push span events: %v", err.Error())
+				log.Error("llmobs: failed to push span events: %v", err.Error()) //errtrack:ignore transport or user-provided payload failure
 				trackDroppedPayload(len(events), telemetryMetricDroppedSpanEvents, "transport_error")
 			} else {
 				log.Debug("llmobs: push span events success")
@@ -482,7 +482,7 @@ func (l *LLMObs) batchSend(params batchSendParams) {
 				}
 			}
 			if err := l.Transport.PushEvalMetrics(ctx, metrics); err != nil {
-				log.Error("llmobs: failed to push eval metrics: %v", err.Error())
+				log.Error("llmobs: failed to push eval metrics: %v", err.Error()) //errtrack:ignore transport or user-provided payload failure
 				trackDroppedPayload(len(metrics), telemetryMetricDroppedEvalEvents, "transport_error")
 			} else {
 				log.Debug("llmobs: push eval metrics success")
@@ -540,7 +540,7 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 		startTime: cfg.StartTime,
 	}
 	if !l.Config.Enabled {
-		log.Warn("llmobs: LLMObs span was started without enabling LLMObs")
+		log.Warn("llmobs: LLMObs span was started without enabling LLMObs") //errtrack:ignore caller used the LLMObs API before enabling it
 		return span, ctx
 	}
 
@@ -583,7 +583,7 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 		span.mlApp = span.propagatedMLApp()
 		if span.mlApp == "" {
 			// We should ensure there's always an ML App to fall back to during startup, so in theory this should never happen.
-			log.Warn("llmobs: ML App is required for sending LLM Observability data.")
+			log.Warn("llmobs: ML App is required for sending LLM Observability data.") //errtrack:ignore per-span lifecycle invariant guard
 		}
 	}
 

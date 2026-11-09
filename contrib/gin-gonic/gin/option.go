@@ -32,6 +32,9 @@ type config struct {
 	isStatusError func(statusCode int) bool
 	useGinErrors  bool
 	headerTags    instrumentation.HeaderTags
+	// otelEnabled is captured when Middleware is called. Dynamic configuration
+	// would require updating or recreating existing middleware.
+	otelEnabled bool
 }
 
 func newConfig(serviceName string) *config {
@@ -42,12 +45,12 @@ func newConfig(serviceName string) *config {
 	}
 	cfg := &config{
 		analyticsRate: instr.AnalyticsRate(true),
-		resourceNamer: defaultResourceNamer,
 		serviceName:   serviceName,
 		serviceSource: serviceSource,
 		ignoreRequest: func(_ *gin.Context) bool { return false },
 		useGinErrors:  false,
 		headerTags:    instr.HTTPHeadersAsTags(),
+		otelEnabled:   instr.OTelSemanticsEnabled(),
 	}
 
 	if fn := httptrace.GetErrorCodesFromInput(env.Get(envServerErrorStatuses)); fn != nil {

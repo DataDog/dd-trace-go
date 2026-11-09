@@ -12,9 +12,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/config"
 )
 
 func TestInitGlobalLoggerProvider(t *testing.T) {
+	config.SetUseFreshConfig(true)
+	t.Cleanup(func() { config.SetUseFreshConfig(false) })
 	t.Run("creates LoggerProvider", func(t *testing.T) {
 		// Clean up any existing provider
 		_ = ShutdownGlobalLoggerProvider(context.Background())
@@ -88,10 +92,10 @@ func TestInitGlobalLoggerProvider(t *testing.T) {
 		assert.NotNil(t, provider)
 
 		// Verify env vars were read
-		assert.Equal(t, 1024, resolveBLRPMaxQueueSize())
-		assert.Equal(t, 500*time.Millisecond, resolveBLRPScheduleDelay())
-		assert.Equal(t, 15000*time.Millisecond, resolveBLRPExportTimeout())
-		assert.Equal(t, 256, resolveBLRPMaxExportBatchSize())
+		assert.Equal(t, 1024, config.Get().BLRPMaxQueueSize())
+		assert.Equal(t, 500*time.Millisecond, config.Get().BLRPScheduleDelay())
+		assert.Equal(t, 15000*time.Millisecond, config.Get().BLRPExportTimeout())
+		assert.Equal(t, 256, config.Get().BLRPMaxExportBatchSize())
 
 		// Clean up
 		err = ShutdownGlobalLoggerProvider(context.Background())

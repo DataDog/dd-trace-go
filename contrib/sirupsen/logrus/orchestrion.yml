@@ -15,15 +15,8 @@ aspects:
     advice:
       - inject-declarations:
           imports:
-            telemetry: github.com/DataDog/dd-trace-go/v2/internal/telemetry
-            tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
-            ext: github.com/DataDog/dd-trace-go/v2/ddtrace/ext
+            tracing: github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2/internal/tracing
           template: |-
-            func init() {
-              telemetry.LoadIntegration("sirupsen/logrus")
-              tracer.MarkIntegrationImported("github.com/sirupsen/logrus")
-            }
-
             // DDContextLogHook ensures that any span in the log context is correlated to log output.
             type DDContextLogHook struct{}
 
@@ -34,12 +27,7 @@ aspects:
 
             // Fire implements logrus.Hook interface, attaches trace and span details found in entry context
             func (d *DDContextLogHook) Fire(e *Entry) error {
-              span, found := tracer.SpanFromContext(e.Context)
-              if !found {
-                return nil
-              }
-              e.Data[ext.LogKeyTraceID] = span.Context().TraceID()
-              e.Data[ext.LogKeySpanID] = span.Context().SpanID()
+              tracing.InjectTraceFields(e.Context, e.Data)
               return nil
             }
 

@@ -16,3 +16,11 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestAppSec(t *testing.T) {
+	harness.Run(t, new(TestCaseAppSec))
+}
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}

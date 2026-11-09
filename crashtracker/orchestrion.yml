@@ -12,6 +12,9 @@ meta:
     start uses DD_* environment configuration; a later programmatic Start call
     in main is a no-op because crashtracker keeps the first successful start.
 
+    This integration is opt-in. It is not part of orchestrion/all, so a project
+    enables it by importing this package in its orchestrion.tool.go file.
+
     Ordering with respect to the tracer and profiler: the tracer and profiler
     aspects use inject-declarations to emit func init() calls, which run before
     main() starts. This aspect uses prepend-statements inside main(), so

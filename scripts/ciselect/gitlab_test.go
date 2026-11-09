@@ -9,9 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
 
 const microBenchPath = ".gitlab/benchmarks/micro/gitlab-ci.yml"
@@ -86,6 +89,79 @@ func TestBenchmarkChangesCoverEveryBenchmark(t *testing.T) {
 	for _, name := range missing {
 		t.Errorf("%s lists benchmark %q, but no `func %s(` exists. The runner matches with "+
 			"`-bench ^%s$`, so it measures nothing.", microBenchPath, name, name, name)
+	}
+}
+
+// The gate reads uploaded results. It must wait for every microbenchmarks-N
+// job in the local pipeline file, including jobs added after this test.
+func TestPerformanceGateWaitsForEveryBenchmarkGroup(t *testing.T) {
+	_, _, root := testTable(t)
+	var pipeline map[string]any
+	if err := yaml.Unmarshal([]byte(readText(t, root, microBenchPath)), &pipeline); err != nil {
+		t.Fatal(err)
+	}
+	gate, ok := pipeline["pr-performance-gates"].(map[string]any)
+	if !ok {
+		t.Fatal("missing pr-performance-gates job")
+	}
+	needs := gitlabNeeds(gate["needs"])
+	groups := 0
+	for name, value := range pipeline {
+		if !strings.HasPrefix(name, "microbenchmarks-") {
+			continue
+		}
+		if _, ok := value.(map[string]any); !ok {
+			t.Errorf("%s is not a job mapping", name)
+			continue
+		}
+		groups++
+		if !contains(needs, name) {
+			t.Errorf("pr-performance-gates must need %s so it waits for that group's uploads", name)
+		}
+	}
+	if groups == 0 {
+		t.Fatal("no microbenchmark groups found")
+	}
+	for _, name := range needs {
+		if strings.HasPrefix(name, "microbenchmarks-") && pipeline[name] == nil {
+			t.Errorf("gate needs unknown benchmark group %s", name)
+		}
+	}
+}
+
+func gitlabNeeds(value any) []string {
+	out := needsList(value)
+	if entries, ok := value.([]any); ok {
+		for _, entry := range entries {
+			if mapping, ok := entry.(map[string]any); ok {
+				if job, ok := mapping["job"].(string); ok {
+					out = append(out, job)
+				}
+			}
+		}
+	}
+	return out
+}
+
+func TestGitlabNeeds(t *testing.T) {
+	for _, tc := range []struct {
+		name, source string
+		want         []string
+	}{
+		{"empty", "[]", nil},
+		{"strings", "[microbenchmarks-1, microbenchmarks-2]", []string{"microbenchmarks-1", "microbenchmarks-2"}},
+		{"mapping", "[{job: microbenchmarks-3, artifacts: false}]", []string{"microbenchmarks-3"}},
+		{"mixed", "[microbenchmarks-1, {job: microbenchmarks-3}]", []string{"microbenchmarks-1", "microbenchmarks-3"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var value any
+			if err := yaml.Unmarshal([]byte(tc.source), &value); err != nil {
+				t.Fatal(err)
+			}
+			if got := gitlabNeeds(value); !slices.Equal(got, tc.want) {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 

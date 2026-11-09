@@ -15,6 +15,7 @@ on:
       - 'internal/appsec/**'
       - 'appsec/**'
       - 'contrib/**/appsec.go'
+      - 'contrib/gofiber/fiber.v2/**'
       - '**/go.mod'
   push:
     branches:
@@ -24,6 +25,7 @@ on:
       - 'instrumentation/**'
       - 'internal/**'
       - 'orchestrion/**'
+      - 'otelc/**'
       - 'scripts/**'
 env:
   GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
@@ -35,6 +37,7 @@ env:
   SUBMODULES: >-
     ./contrib/database/sql
     ./contrib/gin-gonic/gin
+    ./contrib/gofiber/fiber.v2
     ./contrib/google.golang.org/grpc
     ./contrib/net/http
     ./contrib/gorilla/mux
@@ -115,7 +118,7 @@ jobs:
       - go-mod-caching
     strategy:
       matrix:
-        runs-on: [ macos-14, macos-latest ] # oldest and newest macos runners available
+        runs-on: [ macos-15, macos-latest ] # oldest and newest macos runners available
         go-version: [ "1.27", "1.26" ]
       fail-fast: true # saving some CI time - macos runners are too long to get
     steps:
@@ -365,7 +368,7 @@ jobs:
           sudo apt update
           sudo apt install -y ca-certificates curl
           sudo install -m 0755 -d /etc/apt/keyrings
-          sudo curl -fsSL "https://download.docker.com/linux/ubuntu/gpg" -o /etc/apt/keyrings/docker.asc
+          sudo curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 60 "https://download.docker.com/linux/ubuntu/gpg" -o /etc/apt/keyrings/docker.asc
           sudo chmod a+r /etc/apt/keyrings/docker.asc
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list
           sudo apt update

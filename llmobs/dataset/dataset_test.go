@@ -27,6 +27,9 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/llmobstest"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
 	llmobstransport "github.com/DataDog/dd-trace-go/v2/internal/llmobs/transport"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
 const (
@@ -977,6 +980,62 @@ func TestDatasetPull(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, 2, rec.Version(), "record Version must equal the pulled snapshot version")
 	})
+}
+
+func TestPull_MissingBackendRecordIDs_LogsLocallyWithoutReporting(t *testing.T) {
+	agent, err := tracertest.StartAgent(t)
+	require.NoError(t, err)
+	coll := llmobstest.New(t)
+	coll.HandleFunc("/api/unstable/llm-obs/v1/", createMockHandler())
+	coll.HandleFunc("/api/v2/llm-obs/v1/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || !strings.Contains(r.URL.Path, "/records") {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		// The literal response verifies that malformed backend records are
+		// dropped at ingress. Both empty IDs must result in one local log and
+		// neither record may reach the Dataset.
+		const recordsResponse = `{
+			"data": [
+				{"id": "record-1", "type": "dataset_records", "attributes": {"input": "valid"}},
+				{"id": "", "type": "dataset_records", "attributes": {"input": "missing-one"}},
+				{"id": "", "type": "dataset_records", "attributes": {"input": "missing-two"}}
+			],
+			"meta": {}
+		}`
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(recordsResponse))
+	})
+	_, err = tracertest.Start(t, agent,
+		tracer.WithLLMObsEnabled(true),
+		tracer.WithLLMObsMLApp("test-app"),
+		tracer.WithLLMObsAgentlessEnabled(false),
+		tracer.WithLLMObsProjectName("test-project"),
+		tracer.WithService("test-service"),
+		tracer.WithLogStartup(false),
+		coll.TracerOption(),
+	)
+	require.NoError(t, err)
+
+	tp := new(log.RecordLogger)
+	defer log.UseLogger(tp)()
+
+	client, rt := telemetrytest.NewCapturingClient(t)
+	defer telemetry.MockClient(client)()
+
+	ds, err := Pull(context.Background(), "existing-dataset")
+	require.NoError(t, err)
+	assert.Equal(t, 1, ds.Len(), "records without IDs must be discarded at ingress")
+
+	log.Flush()
+	client.Flush()
+
+	logs := tp.Logs()
+	require.Len(t, logs, 1)
+	assert.Contains(t, logs[0], "llmobs: backend returned dataset records without IDs; discarding malformed records")
+	assert.Empty(t, rt.LogMessages(), "Pull is a caller request path and must not report to Error Tracking")
 }
 
 func TestDatasetRecordIteration(t *testing.T) {

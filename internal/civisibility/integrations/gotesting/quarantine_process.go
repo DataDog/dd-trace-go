@@ -865,10 +865,20 @@ func runQuarantinedRaceChildSubtest(t *testing.T, original func(*testing.T), par
 	callbackPC := reflect.ValueOf(original).Pointer()
 	moduleName, suiteName := utils.GetModuleAndSuiteName(callbackPC)
 	sourceFunc := runtime.FuncForPC(callbackPC)
-	if testifyData := getTestifyTest(t); testifyData != nil && testifyData.methodFunc != nil {
+	if testifyData := getTestifyTest(t); testifyData != nil {
 		moduleName = testifyData.moduleName
 		suiteName = testifyData.suiteName
-		sourceFunc = testifyData.methodFunc
+		if testifyData.methodFunc != nil {
+			sourceFunc = testifyData.methodFunc
+		}
+	} else {
+		// Out-of-root discovery carriers have no identity. The retry config
+		// already carries the selected root's module from the parent process.
+		fallbackModule := state.cfg.Root.ModuleName
+		if fallbackModule == "" {
+			fallbackModule = moduleName
+		}
+		moduleName = subtestModuleName(fallbackModule, parent)
 	}
 	execMeta := createTestMetadata(t, nil)
 	execMeta.test = parent.test

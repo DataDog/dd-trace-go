@@ -36,8 +36,10 @@ var changeToWafUpdates sync.Once
 // TODO: add request_excluded to the mix once we have the capability to track it (blocked on libddwaf)
 type RequestMilestones struct {
 	requestBlocked bool
+	blockFailure   bool
 	ruleTriggered  bool
 	wafTimeout     bool
+	// rateLimited is true when a WAF or RASP run had keep=true and the global limiter denied it.
 	rateLimited    bool
 	wafError       bool
 	inputTruncated bool
@@ -185,10 +187,11 @@ type ContextMetrics struct {
 	// SumRASPCalls is the sum of all the RASP calls made by the WAF whatever the rasp rule type it is.
 	SumRASPCalls atomic.Uint32
 	// WAFErrorCode is the closest-to-zero (least-negative) ddwaf_run error code seen in the WAF scope.
-	// Zero means no error occurred. See RFC-1012.
+	// Zero means no error occurred. Timeouts are not errors and are not recorded here. See RFC-1012.
 	WAFErrorCode atomic.Int32
 	// RASPErrorCodes holds the closest-to-zero ddwaf_run error code per RASP rule type.
-	// Zero means no error occurred for that rule type. See RFC-1012.
+	// Zero means no error occurred for that rule type. Timeouts are not errors and are not recorded here.
+	// See RFC-1012.
 	RASPErrorCodes [len(addresses.RASPRuleTypes)]atomic.Int32
 
 	// exceptionOnce + exception store the first exception atomically.
@@ -215,8 +218,42 @@ type ContextMetrics struct {
 	// Milestones are the tags of the metric `waf.requests` that will be submitted at the end of the waf context
 	Milestones RequestMilestones
 
+	blockRequested atomic.Bool
+	blockFailed    atomic.Bool
+	blockApplied   atomic.Bool
+
 	// logger is a pre-configured logger with appsec product tags
 	logger *telemetrylog.Logger
+}
+
+// SetBlockRequested records that the WAF returned a WAF-scope block_request action.
+func (m *ContextMetrics) SetBlockRequested() {
+	m.blockRequested.Store(true)
+}
+
+// SetBlockFailed records that a requested block could not be enforced.
+func (m *ContextMetrics) SetBlockFailed() {
+	m.blockFailed.Store(true)
+}
+
+// SetBlockApplied records that a block response was applied to the request.
+// An applied block has precedence over a failure that another action reports.
+func (m *ContextMetrics) SetBlockApplied() {
+	m.blockApplied.Store(true)
+}
+
+// resolveBlockMilestones turns the block decision and its enforcement outcome
+// into the `request_blocked` and `block_failure` tags of `waf.requests`. The
+// caller must hold milestonesMu.
+func (m *ContextMetrics) resolveBlockMilestones() {
+	// A requested block counts as enforced unless a failure was reported, so an
+	// integration that cannot report its outcome keeps the previous behavior.
+	// When a block response was applied, the request was blocked: a failure
+	// that a later action reports does not change this.
+	blockRequested := m.blockRequested.Load()
+	blockFailure := blockRequested && m.blockFailed.Load() && !m.blockApplied.Load()
+	m.Milestones.blockFailure = blockFailure
+	m.Milestones.requestBlocked = blockRequested && !blockFailure
 }
 
 // Submit increment the metrics for the WAF run stats at the end of each waf context lifecycle
@@ -286,11 +323,16 @@ func (m *ContextMetrics) Submit(truncations libddwaf.Truncations, timerStats map
 // incWafRequestsCounts increments the `waf.requests` metric with the current milestones and creates a new metric handle if it does not exist
 func (m *ContextMetrics) incWafRequestsCounts() {
 	m.milestonesMu.Lock()
+	// Resolve the block outcome in the same critical section as the snapshot, so
+	// that a block reported earlier in Submit is not lost from the tags. The
+	// snapshot is the cutoff: an outcome reported after it is not included.
+	m.resolveBlockMilestones()
 	milestones := m.Milestones
 	m.milestonesMu.Unlock()
 	handle, _ := m.wafRequestsCounts.LoadOrCompute(milestones, func() (telemetry.MetricHandle, bool) {
 		return telemetry.Count(telemetry.NamespaceAppSec, "waf.requests", append([]string{
 			"request_blocked:" + strconv.FormatBool(milestones.requestBlocked),
+			"block_failure:" + strconv.FormatBool(milestones.blockFailure),
 			"rule_triggered:" + strconv.FormatBool(milestones.ruleTriggered),
 			"waf_timeout:" + strconv.FormatBool(milestones.wafTimeout),
 			"rate_limited:" + strconv.FormatBool(milestones.rateLimited),
@@ -318,6 +360,13 @@ func (m *ContextMetrics) RegisterWafRun(addrs addresses.RunAddressData, timerSta
 	switch addrs.TimerKey {
 	case addresses.RASPScope:
 		m.SumRASPCalls.Add(1)
+		// The limiter denial is a request-level milestone for waf.requests, also for a RASP run.
+		// Set it before the early return below, so an unknown RASP address cannot hide it.
+		if tags.rateLimited {
+			m.milestonesMu.Lock()
+			m.Milestones.rateLimited = true
+			m.milestonesMu.Unlock()
+		}
 		ruleType, ok := addresses.RASPRuleTypeFromAddressSet(addrs)
 		if !ok {
 			m.logger.Error("unexpected call to RASPRuleTypeFromAddressSet")
@@ -330,6 +379,8 @@ func (m *ContextMetrics) RegisterWafRun(addrs addresses.RunAddressData, timerSta
 			blockTag := "block:irrelevant"
 			if tags.requestBlocked {
 				blockTag = "block:success"
+			} else if tags.blockFailure {
+				blockTag = "block:failure"
 			}
 
 			handle, _ := m.raspRuleMatch.LoadOrCompute(raspMetricKey[string]{typ: ruleType, additionalTag: blockTag}, func() (telemetry.MetricHandle, bool) {
@@ -346,7 +397,7 @@ func (m *ContextMetrics) RegisterWafRun(addrs addresses.RunAddressData, timerSta
 	case addresses.WAFScope, "":
 		m.milestonesMu.Lock()
 		if tags.requestBlocked {
-			m.Milestones.requestBlocked = true
+			m.SetBlockRequested()
 		}
 		if tags.ruleTriggered {
 			m.Milestones.ruleTriggered = true
@@ -373,12 +424,19 @@ func (m *ContextMetrics) RegisterWafRun(addrs addresses.RunAddressData, timerSta
 // It registers the metrics:
 // - `waf.error`
 // - `rasp.error`
+//
+// A timeout is not counted here: [ContextMetrics.RegisterWafRun] counts it.
 func (m *ContextMetrics) IncWafError(addrs addresses.RunAddressData, in error) {
 	if in == nil {
 		return
 	}
 
-	if !errors.Is(in, waferrors.ErrTimeout) {
+	// A timeout is not an error. RegisterWafRun counts it: rasp.timeout for RASP,
+	// waf.requests{waf_timeout:true} for the WAF scope. Do not count it again in
+	// rasp.error or waf.error. The scope and rule type checks below still apply.
+	timeout := errors.Is(in, waferrors.ErrTimeout)
+
+	if !timeout {
 		switch addrs.TimerKey {
 		case addresses.RASPScope:
 			m.RecordException(ExceptionTypeRASP, in)
@@ -394,9 +452,13 @@ func (m *ContextMetrics) IncWafError(addrs addresses.RunAddressData, in error) {
 			m.RecordException(ExceptionTypeInstrumentation, fmt.Errorf("unknown RASP rule type for addresses %v: %w", addrs, in))
 			return
 		}
-		m.raspError(in, ruleType)
+		if !timeout {
+			m.raspError(in, ruleType)
+		}
 	case addresses.WAFScope, "":
-		m.wafError(in)
+		if !timeout {
+			m.wafError(in)
+		}
 	default:
 		m.RecordException(ExceptionTypeInstrumentation, fmt.Errorf("unexpected WAF error scope %q: %w", addrs.TimerKey, in))
 	}

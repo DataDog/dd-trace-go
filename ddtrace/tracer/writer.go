@@ -296,18 +296,18 @@ func (h *agentTraceWriter) sendAsync(p payload) {
 				// not just this one (see doc.go).
 				h.downgradeAfterRejectedSend()
 				h.statsd.Count("datadog.tracer.traces_dropped", int64(stats.itemCount), []string{"reason:v1_rejected"}, 1)
-				log.Error("agent rejected a v1 trace payload; dropping %d traces and downgrading to v0.4", stats.itemCount)
+				log.Error("agent rejected a v1 trace payload; dropping %d traces and downgrading to v0.4", stats.itemCount) //errtrack:ignore agent compatibility response already reported as a count
 				return
 			}
 
 			if (attempt+1)%5 == 0 {
-				log.Error("failure sending traces (attempt %d of %d): %v", attempt+1, sendRetries+1, err.Error())
+				log.Error("failure sending traces (attempt %d of %d): %v", attempt+1, sendRetries+1, err.Error()) //errtrack:ignore agent or network failure
 			}
 			p.reset()
 			time.Sleep(retryInterval)
 		}
 		h.statsd.Count("datadog.tracer.traces_dropped", int64(stats.itemCount), []string{"reason:send_failed"}, 1)
-		log.Error("lost %d traces: %v", stats.itemCount, err.Error())
+		log.Error("lost %d traces: %v", stats.itemCount, err.Error()) //errtrack:ignore agent or network failure already reported as a count
 	}(p)
 }
 

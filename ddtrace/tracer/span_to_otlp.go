@@ -9,6 +9,10 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
+	"strconv"
+	"strings"
 
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlpresource "go.opentelemetry.io/proto/otlp/resource/v1"
@@ -27,14 +31,20 @@ const maxAttributesCount = 128
 // Resource construction
 // -----------------------------------------------------------------------------
 
-// buildBaseResourceAttrs returns the telemetry.sdk.* and service.* resource attributes
-// shared by both trace and metrics OTLP exports.
-func buildBaseResourceAttrs(serviceName, svcVersion, env string) []*otlpcommon.KeyValue {
+// buildBaseResourceAttrs returns the telemetry.sdk.*, service.* and SDK adoption
+// resource attributes shared by both trace and metrics OTLP exports.
+func buildBaseResourceAttrs(serviceName, svcVersion, env string, otelSemantics bool) []*otlpcommon.KeyValue {
+	semantics := "datadog"
+	if otelSemantics {
+		semantics = "otel"
+	}
 	attrs := []*otlpcommon.KeyValue{
 		otlpKeyValue("service.name", otlpStringValue(serviceName)),
 		otlpKeyValue("telemetry.sdk.language", otlpStringValue("go")),
 		otlpKeyValue("telemetry.sdk.name", otlpStringValue("datadog")),
 		otlpKeyValue("telemetry.sdk.version", otlpStringValue(version.Tag)),
+		otlpKeyValue(keySDKOTLPExport, otlpStringValue("true")),
+		otlpKeyValue("datadog.sdk.semantics", otlpStringValue(semantics)),
 	}
 	if env != "" {
 		attrs = append(attrs, otlpKeyValue("deployment.environment.name", otlpStringValue(env)))
@@ -45,13 +55,82 @@ func buildBaseResourceAttrs(serviceName, svcVersion, env string) []*otlpcommon.K
 	return attrs
 }
 
+// ignoredGlobalTags are global tag keys (compared case-insensitively) that are
+// not written as resource attributes, because the resource carries them under
+// their canonical OTel name or the tracer owns them.
+var ignoredGlobalTags = map[string]struct{}{
+	"service":                     {},
+	ext.Environment:               {},
+	ext.Version:                   {},
+	"service.name":                {},
+	"deployment.environment.name": {},
+	"service.version":             {},
+	"telemetry.sdk.name":          {},
+	"telemetry.sdk.version":       {},
+	"telemetry.sdk.language":      {},
+	"datadog.sdk.semantics":       {},
+	keySDKOTLPExport:              {},
+	"_dd.stats_computed":          {},
+	// The tracer turns these into span fields or the error flag, so spans
+	// never carry them as tags.
+	ext.SpanName:          {},
+	ext.ResourceName:      {},
+	ext.SpanType:          {},
+	ext.Error:             {},
+	ext.ErrorNoStackTrace: {},
+}
+
 // buildResource constructs the OTLP Resource from resolved tracer configuration.
-// If cfg is nil, an empty resource is returned.
+// If cfg is nil, an empty resource is returned. The string global tags (DD_TAGS,
+// leftover OTEL_RESOURCE_ATTRIBUTES, WithGlobalTag) are added as resource
+// attributes, except ignoredGlobalTags.
 func buildResource(cfg *internalconfig.Config) *otlpresource.Resource {
 	if cfg == nil {
 		return &otlpresource.Resource{}
 	}
-	return &otlpresource.Resource{Attributes: buildBaseResourceAttrs(cfg.ServiceName(), cfg.Version(), cfg.Env())}
+	attrs := buildBaseResourceAttrs(cfg.ServiceName(), cfg.Version(), cfg.Env(), cfg.OTelSemanticsEnabled())
+	// Signal to the backend that the SDK has computed stats so it does not
+	// recompute them from the trace spans.
+	if cfg.OTLPSpanMetricsEnabled() {
+		attrs = append(attrs, otlpKeyValue("_dd.stats_computed", otlpStringValue("true")))
+	}
+	otelSemantics := cfg.OTelSemanticsEnabled()
+	globalTags := cfg.GlobalTags()
+	for _, key := range slices.Sorted(maps.Keys(globalTags)) {
+		value, ok := globalTags[key].(string)
+		if !ok {
+			continue
+		}
+		if _, ok := ignoredGlobalTags[strings.ToLower(key)]; ok {
+			continue
+		}
+		if otelSemantics {
+			// Encoded as integers on spans; keep them there rather than
+			// exporting them as resource strings.
+			if _, ok := otelIntMetricKeys[key]; ok {
+				continue
+			}
+			// Omitted from spans under OTel semantics; don't reintroduce them
+			// on the resource.
+			if _, ok := ddOnlyAttributeKeys[key]; ok {
+				continue
+			}
+		}
+		attrs = append(attrs, otlpKeyValue(key, otlpStringValue(value)))
+	}
+	return &otlpresource.Resource{Attributes: attrs}
+}
+
+// resourceStringAttrs returns the string attributes of r, which convertSpan uses
+// to avoid repeating them on spans.
+func resourceStringAttrs(r *otlpresource.Resource) map[string]string {
+	attrs := make(map[string]string, len(r.Attributes))
+	for _, kv := range r.Attributes {
+		if v, ok := kv.Value.Value.(*otlpcommon.AnyValue_StringValue); ok {
+			attrs[kv.Key] = v.StringValue
+		}
+	}
+	return attrs
 }
 
 // -----------------------------------------------------------------------------
@@ -62,8 +141,10 @@ func buildResource(cfg *internalconfig.Config) *otlpresource.Resource {
 // low 8 bits of the OTLP Span.Flags field.
 const otlpTraceFlagSampled = uint32(0x1)
 
+// Span tags with the same key and value as one of resourceAttrs are not
+// repeated as span attributes, since the resource already carries them.
 // +checklocksignore — Post-finish: reads finished span fields during payload encoding.
-func convertSpan(s *Span, defaultServiceName string, otelSemantics bool) *otlptrace.Span {
+func convertSpan(s *Span, defaultServiceName string, otelSemantics bool, resourceAttrs map[string]string) *otlptrace.Span {
 	p, ok := s.context.SamplingPriority()
 	if ok && p < ext.PriorityAutoKeep {
 		return nil
@@ -76,7 +157,7 @@ func convertSpan(s *Span, defaultServiceName string, otelSemantics bool) *otlptr
 		Kind:              convertSpanKind(getSpanKind(s)),
 		StartTimeUnixNano: uint64(s.start),
 		EndTimeUnixNano:   uint64(s.start + s.duration),
-		Attributes:        convertSpanAttributes(s, defaultServiceName, otelSemantics),
+		Attributes:        convertSpanAttributes(s, defaultServiceName, otelSemantics, resourceAttrs),
 		Events:            convertEvents(s),
 		Links:             convertSpanLinks(s.spanLinks),
 		Status:            convertSpanStatus(s),
@@ -193,23 +274,23 @@ func addAttribute(attrs *[]*otlpcommon.KeyValue, key string, val *otlpcommon.Any
 // Datadog stores numeric tags as float64, so these are re-encoded as OTLP intValue
 // rather than doubleValue to conform to the data model.
 var otelIntMetricKeys = map[string]struct{}{
-	"http.response.status_code": {},
-	"http.response.body.size":   {},
-	"http.request.body.size":    {},
-	"server.port":               {},
-	"network.peer.port":         {},
-	"network.destination.port":  {},
-	"client.port":               {},
+	ext.HTTPResponseStatusCode: {},
+	ext.HTTPResponseBodySize:   {},
+	ext.HTTPRequestBodySize:    {},
+	ext.ServerPort:             {},
+	ext.NetworkPeerPort:        {},
+	ext.NetworkDestinationPort: {},
+	ext.ClientPort:             {},
 }
 
-// ddOnlyMetaKeys are Datadog-specific span tags omitted under OTelSemanticsEnabled;
+// ddOnlyAttributeKeys are Datadog-specific span tags omitted under OTelSemanticsEnabled;
 // they have no OTel equivalent. span.kind is already carried by the OTLP SpanKind field.
 // error.type is intentionally excluded: it is a stable OTel span attribute that
 // instrumentation sets directly (e.g. otelhttp on failed requests), independent of
 // RecordError's "exception" event (exception.type/message/stacktrace). #4889 originally
 // suppressed it on the assumption it lived on the exception event instead; it doesn't,
 // so it passes through here.
-var ddOnlyMetaKeys = map[string]struct{}{
+var ddOnlyAttributeKeys = map[string]struct{}{
 	ext.ErrorMsg:           {},
 	ext.ErrorStack:         {},
 	ext.ErrorHandlingStack: {},
@@ -217,7 +298,7 @@ var ddOnlyMetaKeys = map[string]struct{}{
 }
 
 // +checklocksignore — Post-finish: reads finished span fields during payload encoding.
-func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics bool) []*otlpcommon.KeyValue {
+func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics bool, resourceAttrs map[string]string) []*otlpcommon.KeyValue {
 	n := s.meta.Count() + len(s.metrics) + len(s.metaStruct) + 3
 	if s.service != defaultServiceName {
 		n++
@@ -241,16 +322,35 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 		}
 	}
 	for key, value := range s.meta.All() {
+		if v, ok := resourceAttrs[key]; ok && v == value {
+			continue // already carried by the resource
+		}
 		if otelSemantics {
-			if _, skip := ddOnlyMetaKeys[key]; skip {
+			if _, skip := ddOnlyAttributeKeys[key]; skip {
 				continue
 			}
 		}
-		if !addAttribute(&attrs, key, otlpStringValue(value)) {
+		av := otlpStringValue(value)
+		if otelSemantics {
+			if _, isInt := otelIntMetricKeys[key]; isInt {
+				if value, err := strconv.ParseInt(value, 10, 64); err == nil {
+					av = otlpIntValue(value)
+				}
+			}
+		}
+		if !addAttribute(&attrs, key, av) {
 			return attrs
 		}
 	}
 	for key, value := range s.metrics {
+		if otelSemantics {
+			if _, skip := ddOnlyAttributeKeys[key]; skip {
+				continue
+			}
+			if _, exists := s.meta.Get(key); exists {
+				continue
+			}
+		}
 		var av *otlpcommon.AnyValue
 		if _, isInt := otelIntMetricKeys[key]; isInt {
 			av = otlpIntValue(int64(value))
@@ -316,11 +416,11 @@ func otlpKeyValue(key string, value *otlpcommon.AnyValue) *otlpcommon.KeyValue {
 	if value == nil {
 		return nil
 	}
-	return &otlpcommon.KeyValue{Key: key, Value: value}
+	return &otlpcommon.KeyValue{Key: strings.ToValidUTF8(key, "\uFFFD"), Value: value}
 }
 
 func otlpStringValue(s string) *otlpcommon.AnyValue {
-	return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_StringValue{StringValue: s}}
+	return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_StringValue{StringValue: strings.ToValidUTF8(s, "\uFFFD")}}
 }
 
 func otlpDoubleValue(d float64) *otlpcommon.AnyValue {

@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +37,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
 const componentName = "aws/aws-sdk-go-v2/aws"
@@ -62,7 +64,14 @@ func prepConfig(opts ...Option) *config {
 }
 
 func appendMiddleware(cfg *config, apiOptions *[]func(*middleware.Stack) error) {
-	tm := traceMiddleware{cfg: cfg}
+	tm := traceMiddleware{
+		cfg:         cfg,
+		sqs:         sqsTracer.NewEnricher(cfg.injectSQS),
+		sns:         snsTracer.NewEnricher(cfg.injectSNS),
+		kinesis:     kinesisTracer.NewEnricher(cfg.injectKinesis),
+		eventBridge: eventBridgeTracer.NewEnricher(cfg.injectEventBridge),
+		sfn:         sfnTracer.NewEnricher(cfg.injectSFN),
+	}
 	*apiOptions = append(*apiOptions, tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware)
 }
 
@@ -76,8 +85,18 @@ func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
 	appendMiddleware(prepConfig(opts...), &awsCfg.APIOptions)
 }
 
+// enricher adds the Datadog trace context and the Data Streams checkpoint to the request of one AWS service.
+type enricher interface {
+	EnrichOperation(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, operation string)
+}
+
 type traceMiddleware struct {
-	cfg *config
+	cfg         *config
+	sqs         enricher
+	sns         enricher
+	kinesis     enricher
+	eventBridge enricher
+	sfn         enricher
 }
 
 func (mw *traceMiddleware) initTraceMiddleware(stack *middleware.Stack) error {
@@ -143,15 +162,15 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		// Inject trace context
 		switch serviceID {
 		case "SQS":
-			sqsTracer.EnrichOperation(spanctx, span, in, operation)
+			mw.sqs.EnrichOperation(spanctx, span, in, operation)
 		case "SNS":
-			snsTracer.EnrichOperation(spanctx, span, in, operation)
+			mw.sns.EnrichOperation(spanctx, span, in, operation)
 		case "Kinesis":
-			kinesisTracer.EnrichOperation(spanctx, span, in, operation)
+			mw.kinesis.EnrichOperation(spanctx, span, in, operation)
 		case "EventBridge":
-			eventBridgeTracer.EnrichOperation(spanctx, span, in, operation)
+			mw.eventBridge.EnrichOperation(spanctx, span, in, operation)
 		case "SFN":
-			sfnTracer.EnrichOperation(span, in, operation)
+			mw.sfn.EnrichOperation(spanctx, span, in, operation)
 		case "DynamoDB":
 			spanctx = spanpointers.SetDynamoDbParamsOnContext(spanctx, in.Parameters)
 		}
@@ -412,6 +431,9 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 			// Make a copy of the URL so we don't modify the outgoing request
 			url := *req.URL
 			url.User = nil // Do not include userinfo in the HTTPURL tag.
+			// Obfuscate the query string (for example, a presigned URL signature),
+			// or remove it when it must not be reported.
+			redactURLQuery(&url)
 			span.SetTag(ext.HTTPMethod, req.Method)
 			span.SetTag(ext.HTTPURL, url.String())
 			span.SetTag(ext.AWSAgent, req.Header.Get("User-Agent"))
@@ -467,4 +489,30 @@ func coalesceNameOrArnResource(name *string, arnVal *string) string {
 	}
 
 	return ""
+}
+
+// redactURLQuery obfuscates the query string of u for the http.url tag (for
+// example, a presigned URL signature), or removes it when it must not be
+// reported. u must be a copy of the request URL. An opaque URL can also
+// contain user information and a query string: the user information is
+// removed, and the query string is moved to RawQuery before the obfuscation.
+func redactURLQuery(u *url.URL) {
+	if rest, ok := strings.CutPrefix(u.Opaque, "//"); ok {
+		authority, path := rest, ""
+		if i := strings.IndexAny(rest, "/?#"); i >= 0 {
+			authority, path = rest[:i], rest[i:]
+		}
+		if i := strings.LastIndexByte(authority, '@'); i >= 0 {
+			u.Opaque = "//" + authority[i+1:] + path
+		}
+	}
+	if opaque, query, ok := strings.Cut(u.Opaque, "?"); ok {
+		u.Opaque = opaque
+		if u.RawQuery != "" {
+			query += "&" + u.RawQuery
+		}
+		u.RawQuery = query
+	}
+	u.RawQuery = httptrace.ObfuscateQueryString(u.RawQuery, httptrace.ForClientSpan())
+	u.ForceQuery = false
 }

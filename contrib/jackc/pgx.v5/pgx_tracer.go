@@ -8,10 +8,12 @@ package pgx
 import (
 	"context"
 	"strconv"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/sqlsec"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -36,23 +38,22 @@ const (
 	operationTypeAcquire                = "Acquire"
 )
 
-type tracedBatchQuery struct {
-	span *tracer.Span
-	data pgx.TraceBatchQueryData
-}
-
-func (tb *tracedBatchQuery) finish() {
-	tb.span.Finish(tracer.WithError(tb.data.Err))
-}
-
 // batchState holds per-batch mutable tracing state. It is stored in the context
 // returned by TraceBatchStart so that concurrent batches on different pool
 // connections each have isolated state, avoiding a race on shared pgxTracer fields.
 type batchState struct {
-	prevQuery *tracedBatchQuery
+	// lastCheckpoint is when the previous query in the batch had its result read,
+	// or the batch start time for the first query. It bounds the start of the next
+	// query's span.
+	lastCheckpoint time.Time
 }
 
 type contextKeyBatchState struct{}
+
+// customDataKeyAcquiredAt is the PgConn.CustomData key that holds the time a connection
+// leaves the pool. The value lives on the connection, so a hijacked connection that never
+// reaches TraceRelease leaks nothing into the tracer.
+const customDataKeyAcquiredAt = "dd-trace-go.pgx.acquired_at"
 
 type allPgxTracers interface {
 	pgx.QueryTracer
@@ -182,11 +183,14 @@ func defaultPoolName(connConfig *pgx.ConnConfig) string {
 }
 
 func (t *pgxTracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
-	if !t.cfg.traceQuery {
-		return ctx
+	if instr.AppSecRASPEnabled() {
+		sqlsec.MonitorSQLOperation(ctx, data.SQL, ext.DBSystemPostgreSQL)
 	}
 	if t.wrapped.query != nil {
 		ctx = t.wrapped.query.TraceQueryStart(ctx, conn, data)
+	}
+	if !t.cfg.traceQuery {
+		return ctx
 	}
 	opts := t.spanOptions(t.connInfoFor(conn), operationTypeQuery, data.SQL)
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.query", opts...)
@@ -194,11 +198,11 @@ func (t *pgxTracer) TraceQueryStart(ctx context.Context, conn *pgx.Conn, data pg
 }
 
 func (t *pgxTracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryEndData) {
-	if !t.cfg.traceQuery {
-		return
-	}
 	if t.wrapped.query != nil {
 		t.wrapped.query.TraceQueryEnd(ctx, conn, data)
+	}
+	if !t.cfg.traceQuery {
+		return
 	}
 	span, ok := tracer.SpanFromContext(ctx)
 	if ok {
@@ -208,67 +212,76 @@ func (t *pgxTracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.
 }
 
 func (t *pgxTracer) TraceBatchStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchStartData) context.Context {
-	if !t.cfg.traceBatch {
-		return ctx
+	if instr.AppSecRASPEnabled() {
+		for _, query := range data.Batch.QueuedQueries {
+			sqlsec.MonitorSQLOperation(ctx, query.SQL, ext.DBSystemPostgreSQL)
+		}
 	}
 	if t.wrapped.batch != nil {
 		ctx = t.wrapped.batch.TraceBatchStart(ctx, conn, data)
+	}
+	if !t.cfg.traceBatch {
+		return ctx
 	}
 	opts := t.spanOptions(t.connInfoFor(conn), operationTypeBatch, "",
 		tracer.Tag(tagBatchNumQueries, data.Batch.Len()),
 	)
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.batch", opts...)
-	ctx = context.WithValue(ctx, contextKeyBatchState{}, &batchState{})
+	ctx = context.WithValue(ctx, contextKeyBatchState{}, &batchState{lastCheckpoint: time.Now()})
 	return ctx
 }
 
 func (t *pgxTracer) TraceBatchQuery(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchQueryData) {
-	if !t.cfg.traceBatch {
-		return
-	}
 	if t.wrapped.batch != nil {
 		t.wrapped.batch.TraceBatchQuery(ctx, conn, data)
 	}
-	// Finish the previous batch query span before starting the next one, since pgx doesn't provide hooks or
-	// timestamp information about when the actual operation started or finished.
-	// batchState is stored per-batch in the context so concurrent batches on different pool connections
-	// each track their own prevQuery without racing on shared tracer state.
-	bs, _ := ctx.Value(contextKeyBatchState{}).(*batchState)
-	if bs != nil && bs.prevQuery != nil {
-		bs.prevQuery.finish()
-	}
-	opts := t.spanOptions(t.connInfoFor(conn), operationTypeQuery, data.SQL,
-		tracer.Tag(tagRowsAffected, data.CommandTag.RowsAffected()),
-	)
-	span, _ := tracer.StartSpanFromContext(ctx, "pgx.batch.query", opts...)
-	if bs != nil {
-		bs.prevQuery = &tracedBatchQuery{
-			span: span,
-			data: data,
-		}
-	}
-}
-
-func (t *pgxTracer) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchEndData) {
 	if !t.cfg.traceBatch {
 		return
 	}
+	// pgx reports a batch query only once its result has been read, and provides no
+	// timestamp for when the query itself started. The time elapsed since the previous
+	// checkpoint (the batch start, or the prior query's result) is the closest available
+	// estimate of this query's cost, so the span covers that interval. Attributing the
+	// interval until the next query is read instead would charge each query's cost to the
+	// query queued before it. The first query's span starts at the batch start, so it also
+	// absorbs the time to write the whole batch to the wire; server-side buffering can
+	// still attribute a batch-wide wait to the first query, since only client read times
+	// are observable.
+	// batchState is stored per-batch in the context so concurrent batches on different pool
+	// connections each track their own checkpoint without racing on shared tracer state.
+	now := time.Now()
+	start := now
+	if bs, _ := ctx.Value(contextKeyBatchState{}).(*batchState); bs != nil {
+		start = bs.lastCheckpoint
+		bs.lastCheckpoint = now
+	} // else: the hook fired without a traced batch start; the span deliberately
+	// reports as zero-duration rather than guessing an interval it cannot know.
+	opts := t.spanOptions(t.connInfoFor(conn), operationTypeQuery, data.SQL,
+		tracer.Tag(tagRowsAffected, data.CommandTag.RowsAffected()),
+		tracer.StartTime(start),
+	)
+	span, _ := tracer.StartSpanFromContext(ctx, "pgx.batch.query", opts...)
+	// FinishTime pins the end exactly at the checkpoint so consecutive query spans
+	// tile the batch span without gaps or overlap.
+	span.Finish(tracer.WithError(data.Err), tracer.FinishTime(now))
+}
+
+func (t *pgxTracer) TraceBatchEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceBatchEndData) {
 	if t.wrapped.batch != nil {
 		t.wrapped.batch.TraceBatchEnd(ctx, conn, data)
 	}
-	if bs, _ := ctx.Value(contextKeyBatchState{}).(*batchState); bs != nil && bs.prevQuery != nil {
-		bs.prevQuery.finish()
-		bs.prevQuery = nil
+	if !t.cfg.traceBatch {
+		return
 	}
 	t.finishSpan(ctx, data.Err)
 }
 
 func (t *pgxTracer) TraceCopyFromStart(ctx context.Context, conn *pgx.Conn, data pgx.TraceCopyFromStartData) context.Context {
-	if !t.cfg.traceCopyFrom {
-		return ctx
-	}
 	if t.wrapped.copyFrom != nil {
 		ctx = t.wrapped.copyFrom.TraceCopyFromStart(ctx, conn, data)
+	}
+	if !t.cfg.traceCopyFrom {
+		return ctx
 	}
 	opts := t.spanOptions(t.connInfoFor(conn), operationTypeCopyFrom, "",
 		tracer.Tag(tagCopyFromTables, data.TableName),
@@ -279,21 +292,21 @@ func (t *pgxTracer) TraceCopyFromStart(ctx context.Context, conn *pgx.Conn, data
 }
 
 func (t *pgxTracer) TraceCopyFromEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceCopyFromEndData) {
-	if !t.cfg.traceCopyFrom {
-		return
-	}
 	if t.wrapped.copyFrom != nil {
 		t.wrapped.copyFrom.TraceCopyFromEnd(ctx, conn, data)
+	}
+	if !t.cfg.traceCopyFrom {
+		return
 	}
 	t.finishSpan(ctx, data.Err)
 }
 
 func (t *pgxTracer) TracePrepareStart(ctx context.Context, conn *pgx.Conn, data pgx.TracePrepareStartData) context.Context {
-	if !t.cfg.tracePrepare {
-		return ctx
-	}
 	if t.wrapped.prepare != nil {
 		ctx = t.wrapped.prepare.TracePrepareStart(ctx, conn, data)
+	}
+	if !t.cfg.tracePrepare {
+		return ctx
 	}
 	opts := t.spanOptions(t.connInfoFor(conn), operationTypePrepare, data.SQL)
 	_, ctx = tracer.StartSpanFromContext(ctx, "pgx.prepare", opts...)
@@ -301,21 +314,21 @@ func (t *pgxTracer) TracePrepareStart(ctx context.Context, conn *pgx.Conn, data 
 }
 
 func (t *pgxTracer) TracePrepareEnd(ctx context.Context, conn *pgx.Conn, data pgx.TracePrepareEndData) {
-	if !t.cfg.tracePrepare {
-		return
-	}
 	if t.wrapped.prepare != nil {
 		t.wrapped.prepare.TracePrepareEnd(ctx, conn, data)
+	}
+	if !t.cfg.tracePrepare {
+		return
 	}
 	t.finishSpan(ctx, data.Err)
 }
 
 func (t *pgxTracer) TraceConnectStart(ctx context.Context, data pgx.TraceConnectStartData) context.Context {
-	if !t.cfg.traceConnect {
-		return ctx
-	}
 	if t.wrapped.connect != nil {
 		ctx = t.wrapped.connect.TraceConnectStart(ctx, data)
+	}
+	if !t.cfg.traceConnect {
+		return ctx
 	}
 	// data.ConnConfig is the config this connection is actually being established with,
 	// handed over by pgx without copying, so it is both free to read and already
@@ -327,21 +340,21 @@ func (t *pgxTracer) TraceConnectStart(ctx context.Context, data pgx.TraceConnect
 }
 
 func (t *pgxTracer) TraceConnectEnd(ctx context.Context, data pgx.TraceConnectEndData) {
-	if !t.cfg.traceConnect {
-		return
-	}
 	if t.wrapped.connect != nil {
 		t.wrapped.connect.TraceConnectEnd(ctx, data)
+	}
+	if !t.cfg.traceConnect {
+		return
 	}
 	t.finishSpan(ctx, data.Err)
 }
 
 func (t *pgxTracer) TraceAcquireStart(ctx context.Context, pool *pgxpool.Pool, data pgxpool.TraceAcquireStartData) context.Context {
-	if !t.cfg.traceAcquire {
-		return ctx
-	}
 	if t.wrapped.poolAcquire != nil {
 		ctx = t.wrapped.poolAcquire.TraceAcquireStart(ctx, pool, data)
+	}
+	if !t.cfg.traceAcquire {
+		return ctx
 	}
 	// Acquire is scoped to the pool, not to a single connection: this span previously
 	// read pool.Config(), which returns the same base config the snapshot was taken
@@ -352,22 +365,39 @@ func (t *pgxTracer) TraceAcquireStart(ctx context.Context, pool *pgxpool.Pool, d
 }
 
 func (t *pgxTracer) TraceAcquireEnd(ctx context.Context, pool *pgxpool.Pool, data pgxpool.TraceAcquireEndData) {
-	if !t.cfg.traceAcquire {
-		return
-	}
 	if t.wrapped.poolAcquire != nil {
 		t.wrapped.poolAcquire.TraceAcquireEnd(ctx, pool, data)
+	}
+	// pgxpool never releases a failed acquire, so there is nothing to time.
+	if data.Err == nil && data.Conn != nil && t.cfg.measureUseTime() {
+		data.Conn.PgConn().CustomData()[customDataKeyAcquiredAt] = time.Now()
+	}
+	if !t.cfg.traceAcquire {
+		return
 	}
 	t.finishSpan(ctx, data.Err)
 }
 
-// TraceRelease forwards to the wrapped tracer and starts no span of its own: a release carries no
-// context to parent one from. Without this method pgxpool's lone type assertion on the outermost
-// tracer fails, and every wrapped ReleaseTracer stops being called.
+// TraceRelease records the use time of the connection and forwards the call to the wrapped
+// tracer. TraceRelease starts no span because a release carries no context to parent one from.
+// pgxpool finds this hook by one type assertion on the outermost tracer, so a tracer that
+// omits TraceRelease silences every wrapped ReleaseTracer beneath it.
 func (t *pgxTracer) TraceRelease(pool *pgxpool.Pool, data pgxpool.TraceReleaseData) {
 	if t.wrapped.poolRelease != nil {
 		t.wrapped.poolRelease.TraceRelease(pool, data)
 	}
+	if data.Conn == nil || !t.cfg.measureUseTime() {
+		return
+	}
+	customData := data.Conn.PgConn().CustomData()
+	acquiredAt, ok := customData[customDataKeyAcquiredAt].(time.Time)
+	delete(customData, customDataKeyAcquiredAt)
+	// AcquireAllIdle returns connections without running the acquire hooks, so a release can
+	// arrive for a connection that has no acquire time.
+	if !ok {
+		return
+	}
+	t.cfg.statsdClient.Timing(ConnectionUseTime, time.Since(acquiredAt), statsTags(t.cfg), 1)
 }
 
 // connInfoFor returns the metadata to tag a connection-scoped span with. It uses the

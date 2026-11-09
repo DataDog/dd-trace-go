@@ -164,3 +164,25 @@ func TestIsEnabledByEnvironment(t *testing.T) {
 		require.False(t, set)
 	})
 }
+
+func TestDisabledFeaturesFromEnv(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		value    string
+		expected map[string]struct{}
+	}{
+		{name: "empty", value: "", expected: nil},
+		{name: "only-separators", value: " , ,", expected: nil},
+		{name: "single", value: "http", expected: map[string]struct{}{"http": {}}},
+		{
+			name:     "list",
+			value:    " HTTP, grpc,,http ",
+			expected: map[string]struct{}{"http": {}, "grpc": {}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(EnvDisableFeatures, tc.value)
+			require.Equal(t, tc.expected, DisabledFeaturesFromEnv())
+		})
+	}
+}

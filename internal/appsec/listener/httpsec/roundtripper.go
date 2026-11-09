@@ -33,7 +33,7 @@ type DownwardRequestFeature struct {
 }
 
 func (*DownwardRequestFeature) String() string {
-	return "SSRF Protection & OWASP API10 Protection"
+	return listener.FeatureSSRF
 }
 
 func (*DownwardRequestFeature) Stop() {}
