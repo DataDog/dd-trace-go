@@ -517,10 +517,10 @@ func TestIntegrationStatelessToolCall(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
 		protocolVersion string
-		wantInitialize  bool
+		legacy          bool
 	}{
-		{name: "2026-07-28", protocolVersion: "", wantInitialize: false},
-		{name: "legacy", protocolVersion: "2025-11-25", wantInitialize: true},
+		{name: "2026-07-28", protocolVersion: ""},
+		{name: "legacy", protocolVersion: "2025-11-25", legacy: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tt := testTracer(t)
@@ -559,7 +559,7 @@ func TestIntegrationStatelessToolCall(t *testing.T) {
 			require.NoError(t, err)
 
 			tracer.Flush()
-			if tc.wantInitialize {
+			if tc.legacy {
 				tt.RequireSpan(t, "mcp.initialize")
 			} else {
 				assert.Nil(t, tt.FindSpan("mcp.initialize"))
@@ -573,8 +573,24 @@ func TestIntegrationStatelessToolCall(t *testing.T) {
 			}
 			assert.JSONEq(t, `{"text":"hello"}`, handlerArgs)
 
-			input := toolSpan.Meta["input"].(map[string]any)["value"].(string)
-			assert.JSONEq(t, `{"method":"tools/call","params":{"name":"echo","arguments":{"text":"hello"}}}`, input)
+			var input struct {
+				Method string `json:"method"`
+				Params struct {
+					Name      string                     `json:"name"`
+					Arguments json.RawMessage            `json:"arguments"`
+					Meta      map[string]json.RawMessage `json:"_meta"`
+				} `json:"params"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(toolSpan.Meta["input"].(map[string]any)["value"].(string)), &input))
+			assert.Equal(t, "tools/call", input.Method)
+			assert.Equal(t, "echo", input.Params.Name)
+			assert.JSONEq(t, `{"text":"hello"}`, string(input.Params.Arguments))
+			if tc.legacy {
+				assert.Empty(t, input.Params.Meta)
+			} else {
+				assert.Contains(t, input.Params.Meta, "io.modelcontextprotocol/clientInfo")
+				assert.Contains(t, input.Params.Meta, "io.modelcontextprotocol/protocolVersion")
+			}
 		})
 	}
 }

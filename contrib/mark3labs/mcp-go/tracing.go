@@ -85,7 +85,7 @@ var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandler
 				instrmcp.MCPMethodTag:   request.Method,
 			}))
 			tagWithSessionID(ctx, toolSpan)
-			toolSpan.AnnotateTextIO(string(instrmcp.StripReservedMeta(inputJSON)), outputText)
+			toolSpan.AnnotateTextIO(string(inputJSON), outputText)
 
 			// There are two ways a tool can express an error:
 			// 1. It can return a Go error.

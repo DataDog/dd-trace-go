@@ -5,12 +5,7 @@
 
 package mcp
 
-import (
-	"bytes"
-	"encoding/json"
-	"slices"
-	"strings"
-)
+import "slices"
 
 const TelemetryKey = "telemetry"
 
@@ -60,53 +55,4 @@ func IsModelCallable(meta map[string]any) bool {
 	default:
 		return true
 	}
-}
-
-// ReservedMetaKeyPrefix prefixes the _meta keys that the MCP specification reserves.
-// Stateless (2026-07-28) clients repeat their identity and capabilities under these
-// keys on every request.
-const ReservedMetaKeyPrefix = "io.modelcontextprotocol/"
-
-// StripReservedMeta removes reserved keys from params._meta of a JSON-encoded MCP
-// request, and drops _meta when nothing else remains. Other values keep their exact
-// encoding. It returns the input unchanged when it has no reserved keys or cannot be parsed.
-func StripReservedMeta(request []byte) []byte {
-	if !bytes.Contains(request, []byte(ReservedMetaKeyPrefix)) {
-		return request
-	}
-	var req map[string]json.RawMessage
-	if json.Unmarshal(request, &req) != nil {
-		return request
-	}
-	var params map[string]json.RawMessage
-	if json.Unmarshal(req["params"], &params) != nil {
-		return request
-	}
-	var meta map[string]json.RawMessage
-	if json.Unmarshal(params["_meta"], &meta) != nil || meta == nil {
-		return request
-	}
-	for k := range meta {
-		if strings.HasPrefix(k, ReservedMetaKeyPrefix) {
-			delete(meta, k)
-		}
-	}
-	delete(params, "_meta")
-	if len(meta) > 0 {
-		encoded, err := json.Marshal(meta)
-		if err != nil {
-			return request
-		}
-		params["_meta"] = encoded
-	}
-	encoded, err := json.Marshal(params)
-	if err != nil {
-		return request
-	}
-	req["params"] = encoded
-	out, err := json.Marshal(req)
-	if err != nil {
-		return request
-	}
-	return out
 }

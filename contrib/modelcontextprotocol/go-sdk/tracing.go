@@ -147,7 +147,7 @@ func finishSpanWithIO[S textIOSpan](span S, method string, req mcp.Request, outp
 		outputText = string(outputJSON)
 	}
 
-	span.AnnotateTextIO(string(instrmcp.StripReservedMeta(inputJSON)), outputText)
+	span.AnnotateTextIO(string(inputJSON), outputText)
 
 	if err != nil {
 		span.Finish(llmobs.WithError(err))
