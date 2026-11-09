@@ -1087,10 +1087,17 @@ func checkAndFetchBranch(branch, remoteName string) {
 		return // branch doesn't exist in remote
 	}
 
-	// Fetch the latest commit for this branch from remote (without creating local branch).
-	// The explicit refspec writes the remote-tracking ref even in a single-branch clone,
-	// whose configured refspec would leave the commit in FETCH_HEAD only.
-	_, err = execGitString(telemetry.FetchCommandType, "fetch", "--depth", "1", remoteName, "+refs/heads/"+branch+":refs/remotes/"+remoteName+"/"+branch)
+	// Fetch the branch from remote (without creating local branch). The explicit refspec
+	// writes the remote-tracking ref even in a single-branch clone, whose configured refspec
+	// would leave the commit in FETCH_HEAD only. Only a shallow clone fetches its latest
+	// commit alone: in a complete clone, a depth-limited fetch would hide the ancestry that
+	// the clone already has, such as an old merge base.
+	args := []string{"fetch"}
+	if isAShallowClone, err := isAShallowCloneRepository(); err == nil && isAShallowClone {
+		args = append(args, "--depth", "1")
+	}
+	args = append(args, remoteName, "+refs/heads/"+branch+":refs/remotes/"+remoteName+"/"+branch)
+	_, err = execGitString(telemetry.FetchCommandType, args...)
 	if err != nil {
 		log.Debug("civisibility.git: failed to fetch branch %s: %v", branch, err.Error())
 		return

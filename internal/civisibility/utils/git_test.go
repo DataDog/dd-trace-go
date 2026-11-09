@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -913,6 +914,8 @@ func TestGetBaseBranchShaInShallowClones(t *testing.T) {
 		stillShallow bool
 		// noBase expects no base commit: it is older than the fetched month.
 		noBase bool
+		// complete is a checkout with all of its history, not a shallow one.
+		complete bool
 	}{
 		{name: "push checkout", checkout: pushCheckout},
 		// A month of history would cut the base off: the checkout already holds it.
@@ -959,6 +962,13 @@ func TestGetBaseBranchShaInShallowClones(t *testing.T) {
 			runFixtureGit(t, origin, "switch", "main")
 			pushCheckout(t, origin, checkout, feature, main)
 		}},
+		// A complete clone keeps its ancestry: the base branch, missing from it,
+		// must not be fetched as a single commit that hides an old merge base.
+		{name: "complete single-branch clone", firstAge: 90 * day, baseAge: 60 * day, complete: true,
+			checkout: func(t *testing.T, origin, checkout, _, _ string) {
+				runFixtureGit(t, filepath.Dir(checkout), "clone", "--single-branch", "--branch=feature", fileURL(origin), checkout)
+				runFixtureGit(t, checkout, "branch", "main", "HEAD~1")
+			}},
 		{name: "single-branch clone", checkout: func(t *testing.T, origin, checkout, _, _ string) {
 			runFixtureGit(t, filepath.Dir(checkout), "clone", "--depth=1", "--single-branch", "--branch=feature", fileURL(origin), checkout)
 		}},
@@ -980,7 +990,7 @@ func TestGetBaseBranchShaInShallowClones(t *testing.T) {
 				root, origin, base, feature, main := newBaseBranchOrigin(t, firstAge, tt.baseAge, tt.featureAge, tt.mainAge)
 				checkout := filepath.Join(root, "checkout")
 				tt.checkout(t, origin, checkout, feature, main)
-				require.Equal(t, "true", runFixtureGit(t, checkout, "rev-parse", "--is-shallow-repository"))
+				require.Equal(t, strconv.FormatBool(!tt.complete), runFixtureGit(t, checkout, "rev-parse", "--is-shallow-repository"))
 
 				t.Chdir(checkout)
 				resetGitCommandCachesForTesting(t)
