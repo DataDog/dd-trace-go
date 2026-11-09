@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
@@ -321,6 +322,8 @@ func TestFakeGitForUnshallowHelperProcess(t *testing.T) {
 		}
 	case "branch":
 		_, _ = os.Stdout.WriteString("main\n")
+	case "phantom":
+		_, _ = os.Stdout.WriteString(phantomGitOutput)
 	}
 	os.Exit(0)
 }
@@ -406,13 +409,46 @@ func TestGitDebugLoggingIsolated(t *testing.T) {
 		assert.Contains(t, out, "\n--- FAIL: TestPhantom")
 		logs := strings.Join(recorder.Logs(), "\n")
 		assert.Contains(t, logs, "civisibility.git.command")
-		assert.Contains(t, logs, "\n--- FAIL: TestPhantom")
+		assert.Contains(t, logs, `\n--- FAIL: TestPhantom`, "git output must be logged quoted")
 	})
 
 	assert.Equal(t, log.LevelWarn, log.GetLevel())
 	assert.Empty(t, outerLogger.Logs(), "git debug output must stay in the test recorder")
 	log.Warn("logger restored after git debug logging")
 	assert.Len(t, outerLogger.Logs(), 1)
+}
+
+// phantomGitOutput looks like go test output. If it reached stderr unquoted,
+// test2json would read it as a failing test.
+const phantomGitOutput = "x\n--- FAIL: TestPhantom (0.00s)\nFAIL\n"
+
+func TestExecGitDebugLogIsSingleLine(t *testing.T) {
+	for name, run := range map[string]func() (string, error){
+		"execGitString": func() (string, error) {
+			return execGitString(telemetry.NotSpecifiedCommandsType, "phantom")
+		},
+		"execGitStringWithInput": func() (string, error) {
+			return execGitStringWithInput(telemetry.NotSpecifiedCommandsType, "input", "phantom")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			setupFakeGitForUnshallow(t, false)
+			recorder := recordGitDebugLogs(t)
+
+			out, err := run()
+			require.NoError(t, err)
+			require.Contains(t, out, "--- FAIL: TestPhantom", "fake git did not run")
+
+			var found bool
+			for _, l := range recorder.Logs() {
+				if strings.Contains(l, "TestPhantom") {
+					found = true
+					assert.NotContains(t, l, "\n", "git output must be logged on one line")
+				}
+			}
+			assert.True(t, found, "git output was not logged")
+		})
+	}
 }
 
 // Tests for base branch detection functions
