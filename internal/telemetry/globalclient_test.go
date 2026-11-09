@@ -80,6 +80,46 @@ func TestCloseWaitsForStartAppFlush(t *testing.T) {
 	assert.Zero(t, writer.inFlight.Load(), "Close returned while the StartApp flush was still sending")
 }
 
+// TestConcurrentStartAppSameClient makes sure two StartApp calls racing with
+// the same client don't deadlock by closing the client being installed.
+func TestConcurrentStartAppSameClient(t *testing.T) {
+	telemetryEnabledOnce = sync.Once{}
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
+	require.Nil(t, GlobalClient())
+
+	config := defaultConfig(ClientConfig{})
+	config.AgentURL = "http://localhost:8126"
+	config.FlushInterval = internal.Range[time.Duration]{Min: time.Hour, Max: time.Hour}
+	c, err := newClient(internal.TracerConfig{Service: "test-service", Env: "test-env", Version: "1.0.0"}, config)
+	require.NoError(t, err)
+	writer := &blockingWriter{started: make(chan struct{}), release: make(chan struct{})}
+	c.writer = writer
+	t.Cleanup(startAppFlushWg.Wait)
+	t.Cleanup(func() { SwapClient(nil) })
+	t.Cleanup(func() { writer.once.Do(func() {}); close(writer.release) })
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			StartApp(c)
+		}()
+	}
+	close(start)
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("concurrent StartApp calls deadlocked")
+	}
+	assert.Equal(t, Client(c), GlobalClient())
+}
+
 // TestLog_QueuedBeforeStartApp_CapturesCallSiteStacktrace reproduces the bug
 // WithStacktrace() actually captures nothing itself — the real capture used
 // to happen inside loggerBackend.add, at replay time for a call queued

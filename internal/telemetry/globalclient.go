@@ -67,13 +67,18 @@ func StartApp(client Client) {
 	// flush goroutine runs.
 	startAppFlushWg.Add(1)
 	flushDone := trackStartAppFlush(client)
-	if SwapClient(client) != nil {
+	// Install only if no client is set yet. Using SwapClient here would let a
+	// concurrent StartApp with the same client close it while this call's
+	// registration is still pending, which deadlocks in Close.
+	if !casGlobalClient(client) {
 		// A concurrent StartApp call already set the client; undo the Adds.
 		flushDone()
 		startAppFlushWg.Done()
 		log.Debug("telemetry: StartApp called multiple times, ignoring")
 		return
 	}
+
+	installClient(client)
 
 	go func() {
 		defer startAppFlushWg.Done()
@@ -102,14 +107,31 @@ func SwapClient(client Client) Client {
 		return oldClient
 	}
 
+	installClient(client)
+	return oldClient
+}
+
+// casGlobalClient sets client as the global client only if none is set.
+func casGlobalClient(client Client) bool {
+	for {
+		old := globalClient.Load()
+		if old != nil && *old != nil {
+			return false
+		}
+		if globalClient.CompareAndSwap(old, &client) {
+			return true
+		}
+	}
+}
+
+// installClient replays recorded actions and swaps metric handles to client.
+func installClient(client Client) {
 	globalClientRecorder.Replay(client)
 	// Swap all metrics hot pointers to the new MetricHandle
 	metricsHandleSwappablePointers.Range(func(_ metricKey, value *swappableMetricHandle) bool {
 		value.swap(value.maker(client))
 		return true
 	})
-
-	return oldClient
 }
 
 // MockClient swaps the global client with the given client and clears the recorder to make sure external calls are not replayed.

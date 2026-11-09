@@ -44,6 +44,19 @@ func TestNewWriter_ValidConfig(t *testing.T) {
 	assert.NotNil(t, writer)
 }
 
+func TestNewWriter_CapsHTTPTimeout(t *testing.T) {
+	for _, timeout := range []time.Duration{0, -time.Second, time.Minute} {
+		w, err := NewWriter(WriterConfig{
+			HTTPClient: &http.Client{Timeout: timeout},
+			Endpoints: []*http.Request{
+				{Method: http.MethodPost, URL: &url.URL{Scheme: "http", Host: "localhost", Path: "/telemetry"}},
+			},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 5*time.Second, w.(*writer).httpClient.Timeout, "timeout %v", timeout)
+	}
+}
+
 func TestNewWriter_NoEndpoints(t *testing.T) {
 	config := WriterConfig{
 		TracerConfig: TracerConfig{
