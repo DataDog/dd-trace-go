@@ -59,7 +59,7 @@ func withAppsec(next http.Handler, span trace.TagSetter) http.Handler {
 			route, params = rctx.RoutePattern(), routeParams(rctx)
 		}
 		cfg.Route, cfg.RouteParams = route, params
-		earlyParams := maps.Clone(params)
+		early := snapshotEarly(route, params)
 
 		late := http.HandlerFunc(func(w http.ResponseWriter, tr *http.Request) {
 			next.ServeHTTP(w, tr)
@@ -69,7 +69,7 @@ func withAppsec(next http.Handler, span trace.TagSetter) http.Handler {
 				return
 			}
 			finalRoute, finalParams := rc.RoutePattern(), routeParams(rc)
-			if finalRoute == route && maps.Equal(finalParams, earlyParams) {
+			if early.sameAs(finalRoute, finalParams) {
 				return
 			}
 			if !complete {
@@ -82,6 +82,24 @@ func withAppsec(next http.Handler, span trace.TagSetter) http.Handler {
 
 		httpsec.WrapHandler(late, span, cfg).ServeHTTP(tw, r)
 	})
+}
+
+// earlyData is the route and the path parameters that the WAF got before the
+// handler ran. It owns a copy of the parameters, so a later change of the map
+// that the WAF received does not change the comparison.
+type earlyData struct {
+	route  string
+	params map[string]string
+}
+
+func snapshotEarly(route string, params map[string]string) earlyData {
+	return earlyData{route: route, params: maps.Clone(params)}
+}
+
+// sameAs reports whether the final data of chi is the data that the WAF has. A
+// nil map and an empty map are the same.
+func (e earlyData) sameAs(route string, params map[string]string) bool {
+	return e.route == route && maps.Equal(e.params, params)
 }
 
 // routeParams returns the URL parameters of rctx as a new map, or nil when there

@@ -192,3 +192,15 @@ func eventRules(tag any) []string {
 	sort.Strings(ids)
 	return ids
 }
+
+// pathRule returns a rule on the path parameter key of the given tags.type. The
+// action is "" (detection only) or "block".
+func pathRule(id, typ, key, action string) string {
+	onMatch := "[]"
+	if action != "" {
+		onMatch = `["` + action + `"]`
+	}
+	return fmt.Sprintf(`{"id":%q,"name":%q,"tags":{"type":%q,"category":"attack_attempt"},
+		"conditions":[{"operator":"match_regex","parameters":{"inputs":[{"address":"server.request.path_params","key_path":[%q]}],"regex":"attack"}}],
+		"on_match":%s}`, id, id, typ, key, onMatch)
+}
