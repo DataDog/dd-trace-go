@@ -317,13 +317,16 @@ later block of the same request.
 
 `ContextMetrics.IncWafError` (`emitter/waf/metrics.go`) reports the errors that
 `Context.Run` returns. A timeout (`waferrors.ErrTimeout`) is not an error: it
-does not get an error code. `RegisterWafRun` counts timeouts.
+does not get an error code. `RegisterWafRun` counts timeouts. A timeout never
+hides a real error: a real error is reported even when the same run also timed
+out.
 
 The `waf_error` tag of `waf.error` and `rasp.error`, and the span tags
 `_dd.appsec.waf.error` and `_dd.appsec.rasp.error`, hold the `ddwaf_run` return
 code (RFC-1012). `waferrors.ToWafReturnCode` (go-libddwaf v5.1.0 and later)
-gives the code. When it returns zero, dd-trace-go reports `-127`
-(`defaultWafErrorCode`):
+gives the code, and `-127` for an error that does not come from `ddwaf_run`. It
+returns zero when there is no error to report (only timeouts). A timeout gives
+no code, so a real error is reported even when the run also timed out:
 
 | Error from `Run` | Code |
 |------------------|------|
@@ -333,7 +336,8 @@ gives the code. When it returns zero, dd-trace-go reports `-127`
 | Any other error (`ErrOutOfMemory`, `ErrEmptyRuleAddresses`, `ErrContextClosed`, encoder errors, ...) | `-127` (error from the bindings) |
 
 - The boolean `waf_error` tag of `waf.requests` is not a code. It is `true`
-  when `Run` returned an error that is not a timeout.
+  when `Run` returned a real error (`waferrors.ToWafReturnCode` is not zero),
+  also when the same run timed out.
 - The span tags hold one code per request: the code closest to zero (the least
   negative). `updateClosestToZero` keeps it, and ignores a code that is not
   negative. Zero means no error. The RASP tag is the closest code over all rule

@@ -242,6 +242,16 @@ func TestWAFErrorCodeSpanTag(t *testing.T) {
 		}
 	})
 
+	t.Run("waf_timeout_does_not_hide_real_error", func(t *testing.T) {
+		tags := tagsAfter(t, wafAddrs, errors.Join(waferrors.ErrTimeout, waferrors.ErrInternal))
+		require.Equal(t, int32(-3), tags[wafErrorTag])
+	})
+
+	t.Run("rasp_timeout_does_not_hide_real_error", func(t *testing.T) {
+		tags := tagsAfter(t, raspAddrs, errors.Join(waferrors.ErrTimeout, waferrors.ErrInternal))
+		require.Equal(t, int32(-3), tags[raspErrorTag])
+	})
+
 	t.Run("timeout_invalid_input_keeps_exception_tags", func(t *testing.T) {
 		for _, tc := range []struct {
 			name    string
