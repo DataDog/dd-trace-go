@@ -40,51 +40,53 @@ func init() {
 // ([chi.Routes.Match]) and gives the path parameters of that route to AppSec: a
 // rule on path parameters can block before the handler. This early check can use
 // other parameters than the handler gets when a middleware changes the path, the
-// method or the route path (before or after this middleware), or when a mount
-// does not give the request to a chi router that chi can search (for example a
-// router behind a handler wrapper, or an ordinary handler). If the early check
-// does not extend the route that chi already matched when this middleware runs
-// (for example after a middleware changed the route path of a parent mount), it
-// is dropped, and AppSec keeps the parameters that chi matched. When the early
-// check is wrong, a detection-only rule that matches the wrong parameters can
-// also hide a detection-only rule of the same type that matches the correct
-// parameters later (also from a r.With(Middleware()) on the endpoint). The
-// early check never changes a parameter that chi already matched when this
-// middleware runs: a prediction with another value (for example when a name is
-// used at several levels of mounts) is dropped, and the "*" of a mount that this
-// middleware wraps (r.With(Middleware()).Mount) keeps its value. Before the
-// handler, a name that is used at several levels has its first value; after the
-// handler, AppSec reports the last value, the one that chi.URLParam returns.
-// AppSec cannot clear parameters: if chi finally selects a route without
-// parameters, the early parameters stay.
+// method or the route path (before or after this middleware), or when a mount does
+// not give the request to a chi router that chi can search (for example a router
+// behind a handler wrapper, or an ordinary handler). If the early check does not
+// extend the route that chi already matched when this middleware runs (for example
+// after a middleware changed the route path of a parent mount), it is dropped, and
+// AppSec keeps the parameters that chi matched. When the early check is wrong, a
+// detection-only rule that matches the wrong parameters can also hide a
+// detection-only rule of the same type that matches the correct parameters later
+// (also from a r.With(Middleware()) on the endpoint). The early check never
+// changes a parameter that chi already matched when this middleware starts: a
+// prediction with another value for such a name (for example when a name is used
+// at several levels of mounts, or the "*" of a mount that this middleware wraps
+// with r.With(Middleware()).Mount) is dropped as a whole, and AppSec keeps the
+// parameters that chi matched. For parameters that chi already knows when this
+// middleware starts, the first value of a name that is used at several levels of
+// mounts wins. AppSec cannot clear parameters: if chi finally selects a route
+// without parameters, the early parameters stay.
 //
-// After the handler returns, AppSec gets the route and the path parameters that
-// chi selected. A block or a redirect at that time replaces the response only if
-// the response is not sent yet: it never stops the handler, which already ran. If
-// the response is sent, it does not change; AppSec reports a failed block (a
-// redirect is not counted as a block). A flush that returns an error does not
-// itself mark the response as sent: if it wrote part of the response, a block can
-// add its body after that output.
+// After the handler returns, AppSec gets the route that chi selected, and its path
+// parameters when they do not contradict the parameters that chi matched when this
+// middleware started (otherwise only the route: the WAF keeps its input for the
+// response, and no rule can match a mix of the two). A block or a redirect at that
+// time replaces the response only if the response is not sent yet: it never stops
+// the handler, which already ran. If the response is sent, it does not change;
+// AppSec reports a failed block (a redirect is not counted as a block). A flush
+// that returns an error does not itself mark the response as sent: if it wrote
+// part of the response, a block can add its body after that output.
 //
 // The middlewares between this middleware and the handler must send the response
 // through the writer that they get, and return it from Unwrap(). When this
 // middleware cannot see every way the response can start (for example a writer
 // that can hijack the connection only through Unwrap(), or a writer without
 // Unwrap() between 2 of these middlewares), it gives no newly discovered path
-// parameters to AppSec for the request: the parameters that chi already knows
-// when it runs still go to AppSec, as before. A middleware that replaces both
-// the writer and the request context between 2 of these middlewares hides the
-// outer one, and the inner one cannot see it. With a writer without Unwrap()
-// between 2 of these middlewares and a flush between them, a block on path
-// parameters and response data can add its body after the response (a block on
-// response data alone does the same before this version).
+// parameters to AppSec for the request: the parameters that chi already knows when
+// it runs still go to AppSec, as before. A middleware that replaces both the
+// writer and the request context between 2 of these middlewares hides the outer
+// one, and the inner one cannot see it. With a writer without Unwrap() between 2
+// of these middlewares and a flush between them, a block on path parameters and
+// response data can add its body after the response (a block on response data
+// alone does the same before this version).
 //
 // A middleware that writes or flushes the response must come after this
 // middleware: AppSec cannot see a response that was sent before it, and a block
 // can then add its body after that response.
 //
-// With r.With(Middleware()) on the matched endpoint, the route is known before
-// the handler.
+// With r.With(Middleware()) on the matched endpoint, the route is known before the
+// handler.
 func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 	cfg := new(config)
 	defaults(cfg)

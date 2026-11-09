@@ -224,10 +224,15 @@ func TestAddPrediction(t *testing.T) {
 	_, ok = addPrediction(map[string]string{"id": "attack"}, map[string]string{"id": "clean"})
 	assert.False(t, ok)
 
-	// The "*" of a mount that the tracer wraps is not reset yet: the known value stays.
-	got, ok = addPrediction(map[string]string{"*": "rest"}, map[string]string{"*": "", "id": "1"})
+	// The "*" of a mount that the tracer wraps is not reset yet: another value
+	// contradicts the known one too, and the prediction is dropped.
+	_, ok = addPrediction(map[string]string{"*": "rest"}, map[string]string{"*": "", "id": "1"})
+	assert.False(t, ok)
+
+	// A known name that the new parameters do not have is kept.
+	got, ok = addPrediction(map[string]string{"a": "1"}, map[string]string{"b": "2"})
 	assert.True(t, ok)
-	assert.Equal(t, map[string]string{"*": "rest", "id": "1"}, got)
+	assert.Equal(t, map[string]string{"a": "1", "b": "2"}, got)
 
 	// The input maps do not change.
 	known, predicted := map[string]string{"a": "1"}, map[string]string{"b": "2"}

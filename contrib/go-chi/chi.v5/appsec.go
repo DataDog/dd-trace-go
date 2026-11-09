@@ -77,12 +77,20 @@ func withAppsec(next http.Handler, span trace.TagSetter, cfg *config, cache *syn
 			if rc == nil {
 				return
 			}
-			finalRoute, finalParams := reportedRoute(rc, cfg, cache), routeParams(rc)
-			if early.sameAs(finalRoute, finalParams) {
-				return
+			finalRoute := reportedRoute(rc, cfg, cache)
+			// The final parameters (the last value of a name) are added to what the WAF
+			// has. If they contradict it (another value for a name that chi matched
+			// before the handler), only the route is reported: the WAF keeps the input
+			// of the response phase that it had before this change, and no rule can
+			// match a mix of the two.
+			var finalParams map[string]string
+			if complete {
+				if merged, ok := addPrediction(known, routeParams(rc)); ok {
+					finalParams = merged
+				}
 			}
-			if !complete {
-				finalParams = nil
+			if finalRoute == early.route && (finalParams == nil || early.sameAs(finalRoute, finalParams)) {
+				return
 			}
 			// The error is ignored: afterHandle applies the stored action, and the
 			// commitTracker tells if the response can still be replaced.
@@ -128,13 +136,13 @@ func knownParams(rctx *chi.Context) map[string]string {
 	return params
 }
 
-// addPrediction adds the parameters of the lookup to the parameters that chi
-// already matched, and never changes one of them: it keeps every block that works
-// without the lookup. It reports false when the prediction contradicts chi (a
-// name has another value, for example when a name is used at several levels of
-// mounts): then only what chi matched is used. The "*" is the exception to the
-// contradiction: a tracer that wraps a mount (r.With(Middleware()).Mount) runs
-// before chi resets the "*" of the mount, so the known value is kept.
+// addPrediction adds the parameters of the lookup (or the final parameters) to the
+// parameters that chi already matched, and never changes one of them: it keeps
+// every block that works without the lookup. It reports false when the new
+// parameters contradict chi (a name has another value, for example when a name
+// is used at several levels of mounts, or the "*" of a mount that the tracer
+// wraps, which chi resets later): the caller then uses only what chi matched,
+// because a set that mixes values of two routing stages is never seen by chi.
 func addPrediction(known, predicted map[string]string) (map[string]string, bool) {
 	if len(known) == 0 {
 		return predicted, true
@@ -144,7 +152,7 @@ func addPrediction(known, predicted map[string]string) (map[string]string, bool)
 		merged = make(map[string]string, len(known))
 	}
 	for key, value := range known {
-		if other, found := merged[key]; found && other != value && key != "*" {
+		if other, found := merged[key]; found && other != value {
 			return nil, false
 		}
 		merged[key] = value

@@ -29,6 +29,7 @@ type fakeRaw struct {
 	body      bytes.Buffer
 	flushes   int
 	hijacks   int
+	pushes    []string
 	hijackErr error
 	flushErr  error // result of FlushError; the flush is only recorded when nil
 }
@@ -66,7 +67,10 @@ func (f *fakeRaw) ReadFrom(r io.Reader) (int64, error) {
 	}
 	return io.Copy(&f.body, r)
 }
-func (f *fakeRaw) Push(string, *http.PushOptions) error { return nil }
+func (f *fakeRaw) Push(target string, _ *http.PushOptions) error {
+	f.pushes = append(f.pushes, target)
+	return nil
+}
 
 const (
 	rawFlusher = 1 << iota
@@ -314,6 +318,7 @@ func TestCommitTrackerGeneratedTypes(t *testing.T) {
 		}
 		if p, ok := w.(http.Pusher); ok {
 			assert.NoError(t, p.Push("/x", nil), "flags=%05b", flags)
+			assert.Equal(t, []string{"/x"}, raw.pushes, "flags=%05b", flags)
 			assert.False(t, ct.flushed || ct.hijacked, "flags=%05b", flags)
 		}
 		// Flush, FlushError and Hijack reach the chi writer and are recorded.

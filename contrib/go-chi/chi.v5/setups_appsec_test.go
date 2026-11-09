@@ -176,12 +176,13 @@ func TestAppSecRouteSetups(t *testing.T) {
 			attack{early: true, route: "/api/users/{id}", events: pathBlock, spanRoute: "",
 				earlyRoute: "/api/users/{id}", earlyParams: pp("*", "", "id", "attack-1")}},
 		// The tracer wraps the mount handler: chi has not reset the "*" of the mount
-		// yet. The known value stays (a rule on "*" blocked this request before the
-		// lookup existed); the lookup adds "id".
+		// yet. The lookup would change the known "*", so it is dropped: AppSec keeps the
+		// input that it had before the lookup existed (a rule on "*" blocks as before),
+		// and reports only the final route.
 		{fixtureWithMount(),
 			clean{[]string{"/api/users/{id}"}, []string{"wildcard-value"}, 0},
-			attack{early: true, route: "/api/users/{id}", events: pathBlock, spanRoute: "/api/*",
-				earlyRoute: "/api/users/{id}", earlyParams: pp("*", "users/attack-1", "id", "attack-1")}},
+			attack{route: "/api/users/{id}", events: []string{"wildcard-value"},
+				earlyRoute: "/api/*", earlyParams: pp("*", "users/attack-1")}},
 		{fixtureLiteralLeaf(),
 			clean{[]string{"/api/attack"}, nil, 0},
 			attack{route: "/api/attack", earlyRoute: "/api/attack", earlyParams: pp("*", "")}},
