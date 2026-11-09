@@ -9,16 +9,18 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net/http"
 	_ "unsafe" // for go:linkname
 
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/httptransport"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/wrapper"
 )
 
-// setupOrchestrion and invokeOrchestrion are called through go:linkname from
-// the Orchestrion aspect injected into aws-lambda-go's start function. They
-// stay unexported so they are not part of the public API. The signatures have
-// no variadic arguments so the injected declarations can reference them.
+// setupOrchestrion, invokeOrchestrion and transportOrchestrion are called
+// through go:linkname from the Orchestrion aspects injected into aws-lambda-go.
+// They stay unexported so they are not part of the public API. The signatures
+// have no variadic arguments so the injected declarations can reference them.
 
 //go:linkname setupOrchestrion
 func setupOrchestrion() {
@@ -45,6 +47,15 @@ func invokeOrchestrion(ctx context.Context, payload []byte, next func(context.Co
 	}
 	wrapper.CurrentContext = nil
 	return reader, err
+}
+
+// transportOrchestrion is the transport for aws-lambda-go's Runtime API and
+// Extensions API clients. Orchestrion does not trace it, so fetching events
+// and sending responses don't create spans.
+//
+//go:linkname transportOrchestrion
+func transportOrchestrion() *http.Transport {
+	return httptransport.New()
 }
 
 var (

@@ -159,6 +159,7 @@ func TestLambdaExtension(t *testing.T) {
 	var children int
 	for _, s := range agent.Spans() {
 		assert.NotContains(t, s.Meta["http.url"], ext.url, "a request to the extension was traced")
+		assert.NotContains(t, s.Meta["http.url"], srv.URL, "a request to the Runtime API was traced")
 		if s.Operation == "http.request" && s.ParentID == root.SpanID && s.Meta["http.url"] == downstream.URL {
 			children++
 		}
@@ -252,6 +253,9 @@ func requireInvocations(t *testing.T, run lambdaRun, variant string, invokes []i
 		wantRequests = len(invokes)
 	}
 	assert.Equal(t, wantRequests, run.downstreamRequests)
+	for _, s := range run.spans {
+		assert.NotContains(t, s.Meta["http.url"], run.runtimeURL, "a request to the Runtime API was traced")
+	}
 	assert.Len(t, run.metrics("aws.lambda.enhanced.invocations"), len(invokes))
 	assert.Len(t, run.metrics("aws.lambda.enhanced.errors"), errors)
 }
@@ -291,6 +295,7 @@ type lambdaRun struct {
 	exited             bool
 	downstreamURL      string
 	downstreamRequests int
+	runtimeURL         string
 }
 
 func (r lambdaRun) spansNamed(name string) []span {
@@ -382,6 +387,7 @@ func runLambda(t *testing.T, bin, variant string, invokes []invocation) lambdaRu
 		exited:             exited,
 		downstreamURL:      downstream.URL,
 		downstreamRequests: int(downstreamRequests.Load()),
+		runtimeURL:         srv.URL,
 	}
 	run.spans, run.metricLines = parseOutput(stdout, stderr)
 	return run

@@ -37,6 +37,7 @@ aspects:
             - github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2
           imports:
             context: context
+            http: net/http
             io: io
           template: |-
             //go:linkname __dd_lambda_setup github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2.setupOrchestrion
@@ -44,6 +45,12 @@ aspects:
 
             //go:linkname __dd_lambda_invoke github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2.invokeOrchestrion
             func __dd_lambda_invoke(ctx context.Context, payload []byte, next func(context.Context, []byte) (io.Reader, error)) (io.Reader, error)
+
+            // Used by the lambda.http.Client aspect. It is declared here because
+            // start is matched once per build, and a declaration injected by
+            // each matched literal would be duplicated.
+            //go:linkname __dd_lambda_transport github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2.transportOrchestrion
+            func __dd_lambda_transport() *http.Transport
       - prepend-statements:
           # The same imports as the declarations above. entry.go does not import
           # io, and the alias orchestrion assigns is only applied where the
@@ -59,4 +66,23 @@ aspects:
               return __dd_lambda_invoke(ctx, payload, func(ctx context.Context, payload []byte) (io.Reader, error) {
                 return __dd_orig(ctx, payload)
               })
+            }
+
+  # aws-lambda-go's Runtime API and Extensions API clients use
+  # http.DefaultTransport, so Orchestrion's net/http instrumentation would
+  # report every event fetch and response as a span outside any trace. Give
+  # them ddlambda's transport, which net/http leaves untraced.
+  - id: lambda.http.Client
+    join-point:
+      all-of:
+        - import-path: github.com/aws/aws-lambda-go/lambda
+        - struct-literal:
+            type: net/http.Client
+    advice:
+      - wrap-expression:
+          template: |-
+            {{- .AST.Type -}}{
+              Transport: __dd_lambda_transport(),
+              {{ range .AST.Elts }}{{ . }},
+              {{ end }}
             }
