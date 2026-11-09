@@ -587,13 +587,17 @@ func TestAppSecWireHiddenParent(t *testing.T) {
 		t.Run("route", func(t *testing.T) {
 			assert.Equal(t, []string{"/api/items/{id}", "/api/items/{id}"}, res.routes, "the AppSec route of each operation")
 		})
-		// The root tracker saw the flush: the block cannot replace the response.
+		// The inner tracker cannot share the baseline input of the root tracer (the
+		// writer chain does not reach it) but it still gives its known parameters to
+		// the same WAF context: it marks the shared input as uncertain, so the root
+		// reports only its route after the handler. The WAF never gets "id": the same
+		// result as before this change (no match, no event, no block).
 		assert.Equal(t, 200, res.status)
 		assert.Empty(t, res.body)
 		assert.Empty(t, res.log)
-		assert.Equal(t, []string{"mixed-block"}, res.events)
+		assert.Empty(t, res.events)
 		assert.Zero(t, res.requestBlocked())
-		assert.EqualValues(t, 1, res.blockFailure())
+		assert.Zero(t, res.blockFailure())
 	})
 
 	t.Run("hidden-parent-none", func(t *testing.T) {
@@ -603,10 +607,11 @@ func TestAppSecWireHiddenParent(t *testing.T) {
 		t.Run("route", func(t *testing.T) {
 			assert.Equal(t, []string{"/api/items/{id}", "/api/items/{id}"}, res.routes, "the AppSec route of each operation")
 		})
-		assert.Equal(t, 403, res.status)
-		assert.Contains(t, res.body, `{"errors":`)
+		// As above: the root reports only its route, so no rule on "id" matches.
+		assert.Equal(t, 200, res.status)
+		assert.Empty(t, res.events)
 		assert.Empty(t, res.log)
-		assert.EqualValues(t, 1, res.requestBlocked())
+		assert.Zero(t, res.requestBlocked())
 		assert.Zero(t, res.blockFailure())
 	})
 
@@ -748,7 +753,9 @@ func TestAppSecWireCompress(t *testing.T) {
 		return wireServer{router: r}, target
 	}
 
-	// The root tracker saw the flush: the block cannot replace the response.
+	// The inner tracer cannot share the baseline input with the root (no Unwrap()
+	// in Compress), so the root reports only its route: no rule on "id" matches,
+	// as before this change.
 	t.Run("hidden-parent", func(t *testing.T) {
 		res := wireOnce(t, []string{ruleMixedBlock}, func(c *opCapture, ran *bool) (wireServer, string) {
 			return mounted(c, ran, true)
@@ -756,9 +763,9 @@ func TestAppSecWireCompress(t *testing.T) {
 		assert.Equal(t, 200, res.status)
 		assert.Empty(t, res.body)
 		assert.Empty(t, res.log)
-		assert.Equal(t, []string{"mixed-block"}, res.events)
+		assert.Empty(t, res.events)
 		assert.Zero(t, res.requestBlocked())
-		assert.EqualValues(t, 1, res.blockFailure())
+		assert.Zero(t, res.blockFailure())
 	})
 
 	// A rule on a response header only: the same failure as before this change.

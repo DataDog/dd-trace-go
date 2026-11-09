@@ -64,24 +64,43 @@ type commitTracker struct {
 	// WAF as the baseline input (see sharedInput). All the trackers of a request
 	// have the same one: a tracker takes it from its parent, which is reached
 	// through the writer chain and the request context. A tracker that cannot
-	// reach the one of the outer tracers has its own, and is not complete.
+	// reach the one of the outer tracers has its own, and is not complete: it marks
+	// the shared input of the outer tracers as uncertain.
 	shared *sharedInput
 }
 
 // sharedInput is the path parameters that AppSec gave to the WAF as its baseline
 // input: what the tracers of the request knew when they started (the input of
 // AppSec before the route lookup existed), and what they reported after the
-// handler. A tracer adds new names to the input of the WAF, but it never changes
-// a value in this set: it would change the result of a rule that the WAF
+// handler. Early predictions are not recorded in it.
+//
+// A tracer replaces the baseline input at its entry with what it knows, as it did
+// before the route lookup existed. Everything else must pass a conflict check
+// against it: a prediction or a late report adds new names, but it never changes
+// a value in the set, because that would change the result of a rule that the WAF
 // evaluates later, or combine the values of 2 tracers. The tracers of a request
 // run one after the other, so no lock is needed.
 type sharedInput struct {
 	params map[string]string
+
+	// uncertain is set when a tracer that shares the WAF context of the tracers of
+	// this set could not share the set (see newCommitTracker): it can give baseline
+	// input that the set does not have. The tracers that share the set then report
+	// only the route.
+	uncertain bool
 }
 
 func (s *sharedInput) get() map[string]string { return s.params }
 
 func (s *sharedInput) set(params map[string]string) { s.params = maps.Clone(params) }
+
+// markUncertain sets the flag of the shared input of t and of every outer tracker
+// that t reaches through the writer chain.
+func (t *commitTracker) markUncertain() {
+	for ; t != nil; t = t.parent {
+		t.shared.uncertain = true
+	}
+}
 
 // trackerCarrier is implemented by all the generated tracker types.
 type trackerCarrier interface {
@@ -263,6 +282,13 @@ func newCommitTracker(ww middleware.WrapResponseWriter, ctx context.Context) (ht
 	} else {
 		// The first tracer of the request, or one that cannot reach the shared input.
 		ct.shared = &sharedInput{}
+		// In the second case, this tracer can still give its known parameters to the
+		// WAF context of the outer tracers (it keeps its original behavior): they
+		// must not report parameters that contradict it without knowing it. The outer
+		// tracers that it finds through the writer chain and through the request
+		// context get the flag.
+		ct.parent.markUncertain()
+		outer.markUncertain()
 	}
 
 	return wrapCommitTracker(ct, flags), ct

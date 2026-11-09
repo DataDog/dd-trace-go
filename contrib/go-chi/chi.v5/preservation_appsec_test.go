@@ -6,6 +6,7 @@
 package chi
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -313,4 +314,86 @@ func TestNestedNewParams(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/tenant/alpha/items/beta/", nil))
 	assert.Equal(t, http.StatusForbidden, w.Code, "the new name reached the WAF")
+}
+
+type savedContextKey struct{}
+
+// TestSharedInputContext checks tracers whose writer chain is intact but whose
+// request contexts differ:
+//
+//	tracer A → save the context → tracer B → restore the saved context
+//	    → response header middleware, StripSlashes → mount → tracer C
+//
+// C finds B through the writer chain and A through the restored context: it cannot
+// share the baseline input of A and B, but it still gives its known parameters to
+// their WAF context, as before this change. A and B must not report parameters
+// that contradict it, because the WAF would evaluate the response rule with
+// them. Every expectation is the result before the lookup existed, and holds with
+// this change. A new context (control) is another WAF context: no block.
+func TestSharedInputContext(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want int
+	}{
+		{"unchanged-context", http.StatusForbidden},
+		{"restore-outer-context", http.StatusForbidden},
+		{"new-context-control", http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rule := fmt.Sprintf(`{"id":"shared-context","name":"shared-context","tags":{"type":"shared-context-test","category":"attack_attempt"},
+				"conditions":[%s],"on_match":["block"]}`,
+				headerCondition("x-stage", "ready")+","+pathCondition("id", "alpha"))
+			startAppSecRules(t, rule)
+			root, child := chi.NewRouter(), chi.NewRouter()
+			root.Use(Middleware())
+			root.Use(func(next http.Handler) http.Handler { // save the context
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					saved := r.Context()
+					next.ServeHTTP(w, r.WithContext(context.WithValue(saved, savedContextKey{}, saved)))
+				})
+			}, Middleware())
+			root.Use(func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					switch tc.name {
+					case "restore-outer-context":
+						r = r.WithContext(r.Context().Value(savedContextKey{}).(context.Context))
+					case "new-context-control":
+						r = r.WithContext(context.WithValue(context.Background(), chi.RouteCtxKey, chi.RouteContext(r.Context())))
+					}
+					next.ServeHTTP(w, r)
+					w.Header().Set("X-Stage", "ready") // for the response-phase check of A and B
+				})
+			}, middleware.StripSlashes)
+			child.Use(Middleware())
+			child.Get("/items/{id}", func(http.ResponseWriter, *http.Request) {})
+			root.Mount("/tenant/{id}", child)
+
+			w := httptest.NewRecorder()
+			root.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/tenant/alpha/items/beta/", nil))
+			assert.Equal(t, tc.want, w.Code)
+		})
+	}
+}
+
+// TestPredictionPhaseCombination documents a limit: the WAF keeps the match of a
+// condition between its runs. A prediction that the WAF got early (id = alpha) can
+// combine with a final value (op = delete) in a rule across the 2 runs, although no
+// single input has both. The expectation is the result of this change (403), not of
+// the code before the lookup existed (200): the baseline input is protected, a
+// predicted value is not.
+func TestPredictionPhaseCombination(t *testing.T) {
+	startAppSecRules(t, fmt.Sprintf(`{"id":"combined","name":"combined","tags":{"type":"combined-test","category":"attack_attempt"},
+		"conditions":[%s],"on_match":["block"]}`, pathCondition("id", "alpha")+","+pathCondition("op", "delete")))
+	root := chi.NewRouter()
+	root.Use(Middleware(), func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			chi.RouteContext(r.Context()).RoutePath = "/items/beta/delete" // after the lookup of the request
+			next.ServeHTTP(w, r)
+		})
+	})
+	root.Get("/items/{id}/{op}", func(http.ResponseWriter, *http.Request) {})
+
+	w := httptest.NewRecorder()
+	root.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/items/alpha/read", nil))
+	assert.Equal(t, http.StatusForbidden, w.Code, "documented limit: the code before the lookup returned 200")
 }

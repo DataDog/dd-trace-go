@@ -68,7 +68,7 @@ func withAppsec(next http.Handler, span trace.TagSetter) http.Handler {
 		}
 
 		route, params, found := "", map[string]string(nil), false
-		if complete {
+		if complete && !shared.uncertain {
 			route, params, found = lookupRoute(rctx, r)
 		}
 		if found {
@@ -94,11 +94,14 @@ func withAppsec(next http.Handler, span trace.TagSetter) http.Handler {
 			// The final parameters (the last value of a name) are added to the baseline
 			// input of the WAF that all the tracers of the request share. If they
 			// contradict it (another value for a name that a tracer gave), only the
-			// route is reported: the WAF keeps the input
-			// of the response phase that it had before this change, and no rule can
-			// match a mix of the two.
+			// route is reported. The same when a tracer that shares the WAF context
+			// could not share the set (shared.uncertain). So the WAF keeps the baseline
+			// input, and no rule can match a mix of the baseline value and a final value.
+			// This protects the baseline input only: a predicted value that the WAF got
+			// early can still combine with a final value in a rule across the 2 runs
+			// (a documented limit, see TestPredictionPhaseCombination).
 			var finalParams map[string]string
-			if complete {
+			if complete && !shared.uncertain {
 				if merged, ok := addPrediction(shared.get(), routeParams(rc)); ok {
 					finalParams = merged
 				}

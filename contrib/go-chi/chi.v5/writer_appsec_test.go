@@ -662,6 +662,7 @@ func TestCommitTrackerSharedInput(t *testing.T) {
 		_, ict, _ := track(t, plain{otw}, 1, ctx)
 		assert.Same(t, oct.shared, ict.shared)
 		assert.True(t, ict.complete)
+		assert.False(t, oct.shared.uncertain)
 
 		// 3 tracers: the third one shares it with the first.
 		itw, ict, _ := track(t, plain{otw}, 1, ctx)
@@ -677,13 +678,27 @@ func TestCommitTrackerSharedInput(t *testing.T) {
 		assert.Same(t, oct, ict.parent, "the state of the response is still read")
 		assert.NotSame(t, oct.shared, ict.shared)
 		assert.False(t, ict.complete, "no new parameters: only the route")
+		assert.True(t, oct.shared.uncertain, "the outer tracers must know that it can give baseline input")
 
 		// The context has another tracer than the one of the writer chain.
 		_, other, _ := track(t, newFakeRaw(), 1, nil)
 		wrong := context.WithValue(context.Background(), trackerCtxKey{}, other)
+		oct.shared.uncertain = false
 		_, ict, _ = track(t, plain{otw}, 1, wrong)
 		assert.NotSame(t, oct.shared, ict.shared)
 		assert.False(t, ict.complete)
+		assert.True(t, oct.shared.uncertain)
+	})
+
+	t.Run("the flag reaches every outer tracker of the writer chain", func(t *testing.T) {
+		// A <- B (reaches A) <- C (reaches B through the writer chain, but not through the context).
+		atw, act, actx := outer()
+		btw, bct, _ := track(t, plain{atw}, 1, actx)
+		require.Same(t, act.shared, bct.shared)
+		_, cct, _ := track(t, plain{btw}, 1, context.WithValue(context.Background(), trackerCtxKey{}, act))
+		assert.False(t, cct.complete)
+		assert.True(t, bct.shared.uncertain)
+		assert.True(t, act.shared.uncertain, "A shares the set with B")
 	})
 
 	t.Run("the writer chain does not reach the outer tracer", func(t *testing.T) {
@@ -691,6 +706,7 @@ func TestCommitTrackerSharedInput(t *testing.T) {
 		_, ict, _ := track(t, opaque{otw}, 1, ctx)
 		assert.NotSame(t, oct.shared, ict.shared)
 		assert.False(t, ict.complete)
+		assert.True(t, oct.shared.uncertain, "it still gives its known parameters to the WAF context of the outer tracer")
 	})
 
 	t.Run("get and set", func(t *testing.T) {
