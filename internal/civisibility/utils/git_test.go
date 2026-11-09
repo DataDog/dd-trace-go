@@ -694,8 +694,11 @@ func TestGetBaseBranchSha(t *testing.T) {
 }
 
 func TestGetBaseBranchShaWithoutGit(t *testing.T) {
-	// Temporarily disable git for this test
+	// Temporarily disable git for this test. Consume gitFinderOnce first:
+	// otherwise isGitFound runs the real lookup and overwrites the value.
 	originalGitFound := isGitFoundValue
+	gitFinderOnce = sync.Once{}
+	gitFinderOnce.Do(func() {})
 	isGitFoundValue = false
 	defer func() {
 		isGitFoundValue = originalGitFound
@@ -706,7 +709,7 @@ func TestGetBaseBranchShaWithoutGit(t *testing.T) {
 	if err != nil && acceptableError(err) {
 		t.Skipf("test skipped due to: %s", err.Error())
 	}
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Equal(t, "", sha)
 	assert.Contains(t, err.Error(), "git executable not found")
 }
