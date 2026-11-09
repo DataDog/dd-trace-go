@@ -6,7 +6,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
 	github.com/gin-gonic/gin v1.10.1
-	go.opentelemetry.io/otelc/pkg v0.0.0-20261015110818-d3d72efe9f25
+	go.opentelemetry.io/otelc/pkg v0.0.0-20261105152245-5f2bd2ed6ac8
 )
 
 require (
@@ -45,7 +45,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.7 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/linkdata/deadlock v0.5.5 // indirect

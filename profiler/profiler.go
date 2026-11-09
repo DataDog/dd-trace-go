@@ -81,6 +81,8 @@ func Start(opts ...Option) error {
 
 	if activeProfiler != nil {
 		activeProfiler.stop()
+		activeProfiler = nil
+		traceprof.SetProfilerEnabled(false)
 	}
 	p, err := newProfiler(opts...)
 	if err != nil {
@@ -90,8 +92,10 @@ func Start(opts ...Option) error {
 		return nil
 	}
 	activeProfiler = p
-	activeProfiler.run()
+	// Raise the flag before run() so tracer.Stop() sees the profiler as active
+	// while startTelemetry registers on the shared client (avoids a TOCTOU close).
 	traceprof.SetProfilerEnabled(true)
+	activeProfiler.run()
 	return nil
 }
 
