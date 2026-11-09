@@ -283,37 +283,42 @@ func buildWire(first func(http.Handler) http.Handler, m wireMode, late bool, h h
 }
 
 // requireWire checks the response and the report of a request, for a mode in
-// which the handler ran.
+// which the handler ran. The checks on the wire and on the events are separate
+// subtests.
 func requireWire(t *testing.T, set wireSet, m wireMode, res wireResult) {
 	t.Helper()
-	assert.Empty(t, res.log, "no server log")
-	assert.Contains(t, res.events, set.event)
-	switch {
-	case m.sent && m.raw:
-		assert.Equal(t, 200, res.status)
-		assert.Equal(t, appBody, res.body)
-	case m.sent:
-		assert.Equal(t, 200, res.status)
-		assert.Equal(t, m.body, res.body, "the bytes of the application, and no more")
-	case set.redirect:
-		assert.Equal(t, 303, res.status)
-		assert.Equal(t, "/blocked", res.location)
-	default:
-		assert.Equal(t, 403, res.status)
-		assert.Contains(t, res.body, `{"errors":`)
-	}
-	switch {
-	case set.redirect:
-		// A redirect is never a block outcome.
-		assert.Zero(t, res.requestBlocked())
-		assert.Zero(t, res.blockFailure())
-	case m.sent:
-		assert.Zero(t, res.requestBlocked())
-		assert.EqualValues(t, 1, res.blockFailure())
-	default:
-		assert.EqualValues(t, 1, res.requestBlocked())
-		assert.Zero(t, res.blockFailure())
-	}
+	t.Run("wire", func(t *testing.T) {
+		assert.Empty(t, res.log, "no server log")
+		switch {
+		case m.sent && m.raw:
+			assert.Equal(t, 200, res.status)
+			assert.Equal(t, appBody, res.body)
+		case m.sent:
+			assert.Equal(t, 200, res.status)
+			assert.Equal(t, m.body, res.body, "the bytes of the application, and no more")
+		case set.redirect:
+			assert.Equal(t, 303, res.status)
+			assert.Equal(t, "/blocked", res.location)
+		default:
+			assert.Equal(t, 403, res.status)
+			assert.Contains(t, res.body, `{"errors":`)
+		}
+		switch {
+		case set.redirect:
+			// A redirect is never a block outcome.
+			assert.Zero(t, res.requestBlocked())
+			assert.Zero(t, res.blockFailure())
+		case m.sent:
+			assert.Zero(t, res.requestBlocked())
+			assert.EqualValues(t, 1, res.blockFailure())
+		default:
+			assert.EqualValues(t, 1, res.requestBlocked())
+			assert.Zero(t, res.blockFailure())
+		}
+	})
+	t.Run("events", func(t *testing.T) {
+		assert.Contains(t, res.events, set.event)
+	})
 }
 
 // TestAppSecWire sends real requests to a real server with the real WAF. A
@@ -353,14 +358,16 @@ func TestAppSecWire(t *testing.T) {
 					var ran bool
 					handler, target := buildWire(capture.middleware, m, r.late, wireEndpoint(m, &ran))
 					res := wireServer{router: handler, wrap: m.wrap, http2: m.http2}.do(t, rec, capture, http.MethodGet, target)
-					assert.True(t, ran)
+					require.True(t, ran)
 					requireWire(t, r.set, m, res)
-					wantRoute := "/items/{id}"
-					if m.nested {
-						wantRoute = "/api/items/{id}"
-					}
-					require.NotEmpty(t, res.routes)
-					assert.Equal(t, wantRoute, res.routes[0], "the AppSec route is the route that chi selected")
+					t.Run("route", func(t *testing.T) {
+						wantRoute := "/items/{id}"
+						if m.nested {
+							wantRoute = "/api/items/{id}"
+						}
+						require.NotEmpty(t, res.routes)
+						assert.Equal(t, wantRoute, res.routes[0], "the AppSec route is the route that chi selected")
+					})
 				})
 			}
 		})
@@ -399,13 +406,15 @@ func TestAppSecWireSpecial(t *testing.T) {
 			r, target := simpleRouter(c.middleware, false, readyHandler(ran, nil))
 			return wireServer{router: r}, target
 		})
-		assert.False(t, res.ran, "blocked before the handler")
-		assert.Equal(t, 403, res.status)
-		assert.Contains(t, res.body, `{"errors":`)
-		assert.EqualValues(t, 1, res.requestBlocked())
-		assert.Equal(t, []string{"path-block"}, res.events)
-		assert.Equal(t, []string{"/items/{id}"}, res.routes)
-		assert.Empty(t, res.log)
+		t.Run("wire", func(t *testing.T) {
+			assert.False(t, res.ran, "blocked before the handler")
+			assert.Equal(t, 403, res.status)
+			assert.Contains(t, res.body, `{"errors":`)
+			assert.EqualValues(t, 1, res.requestBlocked())
+			assert.Empty(t, res.log)
+		})
+		t.Run("events", func(t *testing.T) { assert.Equal(t, []string{"path-block"}, res.events) })
+		t.Run("route", func(t *testing.T) { assert.Equal(t, []string{"/items/{id}"}, res.routes) })
 	})
 
 	// A chain that can hijack only through Unwrap() and a chi writer that cannot:
@@ -432,14 +441,16 @@ func TestAppSecWireSpecial(t *testing.T) {
 				s.router = r
 				return s, target
 			})
-			assert.True(t, res.ran, "no block before the handler")
-			assert.Equal(t, 200, res.status)
-			assert.Equal(t, appBody, res.body)
-			assert.Empty(t, res.log)
-			assert.Equal(t, c.event, res.events)
-			assert.Zero(t, res.requestBlocked())
-			assert.Zero(t, res.blockFailure())
-			assert.Equal(t, []string{"/items/{id}"}, res.routes, "the route is set")
+			t.Run("wire", func(t *testing.T) {
+				assert.True(t, res.ran, "no block before the handler")
+				assert.Equal(t, 200, res.status)
+				assert.Equal(t, appBody, res.body)
+				assert.Empty(t, res.log)
+				assert.Zero(t, res.requestBlocked())
+				assert.Zero(t, res.blockFailure())
+			})
+			t.Run("events", func(t *testing.T) { assert.Equal(t, c.event, res.events) })
+			t.Run("route", func(t *testing.T) { assert.Equal(t, []string{"/items/{id}"}, res.routes, "the route is set") })
 		})
 	}
 
@@ -451,11 +462,13 @@ func TestAppSecWireSpecial(t *testing.T) {
 			}))
 			return wireServer{router: r, wrap: wrapWriter(func(w http.ResponseWriter) http.ResponseWriter { return &cyclicWriter{w} })}, target
 		})
-		assert.True(t, res.ran)
-		assert.Equal(t, 200, res.status)
-		assert.Equal(t, appBody, res.body)
-		assert.Empty(t, res.events)
-		assert.Equal(t, []string{"/items/{id}"}, res.routes)
+		t.Run("wire", func(t *testing.T) {
+			assert.True(t, res.ran)
+			assert.Equal(t, 200, res.status)
+			assert.Equal(t, appBody, res.body)
+		})
+		t.Run("events", func(t *testing.T) { assert.Empty(t, res.events) })
+		t.Run("route", func(t *testing.T) { assert.Equal(t, []string{"/items/{id}"}, res.routes) })
 	})
 
 	t.Run("flush-error", func(t *testing.T) {
