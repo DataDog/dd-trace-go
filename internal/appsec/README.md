@@ -340,3 +340,22 @@ code (RFC-1012). go-libddwaf v5 returns positive `waferrors.RunError` values, so
 - `AddWAFMonitoringTags` sets `_dd.appsec.waf.error` only when `WAFErrorCode`
   is not zero, and `_dd.appsec.rasp.error` only when one `RASPErrorCodes` entry
   is not zero.
+
+### Rate limit telemetry and trace keep
+
+The AppSec trace rate limit (`DD_APPSEC_TRACE_RATE_LIMIT`) limits the WAF force-keeps
+(`ManualKeep`). It never removes events. The Node.js and Python tracers use the same model.
+
+- `ContextOperation.AddEvents` stores the events of a WAF or RASP run, and it never calls the
+  limiter. A request accepts no new batch once it has 10 stored events. This cap does not use a token.
+- A WAF or RASP result with `keep=true` calls the limiter through `allowKeep`, also when the cap
+  drops its events. A result without `keep` never calls the limiter. When the limiter allows,
+  the run sets `ManualKeep`.
+- Difference from Node.js and Python: after the first success, the request makes no more limiter
+  calls (`wafKeepAdmitted`). Later `keep` runs set `ManualKeep` again with no token. The flag does
+  not tell the sampling priority.
+- `rate_limited:true` on `waf.requests` means that a `keep` run (WAF or RASP) was denied by the
+  limiter. A request that only reaches the cap of 10 stored events gives `rate_limited:false`.
+- A denied `keep` run keeps its events. They reach the backend when any other source keeps the
+  trace: the sampler, the first-request rules keep, or the API Security schema keep. So the limiter
+  is not a global limit on the traces that have events.

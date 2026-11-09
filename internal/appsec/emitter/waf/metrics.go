@@ -39,6 +39,7 @@ type RequestMilestones struct {
 	blockFailure   bool
 	ruleTriggered  bool
 	wafTimeout     bool
+	// rateLimited is true when a WAF or RASP run had keep=true and the global limiter denied it.
 	rateLimited    bool
 	wafError       bool
 	inputTruncated bool
@@ -361,6 +362,13 @@ func (m *ContextMetrics) RegisterWafRun(addrs addresses.RunAddressData, timerSta
 	switch addrs.TimerKey {
 	case addresses.RASPScope:
 		m.SumRASPCalls.Add(1)
+		// The limiter denial is a request-level milestone for waf.requests, also for a RASP run.
+		// Set it before the early return below, so an unknown RASP address cannot hide it.
+		if tags.rateLimited {
+			m.milestonesMu.Lock()
+			m.Milestones.rateLimited = true
+			m.milestonesMu.Unlock()
+		}
 		ruleType, ok := addresses.RASPRuleTypeFromAddressSet(addrs)
 		if !ok {
 			m.logger.Error("unexpected call to RASPRuleTypeFromAddressSet")
