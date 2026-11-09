@@ -54,6 +54,15 @@ const (
 			{"operator":"match_regex","parameters":{"inputs":[{"address":"server.request.path_params","key_path":["id"]}],"regex":"^attack$"}},
 			{"operator":"match_regex","parameters":{"inputs":[{"address":"server.response.headers.no_cookies","key_path":["x-response-stage"]}],"regex":"^ready$"}}],
 		"on_match":["block"]}`
+	// mixed-block-header-first has the conditions of mixed-block in the other order.
+	// The WAF stops at the first condition that does not match: with the response
+	// header first, the path parameter is not evaluated (and not kept) before the
+	// response.
+	ruleMixedBlockHeaderFirst = `{"id":"mixed-block","name":"mixed-block","tags":{"type":"mixed-test","category":"attack_attempt"},
+		"conditions":[
+			{"operator":"match_regex","parameters":{"inputs":[{"address":"server.response.headers.no_cookies","key_path":["x-response-stage"]}],"regex":"^ready$"}},
+			{"operator":"match_regex","parameters":{"inputs":[{"address":"server.request.path_params","key_path":["id"]}],"regex":"^attack$"}}],
+		"on_match":["block"]}`
 	// mixed-redirect: the conditions of mixed-block, with a redirect.
 	ruleMixedRedirect = `{"id":"mixed-redirect","name":"mixed-redirect","tags":{"type":"mixed-redirect-test","category":"attack_attempt"},
 		"conditions":[

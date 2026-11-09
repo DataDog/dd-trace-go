@@ -6,6 +6,7 @@
 package chi
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -141,4 +142,34 @@ func TestEarlyDataSameAs(t *testing.T) {
 	// nil and empty are the same.
 	assert.True(t, snapshotEarly("/", nil).sameAs("/", map[string]string{}))
 	assert.True(t, snapshotEarly("/", map[string]string{}).sameAs("/", nil))
+}
+
+// BenchmarkLookupRoute measures the route lookup that runs before the handler:
+// 20 routes with 2 parameters, and a mount.
+func BenchmarkLookupRoute(b *testing.B) {
+	handler := func(http.ResponseWriter, *http.Request) {}
+	cfg := new(config)
+	defaults(cfg)
+
+	child := chi.NewRouter()
+	child.Get("/users/{id}/orders/{order}", handler)
+	root := chi.NewRouter()
+	for i := 0; i < 18; i++ {
+		root.Get(fmt.Sprintf("/resource%d/{id}/items/{item}", i), handler)
+	}
+	root.Mount("/api", child)
+
+	for name, target := range map[string]string{
+		"leaf":  "/resource9/42/items/7",
+		"mount": "/api/users/42/orders/7",
+		"miss":  "/missing/42",
+	} {
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			req := httptest.NewRequest(http.MethodGet, target, nil)
+			for i := 0; i < b.N; i++ {
+				lookupRoute(&chi.Context{Routes: root}, req, cfg)
+			}
+		})
+	}
 }
