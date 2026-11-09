@@ -1107,6 +1107,116 @@ func TestFakeGitCompletingUploadHelperProcess(t *testing.T) {
 	os.Exit(0)
 }
 
+// Fetching a base branch must not fetch the submodule commits that its history
+// names: base branch detection reads only the repository's own history.
+func TestCheckAndFetchBranchLeavesSubmodulesAlone(t *testing.T) {
+	isolateFixtureGit(t)
+	root := t.TempDir()
+	library := filepath.Join(root, "library")
+	require.NoError(t, os.Mkdir(library, 0o755))
+	runFixtureGit(t, library, "init", "--initial-branch=main")
+	runFixtureGit(t, library, "commit", "--allow-empty", "-m", "s0")
+	s0 := runFixtureGit(t, library, "rev-parse", "HEAD")
+	runFixtureGit(t, library, "switch", "-c", "next")
+	runFixtureGit(t, library, "commit", "--allow-empty", "-m", "s1")
+	s1 := runFixtureGit(t, library, "rev-parse", "HEAD")
+	runFixtureGit(t, library, "switch", "main")
+
+	origin := filepath.Join(root, "origin")
+	require.NoError(t, os.Mkdir(origin, 0o755))
+	runFixtureGit(t, origin, "init", "--initial-branch=main")
+	require.NoError(t, os.WriteFile(filepath.Join(origin, ".gitmodules"), []byte("[submodule \"lib\"]\n\tpath = lib\n\turl = "+fileURL(library)+"\n"), 0o644))
+	runFixtureGit(t, origin, "add", ".gitmodules")
+	runFixtureGit(t, origin, "update-index", "--add", "--cacheinfo", "160000,"+s0+",lib")
+	runFixtureGit(t, origin, "commit", "-m", "base")
+	runFixtureGit(t, origin, "switch", "-c", "feature")
+	runFixtureGit(t, origin, "commit", "--allow-empty", "-m", "feature")
+	runFixtureGit(t, origin, "switch", "main")
+	// main points the submodule at s1, then back at s0.
+	runFixtureGit(t, origin, "update-index", "--cacheinfo", "160000,"+s1+",lib")
+	runFixtureGit(t, origin, "commit", "-m", "library s1")
+	runFixtureGit(t, origin, "update-index", "--cacheinfo", "160000,"+s0+",lib")
+	runFixtureGit(t, origin, "commit", "-m", "library s0")
+
+	checkout := filepath.Join(root, "checkout")
+	runFixtureGit(t, root, "clone", "--single-branch", "--branch=feature", fileURL(origin), checkout)
+	runFixtureGit(t, checkout, "-c", "protocol.file.allow=always", "submodule", "update", "--init", "--depth=1")
+	submodule := filepath.Join(checkout, "lib")
+	require.Equal(t, s0, runFixtureGit(t, submodule, "rev-parse", "HEAD"))
+	hasS1 := func() bool {
+		cmd := exec.Command("git", "cat-file", "-e", s1+"^{commit}")
+		cmd.Dir = submodule
+		return cmd.Run() == nil
+	}
+	require.False(t, hasS1())
+
+	// Let git fetch local submodules, as it would remote ones.
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "protocol.file.allow")
+	t.Setenv("GIT_CONFIG_VALUE_0", "always")
+	t.Chdir(checkout)
+	resetGitCommandCachesForTesting(t)
+
+	checkAndFetchBranch("main", "origin")
+
+	runFixtureGit(t, checkout, "rev-parse", "--verify", "refs/remotes/origin/main")
+	assert.False(t, hasS1(), "the submodule must not get the commit that main's history names")
+}
+
+// A failed shallow clone check must not pass for a complete clone: that would
+// fetch a base branch's whole history into a shallow one.
+func TestCheckAndFetchBranchWithoutShallowState(t *testing.T) {
+	resetGitCommandCachesForTesting(t)
+	commands := filepath.Join(t.TempDir(), "commands.log")
+	testBinary, err := os.Executable()
+	require.NoError(t, err)
+	gitExecutable = testBinary
+	gitExecutableArgs = []string{"-test.run=^TestFakeGitWithoutShallowStateHelperProcess$", "--"}
+	t.Setenv("DD_TEST_GIT_WITHOUT_SHALLOW_STATE", "1")
+	t.Setenv("DD_TEST_GIT_COMMANDS", commands)
+
+	checkAndFetchBranch("main", "origin")
+
+	for range 2 {
+		_, err := isAShallowCloneRepository()
+		assert.Error(t, err, "a failed check must not be cached as a complete clone")
+	}
+	logged, err := os.ReadFile(commands)
+	require.NoError(t, err)
+	assert.NotContains(t, string(logged), "fetch")
+}
+
+// TestFakeGitWithoutShallowStateHelperProcess is a git whose shallow clone
+// check fails, with a remote that has main. It logs its commands.
+func TestFakeGitWithoutShallowStateHelperProcess(t *testing.T) {
+	if os.Getenv("DD_TEST_GIT_WITHOUT_SHALLOW_STATE") != "1" {
+		return
+	}
+	args := os.Args
+	for len(args) > 0 && args[0] != "--" {
+		args = args[1:]
+	}
+	if len(args) > 0 {
+		args = args[1:]
+	}
+	for len(args) >= 2 && args[0] == "-c" {
+		args = args[2:]
+	}
+	if f, err := os.OpenFile(os.Getenv("DD_TEST_GIT_COMMANDS"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
+		_, _ = f.WriteString(strings.Join(args, " ") + "\n")
+		_ = f.Close()
+	}
+	switch {
+	case len(args) >= 2 && args[0] == "rev-parse" && args[1] == "--is-shallow-repository":
+		os.Exit(128)
+	case len(args) >= 1 && args[0] == "show-ref":
+		os.Exit(1)
+	case len(args) >= 1 && args[0] == "ls-remote":
+		_, _ = os.Stdout.WriteString("0123456789012345678901234567890123456789\trefs/heads/main\n")
+	}
+	os.Exit(0)
+}
+
 // The Git upload and base branch detection check and invalidate the shallow
 // clone cache from different goroutines; run with -race.
 func TestShallowCloneCacheConcurrentInvalidation(t *testing.T) {

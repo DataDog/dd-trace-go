@@ -93,8 +93,9 @@ var (
 	gitVersionValue gitVersionData
 
 	// shallowCloneCache holds what `git rev-parse --is-shallow-repository` last
-	// said. Fetches that can change it invalidate it. Its mutex guards every
-	// field, including while the check runs.
+	// said; a failed check is not kept, so every caller sees the failure. Fetches
+	// that can change it invalidate it. Its mutex guards every field, including
+	// while the check runs.
 	shallowCloneCache struct {
 		sync.Mutex
 		known, shallow bool
@@ -649,9 +650,12 @@ func isAShallowCloneRepository() (bool, error) {
 	}
 	// git rev-parse --is-shallow-repository
 	out, err := execGitString(telemetry.CheckShallowCommandsType, "rev-parse", "--is-shallow-repository")
+	if err != nil {
+		return false, err
+	}
 	shallowCloneCache.known = true
-	shallowCloneCache.shallow = err == nil && strings.TrimSpace(out) == "true"
-	return shallowCloneCache.shallow, err
+	shallowCloneCache.shallow = strings.TrimSpace(out) == "true"
+	return shallowCloneCache.shallow, nil
 }
 
 // invalidateShallowCloneCache makes the next isAShallowCloneRepository check
@@ -1091,9 +1095,15 @@ func checkAndFetchBranch(branch, remoteName string) {
 	// writes the remote-tracking ref even in a single-branch clone, whose configured refspec
 	// would leave the commit in FETCH_HEAD only. Only a shallow clone fetches its latest
 	// commit alone: in a complete clone, a depth-limited fetch would hide the ancestry that
-	// the clone already has, such as an old merge base.
-	args := []string{"fetch"}
-	if isAShallowClone, err := isAShallowCloneRepository(); err == nil && isAShallowClone {
+	// the clone already has, such as an old merge base. Without knowing which, it doesn't
+	// fetch. Submodules are not fetched: base branch detection reads only this history.
+	isAShallowClone, err := isAShallowCloneRepository()
+	if err != nil {
+		log.Debug("civisibility.git: not fetching branch %s: %v", branch, err.Error())
+		return
+	}
+	args := []string{"fetch", "--recurse-submodules=no"}
+	if isAShallowClone {
 		args = append(args, "--depth", "1")
 	}
 	args = append(args, remoteName, "+refs/heads/"+branch+":refs/remotes/"+remoteName+"/"+branch)
