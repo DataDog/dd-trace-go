@@ -17,26 +17,25 @@ import (
 // markAdditionalFeaturesInitializedForTesting pre-consumes the Once without
 // racing asynchronous initialization or publishing the lock-free fast path.
 func markAdditionalFeaturesInitializedForTesting() {
-	additionalFeaturesResetting.Store(true)
-	additionalFeaturesInitializationMu.Lock()
-	defer func() {
-		additionalFeaturesResetting.Store(false)
-		additionalFeaturesInitializationMu.Unlock()
-	}()
+	defer lockAdditionalFeaturesForReset()()
 
 	additionalFeaturesInitializationOnce = sync.Once{}
 	additionalFeaturesInitializationOnce.Do(func() {})
 }
 
+func lockAdditionalFeaturesForReset() func() {
+	additionalFeaturesResetting.Store(true)
+	additionalFeaturesInitializationMu.Lock()
+	return func() {
+		additionalFeaturesResetting.Store(false)
+		additionalFeaturesInitializationMu.Unlock()
+	}
+}
+
 func resetCIVisibilityStateForTesting() {
 	stopCIVisibilitySignalHandler()
 
-	additionalFeaturesResetting.Store(true)
-	additionalFeaturesInitializationMu.Lock()
-	defer func() {
-		additionalFeaturesResetting.Store(false)
-		additionalFeaturesInitializationMu.Unlock()
-	}()
+	defer lockAdditionalFeaturesForReset()()
 
 	// Payload-file tests can start a telemetry client that writes files
 	// asynchronously, so stop it before temporary output directories are cleaned.
