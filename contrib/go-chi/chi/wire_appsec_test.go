@@ -193,6 +193,32 @@ type unwrapOnly struct{ http.ResponseWriter }
 
 func (w unwrapOnly) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
+// ignoreFlushWriter is like a compressing writer: it ignores a Flush until a first
+// write, and it has Unwrap().
+type ignoreFlushWriter struct {
+	http.ResponseWriter
+	written bool
+}
+
+func (w *ignoreFlushWriter) Write(b []byte) (int, error) {
+	w.written = true
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *ignoreFlushWriter) Flush() {
+	if w.written {
+		w.ResponseWriter.(http.Flusher).Flush()
+	}
+}
+
+func (w *ignoreFlushWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// bufferedFlushErrorWriter has FlushError, and it keeps the flush: it returns nil
+// and sends nothing.
+type bufferedFlushErrorWriter struct{ http.ResponseWriter }
+
+func (bufferedFlushErrorWriter) FlushError() error { return nil }
+
 // opaqueWriter has no Unwrap() and no optional interface.
 type opaqueWriter struct{ http.ResponseWriter }
 
@@ -209,6 +235,10 @@ type wireMode struct {
 	raw    bool   // the response is the raw bytes of a hijacked connection
 	http2  bool
 	nested bool // uses the router with 2 tracers (nested-*)
+	// asMain: the flush reaches a writer that the tracker does not know, so the
+	// state is the one without the tracker: the block body follows the flushed
+	// response (a documented limit, the same result as before this change).
+	asMain bool
 	wrap   func(http.ResponseWriter, *http.Request) (http.ResponseWriter, *http.Request)
 	do     func(w http.ResponseWriter)
 }
@@ -248,7 +278,7 @@ func wireModes() []wireMode {
 		{name: "flush-write", sent: true, body: appBody, do: func(w http.ResponseWriter) { flush(w); _, _ = io.WriteString(w, appBody) }},
 		{name: "flush-only", sent: true, do: flush},
 		{name: "rc-flush-only", sent: true, do: rcFlush},
-		{name: "flusherror-only", sent: true, do: rcFlush,
+		{name: "flusherror-only", sent: true, asMain: true, do: rcFlush,
 			wrap: wrapWriter(func(w http.ResponseWriter) http.ResponseWriter { return flushErrorWriter{ResponseWriter: w} })},
 		{name: "hijack", sent: true, body: appBody, raw: true, do: hijack},
 		{name: "rc-hijack", sent: true, body: appBody, raw: true, do: rcHijack},
@@ -326,6 +356,12 @@ func buildWire(first func(http.Handler) http.Handler, m wireMode, late bool, h h
 func requireWire(t *testing.T, set wireSet, m wireMode, res wireResult) {
 	t.Helper()
 	t.Run("wire", func(t *testing.T) {
+		if m.asMain {
+			assert.Equal(t, 200, res.status)
+			assert.Contains(t, res.body, `{"errors":`, "a documented limit: the same as before this change")
+			assert.EqualValues(t, 1, res.requestBlocked(), "a false report")
+			return
+		}
 		assert.Empty(t, res.log, "no server log")
 		switch {
 		case m.sent && m.raw:
@@ -523,6 +559,55 @@ func TestAppSecWireSpecial(t *testing.T) {
 		assert.EqualValues(t, 1, res.requestBlocked())
 		assert.Empty(t, res.log)
 	})
+
+	// A controller flush that reaches a writer that does not send it must not mark the
+	// response as sent: the block works as without the tracker (403).
+	for _, c := range []struct {
+		name string
+		wrap func(http.ResponseWriter) http.ResponseWriter
+	}{
+		// like gzhttp behind a writer that only has Unwrap(): the flush is ignored
+		{"ignored-flush-behind-unwrap", func(w http.ResponseWriter) http.ResponseWriter {
+			return unwrapOnly{&ignoreFlushWriter{ResponseWriter: w}}
+		}},
+		// a writer that has FlushError only and keeps the flush
+		{"ignored-flusherror", func(w http.ResponseWriter) http.ResponseWriter { return bufferedFlushErrorWriter{w} }},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			res := wireOnce(t, []string{ruleHeaderBlock}, func(cap *opCapture, ran *bool) (wireServer, string) {
+				r, target := simpleRouter(cap.middleware, true, readyHandler(ran, func(w http.ResponseWriter) {
+					_ = http.NewResponseController(w).Flush()
+				}))
+				return wireServer{router: r, wrap: wrapWriter(c.wrap)}, target
+			})
+			assert.Equal(t, 403, res.status, "the writer did not send the flush")
+			assert.Contains(t, res.body, `{"errors":`)
+			assert.EqualValues(t, 1, res.requestBlocked())
+			assert.Zero(t, res.blockFailure())
+		})
+	}
+
+	// A controller flush that reaches a known server writer is on the wire: the
+	// block cannot replace the response, and no block body follows it.
+	for _, h2 := range []bool{false, true} {
+		name := "known-writer-behind-unwrap"
+		if h2 {
+			name += "-h2"
+		}
+		t.Run(name, func(t *testing.T) {
+			res := wireOnce(t, []string{ruleHeaderBlock}, func(cap *opCapture, ran *bool) (wireServer, string) {
+				r, target := simpleRouter(cap.middleware, true, readyHandler(ran, func(w http.ResponseWriter) {
+					_ = http.NewResponseController(w).Flush()
+				}))
+				return wireServer{router: r, http2: h2, wrap: wrapWriter(func(w http.ResponseWriter) http.ResponseWriter { return unwrapOnly{w} })}, target
+			})
+			assert.Equal(t, 200, res.status)
+			assert.Empty(t, res.body, "no block body after the flushed response")
+			assert.Empty(t, res.log)
+			assert.Zero(t, res.requestBlocked())
+			assert.EqualValues(t, 1, res.blockFailure())
+		})
+	}
 
 	// An output buffer for the outer part, the real writer for the inner part, the
 	// same request context: the inner tracker must not take the state of the

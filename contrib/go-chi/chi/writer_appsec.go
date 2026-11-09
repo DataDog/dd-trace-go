@@ -17,6 +17,7 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"reflect"
 
 	"github.com/go-chi/chi/middleware"
 )
@@ -155,13 +156,77 @@ func (t *commitTracker) flush() {
 
 // flushError is the FlushError method of the trackers whose chi writer has no
 // Flush method, but a writer under it can flush. The result is the result of
-// that writer. Only a nil result marks the response as sent.
+// that writer. It marks the response as sent only if the flush is known to be on
+// the wire (see flushIsOnWire): an opaque writer can ignore a flush, or buffer it,
+// and still return nil, and a block that works without the tracker would be lost.
 func (t *commitTracker) flushError() error {
 	err := http.NewResponseController(t.WrapResponseWriter).Flush()
-	if err == nil {
+	if err == nil && t.flushIsOnWire() {
 		t.markFlushed()
 	}
 	return err
+}
+
+// flushIsOnWire reports whether the flush that http.ResponseController just made
+// reached the wire. It looks at the writer that really flushes: the first writer
+// from the chi writer down that has FlushError or Flush, like the controller does.
+// It is on the wire if that writer is a known server writer (its Flush always
+// sends the status line and the headers, or locks the status of a recorder), or an
+// outer tracker that recorded the flush. For any other writer (a compressing
+// writer that ignores a flush before the first write, a buffering writer, ...), the
+// state does not change: it is the state without the tracker.
+func (t *commitTracker) flushIsOnWire() bool {
+	target := flushTarget(t.WrapResponseWriter)
+	if tc, ok := target.(trackerCarrier); ok {
+		return tc.tracker().flushed
+	}
+	return knownServerWriter(target)
+}
+
+// flushTarget returns the writer that http.ResponseController.Flush calls.
+func flushTarget(w http.ResponseWriter) http.ResponseWriter {
+	for range maxUnwrapWalk {
+		if w == nil {
+			return nil
+		}
+		if _, ok := w.(interface{ FlushError() error }); ok {
+			return w
+		}
+		if _, ok := w.(http.Flusher); ok {
+			return w
+		}
+		u, ok := w.(unwrapper)
+		if !ok {
+			return nil
+		}
+		w = u.Unwrap()
+	}
+	return nil
+}
+
+// knownServerWriters are the writers whose Flush always sends the headers
+// ("package path.type name"). Their types are not exported, and their names depend
+// on the Go version (the HTTP/2 writer is a pointer type in Go 1.26 and a value
+// type in Go 1.27), so they are compared by name, pointer or value. A renamed type
+// is not known: the tracker then keeps the state without the tracker, and the test
+// of the writers of this Go version fails.
+var knownServerWriters = map[string]bool{
+	"net/http.response":                     true, // HTTP/1
+	"net/http.http2responseWriter":          true, // HTTP/2 (Go 1.26)
+	"net/http.http2ResponseWriter":          true, // HTTP/2 (Go 1.27)
+	"golang.org/x/net/http2.responseWriter": true, // h2c and x/net HTTP/2
+	"net/http/httptest.ResponseRecorder":    true,
+}
+
+func knownServerWriter(w http.ResponseWriter) bool {
+	typ := reflect.TypeOf(w)
+	if typ == nil {
+		return false
+	}
+	if typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	return knownServerWriters[typ.PkgPath()+"."+typ.Name()]
 }
 
 func (t *commitTracker) hijack() (net.Conn, *bufio.ReadWriter, error) {

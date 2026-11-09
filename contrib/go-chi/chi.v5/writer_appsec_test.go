@@ -10,9 +10,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -331,7 +333,8 @@ func TestCommitTrackerGeneratedTypes(t *testing.T) {
 		if fe, ok := w.(interface{ FlushError() error }); ok {
 			assert.NoError(t, fe.FlushError(), "flags=%05b", flags)
 			assert.Equal(t, 1, raw.flushes, "flags=%05b", flags)
-			assert.True(t, ct.flushed, "flags=%05b", flags)
+			// The fake chi writer is not a known server writer: the state is unchanged.
+			assert.False(t, ct.flushed, "flags=%05b", flags)
 		}
 		if h, ok := w.(http.Hijacker); ok {
 			_, _, err := h.Hijack()
@@ -389,35 +392,74 @@ func TestCommitTrackerState(t *testing.T) {
 		assert.Equal(t, 1, f.flushes)
 	})
 
-	t.Run("FlushError only", func(t *testing.T) {
-		f := newFakeRaw()
-		tw, ct, _ := track(t, flushErrorOnly{f}, 1, nil)
+	t.Run("FlushError, known server writer", func(t *testing.T) {
+		// The recorder is a known writer: its Flush locks the status.
+		rec := httptest.NewRecorder()
+		tw, ct, _ := track(t, plain{rec}, 1, nil)
 		_, isFlusher := tw.(http.Flusher)
 		require.False(t, isFlusher)
 		require.NoError(t, http.NewResponseController(tw).Flush())
 		assert.True(t, ct.Committed())
 		assert.Equal(t, 200, ct.Status())
+		assert.True(t, rec.Flushed)
+	})
+
+	t.Run("FlushError, unknown writer", func(t *testing.T) {
+		// A writer that the tracker does not know can ignore the flush, or buffer it:
+		// the flush reaches it, but the state stays the one without the tracker.
+		f := newFakeRaw()
+		tw, ct, _ := track(t, flushErrorOnly{f}, 1, nil)
+		require.NoError(t, http.NewResponseController(tw).Flush())
+		assert.Equal(t, 1, f.flushes)
+		assert.False(t, ct.Committed())
+		assert.Equal(t, 0, ct.Status())
+
+		// A compressing writer ignores a flush before the first write.
+		rec := httptest.NewRecorder()
+		tw, ct, _ = track(t, plain{&ignoringWriter{ResponseWriter: rec}}, 1, nil)
+		require.NoError(t, http.NewResponseController(tw).Flush())
+		assert.False(t, rec.Flushed)
+		assert.False(t, ct.Committed())
+	})
+
+	t.Run("FlushError, outer tracker", func(t *testing.T) {
+		// The outer tracker recorded a flush (known writer): the inner one records it.
+		rec := httptest.NewRecorder()
+		otw, oct, _ := track(t, rec, 1, nil)
+		ctx := context.WithValue(context.Background(), trackerCtxKey{}, oct)
+		_, ict, _ := track(t, plain{otw}, 1, ctx)
+		require.NoError(t, http.NewResponseController(ict).Flush())
+		assert.True(t, oct.Committed())
+		assert.True(t, ict.Committed())
+
+		// The outer tracker did not record it (an unknown writer under it): neither does the inner one.
+		raw := &ignoringWriter{ResponseWriter: httptest.NewRecorder()}
+		otw, oct, _ = track(t, plain{raw}, 1, nil)
+		ctx = context.WithValue(context.Background(), trackerCtxKey{}, oct)
+		_, ict, _ = track(t, plain{otw}, 1, ctx)
+		require.NoError(t, http.NewResponseController(ict).Flush())
+		assert.False(t, oct.Committed())
+		assert.False(t, ict.Committed())
 	})
 
 	t.Run("flush then WriteHeader", func(t *testing.T) {
 		// The controller flush sends the implicit 200 and bypasses chi: a later
 		// WriteHeader changes chi's status, but not the response.
-		f := newFakeRaw()
-		tw, ct, _ := track(t, flushErrorOnly{f}, 1, nil)
+		tw, ct, _ := track(t, plain{httptest.NewRecorder()}, 1, nil)
 		require.NoError(t, http.NewResponseController(tw).Flush())
 		tw.WriteHeader(404)
 		assert.Equal(t, 200, ct.Status())
 		assert.Equal(t, 200, tw.(middleware.WrapResponseWriter).Status())
 
 		// A status that was sent before the flush stays.
-		tw, ct, _ = track(t, flushErrorOnly{f}, 1, nil)
+		tw, ct, _ = track(t, plain{httptest.NewRecorder()}, 1, nil)
 		tw.WriteHeader(201)
 		require.NoError(t, http.NewResponseController(tw).Flush())
 		tw.WriteHeader(404)
 		assert.Equal(t, 201, ct.Status())
 
 		// A child tracker reads the same status from its parent.
-		tw, ct, _ = track(t, flushErrorOnly{f}, 1, nil)
+		tw, ct, _ = track(t, plain{httptest.NewRecorder()}, 1, nil)
 		ctx := context.WithValue(context.Background(), trackerCtxKey{}, ct)
 		_, child, _ := track(t, plain{tw}, 1, ctx)
 		require.NoError(t, http.NewResponseController(tw).Flush())
@@ -717,4 +759,60 @@ func TestCommitTrackerSharedInput(t *testing.T) {
 		in["id"] = "changed"
 		assert.Equal(t, map[string]string{"id": "1"}, s.get(), "the set owns a copy")
 	})
+}
+
+// ignoringWriter is like a compressing writer: it ignores a Flush until a first
+// write, and it has Unwrap().
+type ignoringWriter struct {
+	http.ResponseWriter
+	written bool
+}
+
+func (w *ignoringWriter) Write(b []byte) (int, error) {
+	w.written = true
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *ignoringWriter) Flush() {
+	if w.written {
+		w.ResponseWriter.(http.Flusher).Flush()
+	}
+}
+
+func (w *ignoringWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// ResponseRecorder has the name of the recorder of net/http/httptest, in another
+// package: it is not a known writer.
+type ResponseRecorder struct{ http.ResponseWriter }
+
+// TestKnownServerWriters checks the names of the writers that net/http gives with
+// this Go version (they change between versions): HTTP/1, HTTP/2 and the recorder.
+func TestKnownServerWriters(t *testing.T) {
+	for _, h2 := range []bool{false, true} {
+		var known bool
+		var typeName string
+		srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			known, typeName = knownServerWriter(w), fmt.Sprintf("%T", w)
+		}))
+		srv.EnableHTTP2 = h2
+		if h2 {
+			srv.StartTLS()
+		} else {
+			srv.Start()
+		}
+		res, err := srv.Client().Get(srv.URL)
+		require.NoError(t, err)
+		res.Body.Close()
+		srv.Close()
+		assert.Equal(t, h2, res.ProtoMajor == 2)
+		assert.True(t, known, "HTTP/2=%v: %s", h2, typeName)
+	}
+
+	assert.True(t, knownServerWriter(httptest.NewRecorder()))
+	assert.True(t, knownServerWriter(&httptest.ResponseRecorder{}))
+	assert.False(t, knownServerWriter(ResponseRecorder{httptest.NewRecorder()}), "same name, another package")
+	assert.False(t, knownServerWriter(&ResponseRecorder{httptest.NewRecorder()}))
+	assert.False(t, knownServerWriter(plain{httptest.NewRecorder()}))
+	assert.False(t, knownServerWriter(&ignoringWriter{ResponseWriter: httptest.NewRecorder()}))
+	assert.False(t, knownServerWriter(nil))
 }
