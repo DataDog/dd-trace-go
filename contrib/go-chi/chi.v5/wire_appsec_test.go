@@ -7,6 +7,7 @@ package chi
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"io"
@@ -117,6 +118,7 @@ func (s wireServer) do(t *testing.T, rec *metricsRecorder, capture *opCapture, m
 	body, err := io.ReadAll(res.Body)
 	require.NoError(t, err)
 	res.Body.Close()
+	body = gunzipIfNeeded(t, body)
 	select {
 	case <-done:
 	case <-time.After(10 * time.Second):
@@ -136,6 +138,23 @@ func (s wireServer) do(t *testing.T, rec *metricsRecorder, capture *opCapture, m
 	}
 	sortStrings(out.events)
 	return out
+}
+
+// gunzipIfNeeded returns the decompressed body when it is a gzip stream. A
+// compressing middleware can send a gzip body after a flush has sent the
+// headers without Content-Encoding: the client does not decompress it, and the
+// compressed bytes depend on the Go version. The tests check the documented
+// behavior, not the compressed bytes.
+func gunzipIfNeeded(t *testing.T, body []byte) []byte {
+	t.Helper()
+	if len(body) < 2 || body[0] != 0x1f || body[1] != 0x8b {
+		return body
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(body))
+	require.NoError(t, err)
+	plain, err := io.ReadAll(zr)
+	require.NoError(t, err)
+	return plain
 }
 
 // Response writers that a test puts between net/http and the router.
