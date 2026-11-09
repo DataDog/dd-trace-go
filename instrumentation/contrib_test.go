@@ -327,9 +327,9 @@ func TestNoTracerServiceName(t *testing.T) {
 }
 
 // TestManifestNameMatchesTracedPackage fails when the top-level name of a contrib manifest.yaml
-// is not the TracedPackage of a package registered in packages.go. The manifest name identifies
-// the integration (the instrumented library), whereas packages[].name lists the published
-// packages and may legitimately differ.
+// is not the TracedPackage of the Package registered for that contrib path in packages.go, or
+// when two manifests share a name. The manifest name identifies the integration (the instrumented
+// library), whereas packages[].name lists the published packages and may legitimately differ.
 //
 // Origin: reviewers repeatedly had to ask for a new manifest's name to be changed to the
 // integration's TracedPackage, "like every other manifest", which is mechanical to check.
@@ -340,16 +340,13 @@ func TestManifestNameMatchesTracedPackage(t *testing.T) {
 	}
 
 	packagesMu.RLock()
-	traced := make(map[string]struct{}, len(packages))
-	for _, info := range packages {
-		if info.TracedPackage != "" {
-			traced[info.TracedPackage] = struct{}{}
-		}
+	tracedByPath := make(map[string]string, len(packages))
+	for pkg, info := range packages {
+		tracedByPath[string(pkg)] = info.TracedPackage
 	}
 	packagesMu.RUnlock()
 
-	var offending []string
-	var found int
+	var manifests []contribManifest
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -364,7 +361,6 @@ func TestManifestNameMatchesTracedPackage(t *testing.T) {
 		if d.Name() != "manifest.yaml" {
 			return nil
 		}
-		found++
 		relPath, _ := filepath.Rel(root, path)
 		raw, err := os.ReadFile(path)
 		if err != nil {
@@ -376,23 +372,117 @@ func TestManifestNameMatchesTracedPackage(t *testing.T) {
 		if err := yaml.Unmarshal(raw, &m); err != nil {
 			return fmt.Errorf("%s: %w", relPath, err)
 		}
-		if _, ok := traced[m.Name]; !ok {
-			offending = append(offending, fmt.Sprintf("%s: name %q", relPath, m.Name))
-		}
+		manifests = append(manifests, contribManifest{relPath: relPath, name: m.Name})
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if found == 0 {
+	if len(manifests) == 0 {
 		t.Fatal("no contrib manifest.yaml files found; the walk root is probably wrong")
 	}
 
+	offending := checkManifestNames(tracedByPath, manifests)
 	if len(offending) > 0 {
-		slices.Sort(offending)
-		t.Errorf("Found %d contrib manifest(s) whose name is not the TracedPackage of a package in "+
-			"instrumentation/packages.go. Set name to the integration's TracedPackage value "+
-			"(the published packages belong under packages[].name).\nOffending manifests:\n  %s",
+		t.Errorf("Found %d contrib manifest problem(s). Set name to this integration's TracedPackage "+
+			"in instrumentation/packages.go (the Package key is the contrib path); names must be unique. "+
+			"The published packages belong under packages[].name.\nOffending manifests:\n  %s",
 			len(offending), strings.Join(offending, "\n  "))
+	}
+}
+
+type contribManifest struct {
+	relPath string
+	name    string
+}
+
+// checkManifestNames reports manifests whose top-level name is not the TracedPackage of the
+// Package registered for that contrib path, or whose name is reused by another manifest.
+func checkManifestNames(tracedByPath map[string]string, manifests []contribManifest) []string {
+	var offending []string
+	byName := make(map[string][]string)
+	for _, m := range manifests {
+		contribPath := filepath.ToSlash(filepath.Dir(filepath.FromSlash(m.relPath)))
+		byName[m.name] = append(byName[m.name], m.relPath)
+		traced, ok := tracedByPath[contribPath]
+		if !ok {
+			offending = append(offending, fmt.Sprintf("%s: no Package in instrumentation/packages.go for contrib path %q", m.relPath, contribPath))
+			continue
+		}
+		if m.name != traced {
+			offending = append(offending, fmt.Sprintf("%s: name %q, want TracedPackage %q", m.relPath, m.name, traced))
+		}
+	}
+	for name, paths := range byName {
+		if len(paths) < 2 {
+			continue
+		}
+		slices.Sort(paths)
+		offending = append(offending, fmt.Sprintf("duplicate name %q used by %s", name, strings.Join(paths, ", ")))
+	}
+	slices.Sort(offending)
+	return offending
+}
+
+func TestCheckManifestNames(t *testing.T) {
+	traced := map[string]string{
+		"gorilla/mux": "github.com/gorilla/mux",
+		"foo/bar":     "github.com/foo/bar",
+	}
+	tests := []struct {
+		name      string
+		traced    map[string]string
+		manifests []contribManifest
+		want      []string
+	}{
+		{
+			name:   "matching unique names",
+			traced: traced,
+			manifests: []contribManifest{
+				{relPath: "gorilla/mux/manifest.yaml", name: "github.com/gorilla/mux"},
+				{relPath: "foo/bar/manifest.yaml", name: "github.com/foo/bar"},
+			},
+		},
+		{
+			name:   "copied name from another integration",
+			traced: traced,
+			manifests: []contribManifest{
+				{relPath: "gorilla/mux/manifest.yaml", name: "github.com/gorilla/mux"},
+				{relPath: "foo/bar/manifest.yaml", name: "github.com/gorilla/mux"},
+			},
+			want: []string{
+				`duplicate name "github.com/gorilla/mux" used by foo/bar/manifest.yaml, gorilla/mux/manifest.yaml`,
+				`foo/bar/manifest.yaml: name "github.com/gorilla/mux", want TracedPackage "github.com/foo/bar"`,
+			},
+		},
+		{
+			name:   "copied TracedPackage as well as name",
+			traced: map[string]string{"gorilla/mux": "github.com/gorilla/mux", "foo/bar": "github.com/gorilla/mux"},
+			manifests: []contribManifest{
+				{relPath: "gorilla/mux/manifest.yaml", name: "github.com/gorilla/mux"},
+				{relPath: "foo/bar/manifest.yaml", name: "github.com/gorilla/mux"},
+			},
+			want: []string{
+				`duplicate name "github.com/gorilla/mux" used by foo/bar/manifest.yaml, gorilla/mux/manifest.yaml`,
+			},
+		},
+		{
+			name:   "missing packages.go entry",
+			traced: traced,
+			manifests: []contribManifest{
+				{relPath: "new/lib/manifest.yaml", name: "github.com/new/lib"},
+			},
+			want: []string{
+				`new/lib/manifest.yaml: no Package in instrumentation/packages.go for contrib path "new/lib"`,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := checkManifestNames(tt.traced, tt.manifests)
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("problems mismatch\ngot:\n  %s\nwant:\n  %s", strings.Join(got, "\n  "), strings.Join(tt.want, "\n  "))
+			}
+		})
 	}
 }
