@@ -954,21 +954,16 @@ func GetBaseBranchSha(defaultBranch string) (string, error) {
 		source = headCommit
 	}
 	// A shallow clone, the default checkout of most CI providers, can hide where
-	// a candidate meets the source: only then is more history fetched. A month,
-	// the window that UnshallowGitRepository uses, while a candidate has no
-	// merge base; the full history only while none has one, as a candidate that
-	// never meets the source, such as an independent prod branch, would
-	// otherwise fetch it on every run. The month can cut older history short;
-	// if that loses every merge base, the full history brings it back. Each
-	// step compares again even when it fetched nothing: the Git upload, which
-	// can still be running, may have deepened the clone meanwhile.
+	// a candidate meets the source: only then is more history fetched, the month
+	// that UnshallowGitRepository fetches for the Git upload. Older merge bases
+	// stay out of reach: the full history of a large repository costs minutes,
+	// and a fetch that fails, such as one racing another test process, would
+	// otherwise trigger it. The comparison runs again even when nothing was
+	// fetched: the Git upload, which can still be running, may have deepened
+	// the clone meanwhile.
 	baseSha, complete, err := findBaseBranchSha(candidateBranches, source, detectedDefaultBranch, remoteName)
 	if !complete {
-		deepenShallowClone(remoteName, unshallowSince, "--update-shallow")
-		baseSha, _, err = findBaseBranchSha(candidateBranches, source, detectedDefaultBranch, remoteName)
-	}
-	if baseSha == "" {
-		deepenShallowClone(remoteName, "--unshallow")
+		deepenShallowClone(remoteName)
 		baseSha, _, err = findBaseBranchSha(candidateBranches, source, detectedDefaultBranch, remoteName)
 	}
 	return baseSha, err
@@ -1002,13 +997,13 @@ func findBaseBranchSha(candidateBranches []string, sourceBranch, defaultBranch, 
 	return baseSha, complete, nil
 }
 
-// deepenShallowClone fetches, with the given depth options, the history behind
-// each commit where the shallow clone ends: the tips that it fetched, among
+// deepenShallowClone fetches the month of history behind each commit where the
+// shallow clone ends: the tips that it fetched, among
 // them the source branch's even when HEAD is a local commit that the remote
 // lacks. Each one is fetched alone, so a commit that the remote no longer has,
 // such as the tip of a deleted branch, leaves the others alone; it stops once
 // the clone is complete. Only commits and trees are fetched.
-func deepenShallowClone(remoteName string, depth ...string) {
+func deepenShallowClone(remoteName string) {
 	isAShallowClone, err := isAShallowCloneRepository()
 	if err != nil || !isAShallowClone {
 		return
@@ -1022,8 +1017,7 @@ func deepenShallowClone(remoteName string, depth ...string) {
 		return
 	}
 	for commit := range strings.FieldsSeq(string(boundaries)) {
-		args := append(append([]string{"fetch"}, depth...), "--filter=blob:none", "--recurse-submodules=no", remoteName, commit)
-		if _, err := execGitString(telemetry.UnshallowCommandsType, args...); err != nil {
+		if _, err := execGitString(telemetry.UnshallowCommandsType, "fetch", unshallowSince, "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", remoteName, commit); err != nil {
 			log.Debug("civisibility.git: failed to deepen the shallow clone at %s: %s", commit, err.Error())
 			continue
 		}

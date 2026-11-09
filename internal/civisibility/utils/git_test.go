@@ -911,6 +911,8 @@ func TestGetBaseBranchShaInShallowClones(t *testing.T) {
 		pullRequest bool
 		// stillShallow checks that no full history was fetched.
 		stillShallow bool
+		// noBase expects no base commit: it is older than the fetched month.
+		noBase bool
 	}{
 		{name: "push checkout", checkout: pushCheckout},
 		// A month of history would cut the base off: the checkout already holds it.
@@ -922,8 +924,8 @@ func TestGetBaseBranchShaInShallowClones(t *testing.T) {
 				runFixtureGit(t, checkout, "fetch", "--no-tags", "--depth=2", "origin", "+"+feature+":refs/remotes/origin/feature", "+"+main+":refs/remotes/origin/main")
 				runFixtureGit(t, checkout, "checkout", "--force", "-B", "feature", "refs/remotes/origin/feature")
 			}},
-		{name: "branch older than a month", baseAge: 60 * day, checkout: pushCheckout},
-		{name: "every commit older than a month", baseAge: 90 * day, featureAge: 89 * day, mainAge: 88 * day, checkout: pushCheckout},
+		{name: "branch older than a month", firstAge: 90 * day, baseAge: 60 * day, noBase: true, stillShallow: true, checkout: pushCheckout},
+		{name: "every commit older than a month", baseAge: 90 * day, featureAge: 89 * day, mainAge: 88 * day, noBase: true, stillShallow: true, checkout: pushCheckout},
 		{name: "local commit", checkout: func(t *testing.T, origin, checkout, feature, main string) {
 			pushCheckout(t, origin, checkout, feature, main)
 			runFixtureGit(t, checkout, "commit", "--allow-empty", "-m", "synthesized merge")
@@ -985,13 +987,21 @@ func TestGetBaseBranchShaInShallowClones(t *testing.T) {
 				ResetCITags()
 				t.Cleanup(ResetCITags)
 				AddCITags(constants.GitPrBaseBranch, prBaseBranch)
+				// The CI running these tests can give a head commit of its own.
+				headCommit := ""
 				if tt.pullRequest {
-					AddCITags(constants.GitHeadCommit, feature)
+					headCommit = feature
 				}
+				AddCITags(constants.GitHeadCommit, headCommit)
 
 				sha, err := GetBaseBranchSha("")
-				require.NoError(t, err)
-				assert.Equal(t, base, sha)
+				if tt.noBase {
+					assert.ErrorContains(t, err, "merge base")
+					assert.Empty(t, sha)
+				} else {
+					require.NoError(t, err)
+					assert.Equal(t, base, sha)
+				}
 				if tt.stillShallow {
 					assert.Equal(t, "true", runFixtureGit(t, checkout, "rev-parse", "--is-shallow-repository"))
 				}
@@ -1033,6 +1043,7 @@ func TestGetBaseBranchShaAfterTheGitUploadCompletesTheHistory(t *testing.T) {
 	ResetCITags()
 	t.Cleanup(ResetCITags)
 	AddCITags(constants.GitPrBaseBranch, "")
+	AddCITags(constants.GitHeadCommit, "")
 
 	require.True(t, isGitFound())
 	testBinary, err := os.Executable()
