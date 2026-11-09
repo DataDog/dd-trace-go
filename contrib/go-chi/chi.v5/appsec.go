@@ -162,12 +162,33 @@ func lookupRoute(rctx *chi.Context, r *http.Request, cfg *config) (route string,
 		return "", nil, false
 	}
 	// chi may already have routed part of the request (a parent mount), possibly
-	// with a changed route path. A prediction that does not extend the routes that
-	// chi matched contradicts chi: drop it, and keep what chi matched.
-	if known := rctx.RoutePatterns; len(known) > 0 && !slices.Equal(known, tmp.RoutePatterns[:min(len(known), len(tmp.RoutePatterns))]) {
+	// with a changed route path. A prediction that does not extend what chi
+	// matched contradicts chi: drop it, and keep what chi matched.
+	if !extendsMatched(rctx, tmp) {
 		return "", nil, false
 	}
 	return cfg.modifyResourceName(tmp.RoutePattern()), lookupParams(tmp), true
+}
+
+// extendsMatched reports whether the prediction tmp starts with what chi already
+// matched in rctx: the same route patterns, and the same parameters (name and
+// value) of those patterns. The "*" values are not compared: chi blanks the "*"
+// that connects a mount when it enters the mount, and the lookup does not.
+func extendsMatched(rctx, tmp *chi.Context) bool {
+	known := rctx.RoutePatterns
+	if len(known) > len(tmp.RoutePatterns) || !slices.Equal(known, tmp.RoutePatterns[:len(known)]) {
+		return false
+	}
+	keys, values := rctx.URLParams.Keys, rctx.URLParams.Values
+	if len(keys) != len(values) || len(keys) > len(tmp.URLParams.Keys) || len(tmp.URLParams.Keys) != len(tmp.URLParams.Values) {
+		return false
+	}
+	for i, key := range keys {
+		if key != tmp.URLParams.Keys[i] || (key != "*" && values[i] != tmp.URLParams.Values[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 // lookupParams returns the URL parameters that a successful Match left in tmp.

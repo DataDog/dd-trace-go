@@ -61,6 +61,7 @@ func TestLookupRoute(t *testing.T) {
 	root.Mount("/api", child)
 	root.Mount("/mid", middle)
 	root.Mount("/opaque", opaqueHandler(child))
+	root.Mount("/t/{tid}", child)
 
 	for _, tt := range []struct {
 		name       string
@@ -91,6 +92,20 @@ func TestLookupRoute(t *testing.T) {
 			wantRoute: "/api/users/{id}", wantParams: map[string]string{"*": "", "id": "7"}, wantFound: true},
 		{name: "contradicts the routes that chi matched", target: "/api/users/7",
 			prepare: func(rctx *chi.Context) { rctx.RoutePatterns = []string{"/other/*"} }, wantFound: false},
+		{name: "same patterns and parameters as chi matched", target: "/t/clean/users/7",
+			prepare: func(rctx *chi.Context) {
+				rctx.RoutePatterns = []string{"/t/{tid}/*"}
+				rctx.URLParams.Add("tid", "clean")
+				rctx.URLParams.Add("*", "")
+			},
+			wantRoute: "/t/{tid}/users/{id}", wantParams: map[string]string{"tid": "clean", "*": "", "id": "7"}, wantFound: true},
+		{name: "same patterns, another value of a parameter", target: "/t/clean/users/7",
+			prepare: func(rctx *chi.Context) {
+				rctx.RoutePatterns = []string{"/t/{tid}/*"}
+				rctx.URLParams.Add("tid", "attack")
+				rctx.URLParams.Add("*", "")
+			},
+			wantFound: false},
 		{name: "route is final", target: "/items/42", prepare: func(rctx *chi.Context) { rctx.RoutePatterns = []string{"/items/{id}"} }, wantFound: false},
 		{name: "raw path", target: "/items/a%2Fb", wantRoute: "/items/{id}", wantParams: map[string]string{"id": "a%2Fb"}, wantFound: true},
 		{name: "empty path", target: "", wantRoute: "/", wantFound: true},

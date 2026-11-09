@@ -260,3 +260,38 @@ func fixtureOrdinaryMount() routerFixture {
 		return r
 	}}
 }
+
+// rewriteSamePattern changes the route path of "/api/<x>/items/clean?id=<y>" to
+// "/api/<y>/items/clean": the parent routes the same mount pattern with another
+// value of the parameter.
+func rewriteSamePattern(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if rctx := chi.RouteContext(r.Context()); rctx != nil && r.URL.Query().Get("id") != "" {
+			rctx.RoutePath = "/api/" + r.URL.Query().Get("id") + "/items/clean"
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// fixtureSamePatternRewrite is setup 17: the parent rewrites the route path so
+// that the mount "/api/{id}" gets another "id" than the URL of the request. The
+// lookup of the URL gives the same patterns, with the other value.
+func fixtureSamePatternRewrite(rootTracer bool) routerFixture {
+	name := "17 parent rewrites the value of a mount parameter"
+	if rootTracer {
+		name = "17b as 17, with a tracer on the root router"
+	}
+	return routerFixture{name, "GET", "/api/clean/items/clean?id=ATTACK", func(first func(http.Handler) http.Handler, h http.HandlerFunc) http.Handler {
+		r := chi.NewRouter()
+		r.Use(first)
+		if rootTracer {
+			r.Use(Middleware())
+		}
+		r.Use(rewriteSamePattern)
+		child := chi.NewRouter()
+		child.Use(Middleware())
+		child.Get("/items/{item}", h)
+		r.Mount("/api/{id}", child)
+		return r
+	}}
+}

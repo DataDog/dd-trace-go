@@ -197,6 +197,11 @@ func TestAppSecRouteSetups(t *testing.T) {
 			clean{[]string{"/api/{id}/items/{item}"}, nil, 0},
 			attack{early: true, route: "/api/{id}/*", events: pathBlock, spanRoute: "/api/{id}/*",
 				earlyRoute: "/api/{id}/*", earlyParams: pp("*", "", "id", "attack-1")}},
+		// The same patterns, with another value for "id": chi matched "attack-1".
+		{fixtureSamePatternRewrite(false),
+			clean{[]string{"/api/{id}/items/{item}"}, nil, 0},
+			attack{early: true, route: "/api/{id}/*", events: pathBlock, spanRoute: "/api/{id}/*",
+				earlyRoute: "/api/{id}/*", earlyParams: pp("*", "", "id", "attack-1")}},
 	}
 
 	for _, c := range cases {
@@ -542,4 +547,17 @@ func TestAppSecConcurrentRequests(t *testing.T) {
 			assert.Equal(t, r.id+"/7", r.body)
 		}
 	}
+}
+
+// TestAppSecSamePatternRewriteNested adds a tracer on the root router, before the
+// rewrite: its prediction uses the URL of the request ("id" = "clean"), but the
+// tracer of the child router must still block with the "id" that chi matched.
+func TestAppSecSamePatternRewriteNested(t *testing.T) {
+	rec := startAppSecRules(t, rulePathBlock)
+	capture := newOpCapture()
+	o := serveFixture(t, rec, capture, fixtureSamePatternRewrite(true), "attack-1")
+	assert.Equal(t, http.StatusForbidden, o.status)
+	assert.False(t, o.ran, "blocked before the handler")
+	assert.Equal(t, []string{"path-block"}, o.events)
+	assert.Len(t, o.routes, 2, "the tracers of the root and of the child router")
 }

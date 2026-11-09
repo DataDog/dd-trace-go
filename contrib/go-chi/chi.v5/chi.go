@@ -49,11 +49,13 @@ func init() {
 // check is wrong, a detection-only rule that matches the wrong parameters can
 // also hide a detection-only rule of the same type that matches the correct
 // parameters later (also from a r.With(Middleware()) on the endpoint). The
-// early check does not send the "*" of a mount that this middleware wraps
-// (r.With(Middleware()).Mount), and AppSec cannot clear parameters: if chi
-// finally selects a route without parameters, the early parameters stay. When
-// a parameter name is used at several levels of mounts, AppSec reports the last
-// value, the one that chi.URLParam returns.
+// early check resets the "*" that connects a mount to "", like chi does when it
+// enters the mount, when it can search the mount (also with
+// r.With(Middleware()).Mount); a mount that it cannot search keeps the remainder
+// of the path in "*". AppSec cannot clear parameters: if chi finally selects a
+// route without parameters, the early parameters stay. When a parameter name is
+// used at several levels of mounts, AppSec reports the last value, the one that
+// chi.URLParam returns.
 //
 // After the handler returns, AppSec gets the route and the path parameters that
 // chi selected. A block or a redirect at that time replaces the response only if
