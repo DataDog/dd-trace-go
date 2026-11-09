@@ -11,6 +11,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,6 +23,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/maintest"
 )
 
@@ -87,6 +90,124 @@ func TestLambdaNoRPC(t *testing.T) {
 	run := runLambda(t, bin, "Start", invokes)
 	require.False(t, run.exited, "the app exited:\n%s", run.output)
 	requireInvocations(t, run, "Start", invokes, true)
+}
+
+// TestLambdaExtension runs mainapp as if the Datadog Extension were installed,
+// against a fake extension. ddlambda's requests to the extension must not be
+// traced: tracing them would report each call as a span, and overwrite the
+// trace headers the extension reads with the request span's own context.
+func TestLambdaExtension(t *testing.T) {
+	ext := newFakeExtension(t)
+	// The extension counts as running when this file exists.
+	marker := filepath.Join(t.TempDir(), "datadog-agent")
+	require.NoError(t, os.WriteFile(marker, nil, 0o600))
+
+	const extPkg = "github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
+	bin := maintest.BuildWithOrchestrion(t, "./aws_lambda/mainapp",
+		"-ldflags=-X "+extPkg+".extensionURL="+ext.url+" -X "+extPkg+".extensionPath="+marker)
+
+	agent := maintest.NewAgent(t)
+	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(downstream.Close)
+	invokes := []invocation{{event: `{}`, body: `"ok"`}}
+	rt := newFakeRuntime("Start", invokes)
+	srv := httptest.NewServer(rt)
+	t.Cleanup(srv.Close)
+
+	lambdaSpans := func() []*agenttest.Span {
+		var out []*agenttest.Span
+		for _, s := range agent.Spans() {
+			if s.Operation == "aws.lambda" {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	stdout, stderr, exited := maintest.ExecUntil(t, bin, []string{
+		"AWS_LAMBDA_RUNTIME_API=" + strings.TrimPrefix(srv.URL, "http://"),
+		"AWS_LAMBDA_FUNCTION_NAME=" + functionName,
+		"LAMBDA_VARIANT=Start",
+		"LAMBDA_HTTP_URL=" + downstream.URL,
+		"DD_SERVICE=" + serviceName,
+		"DD_TRACE_STARTUP_LOGS=false",
+		// With the extension running, the tracer sends spans to an agent.
+		"DD_TRACE_AGENT_URL=" + agent.URL(),
+	}, func([]byte, []byte) bool {
+		return len(rt.snapshot()) == len(invokes) && len(ext.requests(endInvocationPath)) == 1 && len(lambdaSpans()) == 1
+	}, 45*time.Second)
+	output := "stdout:\n" + string(stdout) + "\nstderr:\n" + string(stderr)
+	require.False(t, exited, "the app exited:\n%s", output)
+
+	starts := ext.requests(startInvocationPath)
+	require.Len(t, starts, 1)
+	for _, h := range []string{"x-datadog-trace-id", "x-datadog-parent-id", "traceparent"} {
+		assert.Empty(t, starts[0].Get(h), "start-invocation carries an injected %s header", h)
+	}
+
+	root := lambdaSpans()[0]
+	assert.Equal(t, uint64(extTraceID), root.TraceID, "aws.lambda continues the extension's trace")
+	assert.Equal(t, uint64(extParentID), root.ParentID)
+
+	end := ext.requests(endInvocationPath)[0]
+	assert.Equal(t, strconv.Itoa(extTraceID), end.Get("x-datadog-trace-id"))
+	assert.Equal(t, strconv.Itoa(extParentID), end.Get("x-datadog-parent-id"))
+	assert.Equal(t, "1", end.Get("x-datadog-sampling-priority"))
+	assert.Equal(t, strconv.FormatUint(root.SpanID, 10), end.Get("x-datadog-span-id"))
+
+	var children int
+	for _, s := range agent.Spans() {
+		assert.NotContains(t, s.Meta["http.url"], ext.url, "a request to the extension was traced")
+		if s.Operation == "http.request" && s.ParentID == root.SpanID && s.Meta["http.url"] == downstream.URL {
+			children++
+		}
+	}
+	assert.Equal(t, 1, children, "the handler's own request is still traced")
+}
+
+const (
+	startInvocationPath = "/lambda/start-invocation"
+	endInvocationPath   = "/lambda/end-invocation"
+
+	// The trace context the fake extension returns from start-invocation.
+	extTraceID  = 1234567890
+	extParentID = 987654321
+)
+
+// fakeExtension implements the Datadog Extension routes ddlambda calls, and
+// records the headers of each request.
+type fakeExtension struct {
+	url string
+
+	mu      sync.Mutex
+	headers map[string][]http.Header
+}
+
+func newFakeExtension(t *testing.T) *fakeExtension {
+	t.Helper()
+	ext := &fakeExtension{headers: map[string][]http.Header{}}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		ext.mu.Lock()
+		ext.headers[r.URL.Path] = append(ext.headers[r.URL.Path], r.Header.Clone())
+		ext.mu.Unlock()
+		if r.URL.Path == startInvocationPath {
+			w.Header().Set("x-datadog-trace-id", strconv.Itoa(extTraceID))
+			w.Header().Set("x-datadog-parent-id", strconv.Itoa(extParentID))
+			w.Header().Set("x-datadog-sampling-priority", "1")
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	ext.url = srv.URL
+	return ext
+}
+
+func (e *fakeExtension) requests(path string) []http.Header {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return append([]http.Header(nil), e.headers[path]...)
 }
 
 // requireInvocations checks the responses, spans, and enhanced metrics of a

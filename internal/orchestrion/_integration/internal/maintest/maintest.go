@@ -65,6 +65,17 @@ func NewAgent(t *testing.T) *Agent {
 	return a
 }
 
+// URL is the agent's address, for DD_TRACE_AGENT_URL.
+func (a *Agent) URL() string {
+	return a.url
+}
+
+// Spans returns a copy of every span the agent collected so far, in random
+// order. It is safe to call while the program under test is running.
+func (a *Agent) Spans() []*agenttest.Span {
+	return a.Agent.(agenttest.SpanLister).Spans()
+}
+
 // Requests reports how many requests the agent received.
 func (a *Agent) Requests() int {
 	return int(a.requests.Load())
