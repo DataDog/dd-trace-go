@@ -526,7 +526,9 @@ func TestAppSecWireSpecial(t *testing.T) {
 				return httptest.NewRecorder(), req.WithContext(context.WithValue(req.Context(), realWriterKey{}, w))
 			}}, "/api/items/clean"
 		})
-		assert.Equal(t, []string{"/api/items/{id}", "/api/items/{id}"}, res.routes, "the AppSec route of each operation")
+		t.Run("route", func(t *testing.T) {
+			assert.Equal(t, []string{"/api/items/{id}", "/api/items/{id}"}, res.routes, "the AppSec route of each operation")
+		})
 		assert.True(t, res.ran)
 		assert.Equal(t, 403, res.status)
 		assert.Contains(t, res.body, `{"errors":`)
@@ -582,7 +584,9 @@ func TestAppSecWireHiddenParent(t *testing.T) {
 		res := wireOnce(t, []string{ruleMixedBlock}, func(c *opCapture, ran *bool) (wireServer, string) {
 			return mounted(c, ran, true, true)
 		})
-		assert.Equal(t, []string{"/api/items/{id}", "/api/items/{id}"}, res.routes, "the AppSec route of each operation")
+		t.Run("route", func(t *testing.T) {
+			assert.Equal(t, []string{"/api/items/{id}", "/api/items/{id}"}, res.routes, "the AppSec route of each operation")
+		})
 		// The root tracker saw the flush: the block cannot replace the response.
 		assert.Equal(t, 200, res.status)
 		assert.Empty(t, res.body)
@@ -596,7 +600,9 @@ func TestAppSecWireHiddenParent(t *testing.T) {
 		res := wireOnce(t, []string{ruleMixedBlock}, func(c *opCapture, ran *bool) (wireServer, string) {
 			return mounted(c, ran, false, true)
 		})
-		assert.Equal(t, []string{"/api/items/{id}", "/api/items/{id}"}, res.routes, "the AppSec route of each operation")
+		t.Run("route", func(t *testing.T) {
+			assert.Equal(t, []string{"/api/items/{id}", "/api/items/{id}"}, res.routes, "the AppSec route of each operation")
+		})
 		assert.Equal(t, 403, res.status)
 		assert.Contains(t, res.body, `{"errors":`)
 		assert.Empty(t, res.log)
@@ -615,7 +621,9 @@ func TestAppSecWireHiddenParent(t *testing.T) {
 		res := wireOnce(t, []string{ruleMixedBlockHeaderFirst}, func(c *opCapture, ran *bool) (wireServer, string) {
 			return mounted(c, ran, true, false)
 		})
-		assert.Equal(t, []string{"/api/items/{id}", "/api/items/{id}"}, res.routes, "the AppSec route of each operation")
+		t.Run("route", func(t *testing.T) {
+			assert.Equal(t, []string{"/api/items/{id}", "/api/items/{id}"}, res.routes, "the AppSec route of each operation")
+		})
 		assert.Equal(t, 200, res.status)
 		assert.Empty(t, res.body)
 		assert.Empty(t, res.log)
@@ -631,7 +639,9 @@ func TestAppSecWireHiddenParent(t *testing.T) {
 		res := wireOnce(t, []string{ruleMixedBlock}, func(c *opCapture, ran *bool) (wireServer, string) {
 			return mounted(c, ran, true, false)
 		})
-		assert.Equal(t, []string{"/api/items/{id}", "/api/items/{id}"}, res.routes, "the AppSec route of each operation")
+		t.Run("route", func(t *testing.T) {
+			assert.Equal(t, []string{"/api/items/{id}", "/api/items/{id}"}, res.routes, "the AppSec route of each operation")
+		})
 		assert.Equal(t, 200, res.status)
 		assert.Contains(t, res.body, `{"errors":`, "documented limit")
 		assert.Equal(t, []string{"mixed-block"}, res.events)
@@ -645,7 +655,9 @@ func TestAppSecWireHiddenParent(t *testing.T) {
 		res := wireOnce(t, []string{ruleHeaderBlock}, func(c *opCapture, ran *bool) (wireServer, string) {
 			return mounted(c, ran, true, false)
 		})
-		assert.Equal(t, []string{"/api/items/{id}", "/api/items/{id}"}, res.routes, "the AppSec route of each operation")
+		t.Run("route", func(t *testing.T) {
+			assert.Equal(t, []string{"/api/items/{id}", "/api/items/{id}"}, res.routes, "the AppSec route of each operation")
+		})
 		assert.Equal(t, 200, res.status)
 		assert.Contains(t, res.body, `{"errors":`, "documented limit (this exists without this change)")
 		assert.EqualValues(t, 1, res.requestBlocked(), "a false report")
@@ -661,7 +673,9 @@ func TestAppSecWireHiddenParent(t *testing.T) {
 			r.Get("/items/{id}", readyHandler(ran, nil))
 			return wireServer{router: r}, "/items/attack"
 		})
-		assert.Equal(t, []string{"/items/{id}", "/items/{id}"}, res.routes, "the AppSec route of each operation")
+		t.Run("route", func(t *testing.T) {
+			assert.Equal(t, []string{"/items/{id}", "/items/{id}"}, res.routes, "the AppSec route of each operation")
+		})
 		assert.Equal(t, 200, res.status)
 		assert.Contains(t, res.body, `{"errors":`, "documented limit")
 		assert.Empty(t, res.log)
@@ -683,7 +697,9 @@ func TestAppSecWireHiddenParent(t *testing.T) {
 			r.Mount("/api", child)
 			return wireServer{router: r}, "/api/items/attack/"
 		})
-		assert.Equal(t, []string{"/api/items/{id}"}, res.routes, "the AppSec route of each operation")
+		t.Run("route", func(t *testing.T) {
+			assert.Equal(t, []string{"/api/items/{id}"}, res.routes, "the AppSec route of each operation")
+		})
 		assert.Equal(t, 200, res.status)
 		assert.Contains(t, res.body, `{"errors":`, "documented limit")
 		assert.EqualValues(t, 1, res.requestBlocked(), "a false report")
