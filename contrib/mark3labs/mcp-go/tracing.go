@@ -49,8 +49,8 @@ var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandler
 		startOpts := []llmobs.StartSpanOption{
 			llmobs.WithIntegration(string(instrumentation.PackageMark3LabsMCPGo)),
 		}
-		if sessionID := sessionIDFromContext(ctx); sessionID != "" {
-			startOpts = append(startOpts, llmobs.WithSessionID(sessionID))
+		if session := server.ClientSessionFromContext(ctx); session != nil {
+			startOpts = append(startOpts, llmobs.WithSessionID(session.SessionID()))
 		}
 		toolSpan, ctx := llmobs.StartToolSpan(ctx, request.Params.Name, startOpts...)
 		if intent, ok := IntentFromContext(ctx); ok {
@@ -201,17 +201,10 @@ func (h *hooks) onError(ctx context.Context, id any, method mcp.MCPMethod, messa
 
 }
 
-// sessionIDFromContext returns "" for stateless requests, which have no session.
-func sessionIDFromContext(ctx context.Context) string {
-	if session := server.ClientSessionFromContext(ctx); session != nil {
-		return session.SessionID()
-	}
-	return ""
-}
-
 func tagWithSessionID(ctx context.Context, span llmobs.Span) {
-	if sessionID := sessionIDFromContext(ctx); sessionID != "" {
-		span.Annotate(llmobs.WithAnnotatedTags(map[string]string{instrmcp.MCPSessionIDTag: sessionID}))
+	session := server.ClientSessionFromContext(ctx)
+	if session != nil && session.SessionID() != "" {
+		span.Annotate(llmobs.WithAnnotatedTags(map[string]string{instrmcp.MCPSessionIDTag: session.SessionID()}))
 	}
 }
 
