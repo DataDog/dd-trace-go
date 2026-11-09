@@ -296,10 +296,6 @@ func TestCommitTrackerGeneratedTypes(t *testing.T) {
 	assert.Panics(t, func() { wrapCommitTracker(&commitTracker{}, hasFlusher|hasFlushError) })
 }
 
-type errReader struct{}
-
-func (errReader) Read([]byte) (int, error) { return 0, errors.New("read error") }
-
 // TestCommitTrackerState checks when a tracker reports that the response is sent.
 func TestCommitTrackerState(t *testing.T) {
 	full := func() (http.ResponseWriter, *commitTracker, middleware.WrapResponseWriter, *fakeRaw) {

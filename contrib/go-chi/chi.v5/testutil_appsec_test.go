@@ -6,6 +6,7 @@
 package chi
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -213,3 +214,8 @@ func pathRule(id, typ, key, action string) string {
 		"conditions":[{"operator":"match_regex","parameters":{"inputs":[{"address":"server.request.path_params","key_path":[%q]}],"regex":"attack"}}],
 		"on_match":%s}`, id, id, typ, key, onMatch)
 }
+
+// errReader fails on the first read.
+type errReader struct{}
+
+func (errReader) Read([]byte) (int, error) { return 0, errors.New("read error") }
