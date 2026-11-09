@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -193,6 +194,23 @@ func TestTagFitsTheTagLength(t *testing.T) {
 	if tag := newOwnership([]string{"@" + strings.Repeat("a", MaximumTagLength)}).Tag(); tag != "" {
 		t.Fatalf("oversized owner: %d characters", len(tag))
 	}
+
+	// A huge list is cut while encoding, not encoded whole first: 100,000
+	// owners encode to 1.3 MB, the tag keeps about 5 KB of them.
+	huge := make([]string, 100_000)
+	for i := range huge {
+		huge[i] = fmt.Sprintf("@u%08d", i)
+	}
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	tag = newOwnership(huge).Tag()
+	runtime.ReadMemStats(&after)
+	if allocated := after.TotalAlloc - before.TotalAlloc; allocated > 256*1024 {
+		t.Fatalf("encoding allocated %d bytes for a %d-byte tag", allocated, len(tag))
+	}
+	if err := json.Unmarshal([]byte(tag), &decoded); err != nil || len(tag) > MaximumTagLength {
+		t.Fatalf("huge list: %d bytes, %v", len(tag), err)
+	}
 }
 func TestReadFailuresAndFileLimit(t *testing.T) {
 	if c, err := Parse(io.MultiReader(strings.NewReader("* @first\n"), failingReader{}), GitHub); c != nil || !errors.Is(err, io.ErrUnexpectedEOF) {
@@ -322,6 +340,68 @@ func FuzzParseFile(f *testing.F) {
 		}
 	})
 }
+
+// A "*literal" segment compares by suffix; it must agree with the general
+// token matcher on every value.
+func TestSuffixSegmentMatchesTokens(t *testing.T) {
+	for _, pattern := range []string{"*go.mod", "*.md", "*a", "*_test.go", "*[x"} {
+		for _, dialect := range []Dialect{GitHub, GitLab} {
+			segment, ok := compilePathSegment(pattern, dialect)
+			if !ok {
+				t.Fatal(pattern)
+			}
+			if !segment.suffix && !(dialect == GitLab && pattern == "*[x") {
+				t.Fatalf("%s: suffix fast path not used", pattern)
+			}
+			for _, value := range []string{"", "go.mod", "xgo.mod", "go.modx", "o.mod", "é.md", "😀.md", ".md", "md", "a", "aa", "x_test.go", "_test.go", "[x", "y[x"} {
+				checkSuffixSegment(t, pattern, dialect, value)
+			}
+		}
+	}
+}
+
+// A suffix segment is not part of a rooted literal prefix.
+func TestRootedSuffixSegment(t *testing.T) {
+	for dialect, name := range map[Dialect]string{GitHub: "GitHub", GitLab: "GitLab"} {
+		checkRules(t, dialect, []ruleTest{{
+			name:  name + " rooted suffix segment",
+			rules: "/src/*foo/bar @suffix\n",
+			files: []fileTest{
+				{"/src/xfoo/bar", []string{"@suffix"}},
+				{"/src/foo/bar", []string{"@suffix"}},
+				{"/src/foox/bar", nil},
+				{"/src/xfoo/baz", nil},
+			},
+		}})
+	}
+}
+
+func checkSuffixSegment(t *testing.T, pattern string, dialect Dialect, value string) {
+	t.Helper()
+	segment, _ := compilePathSegment(pattern, dialect)
+	tokens, ok := compileSegment(pattern, dialect)
+	if !ok {
+		return
+	}
+	if got, want := segment.matches(value), matchSegment(tokens, value); got != want {
+		t.Errorf("pattern=%q dialect=%d value=%q got=%v want=%v", pattern, dialect, value, got, want)
+	}
+}
+
+func FuzzSuffixSegment(f *testing.F) {
+	f.Add("go.mod", "xgo.mod")
+	f.Add(".md", "é.md")
+	f.Add("a", "")
+	f.Fuzz(func(t *testing.T, literal, value string) {
+		if len(literal) > 64 || len(value) > 256 || strings.ContainsRune(value, '/') {
+			t.Skip()
+		}
+		for _, dialect := range []Dialect{GitHub, GitLab} {
+			checkSuffixSegment(t, "*"+literal, dialect, value)
+		}
+	})
+}
+
 func TestPathologicalMatchingAndLargeOwnerLists(t *testing.T) {
 	pattern := strings.Repeat("*a", 32) + "b"
 	c, _ := Parse(strings.NewReader("* @global\n"+pattern+" @slow"), GitHub)
@@ -355,10 +435,17 @@ func TestPathologicalMatchingAndLargeOwnerLists(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("concurrent matching exceeded the matching timeout")
 	}
-	c, _ = Parse(strings.NewReader("* @global\n*"+strings.Repeat("a", 256)+"b @slow"), GitHub)
+	c, _ = Parse(strings.NewReader("* @global\n*"+strings.Repeat("a", 256)+"? @slow"), GitHub)
 	got, _ = c.Match("/" + strings.Repeat("a", 2000) + "b")
 	if got.FirstOwner() != "@global" || c.Diagnostics() != 0 {
 		t.Fatal("match work limit was not applied")
+	}
+	// "*" and an ASCII literal is a suffix comparison, linear and exact, so it
+	// needs no limit; upstream gives up here, but no real file name is that long.
+	c, _ = Parse(strings.NewReader("* @global\n*"+strings.Repeat("a", 256)+"b @suffix"), GitHub)
+	got, _ = c.Match("/" + strings.Repeat("a", 2000) + "b")
+	if got.FirstOwner() != "@suffix" {
+		t.Fatalf("suffix segment: %v", got.Owners())
 	}
 	var text strings.Builder
 	text.WriteString("*.go")

@@ -19,6 +19,10 @@
 //     descendants only to directory patterns.
 //   - "?" and character classes match one Unicode code point, not one UTF-16
 //     code unit, so "?.go" matches "😀.go".
+//   - A segment of "*" and an ASCII literal, such as "*go.mod", is compared
+//     by suffix without upstream's match step limit; the limit only stops
+//     segments far longer than the 255-character file names of common file
+//     systems.
 //   - Discovery reads only the given directory instead of searching for a Git
 //     root, and reads only regular files that resolve inside it.
 //   - Tag leaves out owners beyond MaximumTagLength.
@@ -112,6 +116,22 @@ func (o *Ownership) Tag() string {
 // string if none fits. CI Visibility cuts longer tag values, which would leave
 // the array unterminated.
 func encodeTag(owners []string) string {
+	// Almost every list fits and is encoded at once. Escaping only lengthens
+	// the array, so a list too long even unescaped, counted with an early
+	// stop, goes straight to the owner-by-owner encoding: a huge list is never
+	// encoded whole only to be cut.
+	unescaped := len("[")
+	for _, owner := range owners {
+		unescaped += utf8.RuneCountInString(owner) + len(`"",`)
+		if unescaped > MaximumTagLength {
+			break
+		}
+	}
+	if unescaped <= MaximumTagLength {
+		if data, _ := json.Marshal(owners); utf8.RuneCount(data) <= MaximumTagLength {
+			return string(data)
+		}
+	}
 	var tag strings.Builder
 	length := len("[]")
 	for _, owner := range owners {

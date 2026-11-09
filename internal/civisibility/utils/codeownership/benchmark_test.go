@@ -94,6 +94,25 @@ func BenchmarkLookup(b *testing.B) {
 	}
 }
 
+// Tag is built once per ownership: a typical list, and one far beyond the
+// tag length, which must be cut while encoding.
+func BenchmarkTag(b *testing.B) {
+	for _, count := range []int{3, 100_000} {
+		owners := make([]string, count)
+		for i := range owners {
+			owners[i] = fmt.Sprintf("@org/team%06d", i)
+		}
+		b.Run(strconv.Itoa(count), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if newOwnership(owners).Tag() == "" {
+					b.Fatal("empty tag")
+				}
+			}
+		})
+	}
+}
+
 func BenchmarkSectionUnion(b *testing.B) {
 	for _, duplicate := range []bool{false, true} {
 		var text strings.Builder

@@ -20,9 +20,11 @@ type globPattern struct {
 	prefix   string
 }
 type globSegment struct {
-	globstar, requiresSegment bool
-	tokens                    []segmentToken
-	literal                   string // Nonempty ASCII literal; otherwise use tokens.
+	// suffix marks a literal that follows a leading "*"; it shares the
+	// struct's padding with the other flags instead of adding a field.
+	globstar, requiresSegment, suffix bool
+	tokens                            []segmentToken
+	literal                           string // Nonempty ASCII literal; otherwise use tokens.
 }
 type segmentToken struct {
 	kind    byte
@@ -69,7 +71,7 @@ func compileGlob(pattern string, dialect Dialect) (globPattern, bool) {
 	// splitting the same path and checking each literal for every rule.
 	prefixLength, prefixSegments := 0, 0
 	for _, segment := range file.segments {
-		if segment.literal == "" {
+		if segment.literal == "" || segment.suffix {
 			break
 		}
 		prefixLength += len(segment.literal) + 1
@@ -92,25 +94,34 @@ func compileGlob(pattern string, dialect Dialect) (globPattern, bool) {
 	return file, true
 }
 
-// ASCII literals need no token array. Escapes, wildcards and non-ASCII use
-// compiled rune tokens; matching never allocates a copy of the path.
+// ASCII literals need no token array, nor does "*" followed by one, the
+// common "*.go" or "*go.mod": "*" never crosses "/", so such a segment matches
+// exactly the segments ending in the literal. Escapes, other wildcards and
+// non-ASCII use compiled rune tokens; matching never allocates a copy of the path.
 func compilePathSegment(pattern string, dialect Dialect) (globSegment, bool) {
-	literal := len(pattern) != 0
-	for i := 0; i < len(pattern); i++ {
-		char := pattern[i]
-		if char >= utf8.RuneSelf || char == '\\' || char == '*' || char == '?' || char == '[' && dialect == GitLab {
-			literal = false
-			break
-		}
-	}
-	if literal {
+	if asciiLiteral(pattern, dialect) {
 		return globSegment{literal: pattern}, len(pattern) <= maximumPatternLength
+	}
+	if strings.HasPrefix(pattern, "*") && asciiLiteral(pattern[1:], dialect) {
+		return globSegment{literal: pattern[1:], suffix: true}, len(pattern) <= maximumPatternLength
 	}
 	tokens, ok := compileSegment(pattern, dialect)
 	return globSegment{tokens: tokens}, ok
 }
+func asciiLiteral(pattern string, dialect Dialect) bool {
+	for i := 0; i < len(pattern); i++ {
+		char := pattern[i]
+		if char >= utf8.RuneSelf || char == '\\' || char == '*' || char == '?' || char == '[' && dialect == GitLab {
+			return false
+		}
+	}
+	return pattern != ""
+}
 
 func (s globSegment) matches(value string) bool {
+	if s.suffix {
+		return strings.HasSuffix(value, s.literal)
+	}
 	if s.literal != "" {
 		return s.literal == value
 	}
