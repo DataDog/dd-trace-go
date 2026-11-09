@@ -561,6 +561,11 @@ func (a *atomicAgentFeatures) update(fn func(agentFeatures) agentFeatures) {
 // previous snapshot" during a poll.
 var errAgentFeaturesNotSupported = errors.New("agent does not support /info")
 
+// agentInfoBodyLimit bounds how much of the /info response body the tracer
+// reads. A larger body is rejected as a transport/capacity failure, not a
+// decode failure.
+const agentInfoBodyLimit = 1 << 20
+
 type agentFeaturesDecodeError struct {
 	err error
 }
@@ -625,10 +630,15 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 	// (connection reset, truncated response, cancellation), and those failures
 	// are transport errors, not malformed agent responses — they must stay
 	// local-only rather than reach Error Tracking as agentFeaturesDecodeError.
-	// Parsing the buffered bytes can then only fail for protocol reasons.
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	// One byte is read beyond the limit so an oversized body is rejected here
+	// as a capacity failure; a clean EOF at exactly the limit would otherwise
+	// hand the decoder truncated JSON and produce a false decode error.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, agentInfoBodyLimit+1))
 	if err != nil {
 		return agentFeatures{}, fmt.Errorf("reading features: %w", err)
+	}
+	if len(body) > agentInfoBodyLimit {
+		return agentFeatures{}, fmt.Errorf("agent info response exceeds %d bytes", agentInfoBodyLimit)
 	}
 	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&info); err != nil {
 		return agentFeatures{}, &agentFeaturesDecodeError{err: err}
@@ -859,7 +869,7 @@ func (c *config) surfaceStatsOverride(a agentFeatures) {
 			"protocol loses the `lang` dimension. This overrides the configured "+
 			"DD_TRACE_STATS_COMPUTATION_ENABLED=false. Upgrade the trace-agent to 7.79.0 or later, or "+
 			"set DD_TRACE_AGENT_PROTOCOL_VERSION=0.4, to restore the configured behavior.",
-			a.AgentVersion)
+			a.AgentVersion) //errtrack:ignore expected agent compatibility warning
 	case prev == 2:
 		// Report only on the way back down. Reporting the effective value
 		// unconditionally would shadow the user's own origin for
