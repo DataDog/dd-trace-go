@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
@@ -93,11 +92,13 @@ var (
 	// gitVersionValue holds the version of the Git executable installed on the system.
 	gitVersionValue gitVersionData
 
-	// isAShallowCloneRepositoryOnce is a sync.Once instance used to ensure that the check for a shallow clone repository is only performed once.
-	isAShallowCloneRepositoryOnce atomic.Pointer[sync.Once]
-
-	// isAShallowCloneRepositoryValue is a boolean flag indicating whether the repository is a shallow clone.
-	isAShallowCloneRepositoryValue bool
+	// shallowCloneCache holds what `git rev-parse --is-shallow-repository` last
+	// said. Fetches that can change it invalidate it. Its mutex guards every
+	// field, including while the check runs.
+	shallowCloneCache struct {
+		sync.Mutex
+		known, shallow bool
+	}
 
 	// safeDirectoryOnce is a sync.Once instance used to ensure that the safe directory is only resolved once.
 	safeDirectoryOnce sync.Once
@@ -583,8 +584,7 @@ func UnshallowGitRepository() (bool, error) {
 	}
 
 	log.Debug("civisibility.unshallow: was completed successfully")
-	tmpso := sync.Once{}
-	isAShallowCloneRepositoryOnce.Store(&tmpso)
+	invalidateShallowCloneCache()
 	return true, nil
 }
 
@@ -642,26 +642,24 @@ func filterSensitiveInfo(url string) string {
 
 // isAShallowCloneRepository checks if the local Git repository is a shallow clone.
 func isAShallowCloneRepository() (bool, error) {
-	var fErr error
-	var sOnce *sync.Once
-	sOnce = isAShallowCloneRepositoryOnce.Load()
-	if sOnce == nil {
-		sOnce = &sync.Once{}
-		isAShallowCloneRepositoryOnce.Store(sOnce)
+	shallowCloneCache.Lock()
+	defer shallowCloneCache.Unlock()
+	if shallowCloneCache.known {
+		return shallowCloneCache.shallow, nil
 	}
-	sOnce.Do(func() {
-		// git rev-parse --is-shallow-repository
-		out, err := execGitString(telemetry.CheckShallowCommandsType, "rev-parse", "--is-shallow-repository")
-		if err != nil {
-			isAShallowCloneRepositoryValue = false
-			fErr = err
-			return
-		}
+	// git rev-parse --is-shallow-repository
+	out, err := execGitString(telemetry.CheckShallowCommandsType, "rev-parse", "--is-shallow-repository")
+	shallowCloneCache.known = true
+	shallowCloneCache.shallow = err == nil && strings.TrimSpace(out) == "true"
+	return shallowCloneCache.shallow, err
+}
 
-		isAShallowCloneRepositoryValue = strings.TrimSpace(out) == "true"
-	})
-
-	return isAShallowCloneRepositoryValue, fErr
+// invalidateShallowCloneCache makes the next isAShallowCloneRepository check
+// again, after a fetch that can deepen or shorten the history.
+func invalidateShallowCloneCache() {
+	shallowCloneCache.Lock()
+	defer shallowCloneCache.Unlock()
+	shallowCloneCache.known = false
 }
 
 // hasTheGitLogHaveMoreThanOneCommits checks if the local Git repository has more than one commit.
@@ -948,17 +946,26 @@ func GetBaseBranchSha(defaultBranch string) (string, error) {
 		return "", errors.New("no candidate base branches found")
 	}
 
-	// Step 3 - find the best base branch. A shallow clone, the default checkout
-	// of most CI providers, can hide where a candidate meets the source branch:
-	// only then is more history fetched, and the branches compared again.
-	baseSha, complete, err := findBaseBranchSha(candidateBranches, sourceBranch, detectedDefaultBranch, remoteName)
-	for _, deepening := range shallowCloneDeepenings {
-		if complete {
-			break
-		}
-		if deepenShallowClone(remoteName, deepening) {
-			baseSha, complete, err = findBaseBranchSha(candidateBranches, sourceBranch, detectedDefaultBranch, remoteName)
-		}
+	// Step 3 - find the best base branch. The source is the commit that impacted
+	// tests compare with: a pull request's head when the CI provider gives it,
+	// rather than the merge commit that a pull request checkout can be on.
+	source := sourceBranch
+	if headCommit := ciTags[constants.GitHeadCommit]; headCommit != "" {
+		source = headCommit
+	}
+	// A shallow clone, the default checkout of most CI providers, can hide where
+	// a candidate meets the source: only then is more history fetched. A month,
+	// the window that UnshallowGitRepository uses, while a candidate has no
+	// merge base; the full history only while none has one, as a candidate that
+	// never meets the source, such as an independent prod branch, would
+	// otherwise fetch it on every run. The month can cut older history short;
+	// if that loses every merge base, the full history brings it back.
+	baseSha, complete, err := findBaseBranchSha(candidateBranches, source, detectedDefaultBranch, remoteName)
+	if !complete && deepenShallowClone(remoteName, unshallowSince, "--update-shallow") {
+		baseSha, _, err = findBaseBranchSha(candidateBranches, source, detectedDefaultBranch, remoteName)
+	}
+	if baseSha == "" && deepenShallowClone(remoteName, "--unshallow") {
+		baseSha, _, err = findBaseBranchSha(candidateBranches, source, detectedDefaultBranch, remoteName)
 	}
 	return baseSha, err
 }
@@ -991,20 +998,14 @@ func findBaseBranchSha(candidateBranches []string, sourceBranch, defaultBranch, 
 	return baseSha, complete, nil
 }
 
-// shallowCloneDeepenings are the history that base branch detection fetches,
-// in order, while a shallow clone hides a merge base: the month that
-// UnshallowGitRepository fetches for the Git upload, then everything. They run
-// only when the history at hand is not enough. The month can cut older history
-// short, which everything then brings back if a merge base is still missing.
-var shallowCloneDeepenings = [][]string{{unshallowSince, "--update-shallow"}, {"--unshallow"}}
-
 // deepenShallowClone fetches, with the given depth options, the history behind
 // each commit where the shallow clone ends: the tips that it fetched, among
 // them the source branch's even when HEAD is a local commit that the remote
 // lacks. Each one is fetched alone, so a commit that the remote no longer has,
-// such as the tip of a deleted branch, leaves the others alone. Only commits
-// and trees are fetched. It reports whether any history was fetched.
-func deepenShallowClone(remoteName string, depth []string) bool {
+// such as the tip of a deleted branch, leaves the others alone; it stops once
+// the clone is complete. Only commits and trees are fetched. It reports whether
+// any history was fetched.
+func deepenShallowClone(remoteName string, depth ...string) bool {
 	isAShallowClone, err := isAShallowCloneRepository()
 	if err != nil || !isAShallowClone {
 		return false
@@ -1025,10 +1026,10 @@ func deepenShallowClone(remoteName string, depth []string) bool {
 			continue
 		}
 		deepened = true
-	}
-	if deepened {
-		// The clone may no longer be shallow.
-		isAShallowCloneRepositoryOnce.Store(&sync.Once{})
+		invalidateShallowCloneCache()
+		if isAShallowClone, err := isAShallowCloneRepository(); err == nil && !isAShallowClone {
+			break
+		}
 	}
 	return deepened
 }
@@ -1098,7 +1099,10 @@ func checkAndFetchBranch(branch, remoteName string) {
 	_, err = execGitString(telemetry.FetchCommandType, "fetch", "--depth", "1", remoteName, "+refs/heads/"+branch+":refs/remotes/"+remoteName+"/"+branch)
 	if err != nil {
 		log.Debug("civisibility.git: failed to fetch branch %s: %v", branch, err.Error())
+		return
 	}
+	// A depth-limited fetch can make even a complete clone shallow.
+	invalidateShallowCloneCache()
 }
 
 // getRemoteBranches gets the list of remote tracking branches only (for Step 2a in algorithm).

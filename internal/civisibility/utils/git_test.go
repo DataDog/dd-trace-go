@@ -340,8 +340,7 @@ func resetGitCommandCachesForTesting(t *testing.T) {
 		gitVersionValue = gitVersionData{}
 		safeDirectoryOnce = sync.Once{}
 		safeDirectoryValue = ""
-		isAShallowCloneRepositoryOnce.Store(nil)
-		isAShallowCloneRepositoryValue = false
+		invalidateShallowCloneCache()
 	}
 	reset()
 	t.Cleanup(reset)
@@ -901,9 +900,15 @@ func TestGetBaseBranchShaInShallowClones(t *testing.T) {
 	const day = 24 * time.Hour
 	tests := []struct {
 		name string
-		// ages of the base, feature and main commits
-		baseAge, featureAge, mainAge time.Duration
-		checkout                     func(t *testing.T, origin, checkout, feature, main string)
+		// ages of the first, base, feature and main commits; the first one
+		// defaults to a day before the base
+		firstAge, baseAge, featureAge, mainAge time.Duration
+		checkout                               func(t *testing.T, origin, checkout, feature, main string)
+		// pullRequest runs only with a pull request base branch, and gives the
+		// feature commit as the CI provider's head commit.
+		pullRequest bool
+		// stillShallow checks that no full history was fetched.
+		stillShallow bool
 	}{
 		{name: "push checkout", checkout: pushCheckout},
 		// A month of history would cut the base off: the checkout already holds it.
@@ -929,14 +934,38 @@ func TestGetBaseBranchShaInShallowClones(t *testing.T) {
 			runFixtureGit(t, checkout, "fetch", "--no-tags", "--depth=1", "origin", "+refs/heads/release/old:refs/remotes/origin/release/old")
 			runFixtureGit(t, origin, "branch", "-D", "release/old")
 		}},
+		// actions/checkout on a pull_request event checks out the merge commit.
+		{name: "pull request merge checkout", pullRequest: true,
+			checkout: func(t *testing.T, origin, checkout, feature, main string) {
+				runFixtureGit(t, origin, "switch", "--detach", main)
+				runFixtureGit(t, origin, "merge", "--no-ff", "-m", "merge", feature)
+				runFixtureGit(t, origin, "update-ref", "refs/pull/1/merge", "HEAD")
+				runFixtureGit(t, origin, "switch", "main")
+				require.NoError(t, os.Mkdir(checkout, 0o755))
+				runFixtureGit(t, checkout, "init")
+				runFixtureGit(t, checkout, "remote", "add", "origin", fileURL(origin))
+				runFixtureGit(t, checkout, "fetch", "--no-tags", "--depth=1", "origin", "+refs/pull/1/merge:refs/remotes/pull/1/merge")
+				runFixtureGit(t, checkout, "checkout", "--force", "--detach", "refs/remotes/pull/1/merge")
+			}},
+		// A base-like branch that never meets the source must not fetch the
+		// full history once main has a merge base.
+		{name: "independent candidate", firstAge: 90 * day, stillShallow: true, checkout: func(t *testing.T, origin, checkout, feature, main string) {
+			runFixtureGit(t, origin, "switch", "--orphan", "prod")
+			runFixtureGit(t, origin, "commit", "--allow-empty", "-m", "prod")
+			runFixtureGit(t, origin, "switch", "main")
+			pushCheckout(t, origin, checkout, feature, main)
+		}},
 		{name: "single-branch clone", checkout: func(t *testing.T, origin, checkout, _, _ string) {
 			runFixtureGit(t, filepath.Dir(checkout), "clone", "--depth=1", "--single-branch", "--branch=feature", fileURL(origin), checkout)
 		}},
 	}
 	for _, tt := range tests {
 		for mode, prBaseBranch := range map[string]string{"detected base branch": "", "pull request base branch": "main"} {
-			if tt.name == "deleted branch" && prBaseBranch != "" {
+			if (tt.name == "deleted branch" || tt.name == "independent candidate") && prBaseBranch != "" {
 				continue // the pull request base branch is the only candidate
+			}
+			if tt.pullRequest && prBaseBranch == "" {
+				continue
 			}
 			t.Run(tt.name+"/"+mode, func(t *testing.T) {
 				isolateFixtureGit(t)
@@ -944,7 +973,11 @@ func TestGetBaseBranchShaInShallowClones(t *testing.T) {
 				origin := filepath.Join(root, "origin")
 				require.NoError(t, os.Mkdir(origin, 0o755))
 				runFixtureGit(t, origin, "init", "--initial-branch=main")
-				commitFixtureAt(t, origin, "first", tt.baseAge+day)
+				firstAge := tt.firstAge
+				if firstAge == 0 {
+					firstAge = tt.baseAge + day
+				}
+				commitFixtureAt(t, origin, "first", firstAge)
 				commitFixtureAt(t, origin, "base", tt.baseAge)
 				base := runFixtureGit(t, origin, "rev-parse", "HEAD")
 				runFixtureGit(t, origin, "switch", "-c", "feature")
@@ -963,13 +996,39 @@ func TestGetBaseBranchShaInShallowClones(t *testing.T) {
 				ResetCITags()
 				t.Cleanup(ResetCITags)
 				AddCITags(constants.GitPrBaseBranch, prBaseBranch)
+				if tt.pullRequest {
+					AddCITags(constants.GitHeadCommit, feature)
+				}
 
 				sha, err := GetBaseBranchSha("")
 				require.NoError(t, err)
 				assert.Equal(t, base, sha)
+				if tt.stillShallow {
+					assert.Equal(t, "true", runFixtureGit(t, checkout, "rev-parse", "--is-shallow-repository"))
+				}
 			})
 		}
 	}
+}
+
+// The Git upload and base branch detection check and invalidate the shallow
+// clone cache from different goroutines; run with -race.
+func TestShallowCloneCacheConcurrentInvalidation(t *testing.T) {
+	usePackFilesGitFixture(t)
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			for range 20 {
+				_, err := isAShallowCloneRepository()
+				assert.NoError(t, err)
+				invalidateShallowCloneCache()
+			}
+		})
+	}
+	wg.Wait()
+	shallow, err := isAShallowCloneRepository()
+	require.NoError(t, err)
+	assert.False(t, shallow)
 }
 
 // pushCheckout checks out feature as actions/checkout does for a push: one
