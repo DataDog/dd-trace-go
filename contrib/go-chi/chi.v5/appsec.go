@@ -6,38 +6,172 @@
 package chi
 
 import (
+	"context"
+	"maps"
 	"net/http"
+	"strings"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 )
 
-func withAppsec(next http.Handler, r *http.Request, span trace.TagSetter, cfg *config) http.Handler {
-	rctx := chi.RouteContext(r.Context())
-	if rctx == nil {
-		return httpsec.WrapHandler(next, span, &cfg.appsecConfig)
-	}
+// withAppsec returns the handler that runs the AppSec operation of a request.
+// The handler expects the chi response writer that [Middleware] creates.
+//
+// With Use before routing, chi selects the route after this middleware starts.
+// So the handler does these steps:
+//  1. It wraps the response writer in a commitTracker (see writer_appsec.go).
+//  2. Before the handler runs, it asks chi which route matches (lookupRoute) and
+//     gives the path parameters of that route to the WAF. A tracker that is not
+//     complete gives no newly discovered parameters.
+//  3. After the handler returns, it gives the route and the path parameters that
+//     chi selected to the WAF (httpsec.RouteMatched), when they are not the ones
+//     of step 2. This run never stops the handler. A block or a redirect from it
+//     replaces the response only when the response is not sent yet.
+func withAppsec(next http.Handler, span trace.TagSetter, cfg *config, cache *sync.Map) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A copy for each request: httpsec.BeforeHandle writes in the config.
+		appsecCfg := cfg.appsecConfig
 
-	cfgCopy := cfg.appsecConfig
-	if cfgCopy.Route == "" {
-		cfgCopy.Route = cfg.modifyResourceName(rctx.RoutePattern())
-	}
+		tw, ct := w, (*commitTracker)(nil)
+		if ww, ok := w.(middleware.WrapResponseWriter); ok {
+			tw, ct = newCommitTracker(ww, r.Context())
+			r = r.WithContext(context.WithValue(r.Context(), trackerCtxKey{}, ct))
+		}
 
-	if cfgCopy.RouteParams == nil && len(rctx.URLParams.Keys) > 0 {
-		cfgCopy.RouteParams = make(map[string]string, len(rctx.URLParams.Keys))
-	}
+		rctx := chi.RouteContext(r.Context())
+		if rctx == nil {
+			httpsec.WrapHandler(next, span, &appsecCfg).ServeHTTP(tw, r)
+			return
+		}
 
-	keys := rctx.URLParams.Keys
-	values := rctx.URLParams.Values
-	if len(keys) > 0 && len(keys) == len(values) {
-		for i, key := range keys {
-			if _, found := cfgCopy.RouteParams[key]; !found {
-				cfgCopy.RouteParams[key] = values[i]
+		// Without a complete tracker, the WAF gets no newly discovered data.
+		complete := ct != nil && ct.complete
+
+		route, params, found := "", map[string]string(nil), false
+		if complete {
+			route, params, found = lookupRoute(rctx, r, cfg)
+		}
+		if !found {
+			// The values that chi knows now (for example with r.With(Middleware())).
+			route, params = cfg.modifyResourceName(rctx.RoutePattern()), routeParams(rctx)
+		}
+		appsecCfg.Route, appsecCfg.RouteParams = route, params
+		earlyParams := maps.Clone(params)
+
+		late := http.HandlerFunc(func(w http.ResponseWriter, tr *http.Request) {
+			next.ServeHTTP(w, tr)
+
+			rc := chi.RouteContext(tr.Context())
+			if rc == nil {
+				return
 			}
+			finalRoute, finalParams := reportedRoute(rc, cfg, cache), routeParams(rc)
+			if finalRoute == route && maps.Equal(finalParams, earlyParams) {
+				return
+			}
+			if !complete {
+				finalParams = nil
+			}
+			// The error is ignored: afterHandle applies the stored action, and the
+			// commitTracker tells if the response can still be replaced.
+			_ = httpsec.RouteMatched(tr.Context(), finalRoute, finalParams)
+		})
+
+		httpsec.WrapHandler(late, span, &appsecCfg).ServeHTTP(tw, r)
+	})
+}
+
+// routeParams returns the URL parameters of rctx as a new map, or nil when there
+// are none. The last value of a key wins, like [chi.Context.URLParam].
+func routeParams(rctx *chi.Context) map[string]string {
+	keys, values := rctx.URLParams.Keys, rctx.URLParams.Values
+	if len(keys) == 0 || len(keys) != len(values) {
+		return nil
+	}
+	params := make(map[string]string, len(keys))
+	for i, key := range keys {
+		params[key] = values[i]
+	}
+	return params
+}
+
+// lookupRoute asks chi which route matches the request, like chi does when it
+// routes the request. It returns found = false when the request cannot be
+// matched (or does not need to be): the caller then uses the values that chi
+// knows.
+//
+// The result is a prediction. It can differ from the route that chi selects when
+// a middleware changes the path, the method or the route path after the tracer
+// (or before a tracer in a sub-router), or when a mount hides its child router
+// behind a handler wrapper (chi.Routes.Match stops at the mount).
+func lookupRoute(rctx *chi.Context, r *http.Request, cfg *config) (route string, params map[string]string, found bool) {
+	if rctx.Routes == nil {
+		return "", nil, false
+	}
+	// A route that is already final (r.With(Middleware())) needs no lookup.
+	if pattern := rctx.RoutePattern(); pattern != "" && !strings.HasSuffix(pattern, "/*") {
+		return "", nil, false
+	}
+
+	// The same method and path as Mux.routeHTTP (chi v5.3.0 mux.go:446-461).
+	method := rctx.RouteMethod
+	if method == "" {
+		method = r.Method
+	}
+	var path string
+	if len(rctx.RoutePatterns) == 0 && rctx.RoutePath != "" {
+		path = rctx.RoutePath
+	} else {
+		// In a sub-router, rctx.Routes is the root router and rctx.RoutePath is
+		// relative to the child: use the whole path.
+		if path = r.URL.RawPath; path == "" {
+			path = r.URL.Path
+		}
+		if path == "" {
+			path = "/"
 		}
 	}
 
-	return httpsec.WrapHandler(next, span, &cfgCopy)
+	tmp := chi.NewRouteContext()
+	if !rctx.Routes.Match(tmp, method, path) {
+		return "", nil, false
+	}
+	return cfg.modifyResourceName(tmp.RoutePattern()), lookupParams(tmp), true
+}
+
+// lookupParams returns the URL parameters that a successful Match left in tmp.
+//
+// Match does not run the mount handlers, which reset the "*" parameter that
+// connects a sub-router when chi enters the mount. So all "*" values are reset
+// here, except the value of the last "*" when the matched route itself ends with
+// a wildcard (an endpoint such as "/files/*", or a mount that Match could not
+// follow).
+func lookupParams(tmp *chi.Context) map[string]string {
+	keys, values := tmp.URLParams.Keys, tmp.URLParams.Values
+	if len(keys) == 0 || len(keys) != len(values) {
+		return nil
+	}
+	keep := -1
+	if n := len(tmp.RoutePatterns); n > 0 && strings.HasSuffix(tmp.RoutePatterns[n-1], "*") {
+		for i := len(keys) - 1; i >= 0; i-- {
+			if keys[i] == "*" {
+				keep = i
+				break
+			}
+		}
+	}
+	params := make(map[string]string, len(keys))
+	for i, key := range keys {
+		value := values[i]
+		if key == "*" && i != keep {
+			value = ""
+		}
+		params[key] = value
+	}
+	return params
 }

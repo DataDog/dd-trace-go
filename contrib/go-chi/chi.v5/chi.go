@@ -69,7 +69,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 
 			next := next // avoid modifying the value of next in the outer closure scope
 			if instr.AppSecEnabled() && !cfg.appsecDisabled {
-				next = withAppsec(next, r, httptrace.AppSecSpanTagSetter(span, cfg.otelEnabled), cfg)
+				next = withAppsec(next, httptrace.AppSecSpanTagSetter(span, cfg.otelEnabled), cfg, &subrouterCache)
 				// Note that the following response writer passed to the handler
 				// implements the `interface { Status() int }` expected by httpsec.
 			}
@@ -77,14 +77,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			// pass the span through the request context and serve the request to the next middleware
 			next.ServeHTTP(ww, r)
 
-			rctx := chi.RouteContext(r.Context())
-			routePattern := rctx.RoutePattern()
-			if cfg.otelEnabled && unmatchedSubrouter(rctx, &subrouterCache) {
-				routePattern = ""
-			}
-			if routePattern != "" || !cfg.otelEnabled {
-				routePattern = cfg.modifyResourceName(routePattern)
-			}
+			routePattern := reportedRoute(chi.RouteContext(r.Context()), cfg, &subrouterCache)
 			if routePattern != "" || !cfg.otelEnabled {
 				span.SetTag(ext.HTTPRoute, routePattern)
 			}
@@ -110,6 +103,20 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			span.SetTag(ext.ResourceName, resourceName)
 		})
 	}
+}
+
+// reportedRoute returns the route that chi selected for the request, as the
+// http.route span tag and AppSec report it. It is only final after chi
+// dispatched the request.
+func reportedRoute(rctx *chi.Context, cfg *config, cache *sync.Map) string {
+	routePattern := rctx.RoutePattern()
+	if cfg.otelEnabled && unmatchedSubrouter(rctx, cache) {
+		routePattern = ""
+	}
+	if routePattern != "" || !cfg.otelEnabled {
+		routePattern = cfg.modifyResourceName(routePattern)
+	}
+	return routePattern
 }
 
 // unmatchedSubrouter checks whether routing stopped at a Chi mount instead of an
