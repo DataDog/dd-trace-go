@@ -188,9 +188,9 @@ func execGit(commandType telemetry.CommandType, args ...string) (val []byte, err
 		defer func() {
 			durationInMs := time.Since(startTime).Milliseconds()
 			if err != nil {
-				log.Debug("civisibility.git.command [%s][%s][%dms]: git %s\n%s", commandType, err.Error(), durationInMs, strings.Join(args, " "), string(val))
+				log.Debug("civisibility.git.command [%s][%s][%dms]: git %s output=%q", commandType, err.Error(), durationInMs, strings.Join(args, " "), string(val))
 			} else {
-				log.Debug("civisibility.git.command [%s][%dms]: git %s\n%s", commandType, durationInMs, strings.Join(args, " "), string(val))
+				log.Debug("civisibility.git.command [%s][%dms]: git %s output=%q", commandType, durationInMs, strings.Join(args, " "), string(val))
 			}
 		}()
 	}
@@ -254,9 +254,9 @@ func execGitStringWithInput(commandType telemetry.CommandType, input string, arg
 		defer func() {
 			durationInMs := time.Since(startTime).Milliseconds()
 			if err != nil {
-				log.Debug("civisibility.git.command(input) [%s][%s][%dms]: git %s\n%s", commandType, err.Error(), durationInMs, strings.Join(args, " "), val)
+				log.Debug("civisibility.git.command(input) [%s][%s][%dms]: git %s output=%q", commandType, err.Error(), durationInMs, strings.Join(args, " "), val)
 			} else {
-				log.Debug("civisibility.git.command(input) [%s][%dms]: git %s\n%s", commandType, durationInMs, strings.Join(args, " "), val)
+				log.Debug("civisibility.git.command(input) [%s][%dms]: git %s output=%q", commandType, durationInMs, strings.Join(args, " "), val)
 			}
 		}()
 	}
