@@ -206,6 +206,51 @@ func TestWriter_Flush_Failure(t *testing.T) {
 	assert.True(t, payloadReceived.Load())
 }
 
+// TestWriter_Flush_UnresponsiveEndpointZeroTimeout covers an HTTP client with
+// no timeout talking to an endpoint that accepts the request but never
+// responds. Flush must still return, so shutdown can't wait on it forever.
+func TestWriter_Flush_UnresponsiveEndpointZeroTimeout(t *testing.T) {
+	received := make(chan struct{}, 1)
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		select {
+		case received <- struct{}{}:
+		default:
+		}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	}))
+	defer server.Close()
+	defer close(release)
+
+	req, err := http.NewRequest(http.MethodPost, server.URL, nil)
+	require.NoError(t, err)
+	writer, err := NewWriter(WriterConfig{
+		HTTPClient: &http.Client{},
+		Endpoints:  []*http.Request{req},
+	})
+	require.NoError(t, err)
+
+	payload := testPayload{
+		RequestTypeValue: "test",
+		marshalJSON:      func() ([]byte, error) { return []byte(`{"request_type":"test"}`), nil },
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := writer.Flush(&payload)
+		done <- err
+	}()
+	<-received
+	select {
+	case err := <-done:
+		require.Error(t, err)
+	case <-time.After(15 * time.Second):
+		t.Fatal("Flush blocked on an endpoint that never responds")
+	}
+}
+
 func TestWriter_Flush_MultipleEndpoints(t *testing.T) {
 	config := WriterConfig{
 		TracerConfig: TracerConfig{
