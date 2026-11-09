@@ -1312,6 +1312,10 @@ func TestOTLPSpanMetricsConfig(t *testing.T) {
 					t.Setenv("DD_METRICS_OTEL_ENABLED", generalMetrics)
 
 					assert.Equal(t, spanMetrics == "true", Get().OTLPSpanMetricsEnabled())
+					// Explicit span-metrics=false must not disable explicitly-enabled native stats.
+					if spanMetrics == "false" && statsComputation == "true" {
+						assert.True(t, Get().StatsComputationEnabled())
+					}
 				})
 			}
 		}
