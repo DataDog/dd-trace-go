@@ -192,6 +192,7 @@ func processAndRemoveTelemetryToolMiddlewareFor(enabled func(context.Context) bo
 					}
 					delete(m, instrmcp.TelemetryKey)
 					if params, ok := paramsWithoutTelemetry(request.Params); ok {
+						params.Arguments = m
 						request.Params = params
 					}
 				}
