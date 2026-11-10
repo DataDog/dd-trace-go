@@ -35,10 +35,10 @@ on:
       - 'scripts/ciselect/**'
       - 'scripts/citiming/**'
       - '.github/actions/add-codeowners/**'
-      # The root package and its module files.
+      # The root package (any root-level Go file) and its module files.
       - 'go.mod'
       - 'go.sum'
-      - 'gosum.go'
+      - '*.go'
       # The audit's grouping and its own tooling.
       - 'CODEOWNERS'
       - 'scripts/errtrackaudit/**'
