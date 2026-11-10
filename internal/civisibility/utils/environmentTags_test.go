@@ -666,3 +666,50 @@ func TestGitMetadataPrecedence(t *testing.T) {
 		})
 	}
 }
+
+func TestDetachedCheckoutTagRespectsCITrigger(t *testing.T) {
+	for _, tc := range []struct {
+		name, branch, providerTag, overrideTag, wantTag string
+	}{
+		{name: "branch job", branch: "refs/heads/main"},
+		{name: "pull request job", branch: "refs/pull/42/merge"},
+		{name: "tag job", providerTag: "v1", wantTag: "v1"},
+		{name: "unknown trigger", wantTag: "v1"},
+		{name: "explicit override", branch: "refs/heads/main", overrideTag: "user-tag", wantTag: "user-tag"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := usePackFilesGitFixture(t)
+			runFixtureGit(t, repo, "tag", "v1")
+			runFixtureGit(t, repo, "checkout", "--detach")
+			sha := runFixtureGit(t, repo, "rev-parse", "HEAD")
+			ResetCITags()
+			t.Cleanup(ResetCITags)
+			bazel.ResetForTesting()
+			t.Cleanup(bazel.ResetForTesting)
+			for _, name := range []string{"DD_GIT_COMMIT_SHA", "DD_GIT_BRANCH", "DD_GIT_TAG", "DD_GIT_REPOSITORY_URL", "DD_GIT_PULL_REQUEST_BASE_BRANCH", "DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA"} {
+				t.Setenv(name, "")
+			}
+			t.Setenv("DD_GIT_TAG", tc.overrideTag)
+			originalProvider, originalEnvironmental := getProviderTagsFunc, applyEnvironmentalDataIfRequiredFunc
+			t.Cleanup(func() {
+				getProviderTagsFunc, applyEnvironmentalDataIfRequiredFunc = originalProvider, originalEnvironmental
+			})
+			getProviderTagsFunc = func() map[string]string {
+				return map[string]string{
+					constants.GitBranch: tc.branch, constants.GitTag: tc.providerTag,
+					constants.CIJobName: "tests", constants.GitHeadCommit: sha,
+					constants.GitPrBaseBranch: "main",
+				}
+			}
+			applyEnvironmentalDataIfRequiredFunc = func(map[string]string) {}
+
+			tags := GetCITags()
+			assert.Equal(t, tc.wantTag, tags[constants.GitTag])
+			assert.Empty(t, tags[constants.GitBranch])
+			assert.Equal(t, sha, tags[constants.GitCommitSHA])
+			assert.Equal(t, "tests", tags[constants.CIJobName])
+			assert.Equal(t, sha, tags[constants.GitHeadCommit])
+			assert.Equal(t, "main", tags[constants.GitPrBaseBranch])
+		})
+	}
+}

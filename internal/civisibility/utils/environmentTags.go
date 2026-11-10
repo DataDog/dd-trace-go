@@ -259,6 +259,11 @@ func createCITagsMap() map[string]string {
 		log.Debug("civisibility: skipping local git enrichment in payload-file mode")
 	} else {
 		gitData, _ := getLocalGitDataFunc()
+		// A tag on a detached commit does not make a branch or pull-request job a tag build.
+		if gitData.Branch == "" && localTags[constants.GitBranch] != "" &&
+			!isTagRef(localTags[constants.GitBranch]) && localTags[constants.GitTag] == "" {
+			gitData.Tag = ""
+		}
 		if _, ok := localTags[constants.CIWorkspacePath]; !ok && gitData.SourceRoot != "" {
 			localTags[constants.CIWorkspacePath] = gitData.SourceRoot
 		}
