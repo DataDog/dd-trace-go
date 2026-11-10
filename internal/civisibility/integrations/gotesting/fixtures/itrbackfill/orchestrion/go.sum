@@ -18,8 +18,8 @@ github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.82.3 h1:XainI6q0lePbihA+
 github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.82.3/go.mod h1:6WZPaQSf8yG+XOf4ppzcEUr+yWLSH07+iuRlNazyQWM=
 github.com/DataDog/datadog-go/v5 v5.9.1 h1:jOxw/TaxGWok8RIxbpqn2p3RzSnQr/m3Q6TgaHqqOU0=
 github.com/DataDog/datadog-go/v5 v5.9.1/go.mod h1:2SBt8zJu6r7sRQHZFMQ8oCukWTKj0ymwulmNgQzJ1JM=
-github.com/DataDog/go-libddwaf/v5 v5.0.1 h1:z63Ipq9BRVFjrd9ddF0OI1vL3iRLRKomAxq1oA4v7Z4=
-github.com/DataDog/go-libddwaf/v5 v5.0.1/go.mod h1:lEBmHWNq/KHsd1RLOj8COojJ1WsZJ3rqpG4ZiFn48kI=
+github.com/DataDog/go-libddwaf/v5 v5.1.0 h1:Q3HCwUa5qmpaLfXiakK385NaJ+upEwTlVeonL6FVSjw=
+github.com/DataDog/go-libddwaf/v5 v5.1.0/go.mod h1:lEBmHWNq/KHsd1RLOj8COojJ1WsZJ3rqpG4ZiFn48kI=
 github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d h1:cH9Bm0tJ8FEQbA4FRi0iRm7Zr/5Lata/Or31c+Dth0E=
 github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d/go.mod h1:yDuvU+Ak1TKwgd4K8DNcpJmUrrK8ONLkBMGNAppmBRk=
 github.com/DataDog/go-sqllexer v0.2.4 h1:Ah9v8g5KX8vNV7q3t6YoA3fW4F/1OvZh/JbyfPcaySA=
@@ -103,8 +103,8 @@ github.com/hashicorp/go-version v1.9.0 h1:CeOIz6k+LoN3qX9Z0tyQrPtiB1DFYRPfCIBtaX
 github.com/hashicorp/go-version v1.9.0/go.mod h1:fltr4n8CU8Ke44wwGCBoEymUuxUHl09ZGVZPK5anwXA=
 github.com/json-iterator/go v1.1.12 h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnrnM=
 github.com/json-iterator/go v1.1.12/go.mod h1:e30LSqwooZae/UwlEbR2852Gd8hjQvJoHmT4TnhNGBo=
-github.com/klauspost/compress v1.19.2 h1:hMRETovs/pu/dVWN7zIT1PGG8t509MwT6bO7XSi26R8=
-github.com/klauspost/compress v1.19.2/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
+github.com/klauspost/compress v1.20.2 h1:v5tiZvm1KGLyg5d5oXdXe3lsSPrbEUiKoXGia//I7Qo=
+github.com/klauspost/compress v1.20.2/go.mod h1:LUdAzn7YLVvxLpc7y3V1m40wESHTgc1422pwwBSKYuI=
 github.com/klauspost/cpuid/v2 v2.4.0 h1:S6Hrbc7+ywsr0r+RLapfGBHfyefhCTwEh3A0tV913Dw=
 github.com/klauspost/cpuid/v2 v2.4.0/go.mod h1:19jmZ9mjzoF//ddRSUsv0zfBTJWh3QJh9FNxZTMrGxU=
 github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORNo=

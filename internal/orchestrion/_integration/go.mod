@@ -12,7 +12,7 @@ require (
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/otelc/all/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
-	github.com/DataDog/go-libddwaf/v5 v5.0.1
+	github.com/DataDog/go-libddwaf/v5 v5.1.0
 	github.com/DataDog/orchestrion v1.14.0
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
@@ -298,7 +298,7 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.20.1 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/labstack/gommon v0.5.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
@@ -392,7 +392,7 @@ require (
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/metric v1.46.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0
-	go.opentelemetry.io/otelc/pkg v0.0.0-20261105130149-a21770c1888e // indirect
+	go.opentelemetry.io/otelc/pkg v0.1.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
