@@ -7,7 +7,7 @@ replace github.com/DataDog/dd-trace-go/v2 => ../../../..
 require (
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.13.0-dev.1
 	github.com/stretchr/testify v1.11.1
-	go.opentelemetry.io/otelc/pkg v0.0.0-20261105152245-5f2bd2ed6ac8
+	go.opentelemetry.io/otelc/pkg v0.1.0
 )
 
 require (
@@ -22,7 +22,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.82.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.9.0 // indirect
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1 // indirect
-	github.com/DataDog/go-libddwaf/v5 v5.0.0 // indirect
+	github.com/DataDog/go-libddwaf/v5 v5.1.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
 	github.com/DataDog/go-sqllexer v0.2.3 // indirect
 	github.com/DataDog/go-tuf v1.1.1-0.5.2 // indirect

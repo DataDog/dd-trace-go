@@ -8,10 +8,15 @@ package utils
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/codeownership"
+
+	logger "github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,41 +40,41 @@ func writeCodeOwnersFile(t *testing.T, path string, content string) {
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 }
 
-func TestNewCodeOwners(t *testing.T) {
-	// Create a temporary file for testing
-	fileContent := `[Section 1]
-/path/to/file @owner1 @owner2
-/path/to/* @owner3
+// useCodeOwnersClock makes the retry interval follow *now instead of the wall clock.
+func useCodeOwnersClock(t *testing.T, now *time.Time) {
+	t.Helper()
 
-[Section 2]
-/another/path @owner4
-`
+	previous := codeownersNow
+	codeownersNow = func() time.Time { return *now }
+	t.Cleanup(func() { codeownersNow = previous })
+}
 
-	tmpFile, err := os.CreateTemp("", "CODEOWNERS")
-	assert.NoError(t, err)
-	defer os.Remove(tmpFile.Name())
+// useBinaryPath makes binaryDir the binary's directory for the last-resort lookup.
+func useBinaryPath(t *testing.T, binaryDir string) {
+	t.Helper()
 
-	_, err = tmpFile.WriteString(fileContent)
-	assert.NoError(t, err)
+	previous := os.Args[0]
+	os.Args[0] = filepath.Join(binaryDir, "test-binary")
+	t.Cleanup(func() { os.Args[0] = previous })
+}
 
-	err = tmpFile.Close()
-	assert.NoError(t, err)
+// removeWorkingDirectory changes into a directory and deletes it, so os.Getwd fails.
+func removeWorkingDirectory(t *testing.T) {
+	t.Helper()
 
-	// Test NewCodeOwners
-	codeOwners, err := NewCodeOwners(tmpFile.Name())
-	assert.NoError(t, err)
-	assert.NotNil(t, codeOwners)
-	assert.Equal(t, 2, len(codeOwners.Sections))
-	assert.Equal(t, 2, len(codeOwners.GetSection("Section 1").Entries))
-	assert.Equal(t, 1, len(codeOwners.GetSection("Section 2").Entries))
-
-	// Test empty file path
-	_, err = NewCodeOwners("")
-	assert.Error(t, err)
+	if runtime.GOOS == "windows" {
+		t.Skip("the current directory cannot be removed on Windows")
+	}
+	workingDir := t.TempDir()
+	t.Chdir(workingDir)
+	require.NoError(t, os.Remove(workingDir))
+	if _, err := os.Getwd(); err == nil {
+		t.Skip("os.Getwd succeeds after removing the current directory")
+	}
 }
 
 func TestNilCodeOwnersDoesNotMatch(t *testing.T) {
-	var codeOwners *CodeOwners
+	var codeOwners *codeownership.Resolver
 	match, ok := codeOwners.Match("/source.go")
 	assert.Nil(t, match)
 	assert.False(t, ok)
@@ -94,7 +99,7 @@ func TestGetCodeOwnersCachesMissingDiscovery(t *testing.T) {
 
 	match, ok := codeOwners.Match("/cached/miss")
 	require.True(t, ok)
-	assert.Equal(t, "[\"@owner\"]", match.GetOwnersString())
+	assert.Equal(t, "[\"@owner\"]", match.Tag())
 }
 
 func TestGetCodeOwnersCachesSuccessfulDiscovery(t *testing.T) {
@@ -117,77 +122,218 @@ func TestGetCodeOwnersCachesSuccessfulDiscovery(t *testing.T) {
 	require.True(t, codeOwners == cachedCodeOwners)
 	match, ok := cachedCodeOwners.Match("/cached/success")
 	require.True(t, ok)
-	assert.Equal(t, "[\"@first\"]", match.GetOwnersString())
+	assert.Equal(t, "[\"@first\"]", match.Tag())
 }
 
-func TestGetCodeOwnersDoesNotCacheMalformedFileAsMissing(t *testing.T) {
-	workspaceDir := t.TempDir()
-	workingDir := t.TempDir()
-	t.Chdir(workingDir)
+// Source paths are relative to the CI workspace, so a workspace inside a Git
+// checkout reads its own CODEOWNERS locations: not the enclosing root's, and
+// not the last-resort current or binary directories.
+func TestGetCodeOwnersReadsOnlyTheWorkspace(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(root, ".git"), 0o700))
+	require.NoError(t, os.Mkdir(filepath.Join(root, ".github"), 0o700))
+	writeCodeOwnersFile(t, filepath.Join(root, ".github", "CODEOWNERS"), "* @root\n")
+	workspaceDir := filepath.Join(root, "internal")
+	require.NoError(t, os.Mkdir(workspaceDir, 0o700))
+	t.Chdir(root)
+	writeCodeOwnersFile(t, filepath.Join(root, "CODEOWNERS"), "* @working-directory\n")
+	useBinaryPath(t, root)
 	resetCodeOwnersTestState(t, workspaceDir)
 
-	codeOwnersPath := filepath.Join(workspaceDir, "CODEOWNERS")
-	writeCodeOwnersFile(t, codeOwnersPath, strings.Repeat("x", 70*1024))
+	codeOwners, complete := GetCodeOwnersWithStatus()
+	assert.Nil(t, codeOwners)
+	assert.True(t, complete)
+
+	writeCodeOwnersFile(t, filepath.Join(workspaceDir, "CODEOWNERS"), "/config/ @workspace\n")
+	ResetCodeOwnersForTesting()
+	match, ok := GetCodeOwners().Match("/config/config.go")
+	require.True(t, ok)
+	assert.Equal(t, "@workspace", match.FirstOwner())
+}
+
+// A binary that runs where its CI workspace does not exist still finds the
+// CODEOWNERS file in its current directory.
+func TestGetCodeOwnersFallsBackToWorkingDirectory(t *testing.T) {
+	workingDir := t.TempDir()
+	t.Chdir(workingDir)
+	resetCodeOwnersTestState(t, filepath.Join(t.TempDir(), "missing-workspace"))
+	writeCodeOwnersFile(t, filepath.Join(workingDir, "CODEOWNERS"), "/fallback @owner\n")
+
+	codeOwners, complete := GetCodeOwnersWithStatus()
+	require.NotNil(t, codeOwners)
+	require.True(t, complete)
+	match, ok := codeOwners.Match("/fallback")
+	require.True(t, ok)
+	assert.Equal(t, "[\"@owner\"]", match.Tag())
+}
+
+// The last-resort file keeps the callers' repository-relative paths, even when
+// the current directory is inside a Git checkout.
+func TestGetCodeOwnersFallbackKeepsPaths(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(root, ".git"), 0o700))
+	workingDir := filepath.Join(root, "pkg")
+	require.NoError(t, os.Mkdir(workingDir, 0o700))
+	t.Chdir(workingDir)
+	resetCodeOwnersTestState(t, filepath.Join(t.TempDir(), "missing-workspace"))
+	writeCodeOwnersFile(t, filepath.Join(workingDir, "CODEOWNERS"), "* @global\n/pkg/a_test.go @specific\n")
+
+	codeOwners := GetCodeOwners()
+	require.NotNil(t, codeOwners)
+	match, ok := codeOwners.Match("/pkg/a_test.go")
+	require.True(t, ok)
+	assert.Equal(t, "@specific", match.FirstOwner())
+}
+
+// A read error is retried later, at most once per retry interval; it never
+// selects another candidate file. An unreadable .gitlab/CODEOWNERS that only
+// selects the dialect is a read error too.
+func TestGetCodeOwnersRetriesIOFailure(t *testing.T) {
+	for _, folder := range []string{"", ".gitlab"} {
+		t.Run("folder="+folder, func(t *testing.T) {
+			workspaceDir := t.TempDir()
+			t.Chdir(t.TempDir())
+			resetCodeOwnersTestState(t, workspaceDir)
+			AddCITags(constants.CIProviderName, "jenkins")
+			now := time.Unix(1, 0)
+			useCodeOwnersClock(t, &now)
+
+			require.NoError(t, os.MkdirAll(filepath.Join(workspaceDir, folder), 0o700))
+			codeOwnersPath := filepath.Join(workspaceDir, folder, "CODEOWNERS")
+			if err := os.Symlink("CODEOWNERS", codeOwnersPath); err != nil {
+				t.Skipf("symlinks unavailable: %v", err)
+			}
+			codeOwners, complete := GetCodeOwnersWithStatus()
+			assert.Nil(t, codeOwners)
+			assert.False(t, complete)
+
+			require.NoError(t, os.Remove(codeOwnersPath))
+			writeCodeOwnersFile(t, codeOwnersPath, "/fixed @owner\n")
+			now = now.Add(codeownersRetryInterval - time.Nanosecond)
+			codeOwners, complete = GetCodeOwnersWithStatus()
+			assert.Nil(t, codeOwners, "retried before the interval elapsed")
+			assert.False(t, complete)
+
+			now = now.Add(time.Nanosecond)
+			codeOwners, complete = GetCodeOwnersWithStatus()
+			require.NotNil(t, codeOwners)
+			require.True(t, complete)
+
+			match, ok := codeOwners.Match("/fixed")
+			require.True(t, ok)
+			assert.Equal(t, "[\"@owner\"]", match.Tag())
+		})
+	}
+}
+
+// The binary's directory is the second last-resort location.
+func TestGetCodeOwnersFallsBackToBinaryDirectory(t *testing.T) {
+	t.Chdir(t.TempDir())
+	resetCodeOwnersTestState(t, filepath.Join(t.TempDir(), "missing-workspace"))
+	binaryDir := t.TempDir()
+	useBinaryPath(t, binaryDir)
+	writeCodeOwnersFile(t, filepath.Join(binaryDir, "CODEOWNERS"), "/fallback @owner\n")
+
+	codeOwners, complete := GetCodeOwnersWithStatus()
+	require.NotNil(t, codeOwners)
+	require.True(t, complete)
+	match, ok := codeOwners.Match("/fallback")
+	require.True(t, ok)
+	assert.Equal(t, "[\"@owner\"]", match.Tag())
+}
+
+// Without a current directory, discovery is retried rather than settled on
+// the binary's directory, which has lower priority.
+func TestGetCodeOwnersWithoutWorkingDirectory(t *testing.T) {
+	removeWorkingDirectory(t)
+	resetCodeOwnersTestState(t, filepath.Join(t.TempDir(), "missing-workspace"))
+	now := time.Unix(1, 0)
+	useCodeOwnersClock(t, &now)
+	binaryDir := t.TempDir()
+	useBinaryPath(t, binaryDir)
+	writeCodeOwnersFile(t, filepath.Join(binaryDir, "CODEOWNERS"), "/fallback @binary\n")
+
 	codeOwners, complete := GetCodeOwnersWithStatus()
 	assert.Nil(t, codeOwners)
 	assert.False(t, complete)
 
-	writeCodeOwnersFile(t, codeOwnersPath, "/fixed @owner\n")
-	codeOwners, complete = GetCodeOwnersWithStatus()
-	require.NotNil(t, codeOwners)
-	require.True(t, complete)
-
-	match, ok := codeOwners.Match("/fixed")
-	require.True(t, ok)
-	assert.Equal(t, "[\"@owner\"]", match.GetOwnersString())
-}
-
-func TestGetCodeOwnersMalformedCandidateDoesNotBlockLaterCandidate(t *testing.T) {
-	workspaceDir := t.TempDir()
 	workingDir := t.TempDir()
 	t.Chdir(workingDir)
-	resetCodeOwnersTestState(t, workspaceDir)
-
-	writeCodeOwnersFile(t, filepath.Join(workspaceDir, "CODEOWNERS"), strings.Repeat("x", 70*1024))
-	require.NoError(t, os.MkdirAll(filepath.Join(workspaceDir, ".github"), 0o700))
-	writeCodeOwnersFile(t, filepath.Join(workspaceDir, ".github", "CODEOWNERS"), "/fallback @owner\n")
-
-	codeOwners := GetCodeOwners()
+	writeCodeOwnersFile(t, filepath.Join(workingDir, "CODEOWNERS"), "/fallback @working-directory\n")
+	now = now.Add(codeownersRetryInterval)
+	codeOwners, complete = GetCodeOwnersWithStatus()
 	require.NotNil(t, codeOwners)
-
+	assert.True(t, complete)
 	match, ok := codeOwners.Match("/fallback")
 	require.True(t, ok)
-	assert.Equal(t, "[\"@owner\"]", match.GetOwnersString())
+	assert.Equal(t, "@working-directory", match.FirstOwner())
 }
 
-func TestMatch(t *testing.T) {
-	entries := []Entry{
-		{Pattern: "/path/to/file", Owners: []string{"@owner1", "@owner2"}, Section: "Section 1"},
-		{Pattern: "/path/to/*", Owners: []string{"@owner3"}, Section: "Section 1"},
-		{Pattern: "/another/path", Owners: []string{"@owner4"}, Section: "Section 2"},
+// Dropped rules, an ignored file and a last-resort file are logged above the
+// debug level, so missing ownership can be traced to its cause.
+func TestGetCodeOwnersLogsLoadProblems(t *testing.T) {
+	recordLogger := new(logger.RecordLogger)
+	defer logger.UseLogger(recordLogger)()
+	containsLog := func(level, text string) bool {
+		for _, line := range recordLogger.Logs() {
+			if strings.Contains(line, level) && strings.Contains(line, text) {
+				return true
+			}
+		}
+		return false
 	}
-	sections := []*Section{
-		{Name: "Section 1", Entries: []Entry{entries[0], entries[1]}},
-		{Name: "Section 2", Entries: []Entry{entries[2]}},
-	}
 
-	codeOwners := &CodeOwners{Sections: sections}
+	workspaceDir := t.TempDir()
+	t.Chdir(t.TempDir())
+	resetCodeOwnersTestState(t, workspaceDir)
+	writeCodeOwnersFile(t, filepath.Join(workspaceDir, "CODEOWNERS"), "* @owner\n!negated @owner\n")
+	require.NotNil(t, GetCodeOwners())
+	assert.True(t, containsLog("WARN", "has 1 invalid lines"), recordLogger.Logs())
+	assert.False(t, containsLog("INFO", "last-resort"), recordLogger.Logs())
 
-	// Test exact match
-	entry, ok := codeOwners.Match("/path/to/file")
-	assert.True(t, ok)
-	assert.Equal(t, entries[0], *entry)
+	recordLogger.Reset()
+	ResetCodeOwnersForTesting()
+	require.NoError(t, os.Truncate(filepath.Join(workspaceDir, "CODEOWNERS"), codeownership.GitHubMaximumFileSize+1))
+	require.NotNil(t, GetCodeOwners())
+	assert.True(t, containsLog("WARN", "is ignored"), recordLogger.Logs())
 
-	// Test wildcard match
-	entry, ok = codeOwners.Match("/path/to/anything")
-	assert.True(t, ok)
-	assert.Equal(t, entries[1], *entry)
-
-	// Test no match
-	entry, ok = codeOwners.Match("/no/match")
-	assert.False(t, ok)
+	workingDir := t.TempDir()
+	t.Chdir(workingDir)
+	resetCodeOwnersTestState(t, filepath.Join(t.TempDir(), "missing-workspace"))
+	writeCodeOwnersFile(t, filepath.Join(workingDir, "CODEOWNERS"), "* @owner\n")
+	recordLogger.Reset()
+	require.NotNil(t, GetCodeOwners())
+	assert.True(t, containsLog("INFO", "last-resort location"), recordLogger.Logs())
 }
 
+// Each host reads its own first location: GitHub prefers .github/CODEOWNERS,
+// GitLab prefers the root file.
+func TestGetCodeOwnersUsesProviderLocation(t *testing.T) {
+	workspaceDir := t.TempDir()
+	t.Chdir(t.TempDir())
+	resetCodeOwnersTestState(t, workspaceDir)
+
+	for _, folder := range []string{".github", ".gitlab", "docs"} {
+		require.NoError(t, os.MkdirAll(filepath.Join(workspaceDir, folder), 0o700))
+	}
+	writeCodeOwnersFile(t, filepath.Join(workspaceDir, "CODEOWNERS"), "* @root\n")
+	writeCodeOwnersFile(t, filepath.Join(workspaceDir, ".github", "CODEOWNERS"), "* @github\n")
+	writeCodeOwnersFile(t, filepath.Join(workspaceDir, ".gitlab", "CODEOWNERS"), "* @gitlab\n")
+	writeCodeOwnersFile(t, filepath.Join(workspaceDir, "docs", "CODEOWNERS"), "* @docs\n")
+
+	match, ok := GetCodeOwners().Match("/a.go")
+	require.True(t, ok)
+	assert.Equal(t, "@github", match.FirstOwner())
+
+	ResetCodeOwnersForTesting()
+	AddCITags(constants.CIProviderName, "gitlab")
+	match, ok = GetCodeOwners().Match("/a.go")
+	require.True(t, ok)
+	assert.Equal(t, "@root", match.FirstOwner())
+}
+
+// The previous matcher treated these wildcards as literal characters; GitHub,
+// and now CI Visibility, match them.
 func TestMatchAnchoredFilenamePrefix(t *testing.T) {
 	for _, tc := range []struct {
 		pattern string
@@ -209,18 +355,18 @@ func TestMatchAnchoredFilenamePrefix(t *testing.T) {
 		{"/src/*", "/src/nested/direct.go", false},
 		{"/src/", "/src/nested/direct.go", true},
 		{"*test.go", "/src/nested/direct_test.go", true},
-		{"ci_*", "/src/ci_new.go", false},
-		{"/src/ci_**", "/src/ci_new.go", false},
-		{"/src/ci_?*", "/src/ci_new.go", false},
-		{"/src/ci_*.go", "/src/ci_new.go", false},
+		{"ci_*", "/src/ci_new.go", true},
+		{"/src/ci_**", "/src/ci_new.go", true},
+		{"/src/ci_?*", "/src/ci_new.go", true},
+		{"/src/ci_*.go", "/src/ci_new.go", true},
 	} {
 		t.Run(tc.pattern+":"+tc.path, func(t *testing.T) {
-			owners := &CodeOwners{Sections: []*Section{{Entries: []Entry{{Pattern: tc.pattern, Owners: []string{"@owner"}}}}}}
-			entry, ok := owners.Match(tc.path)
+			owners, err := codeownership.Parse(strings.NewReader(tc.pattern+" @owner\n"), codeownership.GitHub)
+			require.NoError(t, err)
+			match, ok := owners.Match(tc.path)
 			assert.Equal(t, tc.matches, ok)
 			if tc.matches {
-				require.NotNil(t, entry)
-				assert.Equal(t, []string{"@owner"}, entry.Owners)
+				assert.Equal(t, []string{"@owner"}, match.Owners())
 			}
 		})
 	}
@@ -238,31 +384,18 @@ func TestMatchAnchoredFilenamePrefixPrecedence(t *testing.T) {
 		t.Run(tc.owner, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "CODEOWNERS")
 			writeCodeOwnersFile(t, path, tc.content)
-			owners, err := NewCodeOwners(path)
+			owners, err := codeownership.Load(path, codeownership.GitHub)
 			require.NoError(t, err)
-			entry, ok := owners.Match("/src/ci_exact.go")
+			match, ok := owners.Match("/src/ci_exact.go")
 			require.True(t, ok)
-			assert.Equal(t, []string{tc.owner}, entry.Owners)
+			assert.Equal(t, []string{tc.owner}, match.Owners())
 		})
 	}
 }
 
-func TestGetOwnersString(t *testing.T) {
-	entry := Entry{Owners: []string{"@owner1", "@owner2"}}
-	assert.Equal(t, "[\"@owner1\",\"@owner2\"]", entry.GetOwnersString())
-
-	entry = Entry{}
-	assert.Equal(t, "", entry.GetOwnersString())
-}
-
 func TestGithubCodeOwners(t *testing.T) {
-	cOwners, err := NewCodeOwners("testdata/fixtures/codeowners/CODEOWNERS_GITHUB")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cOwners == nil {
-		t.Fatal("nil codeowners")
-	}
+	cOwners, err := codeownership.Load("testdata/fixtures/codeowners/CODEOWNERS_GITHUB", codeownership.GitHub)
+	require.NoError(t, err)
 
 	data := []struct {
 		value    string
@@ -272,7 +405,9 @@ func TestGithubCodeOwners(t *testing.T) {
 		{value: "apps/test.cs", expected: "[\"@octocat\"]"},
 		{value: "/example/apps/test.cs", expected: "[\"@octocat\"]"},
 		{value: "/docs/test.cs", expected: "[\"@doctocat\"]"},
-		{value: "/examples/docs/test.cs", expected: "[\"docs@example.com\"]"},
+		// docs/* has an interior slash, so it is rooted: it does not match
+		// examples/docs/test.cs, which the previous matcher gave docs@example.com.
+		{value: "/examples/docs/test.cs", expected: "[\"@global-owner1\",\"@global-owner2\"]"},
 		{value: "/src/vendor/match.go", expected: "[\"docs@example.com\"]"},
 		{value: "/examples/docs/inside/test.cs", expected: "[\"@global-owner1\",\"@global-owner2\"]"},
 		{value: "/component/path/test.js", expected: "[\"@js-owner\"]"},
@@ -286,39 +421,37 @@ func TestGithubCodeOwners(t *testing.T) {
 		t.Run(strings.ReplaceAll(item.value, "/", "_"), func(t *testing.T) {
 			match, ok := cOwners.Match(item.value)
 			assert.True(t, ok)
-			assert.EqualValues(t, item.expected, match.GetOwnersString())
+			assert.EqualValues(t, item.expected, match.Tag())
 		})
 	}
 }
 
 func TestGitlabCodeOwners(t *testing.T) {
-	cOwners, err := NewCodeOwners("testdata/fixtures/codeowners/CODEOWNERS_GITLAB")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cOwners == nil {
-		t.Fatal("nil codeowners")
-	}
+	cOwners, err := codeownership.Load("testdata/fixtures/codeowners/CODEOWNERS_GITLAB", codeownership.GitLab)
+	require.NoError(t, err)
 
+	// Sections combine their owners in declaration order, starting with the
+	// rules before the first section header. The previous matcher listed the
+	// default section's owners last.
 	data := []struct {
 		value    string
 		expected string
 	}{
-		{value: "apps/README.md", expected: "[\"@docs\",\"@database\",\"@multiple\",\"@code\",\"@owners\"]"},
-		{value: "model/db", expected: "[\"@database\",\"@multiple\",\"@code\",\"@owners\"]"},
+		{value: "apps/README.md", expected: "[\"@multiple\",\"@code\",\"@owners\",\"@docs\",\"@database\"]"},
+		{value: "model/db", expected: "[\"@multiple\",\"@code\",\"@owners\",\"@database\"]"},
 		{value: "/config/data.conf", expected: "[\"@config-owner\"]"},
 		{value: "/docs/root.md", expected: "[\"@root-docs\"]"},
 		{value: "/docs/sub/root.md", expected: "[\"@all-docs\"]"},
 		{value: "/src/README", expected: "[\"@group\",\"@group/with-nested/subgroup\"]"},
 		{value: "/src/lib/internal.h", expected: "[\"@lib-owner\"]"},
-		{value: "src/ee/docs", expected: "[\"@docs\",\"@multiple\",\"@code\",\"@owners\"]"},
+		{value: "src/ee/docs", expected: "[\"@multiple\",\"@code\",\"@owners\",\"@docs\"]"},
 	}
 
 	for _, item := range data {
 		t.Run(strings.ReplaceAll(item.value, "/", "_"), func(t *testing.T) {
 			match, ok := cOwners.Match(item.value)
 			assert.True(t, ok)
-			assert.EqualValues(t, item.expected, match.GetOwnersString())
+			assert.EqualValues(t, item.expected, match.Tag())
 		})
 	}
 }

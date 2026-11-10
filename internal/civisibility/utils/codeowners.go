@@ -6,101 +6,140 @@
 package utils
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
-	codeownerspkg "github.com/DataDog/dd-trace-go/v2/internal/codeowners"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/codeownership"
 
 	logger "github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
-// This is a port of https://github.com/DataDog/dd-trace-dotnet/blob/v2.53.0/tracer/src/Datadog.Trace/Ci/CodeOwners.cs
-
-type (
-	// CodeOwners represents a structured data type that holds sections of code owners.
-	// Each section maps to a slice of entries, where each entry includes a pattern and a list of owners.
-	CodeOwners = codeownerspkg.CodeOwners
-
-	// Section represents a block of structured data of multiple entries in a single section.
-	Section = codeownerspkg.Section
-
-	// Entry represents a single entry in a CODEOWNERS file.
-	Entry = codeownerspkg.Entry
-)
+// codeownersRetryInterval bounds discovery retries after an I/O error. Every
+// test that needs ownership asks again, so a persistent error would otherwise
+// repeat the file system work, under codeownersMutex, for each test.
+const codeownersRetryInterval = 100 * time.Millisecond
 
 var (
-	// codeowners holds the parsed CODEOWNERS file data after discovery succeeds.
-	codeowners *CodeOwners
+	// codeowners holds the CODEOWNERS resolver after discovery succeeds.
+	codeowners *codeownership.Resolver
 
 	// codeownersLookupDone distinguishes "not looked up yet" from "looked up and no CODEOWNERS file exists".
 	codeownersLookupDone bool
 
+	// codeownersRetryAt is when discovery may run again after an I/O error.
+	codeownersRetryAt time.Time
+
+	// codeownersFailureLogged limits the warning to the first failed discovery.
+	codeownersFailureLogged bool
+
 	// codeownersMutex protects CODEOWNERS discovery state.
 	codeownersMutex sync.Mutex
+
+	// codeownersNow lets tests control the retry interval.
+	codeownersNow = time.Now
 )
 
 // GetCodeOwners retrieves and caches CODEOWNERS discovery for this process.
-// It looks for the CODEOWNERS file in various standard locations within the CI workspace.
-// Successful parsed data is cached, and true missing-file discovery results are cached as nil.
-// This function is thread-safe due to the use of a mutex.
+// Parsing, host-specific file discovery and matching live in codeownership.
 //
 // Returns:
 //
-//	A pointer to a CodeOwners struct containing the parsed CODEOWNERS data, or nil if not found.
-func GetCodeOwners() *CodeOwners {
+//	A resolver for paths relative to the CI workspace, or nil if no CODEOWNERS file is found.
+func GetCodeOwners() *codeownership.Resolver {
 	codeOwners, _ := GetCodeOwnersWithStatus()
 	return codeOwners
 }
 
 // GetCodeOwnersWithStatus retrieves CODEOWNERS and reports whether discovery
-// reached a cacheable result. A false completion status means a non-missing
-// read or parse error occurred and a later call should retry discovery.
-func GetCodeOwnersWithStatus() (*CodeOwners, bool) {
+// reached a cacheable result. Missing files and malformed rules are stable
+// decisions; a false completion status means an I/O error occurred and a later
+// call retries discovery, at most once per codeownersRetryInterval.
+func GetCodeOwnersWithStatus() (*codeownership.Resolver, bool) {
 	codeownersMutex.Lock()
 	defer codeownersMutex.Unlock()
 
 	if codeownersLookupDone {
 		return codeowners, true
 	}
+	now := codeownersNow()
+	if now.Before(codeownersRetryAt) {
+		return nil, false
+	}
 
-	hasNonMissingError := false
+	resolver, fallback, err := discoverCodeOwners()
+	if err != nil {
+		codeownersRetryAt = now.Add(codeownersRetryInterval)
+		if codeownersFailureLogged {
+			logger.Debug("civisibility: CODEOWNERS discovery failed: %s", err.Error())
+		} else {
+			codeownersFailureLogged = true
+			logger.Warn("civisibility: CODEOWNERS discovery failed; it will be retried: %s", err.Error())
+		}
+		return nil, false
+	}
+	codeowners = resolver
+	codeownersLookupDone = true
+	if resolver != nil {
+		logLoadedCodeOwners(resolver, fallback)
+	}
+	return codeowners, true
+}
+
+// discoverCodeOwners reads the CI workspace's CODEOWNERS file, or a last-resort
+// file, and reports whether the last resort was used.
+func discoverCodeOwners() (*codeownership.Resolver, bool, error) {
 	tags := GetCITags()
-	if v, ok := tags[constants.CIWorkspacePath]; ok {
-		paths := []string{
-			filepath.Join(v, "CODEOWNERS"),
-			filepath.Join(v, ".github", "CODEOWNERS"),
-			filepath.Join(v, ".gitlab", "CODEOWNERS"),
-			filepath.Join(v, ".docs", "CODEOWNERS"),
+	locations := codeownership.Locations{
+		Repository: tags[constants.GitRepositoryURL],
+		Provider:   tags[constants.CIProviderName],
+	}
+	if workspace := tags[constants.CIWorkspacePath]; workspace != "" {
+		// Source paths are relative to the workspace, the repository root, so
+		// its CODEOWNERS file is read without looking for an enclosing Git root.
+		// An existing workspace decides: a file elsewhere would be matched
+		// against paths it was not written for.
+		resolver, err := codeownership.DiscoverIn(workspace, locations)
+		if err != nil || resolver != nil {
+			return resolver, false, err
 		}
-		for _, path := range paths {
-			if cow, err := parseCodeOwners(path); err == nil {
-				codeowners = cow
-				codeownersLookupDone = true
-				return codeowners, true
-			} else if !os.IsNotExist(err) {
-				hasNonMissingError = true
-			}
+		if info, err := os.Stat(workspace); err == nil && info.IsDir() {
+			return nil, false, nil
 		}
 	}
+	// Standalone test binaries may have no CI workspace, or one that does not
+	// exist where they run: as a last resort, look in the current directory,
+	// then in the binary's directory. Without a current directory, discovery
+	// is retried later rather than settled on a lower-priority file.
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		return nil, false, err
+	}
+	for _, directory := range []string{workingDirectory, filepath.Dir(os.Args[0])} {
+		resolver, err := codeownership.DiscoverIn(directory, locations)
+		if err != nil || resolver != nil {
+			return resolver, true, err
+		}
+	}
+	return nil, false, nil
+}
 
-	// If the codeowners file is not found, let's try a last resort by looking in the current directory (for standalone test binaries)
-	for _, path := range []string{"CODEOWNERS", filepath.Join(filepath.Dir(os.Args[0]), "CODEOWNERS")} {
-		if cow, err := parseCodeOwners(path); err == nil {
-			codeowners = cow
-			codeownersLookupDone = true
-			return codeowners, true
-		} else if !os.IsNotExist(err) {
-			hasNonMissingError = true
-		}
+// logLoadedCodeOwners warns about rules the parser dropped or an ignored file,
+// as dd-trace-dotnet does, so missing ownership can be traced to its cause.
+func logLoadedCodeOwners(resolver *codeownership.Resolver, fallback bool) {
+	if resolver.Ignored() {
+		logger.Warn("civisibility: CODEOWNERS file exceeds GitHub's %d byte limit and is ignored, as GitHub does: %q",
+			codeownership.GitHubMaximumFileSize, resolver.File())
+	} else if diagnostics := resolver.Diagnostics(); diagnostics > 0 {
+		logger.Warn("civisibility: CODEOWNERS file has %d invalid lines; their rules were ignored or kept with the owners that could be read: %q",
+			diagnostics, resolver.File())
 	}
-
-	if !hasNonMissingError {
-		codeownersLookupDone = true
+	if fallback {
+		logger.Info("civisibility: CODEOWNERS loaded from a last-resort location outside the CI workspace: %q", resolver.File())
 	}
-	return nil, codeownersLookupDone
+	logger.Debug("civisibility: CODEOWNERS loaded file=%q dialect=%d diagnostics=%d", resolver.File(), resolver.Dialect(), resolver.Diagnostics())
 }
 
 // ResetCodeOwnersForTesting clears the process-local CODEOWNERS discovery cache.
@@ -110,39 +149,6 @@ func ResetCodeOwnersForTesting() {
 
 	codeowners = nil
 	codeownersLookupDone = false
-}
-
-// parseCodeOwners reads and parses the CODEOWNERS file located at the given filePath.
-func parseCodeOwners(filePath string) (*CodeOwners, error) {
-	if _, err := os.Stat(filePath); err != nil {
-		return nil, err
-	}
-	cow, err := NewCodeOwners(filePath)
-	if err == nil {
-		if logger.DebugEnabled() {
-			logger.Debug("civisibility: codeowner file '%s' was loaded successfully.", filePath)
-		}
-		return cow, nil
-	}
-	logger.Debug("Error parsing codeowners: %s", err.Error())
-	return nil, err
-}
-
-// NewCodeOwners creates a new instance of CodeOwners by parsing a CODEOWNERS file located at the given filePath.
-// It returns an error if the file cannot be read or parsed properly.
-func NewCodeOwners(filePath string) (*CodeOwners, error) {
-	if filePath == "" {
-		return nil, errors.New("filePath cannot be empty")
-	}
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		err = file.Close()
-		if err != nil && !errors.Is(err, os.ErrClosed) {
-			logger.Warn("Error closing codeowners file: %s", err.Error()) //errtrack:ignore filesystem close failure
-		}
-	}()
-	return codeownerspkg.Parse(file)
+	codeownersRetryAt = time.Time{}
+	codeownersFailureLogged = false
 }
