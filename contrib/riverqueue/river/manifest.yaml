@@ -1,0 +1,13 @@
+_v: 1
+name: github.com/riverqueue/river
+display_name: River
+description: Instruments River job inserts and job execution with producer and consumer spans, propagating trace context
+  and sampling decisions through job metadata.
+packages:
+- name: github.com/riverqueue/river
+category:
+- messaging.consumer
+- messaging.producer
+systems:
+- river
+creation_date: '2026-11-04'

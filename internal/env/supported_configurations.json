@@ -1906,6 +1906,13 @@
         "default": "1ms"
       }
     ],
+    "DD_TRACE_RIVER_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_SAMPLE_RATE": [
       {
         "implementation": "C",

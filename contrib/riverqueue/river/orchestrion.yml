@@ -1,0 +1,60 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026 Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/riverqueue/river/v2
+  description: River is a Postgres-backed job queue for Go.
+
+aspects:
+  # river.NewClient is generic and takes its middleware inside *river.Config, so
+  # the tracing middleware is added in the library itself, on a copy of the
+  # caller's config. The caller's Config and its slices are never modified, and
+  # a client that already has the middleware is not traced twice. The contrib
+  # package only imports rivertype, so importing it from package river does not
+  # create an import cycle.
+  - id: NewClient
+    join-point:
+      all-of:
+        - import-path: github.com/riverqueue/river
+        - function-body:
+            function:
+              - name: NewClient
+    advice:
+      - prepend-statements:
+          imports:
+            rivertrace: github.com/DataDog/dd-trace-go/contrib/riverqueue/river/v2
+          template: |-
+            {{- $cfg := .Function.Argument 1 -}}
+            if {{ $cfg }} != nil {
+              // Skip clients that already have the middleware in a field
+              // AddMiddleware does not look at: as a plugin, or in the
+              // deprecated WorkerMiddleware field.
+              __dd_traced := false
+              for _, __dd_plugin := range {{ $cfg }}.Plugins {
+                if _, ok := __dd_plugin.(*rivertrace.Middleware); ok {
+                  __dd_traced = true
+                }
+              }
+              for _, __dd_mw := range {{ $cfg }}.WorkerMiddleware {
+                if _, ok := __dd_mw.(*rivertrace.Middleware); ok {
+                  __dd_traced = true
+                }
+              }
+              if !__dd_traced {
+                __dd_config := *{{ $cfg }}
+                if len(__dd_config.JobInsertMiddleware) > 0 || len(__dd_config.WorkerMiddleware) > 0 {
+                  // River rejects a config mixing Middleware with the deprecated
+                  // JobInsertMiddleware/WorkerMiddleware fields, so follow the
+                  // caller. One instance in JobInsertMiddleware also traces work,
+                  // since it implements both interfaces and River runs each
+                  // middleware once.
+                  __dd_config.JobInsertMiddleware = rivertrace.AddMiddleware(__dd_config.JobInsertMiddleware)
+                } else {
+                  __dd_config.Middleware = rivertrace.AddMiddleware(__dd_config.Middleware)
+                }
+                {{ $cfg }} = &__dd_config
+              }
+            }
