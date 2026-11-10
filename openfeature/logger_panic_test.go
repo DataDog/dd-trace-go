@@ -189,6 +189,8 @@ func shutdownAndWait(tb testing.TB, p *DatadogProvider) {
 	if p.exposureWriter != nil {
 		waits["exposure writer"] = p.exposureWriter.workerDone
 	}
+	// Gate on ticker, not workerDone: the flag evaluation writer creates
+	// workerDone at construction, so a nil check cannot detect "never started".
 	if p.flagEvalLoggingWriter != nil && p.flagEvalLoggingWriter.ticker != nil {
 		waits["flag evaluation writer"] = p.flagEvalLoggingWriter.workerDone
 	}
@@ -254,6 +256,9 @@ func providerGoroutines() []string {
 // logger and before starting the test's own provider: a stray goroutine
 // would log into the swapped logger, which can panic, stall or fail
 // assertions on what was logged. Use cleanupProvider in the leaking test.
+// This targeted stack scan is used instead of goleak: goleak runs at test end
+// and flags every goroutine, while this runs mid-suite, names the provider's
+// goroutines, and reports the leaking stack.
 func requireNoStrayProviderGoroutines(tb testing.TB) {
 	tb.Helper()
 	// cleanupProvider joins every goroutine through the channel it closes on
@@ -281,5 +286,23 @@ func stopAgentlessSource(tb testing.TB, src *agentlessSource) {
 	defer cancel()
 	if err := src.Stop(ctx); err != nil {
 		tb.Errorf("agentless poll loop did not stop: %v", err)
+	}
+}
+
+// TestProviderGoroutines_FindsRunningProvider guards providerGoroutines
+// against renames: if it stops matching the provider's goroutines, leak
+// detection is silently disabled.
+func TestProviderGoroutines_FindsRunningProvider(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(srv.Close)
+	evp := testAgentlessEVPClient(t, nil, srv, "test-api-key")
+	p := newDatadogProviderWithSourceAndEVP(ProviderConfig{}, internalffe.SourceAgentless, evp)
+	cleanupProvider(t, p)
+
+	p.updateConfiguration(createTestConfig())
+	if len(providerGoroutines()) == 0 {
+		t.Fatal("providerGoroutines found no goroutines of a running provider")
 	}
 }
