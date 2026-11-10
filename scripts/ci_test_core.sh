@@ -17,8 +17,11 @@ github\.com/DataDog/dd-trace-go/v2/internal/civisibility/utils|\
 github\.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo|\
 github\.com/DataDog/dd-trace-go/v2/instrumentation/httptrace)$"
 
-mapfile -t SHUFFLE_PACKAGES < <($GO_CMD list ./... | grep -v /contrib/ | grep -Ev "$NO_SHUFFLE_PATTERN")
-mapfile -t NO_SHUFFLE_PACKAGES < <($GO_CMD list ./... | grep -v /contrib/ | grep -E "$NO_SHUFFLE_PATTERN")
+# `go list ./...` lists the root module only: each integration is its own module, which
+# ci_test_contrib.sh tests. The root-module packages under contrib/, such as the cores that two
+# majors of an integration share, have no other -race runner, so they are tested here.
+mapfile -t SHUFFLE_PACKAGES < <($GO_CMD list ./... | grep -Ev "$NO_SHUFFLE_PATTERN")
+mapfile -t NO_SHUFFLE_PACKAGES < <($GO_CMD list ./... | grep -E "$NO_SHUFFLE_PATTERN")
 
 # Set +e so that we run all test commands even if one fails
 set +e
