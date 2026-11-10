@@ -291,6 +291,40 @@ func TestToolSpanDownstreamCalls(t *testing.T) {
 		assert.Equal(t, 1, got.TotalErrorCount)
 	})
 
+	t.Run("grpc-host-is-service-not-peer-ip", func(t *testing.T) {
+		tt := testTracer(t)
+		tool, ctx := llmobs.StartToolSpan(context.Background(), "t")
+		for _, ip := range []string{"100.112.26.15", "100.113.45.67"} {
+			rpc, _ := tracer.StartSpanFromContext(ctx, "grpc.client",
+				tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+				tracer.Tag(ext.GRPCFullMethod, "/pb.Ephemera/Increment"),
+				tracer.Tag(ext.RPCService, "pb.Ephemera"),
+				tracer.Tag(ext.TargetHost, ip),
+				tracer.Tag(ext.TargetPort, "10000"),
+				tracer.Tag("grpc.code", "OK"),
+			)
+			rpc.Finish()
+		}
+		peer, _ := tracer.StartSpanFromContext(ctx, "grpc.client",
+			tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+			tracer.Tag(ext.GRPCFullMethod, "/sandboxpb.SandboxWorker/Execute"),
+			tracer.Tag(ext.RPCService, "sandboxpb.SandboxWorker"),
+			tracer.Tag(ext.PeerService, "mcp-sandbox-worker"),
+			tracer.Tag(ext.TargetHost, "100.112.11.48"),
+		)
+		peer.Finish()
+		tool.Finish()
+
+		got := requireDownstreamCalls(t, tt, "t")
+		require.NotNil(t, got)
+		assert.ElementsMatch(t, []string{"pb.Ephemera", "mcp-sandbox-worker"}, got.Hosts)
+		assert.ElementsMatch(t, []string{
+			"pb.Ephemera/pb.Ephemera/Increment",
+			"mcp-sandbox-worker/sandboxpb.SandboxWorker/Execute",
+		}, got.Endpoints)
+		assert.Equal(t, 3, got.TotalCount)
+	})
+
 	t.Run("concurrent-finish-records-once", func(t *testing.T) {
 		tt := testTracer(t)
 		tool, ctx := llmobs.StartToolSpan(context.Background(), "t")
