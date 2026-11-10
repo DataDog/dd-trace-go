@@ -81,6 +81,11 @@ func (s *Span) llmobsDownstreamCallLocked() illmobs.DownstreamCall {
 	case s.firstMetaLocked(ext.GRPCFullMethod) != "":
 		call.Kind, call.Target = "grpc", s.firstMetaLocked(ext.GRPCFullMethod)
 		call.Status = s.firstMetaLocked(grpcCodeTag, grpcStatusCodeTag)
+		// The gRPC client records the resolved peer address as the host, which is a different pod
+		// IP on most calls. Prefer a stable service name so calls to one service group together.
+		if service := s.firstMetaLocked(ext.PeerService, ext.RPCService); service != "" {
+			call.Host = service
+		}
 	case s.firstMetaLocked(ext.DBSystem) != "":
 		call.Kind, call.Method, call.Target = "db", s.firstMetaLocked(ext.DBSystem), s.name
 	default:
