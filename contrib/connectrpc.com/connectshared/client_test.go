@@ -368,6 +368,68 @@ func TestClientCallTerminalError(t *testing.T) {
 				c.EndReceive(internal("boom"), false, false)
 			},
 		},
+		// A unary response leaves the stream to the Close that follows it.
+		{
+			name: "Close records its error after a unary response",
+			run: func(c *ClientCall) {
+				c.Begin()
+				c.EndUnaryReceive(nil, false)
+				c.Begin()
+				c.End(newTestError(codeUnavailable, "close failed"), false, true, false)
+			},
+			wantCode: "unavailable", wantError: "close failed",
+		},
+		{
+			name: "a unary Receive error ends the stream before Close",
+			run: func(c *ClientCall) {
+				c.Begin()
+				c.EndUnaryReceive(internal("boom"), false)
+				c.Begin()
+				c.End(newTestError(codeUnavailable, "close failed"), false, true, false)
+			},
+			wantCode: "internal", wantError: "boom",
+		},
+		{
+			name: "a missing unary response is an error",
+			run: func(c *ClientCall) {
+				c.Begin()
+				c.EndUnaryReceive(io.EOF, false)
+			},
+			wantCode: "unknown", wantError: "EOF",
+		},
+		{
+			name: "a unary Receive panic ends the stream",
+			run: func(c *ClientCall) {
+				c.Begin()
+				c.EndUnaryReceive(errors.New("boom"), true)
+			},
+			wantCode: "unknown", wantError: "boom",
+		},
+		{
+			name: "the unary response in flight drops the context's deadline",
+			run: func(c *ClientCall) {
+				c.Begin()
+				c.requestFinish(context.DeadlineExceeded)
+				c.EndUnaryReceive(nil, false)
+			},
+		},
+		{
+			name: "the context ending after a unary response records nothing",
+			run: func(c *ClientCall) {
+				c.Begin()
+				c.EndUnaryReceive(nil, false)
+				c.requestFinish(context.DeadlineExceeded)
+			},
+		},
+		{
+			name:       "no call span skips the classification of a unary Receive",
+			errCheck:   func(int32, error) bool { return true },
+			noCallSpan: true,
+			run: func(c *ClientCall) {
+				c.Begin()
+				c.EndUnaryReceive(internal("boom"), false)
+			},
+		},
 		// A result set while the stream runs is what the caller got, however the stream ends.
 		{
 			name: "the result replaces the terminal error",
@@ -481,6 +543,19 @@ func TestClientCallTerminalError(t *testing.T) {
 		defer c.mu.Unlock()
 		assert.Empty(t, c.fallbacks)
 		assert.Equal(t, internal("first").Error(), c.terminal.err.Error())
+	})
+
+	t.Run("a unary response leaves the call span open", func(t *testing.T) {
+		mt := startMockTracer(t)
+		c := newTestClientCall(tracer.StartSpan(operationClient))
+		c.Begin()
+		c.EndUnaryReceive(nil, false)
+		assert.Empty(t, mt.FinishedSpans())
+		c.Begin()
+		c.End(nil, false, true, false)
+		finished := requireFinished(t, mt)
+		assert.Nil(t, finished.Tag(tagConnectErrorCode))
+		assert.Nil(t, finished.Tag(ext.ErrorMsg))
 	})
 
 	t.Run("the call's finish mode classifies the terminal error", func(t *testing.T) {

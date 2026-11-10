@@ -270,9 +270,14 @@ func (s *clientStream) endReceive(err error, isPanic bool) {
 }
 
 // endResponse ends the first Receive of a single-response stream, which reads its only response:
-// its caller may never call Close (the generated CloseAndReceive doesn't), and an io.EOF means
-// that the server sent none.
+// an io.EOF means that the server sent none. A client stream ends there, as its caller may never
+// call Close (the generated CloseAndReceive doesn't). A unary stream's response doesn't end it:
+// connect.Client.CallUnary always calls Close, and returns its error too.
 func (s *clientStream) endResponse(err error, isPanic bool) {
+	if s.spec.StreamType == connectrpc.StreamTypeUnary {
+		s.call.EndUnaryReceive(err, isPanic)
+		return
+	}
 	s.call.EndReceive(err, isPanic, true)
 }
 

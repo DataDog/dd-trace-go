@@ -117,6 +117,20 @@ func (s *ClientCall) EndReceive(err error, isPanic, single bool) {
 	}
 }
 
+// EndUnaryReceive ends the Receive of a unary stream's response, like EndReceive with single,
+// except that a response doesn't end the stream: the caller's result also holds the error of the
+// Close that follows (connect.Client.CallUnary joins them), so Close, or the end of the context,
+// finishes the call span. An error still ends the stream: the span then records the failure,
+// even if the caller abandons the stream without closing it.
+func (s *ClientCall) EndUnaryReceive(err error, isPanic bool) {
+	if s.span == nil {
+		return
+	}
+	if s.end(err, isPanic, err != nil, true, !isPanic && err == nil) {
+		s.finishCall()
+	}
+}
+
 // SetResult makes err the error that the call span finishes with, whatever error or end of the
 // context ends the stream, unless an operation panics; a nil err undoes it. A stream wrapper calls
 // it from an operation started by Begin, before the operation ends, once the caller's result no

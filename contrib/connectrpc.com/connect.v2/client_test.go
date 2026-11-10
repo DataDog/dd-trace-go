@@ -146,6 +146,81 @@ func TestUnaryClient(t *testing.T) {
 			})
 		}
 	})
+
+	// connect.Client.CallUnary returns the error of the Close that follows the response, joined
+	// with the Receive's: the call span records what the caller gets.
+	closeFailed := connectrpc.Errorf(connectrpc.CodeUnavailable, "close failed")
+	for _, test := range []struct {
+		name     string
+		stream   *fakeClientStream
+		wantCode any
+		// wantError is a substring of the recorded error; empty if none may be recorded.
+		wantError string
+	}{
+		{name: "Close succeeds after the response", stream: &fakeClientStream{receive: returns(nil)}},
+		{
+			name: "Close fails after the response", stream: &fakeClientStream{receive: returns(nil), close: returns(closeFailed)},
+			wantCode: "unavailable", wantError: "close failed",
+		},
+		{
+			name:     "the Receive error comes before the Close error",
+			stream:   &fakeClientStream{receive: returns(connectrpc.Errorf(connectrpc.CodeInternal, "boom")), close: returns(closeFailed)},
+			wantCode: "internal", wantError: "boom",
+		},
+		{
+			name: "a missing response is an error", stream: &fakeClientStream{receive: returns(io.EOF)},
+			wantCode: "unknown", wantError: "EOF",
+		},
+	} {
+		t.Run("CallUnary/"+test.name, func(t *testing.T) {
+			mt := startMockTracer(t)
+			transport := fakeTransport(fakeClientFunc(test.stream, connectrpc.ProtocolNameConnect, fakePeerAddr))
+			_, err := callUnary(context.Background(), connectrpc.NewClient(transport, NewClientInterceptor()), "hello")
+			assert.Equal(t, test.wantError == "", err == nil, "%v", err)
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			assert.Equal(t, test.wantCode, spans[0].Tag(tagConnectErrorCode))
+			if test.wantError == "" {
+				assert.Nil(t, spans[0].Tag(ext.ErrorMsg))
+			} else {
+				assert.Contains(t, spans[0].Tag(ext.ErrorMsg), test.wantError)
+			}
+		})
+	}
+
+	// openUnary opens a traced unary stream over fake and reads its response, as CallUnary does
+	// before its deferred Close.
+	openUnary := func(t *testing.T, ctx context.Context, fake *fakeClientStream) connectrpc.ClientStream {
+		t.Helper()
+		stream, err := traceFakeClient(ctx, unarySpec, fake)
+		require.NoError(t, err)
+		require.NoError(t, stream.Send(wrapperspb.String("hello")))
+		require.NoError(t, stream.CloseSend())
+		require.NoError(t, stream.Receive(new(wrapperspb.StringValue)))
+		return stream
+	}
+
+	t.Run("the response leaves the call span open until Close", func(t *testing.T) {
+		mt := startMockTracer(t)
+		stream := openUnary(t, context.Background(), &fakeClientStream{receive: returns(nil), close: returns(closeFailed)})
+		assert.Empty(t, mt.FinishedSpans())
+		assert.Equal(t, closeFailed, stream.Close())
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, "unavailable", spans[0].Tag(tagConnectErrorCode))
+	})
+
+	// The caller has the RPC's result, so the end of its context is no error.
+	t.Run("the end of the context after the response finishes the call span", func(t *testing.T) {
+		mt := startMockTracer(t)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+		openUnary(t, ctx, &fakeClientStream{receive: returns(nil)})
+		assert.Empty(t, mt.FinishedSpans())
+		cancel()
+		spans := waitForSpans(t, mt, 1)
+		assert.Nil(t, spans[0].Tag(tagConnectErrorCode))
+		assert.Nil(t, spans[0].Tag(ext.ErrorMsg))
+	})
 }
 
 func TestStreamingClientCallSpan(t *testing.T) {
