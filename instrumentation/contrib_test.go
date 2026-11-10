@@ -402,15 +402,16 @@ func checkManifestNames(tracedByPath map[string]string, manifests []contribManif
 	var offending []string
 	byName := make(map[string][]string)
 	for _, m := range manifests {
-		contribPath := filepath.ToSlash(filepath.Dir(filepath.FromSlash(m.relPath)))
-		byName[m.name] = append(byName[m.name], m.relPath)
+		relPath := filepath.ToSlash(m.relPath)
+		contribPath := filepath.ToSlash(filepath.Dir(filepath.FromSlash(relPath)))
+		byName[m.name] = append(byName[m.name], relPath)
 		traced, ok := tracedByPath[contribPath]
 		if !ok {
-			offending = append(offending, fmt.Sprintf("%s: no Package in instrumentation/packages.go for contrib path %q", m.relPath, contribPath))
+			offending = append(offending, fmt.Sprintf("%s: no Package in instrumentation/packages.go for contrib path %q", relPath, contribPath))
 			continue
 		}
 		if m.name != traced {
-			offending = append(offending, fmt.Sprintf("%s: name %q, want TracedPackage %q", m.relPath, m.name, traced))
+			offending = append(offending, fmt.Sprintf("%s: name %q, want TracedPackage %q", relPath, m.name, traced))
 		}
 	}
 	for name, paths := range byName {
@@ -474,6 +475,26 @@ func TestCheckManifestNames(t *testing.T) {
 			},
 			want: []string{
 				`new/lib/manifest.yaml: no Package in instrumentation/packages.go for contrib path "new/lib"`,
+			},
+		},
+		{
+			name:   "lone wrong name",
+			traced: traced,
+			manifests: []contribManifest{
+				{relPath: filepath.FromSlash("foo/bar/manifest.yaml"), name: "github.com/old/typo"},
+			},
+			want: []string{
+				`foo/bar/manifest.yaml: name "github.com/old/typo", want TracedPackage "github.com/foo/bar"`,
+			},
+		},
+		{
+			name:   "empty name",
+			traced: traced,
+			manifests: []contribManifest{
+				{relPath: "foo/bar/manifest.yaml", name: ""},
+			},
+			want: []string{
+				`foo/bar/manifest.yaml: name "", want TracedPackage "github.com/foo/bar"`,
 			},
 		},
 	}
