@@ -341,3 +341,32 @@ func TestScan_RealRepo(t *testing.T) {
 		t.Error("expected sites in ddtrace/tracer/, got none")
 	}
 }
+
+func TestScan_IncludesDotPrefixedDirectories(t *testing.T) {
+	// "./..." skips dot-prefixed directories such as .github/actions, so the
+	// scan must load them explicitly.
+	dir := filepath.Join("testdata", "dotdir")
+	sites, err := scan(dir, scanOptions{
+		logPackagePath: fixtureLogPath,
+		platforms:      []buildPlatform{{goos: "linux", goarch: "amd64"}},
+	})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	got := map[siteKey]bool{}
+	for _, s := range sites {
+		got[key(s)] = true
+	}
+	want := []siteKey{
+		{".github/actions/tool/main.go", "main", levelError, "dot-dir error: %s", false},
+		{"app/app.go", "Run", levelWarn, "regular warn", false},
+	}
+	for _, w := range want {
+		if !got[w] {
+			t.Errorf("missing site %+v; got %+v", w, sites)
+		}
+	}
+	if len(sites) != len(want) {
+		t.Errorf("got %d sites, want %d: %+v", len(sites), len(want), sites)
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"go/constant"
 	"go/token"
 	"go/types"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -198,7 +199,11 @@ func loadPlatform(root string, platform buildPlatform) ([]*packages.Package, err
 		Tests: false,
 		Env:   env,
 	}
-	pkgs, err := packages.Load(cfg, "./...")
+	patterns, err := loadPatterns(root)
+	if err != nil {
+		return nil, err
+	}
+	pkgs, err := packages.Load(cfg, patterns...)
 	if err != nil {
 		return nil, fmt.Errorf("packages.Load for %s/%s: %w", platform.goos, platform.goarch, err)
 	}
@@ -456,4 +461,62 @@ func funcName(fn *ast.FuncDecl) string {
 		return fn.Name.Name
 	}
 	return "(" + types.ExprString(fn.Recv.List[0].Type) + ")." + fn.Name.Name
+}
+
+// loadPatterns returns the package patterns covering every package of the
+// module at root. The go command skips directories whose name starts with "."
+// for any "..." wildcard, even one rooted inside such a directory, so
+// "./..." misses packages like .github/actions/add-codeowners. Each package
+// directory found below a dot-prefixed directory is listed explicitly.
+// Nested modules, testdata, and _-prefixed directories stay out of scope, as
+// they do for "./...".
+func loadPatterns(root string) ([]string, error) {
+	patterns := []string{"./..."}
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == root {
+			return nil
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if d.IsDir() {
+			name := d.Name()
+			if name == "testdata" || name == ".git" || strings.HasPrefix(name, "_") {
+				return filepath.SkipDir
+			}
+			if _, err := os.Stat(filepath.Join(path, "go.mod")); err == nil {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".go") || !underDotDir(rel) {
+			return nil
+		}
+		pattern := "./" + filepath.ToSlash(filepath.Dir(rel))
+		if !slices.Contains(patterns, pattern) {
+			patterns = append(patterns, pattern)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("finding dot-prefixed packages under %s: %w", root, err)
+	}
+	return patterns, nil
+}
+
+// underDotDir reports whether a slash-separated file path has a directory
+// component starting with ".".
+func underDotDir(rel string) bool {
+	dirs := strings.Split(rel, "/")
+	for _, dir := range dirs[:len(dirs)-1] {
+		if strings.HasPrefix(dir, ".") {
+			return true
+		}
+	}
+	return false
 }
