@@ -50,6 +50,7 @@ func tracingMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 
 func traceToolCallRequest(next mcp.MethodHandler, ctx context.Context, method string, req *mcp.CallToolRequest) (mcp.Result, error) {
 	toolSpan, ctx := llmobs.StartToolSpan(ctx, req.Params.Name, llmobs.WithIntegration(string(instrumentation.PackageModelContextProtocolGoSDK)))
+	annotateTags(toolSpan, toolCallClientInfoTags(req))
 
 	var res mcp.Result
 	var err error
@@ -84,6 +85,8 @@ func traceInitializeRequest(next mcp.MethodHandler, ctx context.Context, method 
 				instrmcp.MCPClientNameTag:    clientName,
 				instrmcp.MCPClientVersionTag: clientName + "_" + clientVersion,
 			}))
+			info := initParams.ClientInfo
+			annotateTags(taskSpan, instrmcp.ClientInfoTags(info.Name, info.Title, info.Version))
 		}
 	}
 
@@ -100,6 +103,29 @@ func traceInitializeRequest(next mcp.MethodHandler, ctx context.Context, method 
 
 	res, err = next(ctx, method, req)
 	return res, err
+}
+
+// toolCallClientInfoTags reads the client's identity from the request's _meta
+// (2026-07-28 protocol), falling back to the session's initialize handshake.
+func toolCallClientInfoTags(req *mcp.CallToolRequest) map[string]string {
+	if req.Params != nil {
+		if tags := instrmcp.ClientInfoTagsFromValue(req.Params.Meta[instrmcp.MetaKeyClientInfo]); len(tags) > 0 {
+			return tags
+		}
+	}
+	if req.Session == nil {
+		return nil
+	}
+	if params := req.Session.InitializeParams(); params != nil && params.ClientInfo != nil {
+		return instrmcp.ClientInfoTags(params.ClientInfo.Name, params.ClientInfo.Title, params.ClientInfo.Version)
+	}
+	return nil
+}
+
+func annotateTags(span llmobs.Span, tags map[string]string) {
+	if len(tags) > 0 {
+		span.Annotate(llmobs.WithAnnotatedTags(tags))
+	}
 }
 
 func tagWithSessionID(req mcp.Request, span llmobs.Span) {

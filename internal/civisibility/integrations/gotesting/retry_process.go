@@ -2499,8 +2499,8 @@ func finishProcessRetryTestEvent(
 		}
 		if codeOwners := utils.GetCodeOwners(); codeOwners != nil {
 			if match, found := codeOwners.Match("/" + relativePath); found {
-				test.SetTag(constants.TestCodeOwners, match.GetOwnersString())
-				suite.SetTag(constants.TestCodeOwners, match.GetOwnersString())
+				test.SetTag(constants.TestCodeOwners, match.Tag())
+				suite.SetTag(constants.TestCodeOwners, match.Tag())
 			}
 		}
 		if source.Unskippable {

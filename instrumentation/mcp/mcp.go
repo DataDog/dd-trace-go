@@ -5,7 +5,10 @@
 
 package mcp
 
-import "slices"
+import (
+	"encoding/json"
+	"slices"
+)
 
 const TelemetryKey = "telemetry"
 
@@ -19,6 +22,61 @@ const MCPMethodTag = "mcp_method"
 const MCPSessionIDTag = "mcp_session_id"
 const MCPClientNameTag = "client_name"
 const MCPClientVersionTag = "client_version"
+
+const MCPClientInfoNameTag = "mcp_client_name"
+const MCPClientInfoTitleTag = "mcp_client_title"
+const MCPClientInfoVersionTag = "mcp_client_version"
+
+// MetaKeyClientInfo is the request _meta key that carries the client's identity on
+// every request of the 2026-07-28 protocol.
+const MetaKeyClientInfo = "io.modelcontextprotocol/clientInfo"
+
+// MaxClientInfoTagLength caps client-supplied identity values, which are repeated on
+// every tool call span.
+const MaxClientInfoTagLength = 256
+
+// ClientInfoTags returns the mcp_client_* tags for a client's self-reported identity,
+// omitting empty values and truncating long ones.
+func ClientInfoTags(name, title, version string) map[string]string {
+	tags := make(map[string]string, 3)
+	for key, value := range map[string]string{
+		MCPClientInfoNameTag:    name,
+		MCPClientInfoTitleTag:   title,
+		MCPClientInfoVersionTag: version,
+	} {
+		if value == "" {
+			continue
+		}
+		if runes := []rune(value); len(runes) > MaxClientInfoTagLength {
+			value = string(runes[:MaxClientInfoTagLength])
+		}
+		tags[key] = value
+	}
+	return tags
+}
+
+// ClientInfoTagsFromValue returns the mcp_client_* tags for a client identity of any
+// shape that encodes as an MCP Implementation object: a decoded _meta entry, or an SDK
+// Implementation struct. Decoding through JSON keeps this independent of which fields
+// a given SDK version declares.
+func ClientInfoTagsFromValue(value any) map[string]string {
+	if value == nil {
+		return nil
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var info struct {
+		Name    string `json:"name"`
+		Title   string `json:"title"`
+		Version string `json:"version"`
+	}
+	if json.Unmarshal(raw, &info) != nil {
+		return nil
+	}
+	return ClientInfoTags(info.Name, info.Title, info.Version)
+}
 
 // IsModelCallable reports whether a tool's _meta permits the model to call it.
 // Absent _meta.ui.visibility means model-callable (MCP Apps spec default); a
