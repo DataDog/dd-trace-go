@@ -40,6 +40,7 @@ import (
 // captures every message logged meanwhile.
 func withLogLevel(t *testing.T, lvl log.Level) *capturingLogger {
 	t.Helper()
+	requireNoStrayProviderGoroutines(t)
 	prev := log.GetLevel()
 	log.SetLevel(lvl)
 	logger, undo := newCapturingLogger()
@@ -1038,6 +1039,7 @@ func (l *stallingLogger) Log(msg string) {
 }
 
 func TestShutdown_DebugLogsWhenContextExpires(t *testing.T) {
+	requireNoStrayProviderGoroutines(t)
 	p := newDatadogProvider(ProviderConfig{})
 	cleanupProvider(t, p)
 	logger := &stallingLogger{p: p}
@@ -1092,6 +1094,7 @@ func (l *lockProbingLogger) assertLoggedWithoutLock(t *testing.T, substr string)
 }
 
 func TestLifecycle_DebugLogsReleaseProviderLock(t *testing.T) {
+	requireNoStrayProviderGoroutines(t)
 	p := newDatadogProvider(ProviderConfig{})
 	cleanupProvider(t, p)
 	logger := &lockProbingLogger{p: p}
@@ -1144,7 +1147,7 @@ func TestShutdown_ContainsLoggerPanics(t *testing.T) {
 	// A meter provider fails a second shutdown, so shutdown logs a warning.
 	require.NoError(t, m.shutdown(context.Background()))
 	p.flagEvalMetricsHook = newFlagEvalMetricsHook(m)
-	t.Cleanup(log.UseLogger(panickingLogger{}))
+	t.Cleanup(log.UseLogger(panickingLogger{})) // after withLogLevel, which checks for stray goroutines
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -1169,9 +1172,10 @@ func TestAgentlessPollLoop_ContainsLoggerPanics(t *testing.T) {
 	}, func(*universalFlagsConfiguration) {})
 	require.NoError(t, err)
 	src.retryDelay = func(int) time.Duration { return 0 }
-	t.Cleanup(log.UseLogger(panickingLogger{}))
+	t.Cleanup(log.UseLogger(panickingLogger{})) // after withLogLevel, which checks for stray goroutines
 
 	src.start()
+	t.Cleanup(func() { stopAgentlessSource(t, src) })
 	// Attempts run in sequence, so a second request means the first
 	// attempt's warning was logged.
 	require.Eventually(t, func() bool { return requests.Load() >= 2 }, 5*time.Second, time.Millisecond)
@@ -1185,13 +1189,7 @@ type panickingLogger struct{}
 func (panickingLogger) Log(string) { panic("logger failure") }
 
 func TestDebugLoggingHook_ContainsLoggerPanics(t *testing.T) {
-	prev := log.GetLevel()
-	log.SetLevel(log.LevelDebug)
-	undo := log.UseLogger(panickingLogger{})
-	t.Cleanup(func() {
-		undo()
-		log.SetLevel(prev)
-	})
+	withPanickingLogger(t, log.LevelDebug)
 	hookCtx := of.NewHookContext("my-flag", of.Boolean, false, of.NewClientMetadata("test"), of.Metadata{}, of.EvaluationContext{})
 	h := newDebugLoggingHook(new(atomic.Bool))
 
