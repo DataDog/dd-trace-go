@@ -260,16 +260,21 @@ func createCITagsMap() map[string]string {
 		log.Debug("civisibility: skipping local git enrichment in payload-file mode")
 	} else {
 		gitData, _ := getLocalGitDataFunc()
-		// A tag on a detached commit does not make a branch or pull-request job a tag build.
-		if gitData.Branch == "" && localTags[constants.GitBranch] != "" &&
-			!isTagRef(localTags[constants.GitBranch]) && localTags[constants.GitTag] == "" {
-			gitData.Tag = ""
-		}
 		if _, ok := localTags[constants.CIWorkspacePath]; !ok && gitData.SourceRoot != "" {
 			localTags[constants.CIWorkspacePath] = gitData.SourceRoot
 		}
 		// File metadata is a fallback too; a readable checkout replaces its Git fields.
 		applyEnvironmentalDataIfRequiredFunc(localTags)
+		// Resolve job refs before replacing provider/file Git fields with checkout data.
+		branchOverride := env.Get("DD_GIT_BRANCH")
+		branch := branchOverride
+		if branch == "" {
+			branch = localTags[constants.GitBranch]
+		}
+		tagTrigger := branchOverride == "" && localTags[constants.GitTag] != ""
+		if gitData.Branch == "" && branch != "" && !isTagRef(branch) && !tagTrigger {
+			gitData.Tag = ""
+		}
 
 		if gitData.CommitSha != "" {
 			checkoutBranch = gitData.Branch
@@ -278,7 +283,9 @@ func createCITagsMap() map[string]string {
 					delete(localTags, key)
 				}
 			}
-			localTags[constants.GitTag] = gitData.Tag
+			if gitData.Tag != "" {
+				localTags[constants.GitTag] = "refs/tags/" + gitData.Tag
+			}
 		}
 		if _, ok := localTags[constants.GitRepositoryURL]; !ok {
 			localTags[constants.GitRepositoryURL] = gitData.RepositoryURL

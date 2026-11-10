@@ -115,3 +115,5 @@ Git metadata uses explicit `DD_GIT_*` overrides first, then the readable local G
 A detached checkout's single local tag is not inferred for a CI branch or pull-request trigger. The trigger disambiguates tag inference without supplying missing checkout Git fields; explicit `DD_GIT_TAG` overrides still take priority.
 
 Short branch names read from Git remain literal, including prefixes such as `tags/` or `origin/`. Provider refs and explicit branch overrides retain their existing normalization.
+
+Local tag names retain their literal prefixes too. Detached tag inference considers explicit branch overrides and environmental-file job refs before checkout metadata replaces fallback fields; explicit tag overrides still win.
