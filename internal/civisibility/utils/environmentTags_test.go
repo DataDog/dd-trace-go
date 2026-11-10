@@ -893,10 +893,18 @@ func TestReadableCheckoutWithoutRemoteDoesNotBackfillProviderURL(t *testing.T) {
 }
 
 func TestPRNumbersControlInferredCheckoutTags(t *testing.T) {
-	for _, tc := range []struct{ name, event, number, wantTag string }{
-		{name: "teamcity PR", number: "42"},
-		{name: "github tag push", event: `{}`, number: "0", wantTag: "v1"},
-		{name: "github PR", event: `{"number":42}`, number: "42"},
+	for _, tc := range []struct {
+		name, event, number, wantTag, wantJob string
+		provider                              func() map[string]string
+	}{
+		{name: "teamcity PR", number: "42", wantJob: "teamcity-tests", provider: extractTeamcity},
+		{name: "github tag push", event: `{}`, number: "0", wantTag: "v1", wantJob: "teamcity-tests", provider: extractGithubActions},
+		{name: "github PR", event: `{"number":42}`, number: "42", wantJob: "teamcity-tests", provider: extractGithubActions},
+		{name: "buildkite tag push", number: "false", wantTag: "v1", provider: extractBuildkite},
+		{name: "buildkite PR", number: "42", provider: extractBuildkite},
+		{name: "travis tag push", number: "false", wantTag: "v1", provider: extractTravis},
+		{name: "travis uppercase sentinel", number: "FALSE", wantTag: "v1", provider: extractTravis},
+		{name: "travis PR", number: "42", provider: extractTravis},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, override := range []string{"", "explicit-tag"} {
@@ -920,7 +928,15 @@ func TestPRNumbersControlInferredCheckoutTags(t *testing.T) {
 					t.Cleanup(func() {
 						getProviderTagsFunc, applyEnvironmentalDataIfRequiredFunc = originalProvider, originalEnvironmental
 					})
-					getProviderTagsFunc = extractTeamcity
+					t.Setenv("BUILDKITE_PULL_REQUEST", tc.number)
+					t.Setenv("BUILDKITE_PULL_REQUEST_BASE_BRANCH", "main")
+					t.Setenv("BUILDKITE_TAG", tc.wantTag)
+					t.Setenv("TRAVIS_PULL_REQUEST", tc.number)
+					t.Setenv("TRAVIS_BRANCH", "main")
+					t.Setenv("TRAVIS_PULL_REQUEST_BRANCH", "")
+					t.Setenv("TRAVIS_PULL_REQUEST_SHA", "")
+					t.Setenv("TRAVIS_TAG", tc.wantTag)
+					getProviderTagsFunc = tc.provider
 					if tc.event != "" {
 						event := filepath.Join(t.TempDir(), "event.json")
 						assert.NoError(t, os.WriteFile(event, []byte(tc.event), 0600))
@@ -943,7 +959,7 @@ func TestPRNumbersControlInferredCheckoutTags(t *testing.T) {
 					assert.Equal(t, sha, tags[constants.GitCommitSHA])
 					assert.Equal(t, tc.number, tags[constants.PrNumber])
 					assert.Equal(t, "main", tags[constants.GitPrBaseBranch])
-					assert.Equal(t, "teamcity-tests", tags[constants.CIJobName])
+					assert.Equal(t, tc.wantJob, tags[constants.CIJobName])
 				})
 			}
 		})
