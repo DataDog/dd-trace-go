@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Run Ensure CI Success
-        uses: DataDog/ensure-ci-success@cccc70e01e12f746739ac9ad158b93439fac4821
+        uses: DataDog/ensure-ci-success@c81123e3564e2474642c8c7337372b304d731c1b
         with:
           # The action evaluates only the checks that exist when it polls.
           # The delay must outlast the GitHub fan-out of the trigger event.
