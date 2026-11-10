@@ -33,7 +33,8 @@ func TestDependentFlags_JSONConfiguration(t *testing.T) {
 			]}],"splits":[{"variationKey":"on","shards":[]}]}
 		]}}
 	}`), &config))
-	require.Equal(t, 3, *config.EvaluatorParams.MaxDependencyDepth)
+	require.JSONEq(t, `{"maxDependencyDepth":3}`, string(config.EvaluatorParams))
+	require.Equal(t, 3, configuredMaxDependencyDepth(&config))
 	condition := config.Flags["root"].Allocations[0].Rules[0].Conditions[0]
 	require.Equal(t, "dependency", condition.FlagEvaluation.Key)
 	require.Empty(t, condition.Attribute)
@@ -44,10 +45,33 @@ func TestDependentFlags_NonObjectEvaluatorParamsUseDefaults(t *testing.T) {
 		t.Run(raw, func(t *testing.T) {
 			var config universalFlagsConfiguration
 			require.NoError(t, json.Unmarshal([]byte(`{"format":"SERVER","evaluatorParams":`+raw+`,"flags":{}}`), &config))
-			require.Nil(t, config.EvaluatorParams.MaxDependencyDepth)
-			require.True(t, config.EvaluatorParams.maxDependencyDepthInvalid)
+			require.JSONEq(t, raw, string(config.EvaluatorParams))
 		})
 	}
+}
+
+func TestDependentFlags_EvaluatorParamsRemainOptionalAndExtensible(t *testing.T) {
+	var config universalFlagsConfiguration
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"format":"SERVER",
+		"evaluatorParams":{"futureOption":{"enabled":true},"maxDependencyDepth":3},
+		"flags":{}
+	}`), &config))
+
+	encoded, err := json.Marshal(&config)
+	require.NoError(t, err)
+	var roundTrip struct {
+		EvaluatorParams json.RawMessage `json:"evaluatorParams"`
+	}
+	require.NoError(t, json.Unmarshal(encoded, &roundTrip))
+	require.JSONEq(t, `{"futureOption":{"enabled":true},"maxDependencyDepth":3}`, string(roundTrip.EvaluatorParams))
+
+	var withoutParams universalFlagsConfiguration
+	require.NoError(t, json.Unmarshal([]byte(`{"format":"SERVER","flags":{}}`), &withoutParams))
+	require.Empty(t, withoutParams.EvaluatorParams)
+	encoded, err = json.Marshal(&withoutParams)
+	require.NoError(t, err)
+	require.NotContains(t, string(encoded), "evaluatorParams")
 }
 
 func TestDependentFlags_JSONConditionValidation(t *testing.T) {
@@ -392,8 +416,7 @@ func TestDependentFlags_DefaultAndZeroDepth(t *testing.T) {
 	result := evaluateConfiguredFlag(config, "root", false, nil, time.Now(), experimentationExclusion{})
 	require.NoError(t, result.Error, "missing evaluatorParams uses the default")
 
-	zero := 0
-	config.EvaluatorParams.MaxDependencyDepth = &zero
+	config.EvaluatorParams = json.RawMessage(`{"maxDependencyDepth":0}`)
 	result = evaluateConfiguredFlag(config, "root", false, nil, time.Now(), experimentationExclusion{})
 	require.Equal(t, of.ErrorReason, result.Reason)
 	var graphErr *dependencyGraphError
@@ -432,7 +455,7 @@ func TestDependentFlags_InvalidConfiguredDepthLogsAndUsesDefault(t *testing.T) {
 		"1e1000000", "1e-1000000",
 	} {
 		t.Run(configured, func(t *testing.T) {
-			logger := withLogLevel(t, log.LevelError)
+			logger := withLogLevel(t, log.LevelWarn)
 			config := dependencyTestConfig(
 				dependencyTestFlag("dependency", "on", nil),
 				dependencyTestFlag("root", "on", dependencyCondition("dependency", operatorOneOf, "on")),
@@ -452,13 +475,13 @@ func TestDependentFlags_InvalidConfiguredDepthLogsAndUsesDefault(t *testing.T) {
 			require.Equal(t, true, record.Result.Value)
 			require.NoError(t, record.Result.Error)
 			require.Equal(t, []string{"dependency"}, dependencyExposureKeys(result))
-			require.Equal(t, 1, logger.countContaining("maxDependencyDepth must be an integer from 0 through 255; using default 10"), "malformed configuration must not log at request QPS")
+			require.Equal(t, 2, logger.countContaining("maxDependencyDepth must be an integer from 0 through 255; using default 10"), "each root evaluation emits its own diagnostic")
 		})
 	}
 }
 
-func TestDependentFlags_CopiedConfigurationSharesInvalidDepthLogState(t *testing.T) {
-	logger := withLogLevel(t, log.LevelError)
+func TestDependentFlags_InvalidDepthDiagnosticIsNotCached(t *testing.T) {
+	logger := withLogLevel(t, log.LevelWarn)
 	config := dependencyTestConfig(
 		dependencyTestFlag("dependency", "on", nil),
 		dependencyTestFlag("root", "on", dependencyCondition("dependency", operatorOneOf, "on")),
@@ -472,7 +495,7 @@ func TestDependentFlags_CopiedConfigurationSharesInvalidDepthLogState(t *testing
 		require.True(t, result.Value.(bool))
 	}
 	log.Flush()
-	require.Equal(t, 1, logger.countContaining("maxDependencyDepth must be an integer from 0 through 255; using default 10"))
+	require.Equal(t, 4, logger.countContaining("maxDependencyDepth must be an integer from 0 through 255; using default 10"))
 }
 
 func TestDependentFlags_ExactIntegerDepthForms(t *testing.T) {
@@ -483,11 +506,10 @@ func TestDependentFlags_ExactIntegerDepthForms(t *testing.T) {
 		"-0":     0,
 	} {
 		t.Run(configured, func(t *testing.T) {
-			var params evaluatorParams
-			require.NoError(t, json.Unmarshal([]byte(`{"maxDependencyDepth":`+configured+`}`), &params))
-			require.False(t, params.maxDependencyDepthInvalid)
-			require.NotNil(t, params.MaxDependencyDepth)
-			require.Equal(t, want, *params.MaxDependencyDepth)
+			config := &universalFlagsConfiguration{
+				EvaluatorParams: json.RawMessage(`{"maxDependencyDepth":` + configured + `}`),
+			}
+			require.Equal(t, want, configuredMaxDependencyDepth(config))
 		})
 	}
 }
@@ -558,8 +580,8 @@ func TestDependentFlags_InvalidConfiguredDepthPublishesSuccessfulDependencyBatch
 	require.Len(t, h.sink.exposures, 2)
 }
 
-func TestDependentFlags_InvalidConfiguredDepthIsIgnoredUntilDependencyReached(t *testing.T) {
-	logger := withLogLevel(t, log.LevelError)
+func TestDependentFlags_InvalidConfiguredDepthIsReadOnceForIndependentRoot(t *testing.T) {
+	logger := withLogLevel(t, log.LevelWarn)
 	config := dependencyTestConfig(dependencyTestFlag("root", "on", nil))
 	require.NoError(t, json.Unmarshal([]byte(`{"maxDependencyDepth":null}`), &config.EvaluatorParams))
 
@@ -568,20 +590,18 @@ func TestDependentFlags_InvalidConfiguredDepthIsIgnoredUntilDependencyReached(t 
 	require.Equal(t, of.StaticReason, result.Reason)
 	require.True(t, result.Value.(bool))
 	log.Flush()
-	require.Zero(t, logger.countContaining("maxDependencyDepth"), "options parsing stays lazy for independent flags")
+	require.Equal(t, 1, logger.countContaining("maxDependencyDepth"), "each root evaluation resolves the option once")
 }
 
 func TestDependentFlags_MalformedOptionsObjectsLogAndFallBack(t *testing.T) {
 	for _, raw := range []string{`null`, `42`, `"future"`, `true`, `[]`} {
 		t.Run(raw, func(t *testing.T) {
-			logger := withLogLevel(t, log.LevelError)
-			var params evaluatorParams
-			require.NoError(t, json.Unmarshal([]byte(raw), &params))
+			logger := withLogLevel(t, log.LevelWarn)
 			config := dependencyTestConfig(
 				dependencyTestFlag("dependency", "on", nil),
 				dependencyTestFlag("root", "on", dependencyCondition("dependency", operatorOneOf, "on")),
 			)
-			config.EvaluatorParams = params
+			config.EvaluatorParams = json.RawMessage(raw)
 			result := evaluateConfiguredFlag(config, "root", false, nil, time.Now(), experimentationExclusion{})
 			log.Flush()
 			require.NoError(t, result.Error)
@@ -1128,7 +1148,7 @@ func BenchmarkIndependentEvaluationWithoutDependencyTrace(b *testing.B) {
 
 func dependencyTestConfigWithDepth(depth int, flags ...*flag) *universalFlagsConfiguration {
 	config := dependencyTestConfig(flags...)
-	config.EvaluatorParams.MaxDependencyDepth = &depth
+	config.EvaluatorParams = json.RawMessage(fmt.Sprintf(`{"maxDependencyDepth":%d}`, depth))
 	return config
 }
 

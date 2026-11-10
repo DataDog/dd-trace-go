@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -28,9 +27,9 @@ type universalFlagsConfiguration struct {
 	// root, as a sibling of Environment. Plain bool (no omitempty, no pointer) so an absent
 	// or malformed value fails closed to false.
 	ObserveFullEvaluationData bool `json:"observeFullEvaluationData"`
-	// EvaluatorParams controls optional evaluator behaviour. Missing fields use
-	// evaluator defaults; a present zero maxDependencyDepth is meaningful.
-	EvaluatorParams evaluatorParams `json:"evaluatorParams"`
+	// EvaluatorParams contains optional, extensible evaluator configuration.
+	// It stays raw so unknown fields survive the configuration lifecycle.
+	EvaluatorParams json.RawMessage `json:"evaluatorParams,omitempty"`
 	// Flags is a map of feature flag keys to their configurations
 	Flags map[string]*flag `json:"flags"`
 	// invalidFlags contains errors for flags that could not be parsed or validated.
@@ -52,7 +51,7 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 		Format                    string                     `json:"format"`
 		Environment               environment                `json:"environment"`
 		ObserveFullEvaluationData json.RawMessage            `json:"observeFullEvaluationData"`
-		EvaluatorParams           evaluatorParams            `json:"evaluatorParams"`
+		EvaluatorParams           json.RawMessage            `json:"evaluatorParams"`
 		Flags                     map[string]json.RawMessage `json:"flags"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -88,59 +87,6 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 		config.Flags[flagKey] = &parsedFlag
 	}
 
-	return nil
-}
-
-type evaluatorParams struct {
-	MaxDependencyDepth        *int `json:"-"`
-	maxDependencyDepthInvalid bool
-	state                     *evaluatorParamsState
-}
-
-// evaluatorParamsState owns mutable, concurrency-safe state separately from
-// the copyable evaluatorParams values embedded in immutable configurations.
-// Configuration copies intentionally share this state so a malformed option
-// is logged once for the parsed configuration, not once per copy or request.
-type evaluatorParamsState struct {
-	maxDependencyDepthLog sync.Once
-}
-
-var uninitializedEvaluatorParamsState evaluatorParamsState
-
-// UnmarshalJSON keeps malformed depth configuration evaluable so dependency
-// traversal can log the problem and use the default without rejecting the
-// complete configuration update. JSON numbers such as 3.0 are valid integers.
-func (params *evaluatorParams) UnmarshalJSON(data []byte) error {
-	params.MaxDependencyDepth = nil
-	params.maxDependencyDepthInvalid = false
-	params.state = new(evaluatorParamsState)
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		// Keep the UFC usable. The evaluator logs and applies the default only
-		// if dependency traversal reaches these malformed options.
-		params.maxDependencyDepthInvalid = true
-		return nil
-	}
-	if raw == nil && !bytes.Equal(bytes.TrimSpace(data), []byte("{}")) {
-		// JSON null decodes to a nil map without an error. It is still a
-		// malformed options object rather than an omitted options object.
-		params.maxDependencyDepthInvalid = true
-		return nil
-	}
-	depthJSON, present := raw["maxDependencyDepth"]
-	if !present {
-		return nil
-	}
-	// Validate the original JSON number lexeme exactly. Decoding through
-	// float64 can round a non-integer such as 254.99999999999999 to 255. The
-	// bounded parser also avoids expanding untrusted decimal exponents into
-	// arbitrarily large big integers before rejecting values outside 0..255.
-	value, ok := parseMaxDependencyDepth(depthJSON)
-	if !ok {
-		params.maxDependencyDepthInvalid = true
-		return nil
-	}
-	params.MaxDependencyDepth = &value
 	return nil
 }
 
@@ -286,7 +232,7 @@ func parseMaxDependencyDepth(raw []byte) (int, bool) {
 	for range appendZeros {
 		value *= 10
 	}
-	return value, value <= 255
+	return value, value <= maxMaxDependencyDepth
 }
 
 // environment represents environment information for the configuration.
