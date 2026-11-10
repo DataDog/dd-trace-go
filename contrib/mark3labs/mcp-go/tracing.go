@@ -54,6 +54,9 @@ var toolHandlerMiddleware = func(next server.ToolHandlerFunc) server.ToolHandler
 		}
 		toolSpan, ctx := llmobs.StartToolSpan(ctx, request.Params.Name, startOpts...)
 		annotateTags(toolSpan, toolCallClientInfoTags(ctx, request))
+		if intent, ok := IntentFromContext(ctx); ok {
+			toolSpan.Annotate(llmobs.WithAnnotatedIntent(intent))
+		}
 
 		var result *mcp.CallToolResult
 		var err error
@@ -222,9 +225,8 @@ func annotateTags(span llmobs.Span, tags map[string]string) {
 
 func tagWithSessionID(ctx context.Context, span llmobs.Span) {
 	session := server.ClientSessionFromContext(ctx)
-	if session != nil {
-		sessionID := session.SessionID()
-		span.Annotate(llmobs.WithAnnotatedTags(map[string]string{instrmcp.MCPSessionIDTag: sessionID}))
+	if session != nil && session.SessionID() != "" {
+		span.Annotate(llmobs.WithAnnotatedTags(map[string]string{instrmcp.MCPSessionIDTag: session.SessionID()}))
 	}
 }
 
