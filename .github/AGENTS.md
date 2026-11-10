@@ -1,6 +1,7 @@
 # CI workflows, actions and scripts
 
-* Every `curl` run in CI must fail on HTTP errors and retry: `curl -fsSL --retry 5 --retry-delay 2 --retry-connrefused`. For downloads (safe to repeat), add `--retry-all-errors`.
+* Every `curl` run in CI must fail on HTTP errors (or capture and check the HTTP status explicitly) and retry: `curl -fsSL --retry 5 --retry-delay 2 --retry-connrefused`. For downloads (safe to repeat), add `--retry-all-errors`.
+* Bound downloads with `--connect-timeout 10 --max-time 60`: a stalled attempt then fails the step instead of holding it for curl's 300-second connect timeout.
 * Use fewer retries only where a hung attempt is costly, with a comment saying why (e.g. `actions/dd-ci-upload`, retried once).
 * Don't retry non-idempotent requests (e.g. metric submissions): a retry after a response timeout sends the payload twice.
 * Run every Go command that downloads modules (`go mod download`, `go mod tidy`, `go get`…) in CI through `retry_on_corruption` from `.github/workflows/apps/go-retry.sh`, in GitHub and GitLab jobs alike. `cmd/go` never retries, and `GOPROXY=…|direct` doesn't help when checksum verification fails, since it reads `sum.golang.org` directly.

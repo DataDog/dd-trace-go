@@ -51,6 +51,41 @@ func (cs *captureMetricsServer) receivedBodies() [][]byte {
 	return out
 }
 
+func TestOTLPSpanMetricsOptIn(t *testing.T) {
+	for _, spanMetrics := range []string{"", "true", "false"} {
+		for _, otherMetrics := range []string{"true", "false"} {
+			t.Run("span metrics="+spanMetrics+"/other metrics="+otherMetrics, func(t *testing.T) {
+				t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+				t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", spanMetrics)
+				t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", otherMetrics)
+				t.Setenv("DD_METRICS_OTEL_ENABLED", otherMetrics)
+
+				tr, err := newUnstartedTracer(withNoopInfoHTTPClient())
+				require.NoError(t, err)
+				defer tr.Stop()
+
+				writer, ok := tr.traceWriter.(*otlpTraceWriter)
+				require.True(t, ok)
+				var statsComputed bool
+				for _, attr := range writer.resource.Attributes {
+					if attr.Key == "_dd.stats_computed" {
+						statsComputed = true
+						assert.Equal(t, "true", attr.Value.GetStringValue())
+					}
+				}
+				assert.Equal(t, spanMetrics == "true", statsComputed)
+				if spanMetrics == "true" {
+					conc, ok := tr.stats.(*concentrator)
+					require.True(t, ok)
+					assert.IsType(t, &otlpStatsSender{}, conc.sender)
+				} else {
+					assert.IsType(t, &noopConcentrator{}, tr.stats)
+				}
+			})
+		}
+	}
+}
+
 // TestOTLPMetricsConcentratorRoutesToExporter verifies that a concentrator wired
 // with an otlpStatsSender routes flushed stats to the OTLP endpoint and does
 // not use the agent's native /v0.6/stats path.
