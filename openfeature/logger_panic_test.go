@@ -9,6 +9,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -83,4 +85,99 @@ func withPanickingLogger(t *testing.T, lvl log.Level) {
 		undo()
 		log.SetLevel(prev)
 	})
+}
+
+// cleanupProvider shuts p down when the test ends and waits for its teardown
+// goroutine to finish. Without it, a provider's writers, or a teardown the
+// OpenFeature SDK starts when a later test replaces the global provider, keep
+// running and logging into whatever logger a later test installs.
+func cleanupProvider(tb testing.TB, fp of.FeatureProvider) {
+	tb.Helper()
+	p, ok := fp.(*DatadogProvider)
+	if !ok || p == nil {
+		return
+	}
+	tb.Cleanup(func() { shutdownAndWait(tb, p) })
+}
+
+// shutdownAndWait shuts p down, then waits for its teardown goroutine, which
+// can outlive ShutdownWithContext when the context expires or when another
+// caller, such as the OpenFeature SDK, started the shutdown.
+func shutdownAndWait(tb testing.TB, p *DatadogProvider) {
+	tb.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_ = p.ShutdownWithContext(ctx)
+	p.mu.Lock()
+	done := p.teardownDone
+	p.mu.Unlock()
+	if done == nil {
+		// A test marked the provider shut down without running the teardown.
+		return
+	}
+	select {
+	case <-done:
+	case <-ctx.Done():
+		tb.Errorf("provider teardown did not finish: %v", ctx.Err())
+	}
+}
+
+// strayProviderGoroutines are the goroutines a provider owns. Any of them
+// left running by an earlier test logs into the logger the current test
+// installs.
+var strayProviderGoroutines = []string{
+	"(*exposureWriter).start.func1",
+	"(*flagEvalLoggingWriter).start.func1",
+	"(*DatadogProvider).ShutdownWithContext.func1",
+	"(*agentlessSource).run",
+}
+
+// providerGoroutines returns the stacks of the running goroutines listed in
+// strayProviderGoroutines.
+func providerGoroutines() []string {
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+	var found []string
+	for _, g := range strings.Split(string(buf), "\n\n") {
+		for _, line := range strings.Split(g, "\n") {
+			if strings.HasPrefix(line, "created by ") {
+				continue
+			}
+			if slices.ContainsFunc(strayProviderGoroutines, func(fn string) bool {
+				return strings.HasPrefix(line, "github.com/DataDog/dd-trace-go/v2/openfeature."+fn+"(")
+			}) {
+				found = append(found, g)
+				break
+			}
+		}
+	}
+	return found
+}
+
+// requireNoStrayProviderGoroutines fails the test if goroutines of providers
+// from earlier tests are still running. Call it before swapping the global
+// logger and before starting the test's own provider: a stray goroutine
+// would log into the swapped logger, which can panic, stall or fail
+// assertions on what was logged. Use cleanupProvider in the leaking test.
+func requireNoStrayProviderGoroutines(tb testing.TB) {
+	tb.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		found := providerGoroutines()
+		if len(found) == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			tb.Fatalf("an earlier test left %d provider goroutine(s) running; shut its provider down with cleanupProvider:\n\n%s",
+				len(found), strings.Join(found, "\n\n"))
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
