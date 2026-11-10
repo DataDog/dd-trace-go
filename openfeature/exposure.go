@@ -179,7 +179,8 @@ type exposureWriter struct {
 	stopChan      chan struct{}
 	// workerDone is closed when the goroutine started by start exits; nil
 	// until start runs. stop does not wait on it, so a periodic send may
-	// still be in flight when stop returns.
+	// still be in flight when stop returns. stop cannot join it: the
+	// worker's panic path calls stop itself, so joining would deadlock.
 	workerDone    chan struct{}
 	stopped       bool
 	featureValues featureValuesCache
@@ -333,7 +334,8 @@ func (w *exposureWriter) sendToAgent(payload exposurePayload) error {
 	return w.evp.post(exposureEndpoint, "exposure", payload)
 }
 
-// stop stops the exposure writer and flushes any remaining events
+// stop stops the exposure writer. The shutdown teardown flushes pending events
+// separately, before calling stop.
 func (w *exposureWriter) stop() {
 	w.mu.Lock()
 	if w.stopped {
