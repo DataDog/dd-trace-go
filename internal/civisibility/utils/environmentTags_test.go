@@ -713,3 +713,42 @@ func TestDetachedCheckoutTagRespectsCITrigger(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckoutBranchNamesAreNotNormalizedAsProviderRefs(t *testing.T) {
+	for _, tc := range []struct {
+		branch, override, want string
+	}{
+		{branch: "tags/release", want: "tags/release"},
+		{branch: "origin/release", want: "origin/release"},
+		{branch: "origin/tags/release", want: "origin/tags/release"},
+		{branch: "refs/tags/release", want: "refs/tags/release"},
+		{branch: "tags/release", override: "refs/heads/override", want: "override"},
+	} {
+		t.Run(tc.branch+"/"+tc.override, func(t *testing.T) {
+			repo := usePackFilesGitFixture(t)
+			runFixtureGit(t, repo, "checkout", "-b", tc.branch)
+			ResetCITags()
+			t.Cleanup(ResetCITags)
+			bazel.ResetForTesting()
+			t.Cleanup(bazel.ResetForTesting)
+			for _, name := range []string{"DD_GIT_COMMIT_SHA", "DD_GIT_TAG", "DD_GIT_PULL_REQUEST_BASE_BRANCH"} {
+				t.Setenv(name, "")
+			}
+			t.Setenv("DD_GIT_BRANCH", tc.override)
+			originalProvider, originalEnvironmental := getProviderTagsFunc, applyEnvironmentalDataIfRequiredFunc
+			t.Cleanup(func() {
+				getProviderTagsFunc, applyEnvironmentalDataIfRequiredFunc = originalProvider, originalEnvironmental
+			})
+			getProviderTagsFunc = func() map[string]string {
+				return map[string]string{constants.GitBranch: "refs/heads/provider", constants.CIJobName: "tests", constants.GitPrBaseBranch: "refs/heads/main"}
+			}
+			applyEnvironmentalDataIfRequiredFunc = func(map[string]string) {}
+
+			tags := GetCITags()
+			assert.Equal(t, tc.want, tags[constants.GitBranch])
+			assert.Empty(t, tags[constants.GitTag])
+			assert.Equal(t, "tests", tags[constants.CIJobName])
+			assert.Equal(t, "main", tags[constants.GitPrBaseBranch])
+		})
+	}
+}

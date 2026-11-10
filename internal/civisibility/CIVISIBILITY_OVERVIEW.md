@@ -113,3 +113,5 @@
 Git metadata uses explicit `DD_GIT_*` overrides first, then the readable local Git checkout, and CI-provider Git data only when the checkout cannot be read. This includes SHA, repository URL, branch/tag, author, committer, and message. CI job and pull-request relationship metadata remain provider-derived. Events, API requests, and upload metadata share the selected commit identity.
 
 A detached checkout's single local tag is not inferred for a CI branch or pull-request trigger. The trigger disambiguates tag inference without supplying missing checkout Git fields; explicit `DD_GIT_TAG` overrides still take priority.
+
+Short branch names read from Git remain literal, including prefixes such as `tags/` or `origin/`. Provider refs and explicit branch overrides retain their existing normalization.

@@ -253,6 +253,7 @@ func createCITagsMap() map[string]string {
 	}
 
 	commitShaOverride := env.Get("DD_GIT_COMMIT_SHA")
+	var checkoutBranch string
 	if bazel.IsPayloadFilesModeEnabled() {
 		// Payload-file mode relies on the environmental data file instead of invoking the Git CLI.
 		applyEnvironmentalDataIfRequiredFunc(localTags)
@@ -271,6 +272,7 @@ func createCITagsMap() map[string]string {
 		applyEnvironmentalDataIfRequiredFunc(localTags)
 
 		if gitData.CommitSha != "" {
+			checkoutBranch = gitData.Branch
 			for key := range localTags {
 				if strings.HasPrefix(key, "git.") && !strings.HasPrefix(key, "git.commit.head.") && !strings.HasPrefix(key, "git.pull_request.") {
 					delete(localTags, key)
@@ -344,7 +346,15 @@ func createCITagsMap() map[string]string {
 	}
 
 	replaceWithUserSpecificTags(localTags)
+	// Git already returned a short name; prefixes in it belong to the actual branch.
+	preserveCheckoutBranch := checkoutBranch != "" && env.Get("DD_GIT_BRANCH") == ""
+	if preserveCheckoutBranch {
+		delete(localTags, constants.GitBranch)
+	}
 	normalizeTags(localTags)
+	if preserveCheckoutBranch {
+		localTags[constants.GitBranch] = checkoutBranch
+	}
 	for key, value := range localTags {
 		if value == "" {
 			delete(localTags, key)
