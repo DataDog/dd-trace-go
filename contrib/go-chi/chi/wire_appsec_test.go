@@ -587,6 +587,74 @@ func TestAppSecWireSpecial(t *testing.T) {
 		})
 	}
 
+	// An Unwrap() method that returns another writer after the flush: the writer
+	// that got the flush is classified, not the writer that Unwrap() returns later.
+	// The empty stage gets exactly 1 flush call, sends nothing, and leaves the chain.
+	for _, h2 := range []bool{false, true} {
+		name := "flush-target-changes"
+		if h2 {
+			name += "-h2"
+		}
+		t.Run(name, func(t *testing.T) {
+			var stage *emptyStageWriter
+			res := wireOnce(t, []string{ruleHeaderBlock}, func(cap *opCapture, ran *bool) (wireServer, string) {
+				r, target := simpleRouter(cap.middleware, true, readyHandler(ran, func(w http.ResponseWriter) {
+					assert.NoError(t, http.NewResponseController(w).Flush())
+				}))
+				return wireServer{router: r, http2: h2, wrap: wrapWriter(func(w http.ResponseWriter) http.ResponseWriter {
+					outer := &switchWriter{}
+					stage = &emptyStageWriter{ResponseWriter: w, owner: outer}
+					outer.ResponseWriter = stage
+					return outer
+				})}, target
+			})
+			assert.Equal(t, 1, stage.calls, "the empty stage gets exactly 1 flush call")
+			assert.Equal(t, 403, res.status, "the empty stage sent nothing")
+			assert.Contains(t, res.body, `{"errors":`)
+			assert.EqualValues(t, 1, res.requestBlocked())
+			assert.Zero(t, res.blockFailure())
+		})
+	}
+
+	// The flush walk has 1 more step than newCommitTracker: the chi writer. With 15
+	// Unwrap()-only wrappers above the server writer, the tracker is complete and
+	// the flush is marked: no block body follows the sent response. With 1 more
+	// wrapper, the tracker is not complete: the flush is not tracked, as on main
+	// (the sent response is followed by the block body, and the server logs it).
+	for _, c := range []struct {
+		name     string
+		wrappers int
+		tracked  bool
+	}{
+		{"flush-depth-limit", maxUnwrapWalk - 1, true},
+		{"flush-depth-over-limit", maxUnwrapWalk, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rec := startAppSecRules(t, ruleHeaderBlock)
+			cap := newOpCapture()
+			var ran bool
+			r, target := simpleRouter(cap.middleware, true, readyHandler(&ran, func(w http.ResponseWriter) {
+				_ = http.NewResponseController(w).Flush()
+			}))
+			s := wireServer{router: r, wrap: wrapWriter(func(w http.ResponseWriter) http.ResponseWriter {
+				for range c.wrappers {
+					w = unwrapOnly{w}
+				}
+				return w
+			})}
+			res := s.do(t, rec, cap, http.MethodGet, target)
+			assert.Equal(t, 200, res.status, "the flush sent the response")
+			if c.tracked {
+				assert.Empty(t, res.body, "no block body after the flushed response")
+				assert.Empty(t, res.log)
+				assert.EqualValues(t, 1, res.blockFailure())
+			} else {
+				assert.Contains(t, res.body, `{"errors":`, "state of main")
+				assert.Contains(t, res.log, "superfluous")
+			}
+		})
+	}
+
 	// A controller flush that reaches a known server writer is on the wire: the
 	// block cannot replace the response, and no block body follows it.
 	for _, h2 := range []bool{false, true} {
@@ -881,4 +949,22 @@ func TestAppSecWireCompress(t *testing.T) {
 		assert.Contains(t, res.body, `{"errors":`, "documented limit (this exists without this change)")
 		assert.EqualValues(t, 1, res.requestBlocked(), "a false report")
 	})
+}
+
+// switchWriter drops an empty stage from its chain after the stage got a flush.
+type switchWriter struct{ http.ResponseWriter }
+
+func (w *switchWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// emptyStageWriter is a buffering stage with FlushError() that sends nothing.
+type emptyStageWriter struct {
+	http.ResponseWriter
+	owner *switchWriter
+	calls int
+}
+
+func (w *emptyStageWriter) FlushError() error {
+	w.calls++
+	w.owner.ResponseWriter = w.ResponseWriter
+	return nil
 }

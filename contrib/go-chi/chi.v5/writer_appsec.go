@@ -157,51 +157,54 @@ func (t *commitTracker) flush() {
 // flushError is the FlushError method of the trackers whose chi writer has no
 // Flush method, but a writer under it can flush. The result is the result of
 // that writer. It marks the response as sent only if the flush is known to be on
-// the wire (see flushIsOnWire): an opaque writer can ignore a flush, or buffer it,
-// and still return nil, and a block that works without the tracker would be lost.
+// the wire: an opaque writer can ignore a flush, or buffer it, and still return
+// nil, and a block that works without the tracker would be lost.
+//
+// It does the walk of http.ResponseController.Flush (FlushError, then Flush, then
+// Unwrap) itself, in one pass: the writer that gets the flush is the writer that
+// is classified. A second walk could find another writer, if an Unwrap method
+// returns a different writer after the flush. The first writer that flushes is
+// on the wire if it is a known server writer (its Flush always sends the status
+// line and the headers, or locks the status of a recorder), or an outer tracker
+// that recorded the flush. For any other writer (a compressing writer that
+// ignores a flush before the first write, a buffering writer, ...), the state
+// does not change: it is the state without the tracker.
 func (t *commitTracker) flushError() error {
-	err := http.NewResponseController(t.WrapResponseWriter).Flush()
-	if err == nil && t.flushIsOnWire() {
-		t.markFlushed()
+	w := http.ResponseWriter(t.WrapResponseWriter)
+	// The chi writer is the first step: newCommitTracker does not count it.
+	for range maxUnwrapWalk + 1 {
+		switch f := w.(type) {
+		case interface{ FlushError() error }:
+			err := f.FlushError()
+			if err == nil && flushIsOnWire(w) {
+				t.markFlushed()
+			}
+			return err
+		case http.Flusher:
+			f.Flush()
+			if flushIsOnWire(w) {
+				t.markFlushed()
+			}
+			return nil
+		case unwrapper:
+			if w = f.Unwrap(); w == nil {
+				return http.ErrNotSupported
+			}
+		default:
+			return http.ErrNotSupported
+		}
 	}
-	return err
+	// The bounded walk ends (a cycle or a very long chain): the controller
+	// finishes the walk, and the state does not change.
+	return http.NewResponseController(w).Flush()
 }
 
-// flushIsOnWire reports whether the flush that http.ResponseController just made
-// reached the wire. It looks at the writer that really flushes: the first writer
-// from the chi writer down that has FlushError or Flush, like the controller does.
-// It is on the wire if that writer is a known server writer (its Flush always
-// sends the status line and the headers, or locks the status of a recorder), or an
-// outer tracker that recorded the flush. For any other writer (a compressing
-// writer that ignores a flush before the first write, a buffering writer, ...), the
-// state does not change: it is the state without the tracker.
-func (t *commitTracker) flushIsOnWire() bool {
-	target := flushTarget(t.WrapResponseWriter)
-	if tc, ok := target.(trackerCarrier); ok {
+// flushIsOnWire reports whether a flush that w got reached the wire.
+func flushIsOnWire(w http.ResponseWriter) bool {
+	if tc, ok := w.(trackerCarrier); ok {
 		return tc.tracker().flushed
 	}
-	return knownServerWriter(target)
-}
-
-// flushTarget returns the writer that http.ResponseController.Flush calls.
-func flushTarget(w http.ResponseWriter) http.ResponseWriter {
-	for range maxUnwrapWalk {
-		if w == nil {
-			return nil
-		}
-		if _, ok := w.(interface{ FlushError() error }); ok {
-			return w
-		}
-		if _, ok := w.(http.Flusher); ok {
-			return w
-		}
-		u, ok := w.(unwrapper)
-		if !ok {
-			return nil
-		}
-		w = u.Unwrap()
-	}
-	return nil
+	return knownServerWriter(w)
 }
 
 // knownServerWriters are the writers whose Flush always sends the headers
