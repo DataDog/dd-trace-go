@@ -78,6 +78,7 @@ func TestProviderGoroutines_ContainLoggerPanics(t *testing.T) {
 // logger that panics on every line, at level lvl.
 func withPanickingLogger(t *testing.T, lvl log.Level) {
 	t.Helper()
+	requireNoStrayProviderGoroutines(t)
 	prev := log.GetLevel()
 	log.SetLevel(lvl)
 	undo := log.UseLogger(panickingLogger{})
@@ -179,5 +180,16 @@ func requireNoStrayProviderGoroutines(tb testing.TB) {
 				len(found), strings.Join(found, "\n\n"))
 		}
 		time.Sleep(time.Millisecond)
+	}
+}
+
+// stopAgentlessSource stops a started poll loop at the end of a test. Stop is
+// idempotent, so tests that already stop the source can use it too.
+func stopAgentlessSource(tb testing.TB, src *agentlessSource) {
+	tb.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := src.Stop(ctx); err != nil {
+		tb.Errorf("agentless poll loop did not stop: %v", err)
 	}
 }
