@@ -137,6 +137,22 @@ func (co *CodeOwners) GetSection(section string) *Section {
 	return nil
 }
 
+// suffixMatchesPathOrAncestor reports whether value, or one of its ancestor
+// directories, ends with suffix. A CODEOWNERS rule that matches a directory
+// also owns everything inside it, so "*.md" owns "docs.md/tool.go".
+func suffixMatchesPathOrAncestor(value, suffix string) bool {
+	for {
+		if strings.HasSuffix(value, suffix) {
+			return true
+		}
+		i := strings.LastIndex(value, "/")
+		if i < 0 {
+			return false
+		}
+		value = value[:i]
+	}
+}
+
 // Match returns the first matching entry from each section. If entries from
 // multiple sections match, Match combines them into one entry.
 func (co *CodeOwners) Match(value string) (*Entry, bool) {
@@ -185,7 +201,7 @@ func (co *CodeOwners) Match(value string) (*Entry, bool) {
 					break
 				}
 			} else if includeAnythingBefore {
-				if strings.HasSuffix(value, finalPattern) {
+				if suffixMatchesPathOrAncestor(value, finalPattern) {
 					matches = append(matches, entry)
 					break
 				}

@@ -30,6 +30,7 @@ const codeownersFixture = `# comment line
 /internal/log/      @DataDog/log-team
 /ddtrace/           @DataDog/apm-go @DataDog/apm-idm-go
 *appsec.go           @DataDog/asm-go
+*.md                 @DataDog/docs
 /LICENSE             @DataDog/root
 `
 
@@ -45,6 +46,9 @@ func TestCodeowners_Matching(t *testing.T) {
 		// Exact file and suffix patterns use repository-relative paths.
 		{"LICENSE", []string{"@DataDog/root"}},
 		{"appsec/listener_appsec.go", []string{"@DataDog/asm-go"}},
+		// A suffix rule matching a directory owns the files inside it.
+		{"docs.md/tool.go", []string{"@DataDog/docs"}},
+		{"orphan/notes.md/sub/tool.go", []string{"@DataDog/docs"}},
 		// Multiple owners are preserved as a group.
 		{"ddtrace/tracer/tracer.go", []string{"@DataDog/apm-go", "@DataDog/apm-idm-go"}},
 		// Files owned by nobody fall in a placeholder group.

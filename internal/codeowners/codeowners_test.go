@@ -57,6 +57,9 @@ func TestMatch(t *testing.T) {
 		{"/path/to/file", []string{"@exact1", "@exact2"}},
 		{"/path/to/other", []string{"@broad"}},
 		{"/docs/README.md", []string{"@docs"}},
+		// A suffix rule that matches a directory owns its descendants.
+		{"/docs.md/tool.go", []string{"@docs"}},
+		{"/a/docs.md/b/tool.go", []string{"@docs"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.path, func(t *testing.T) {
