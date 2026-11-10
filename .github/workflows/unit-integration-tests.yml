@@ -88,7 +88,7 @@ jobs:
           set -euo pipefail
           # One module per line; ALL (or an unset value) means every module.
           printf '%s' "${CONTRIB_MODULES:-ALL}" | tr ' ' '\n' > "${RUNNER_TEMP}/contrib-select.txt"
-          matrix="$(go run ./scripts/ci_contrib_matrix.go -select "${RUNNER_TEMP}/contrib-select.txt")"
+          matrix="$(go run ./scripts/ci_contrib_matrix.go -shards -select "${RUNNER_TEMP}/contrib-select.txt")"
           echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
           # An empty matrix would still schedule nothing useful while making the
           # downstream job look mysteriously absent; gate it explicitly instead.
@@ -102,6 +102,7 @@ jobs:
   test-contrib-matrix:
     needs: set-up
     if: needs.set-up.outputs.has-contribs == 'true'
+    name: test-contrib-matrix (${{ matrix.chunk.shard }})
     runs-on:
       group: "APM Larger Runners"
     # Without this the job inherits GitHub's 360-minute default, so a hang (for
@@ -146,9 +147,13 @@ jobs:
           go-version: ${{ inputs.go-version }}
           check-latest: "true"
           workload: unit-contrib
+          # The variant names the fixed shard, not the module list. The
+          # set-up job assigns every module to a shard before it applies
+          # the pull request selection, so a narrowed pull request shares
+          # the nightly shard keys by construction.
           variant: |-
             {"runner":"APM Larger Runners",
-             "modules":${{ toJson(matrix.chunk) }},
+             "shard":${{ toJSON(matrix.chunk.shard) }},
              "tags":${{ toJSON(inputs.build_tags || 'standard') }},
              "coverage":"contrib"}
           # Default-branch seed set: the nightly main runs of this
@@ -156,10 +161,11 @@ jobs:
           # and the nightly dynamic-checks runs (Go 1.27 only) save the
           # debug and deadlock families; every other run, including all
           # PR and merge-queue runs, restores only. Narrowed PR matrices
-          # (bounded contrib-modules) hash a different module list, so
-          # they cannot restore the contrib keys; broad PRs can. The
-          # seed comparison uses the raw input: pass the alias ("1.27"),
-          # not a resolved version ("1.27.2"), or the job stops seeding.
+          # keep the nightly shard keys by construction: the variant
+          # names the fixed shard, not the module list, so any pull
+          # request restores the seed. The seed comparison uses the
+          # raw input: pass the alias ("1.27"), not a resolved
+          # version ("1.27.2"), or the job stops seeding.
           seed: ${{ inputs.go-version == '1.26' || inputs.go-version == '1.27' }}
 
       - name: Restore and install development tools
@@ -182,7 +188,7 @@ jobs:
           RERUN_FAILS: ${{ inputs.rerun-fails }}
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
-          ./scripts/ci_test_contrib.sh default ${{ toJson(matrix.chunk) }}
+          ./scripts/ci_test_contrib.sh default ${{ toJson(matrix.chunk.modules) }}
 
       - name: Get Datadog credentials
         id: dd-sts
