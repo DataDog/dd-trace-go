@@ -259,6 +259,7 @@ func evaluateConfiguredFlagLookedUp(
 	now time.Time,
 	exclusion experimentationExclusion,
 ) evaluationResult {
+	maxDependencyDepth := configuredMaxDependencyDepth(config)
 	if !exists || !flag.Enabled || !flagMayEvaluateDependencies(flag) {
 		if exists && !(exclusion.mode == ExperimentationOptOutFutureExperimentsOnly && flag.invalidActivation) {
 			return evaluateFlagWithResolver(flag, defaultValue, context, now, exclusion, nil)
@@ -271,6 +272,7 @@ func evaluateConfiguredFlagLookedUp(
 		context:     context,
 		now:         now,
 		exclusion:   exclusion,
+		maxDepth:    maxDependencyDepth,
 	}
 	result := evaluateConfiguredFlagOnce(config, flagKey, defaultValue, context, now, exclusion, resolver)
 	if resolver.session == nil {
@@ -364,31 +366,29 @@ func evaluateConfiguredFlagOnce(
 }
 
 func configuredMaxDependencyDepth(config *universalFlagsConfiguration) int {
-	if config.EvaluatorParams.maxDependencyDepthInvalid {
-		logInvalidMaxDependencyDepth(config.EvaluatorParams.state)
+	if len(config.EvaluatorParams) == 0 {
 		return defaultMaxDependencyDepth
 	}
-	if config.EvaluatorParams.MaxDependencyDepth == nil {
+
+	var params map[string]json.RawMessage
+	if err := json.Unmarshal(config.EvaluatorParams, &params); err != nil || params == nil {
+		logInvalidMaxDependencyDepth()
 		return defaultMaxDependencyDepth
 	}
-	depth := *config.EvaluatorParams.MaxDependencyDepth
-	if depth < 0 || depth > maxMaxDependencyDepth {
-		logInvalidMaxDependencyDepth(config.EvaluatorParams.state)
+	configuredDepth, present := params["maxDependencyDepth"]
+	if !present {
+		return defaultMaxDependencyDepth
+	}
+	depth, valid := parseMaxDependencyDepth(configuredDepth)
+	if !valid {
+		logInvalidMaxDependencyDepth()
 		return defaultMaxDependencyDepth
 	}
 	return depth
 }
 
-func logInvalidMaxDependencyDepth(state *evaluatorParamsState) {
-	// Production configurations initialize a distinct state during JSON
-	// unmarshalling. Keep the zero value safe for internal programmatic
-	// configurations without mutating an immutable config during evaluation.
-	if state == nil {
-		state = &uninitializedEvaluatorParamsState
-	}
-	state.maxDependencyDepthLog.Do(func() {
-		log.Error("openfeature: maxDependencyDepth must be an integer from 0 through 255; using default %d", defaultMaxDependencyDepth) //errtrack:ignore malformed customer configuration
-	})
+func logInvalidMaxDependencyDepth() {
+	log.Warn("openfeature: maxDependencyDepth must be an integer from 0 through 255; using default %d", defaultMaxDependencyDepth) //errtrack:ignore malformed customer configuration
 }
 
 // evaluateAllocation evaluates an allocation and returns the matching split if any.
@@ -581,6 +581,7 @@ type lazyDependencyResolver struct {
 	context     map[string]any
 	now         time.Time
 	exclusion   experimentationExclusion
+	maxDepth    int
 	session     *dependencyEvaluationSession
 }
 
@@ -591,7 +592,7 @@ func (r *lazyDependencyResolver) Resolve(ref *flagEvaluation) (string, error) {
 			context:           r.context,
 			now:               r.now,
 			exclusion:         r.exclusion,
-			maxDepth:          configuredMaxDependencyDepth(r.config),
+			maxDepth:          r.maxDepth,
 			active:            map[string]bool{r.rootFlagKey: true},
 			memo:              make(map[string]memoizedDependency),
 			exposureKeys:      make(map[string]struct{}),
