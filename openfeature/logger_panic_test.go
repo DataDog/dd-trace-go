@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -45,6 +46,7 @@ func TestProviderGoroutines_ContainLoggerPanics(t *testing.T) {
 		ExposureFlushInterval:       5 * time.Millisecond,
 		FlagEvaluationFlushInterval: 5 * time.Millisecond,
 	}, internalffe.SourceAgentless, evp)
+	cleanupProvider(t, p)
 	withPanickingLogger(t, log.LevelDebug)
 
 	p.updateConfiguration(createTestConfig())
@@ -72,6 +74,76 @@ func TestProviderGoroutines_ContainLoggerPanics(t *testing.T) {
 	require.NoError(t, p.ShutdownWithContext(ctx))
 	assert.Greater(t, exposures.Load(), sentExposures, "shutdown must send the pending exposures")
 	assert.Greater(t, evaluations.Load(), sentEvaluations, "shutdown must send the pending evaluations")
+}
+
+// The shutdown teardown can finish while the exposure writer's periodic send
+// is still in flight. Cleanup must wait for that send, or it logs into the
+// logger a later test installs.
+func TestShutdownAndWait_JoinsInFlightSend(t *testing.T) {
+	entered := make(chan struct{}, 1)
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, exposureEndpoint) {
+			select {
+			case entered <- struct{}{}:
+			default:
+			}
+			<-release
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(srv.Close)
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	t.Cleanup(unblock) // runs before srv.Close, even if the test fails
+	evp := testAgentlessEVPClient(t, nil, srv, "test-api-key")
+	p := newDatadogProviderWithSourceAndEVP(ProviderConfig{
+		ExposureFlushInterval:       5 * time.Millisecond,
+		FlagEvaluationFlushInterval: time.Hour,
+	}, internalffe.SourceAgentless, evp)
+	cleanupProvider(t, p)
+
+	p.updateConfiguration(createTestConfig())
+	p.exposureWriter.append(exposureEvent{Flag: exposureFlag{Key: "bool-flag"}, Subject: exposureSubject{ID: "user-1"}})
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the periodic exposure send never started")
+	}
+
+	returned := make(chan struct{})
+	go func() {
+		defer close(returned)
+		shutdownAndWait(t, p)
+	}()
+	// The teardown itself has nothing left to send, so it finishes while the
+	// periodic send is still blocked.
+	require.Eventually(t, func() bool {
+		p.mu.Lock()
+		done := p.teardownDone
+		p.mu.Unlock()
+		if done == nil {
+			return false
+		}
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	}, 5*time.Second, time.Millisecond)
+	select {
+	case <-returned:
+		t.Fatal("shutdownAndWait returned while the exposure send was in flight")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	unblock()
+	select {
+	case <-returned:
+	case <-time.After(5 * time.Second):
+		t.Fatal("shutdownAndWait did not return after the send finished")
+	}
 }
 
 // withPanickingLogger installs, for the rest of the test, an application
@@ -109,17 +181,32 @@ func shutdownAndWait(tb testing.TB, p *DatadogProvider) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = p.ShutdownWithContext(ctx)
+	// The teardown can finish before the goroutines it stops have exited: a
+	// periodic exposure send may still be in flight, and the poll loop may
+	// outlive an expired Stop. Join each of them.
 	p.mu.Lock()
-	done := p.teardownDone
-	p.mu.Unlock()
-	if done == nil {
-		// A test marked the provider shut down without running the teardown.
-		return
+	waits := map[string]<-chan struct{}{"teardown": p.teardownDone}
+	if p.exposureWriter != nil {
+		waits["exposure writer"] = p.exposureWriter.workerDone
 	}
-	select {
-	case <-done:
-	case <-ctx.Done():
-		tb.Errorf("provider teardown did not finish: %v", ctx.Err())
+	if p.flagEvalLoggingWriter != nil && p.flagEvalLoggingWriter.ticker != nil {
+		waits["flag evaluation writer"] = p.flagEvalLoggingWriter.workerDone
+	}
+	if p.agentless != nil {
+		waits["agentless poll loop"] = p.agentless.doneCh
+	}
+	p.mu.Unlock()
+	for name, done := range waits {
+		if done == nil {
+			// Never started, or a test marked the provider shut down
+			// without running the teardown.
+			continue
+		}
+		select {
+		case <-done:
+		case <-ctx.Done():
+			tb.Errorf("provider %s did not exit: %v", name, ctx.Err())
+		}
 	}
 }
 
@@ -146,8 +233,8 @@ func providerGoroutines() []string {
 		buf = make([]byte, 2*len(buf))
 	}
 	var found []string
-	for _, g := range strings.Split(string(buf), "\n\n") {
-		for _, line := range strings.Split(g, "\n") {
+	for g := range strings.SplitSeq(string(buf), "\n\n") {
+		for line := range strings.SplitSeq(g, "\n") {
 			if strings.HasPrefix(line, "created by ") {
 				continue
 			}
@@ -169,7 +256,10 @@ func providerGoroutines() []string {
 // assertions on what was logged. Use cleanupProvider in the leaking test.
 func requireNoStrayProviderGoroutines(tb testing.TB) {
 	tb.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	// cleanupProvider joins every goroutine through the channel it closes on
+	// exit, so a goroutine can still be returning right after the join. A
+	// short grace covers that; a leaked goroutine never exits.
+	deadline := time.Now().Add(100 * time.Millisecond)
 	for {
 		found := providerGoroutines()
 		if len(found) == 0 {
