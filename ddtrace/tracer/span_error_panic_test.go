@@ -7,7 +7,13 @@ package tracer
 
 import (
 	"io/fs"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 
@@ -50,15 +56,43 @@ func assertSpanUnlocked(t *testing.T, s *Span) {
 	}
 }
 
+// newFakeAgent starts a local HTTP agent that counts the traces it receives,
+// using the X-Datadog-Trace-Count header the tracer sets on each payload.
+func newFakeAgent(t *testing.T) (*httptest.Server, *atomic.Int64) {
+	var traces atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/traces") {
+			n, _ := strconv.Atoi(r.Header.Get("X-Datadog-Trace-Count"))
+			traces.Add(int64(n))
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &traces
+}
+
+// waitFor runs fn in a goroutine and reports whether it returned within d.
+func waitFor(fn func(), d time.Duration) bool {
+	done := make(chan struct{})
+	go func() { defer close(done); fn() }()
+	select {
+	case <-done:
+		return true
+	case <-time.After(d):
+		return false
+	}
+}
+
 func TestSpanFinishWithPanickingError(t *testing.T) {
 	for name, newErr := range panickingErrors() {
 		t.Run(name, func(t *testing.T) {
-			tr, transport, flush, stop, err := startTestTracer(t)
-			require.NoError(t, err)
-			defer stop()
+			srv, received := newFakeAgent(t)
+			require.NoError(t, Start(WithAgentURL(srv.URL), WithLogStartup(false)))
 
-			parent := tr.StartSpan("parent")
-			child := tr.StartSpan("child", ChildOf(parent.Context()))
+			parent := StartSpan("parent")
+			child := StartSpan("child", ChildOf(parent.Context()))
 
 			r := callRecover(func() { child.Finish(WithError(newErr())) })
 			assert.Nil(t, r, "Finish must not panic")
@@ -70,10 +104,18 @@ func TestSpanFinishWithPanickingError(t *testing.T) {
 			}
 
 			parent.Finish()
-			flush(1) // fails the test if no trace is sent within the timeout
-			traces := transport.Traces()
-			require.Len(t, traces, 1)
-			assert.Len(t, traces[0], 2)
+			// Stop flushes pending traces to the agent.
+			require.True(t, waitFor(Stop, 5*time.Second), "tracer.Stop did not return")
+
+			deadline := time.After(2 * time.Second)
+			for received.Load() < 1 {
+				select {
+				case <-deadline:
+					t.Fatalf("fake agent received %d traces, want 1", received.Load())
+				case <-time.After(10 * time.Millisecond):
+				}
+			}
+			assert.EqualValues(t, 1, received.Load())
 		})
 	}
 }
@@ -102,9 +144,22 @@ func TestStartSpanTagWithPanickingError(t *testing.T) {
 			var s *Span
 			r := callRecover(func() { s = tr.StartSpan("op", Tag(ext.Error, newErr())) })
 			assert.Nil(t, r, "StartSpan must not panic")
-			if s != nil {
-				assertSpanUnlocked(t, s)
-			}
+			require.NotNil(t, s, "StartSpan did not return a span")
+			assertSpanUnlocked(t, s)
+		})
+	}
+}
+
+// setTags is the helper StartSpan uses for Tag options. Calling it on an
+// existing span makes the lock leak observable even though StartSpan itself
+// never returns the span when it panics.
+func TestSpanSetTagsWithPanickingError(t *testing.T) {
+	for name, newErr := range panickingErrors() {
+		t.Run(name, func(t *testing.T) {
+			s := newBasicSpan("op")
+			r := callRecover(func() { s.setTags(map[string]any{ext.Error: newErr()}) })
+			assert.Nil(t, r, "setTags must not panic")
+			assertSpanUnlocked(t, s)
 		})
 	}
 }
