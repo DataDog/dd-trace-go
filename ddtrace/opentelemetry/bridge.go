@@ -180,10 +180,8 @@ func (s *borrowedSpan) live() bool {
 
 // SpanContext returns the context of the Datadog span. The span is local: a Datadog
 // integration in this process started it. A finished span keeps its span context.
-// Remote is false, because the span is local. Spans that this package starts report Remote
-// true, which is a known difference.
 func (s *borrowedSpan) SpanContext() oteltrace.SpanContext {
-	return ddSpanContext(s.ddSpan).WithRemote(false)
+	return ddSpanContext(s.ddSpan)
 }
 
 // IsRecording returns false after the integration that owns the span finished it.
