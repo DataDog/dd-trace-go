@@ -371,8 +371,8 @@ func replaceWithUserSpecificTags(tags map[string]string) {
 
 	if branch := env.Get("DD_GIT_BRANCH"); branch != "" {
 		if isTagRef(branch) {
-			branch = normalizeRef(branch)
 			tags[constants.GitTag] = branch
+			branch = normalizeRef(branch)
 		}
 		tags[constants.GitBranch] = branch
 	}

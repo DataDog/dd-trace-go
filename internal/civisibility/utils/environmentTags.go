@@ -274,7 +274,7 @@ func createCITagsMap() map[string]string {
 			branch = localTags[constants.GitBranch]
 		}
 		tagTrigger := branchOverride == "" && localTags[constants.GitTag] != ""
-		if gitData.Branch == "" && (localTags[constants.PrNumber] != "" || branch != "" && !isTagRef(branch) && !tagTrigger) {
+		if gitData.Branch == "" && (localTags[constants.PrNumber] != "" && localTags[constants.PrNumber] != "0" || branch != "" && !isTagRef(branch) && !tagTrigger) {
 			gitData.Tag = ""
 		}
 
@@ -367,7 +367,11 @@ func createCITagsMap() map[string]string {
 		}
 	}
 	replaceWithUserSpecificTags(localTags)
-	preserveBranch := literalBranch != "" && env.Get("DD_GIT_BRANCH") == ""
+	tagRefOverride := isTagRef(env.Get("DD_GIT_BRANCH"))
+	if tagRefOverride {
+		literalBranch = localTags[constants.GitBranch]
+	}
+	preserveBranch := literalBranch != "" && (env.Get("DD_GIT_BRANCH") == "" || tagRefOverride)
 	preserveTag := literalTag != "" && env.Get("DD_GIT_TAG") == "" && !isTagRef(env.Get("DD_GIT_BRANCH")) &&
 		(preserveBranch || !isTagRef(localTags[constants.GitBranch]))
 	if preserveBranch {

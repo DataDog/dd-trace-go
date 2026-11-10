@@ -892,38 +892,93 @@ func TestReadableCheckoutWithoutRemoteDoesNotBackfillProviderURL(t *testing.T) {
 	}
 }
 
-func TestTeamCityPRSuppressesInferredCheckoutTag(t *testing.T) {
-	for _, override := range []string{"", "explicit-tag"} {
-		t.Run("override="+override, func(t *testing.T) {
-			repo := usePackFilesGitFixture(t)
-			runFixtureGit(t, repo, "tag", "v1")
-			runFixtureGit(t, repo, "checkout", "--detach")
-			sha := runFixtureGit(t, repo, "rev-parse", "HEAD")
-			ResetCITags()
-			t.Cleanup(ResetCITags)
-			bazel.ResetForTesting()
-			t.Cleanup(bazel.ResetForTesting)
-			for _, name := range []string{"DD_GIT_COMMIT_SHA", "DD_GIT_BRANCH", "DD_GIT_TAG", "DD_GIT_REPOSITORY_URL", "DD_GIT_PULL_REQUEST_BASE_BRANCH", "DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA"} {
-				t.Setenv(name, "")
-			}
-			t.Setenv("DD_GIT_TAG", override)
-			t.Setenv("TEAMCITY_PULLREQUEST_NUMBER", "42")
-			t.Setenv("TEAMCITY_PULLREQUEST_TARGET_BRANCH", "main")
-			t.Setenv("TEAMCITY_BUILDCONF_NAME", "teamcity-tests")
-			originalProvider, originalEnvironmental := getProviderTagsFunc, applyEnvironmentalDataIfRequiredFunc
-			t.Cleanup(func() {
-				getProviderTagsFunc, applyEnvironmentalDataIfRequiredFunc = originalProvider, originalEnvironmental
-			})
-			getProviderTagsFunc = extractTeamcity
-			applyEnvironmentalDataIfRequiredFunc = func(map[string]string) {}
+func TestPRNumbersControlInferredCheckoutTags(t *testing.T) {
+	for _, tc := range []struct{ name, event, number, wantTag string }{
+		{name: "teamcity PR", number: "42"},
+		{name: "github tag push", event: `{}`, number: "0", wantTag: "v1"},
+		{name: "github PR", event: `{"number":42}`, number: "42"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, override := range []string{"", "explicit-tag"} {
+				t.Run("override="+override, func(t *testing.T) {
+					repo := usePackFilesGitFixture(t)
+					runFixtureGit(t, repo, "tag", "v1")
+					runFixtureGit(t, repo, "checkout", "--detach")
+					sha := runFixtureGit(t, repo, "rev-parse", "HEAD")
+					ResetCITags()
+					t.Cleanup(ResetCITags)
+					bazel.ResetForTesting()
+					t.Cleanup(bazel.ResetForTesting)
+					for _, name := range []string{"DD_GIT_COMMIT_SHA", "DD_GIT_BRANCH", "DD_GIT_TAG", "DD_GIT_REPOSITORY_URL", "DD_GIT_PULL_REQUEST_BASE_BRANCH", "DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA"} {
+						t.Setenv(name, "")
+					}
+					t.Setenv("DD_GIT_TAG", override)
+					t.Setenv("TEAMCITY_PULLREQUEST_NUMBER", "42")
+					t.Setenv("TEAMCITY_PULLREQUEST_TARGET_BRANCH", "main")
+					t.Setenv("TEAMCITY_BUILDCONF_NAME", "teamcity-tests")
+					originalProvider, originalEnvironmental := getProviderTagsFunc, applyEnvironmentalDataIfRequiredFunc
+					t.Cleanup(func() {
+						getProviderTagsFunc, applyEnvironmentalDataIfRequiredFunc = originalProvider, originalEnvironmental
+					})
+					getProviderTagsFunc = extractTeamcity
+					if tc.event != "" {
+						event := filepath.Join(t.TempDir(), "event.json")
+						assert.NoError(t, os.WriteFile(event, []byte(tc.event), 0600))
+						t.Setenv("GITHUB_EVENT_PATH", event)
+						t.Setenv("GITHUB_HEAD_REF", "")
+						t.Setenv("GITHUB_REF", "refs/tags/v1")
+						t.Setenv("GITHUB_BASE_REF", "main")
+						t.Setenv("GITHUB_JOB", "teamcity-tests")
+						getProviderTagsFunc = extractGithubActions
+					}
+					applyEnvironmentalDataIfRequiredFunc = func(map[string]string) {}
 
-			tags := GetCITags()
-			assert.Equal(t, override, tags[constants.GitTag])
-			assert.NotContains(t, tags, constants.GitBranch)
-			assert.Equal(t, sha, tags[constants.GitCommitSHA])
-			assert.Equal(t, "42", tags[constants.PrNumber])
-			assert.Equal(t, "main", tags[constants.GitPrBaseBranch])
-			assert.Equal(t, "teamcity-tests", tags[constants.CIJobName])
+					tags := GetCITags()
+					wantTag := tc.wantTag
+					if override != "" {
+						wantTag = override
+					}
+					assert.Equal(t, wantTag, tags[constants.GitTag])
+					assert.NotContains(t, tags, constants.GitBranch)
+					assert.Equal(t, sha, tags[constants.GitCommitSHA])
+					assert.Equal(t, tc.number, tags[constants.PrNumber])
+					assert.Equal(t, "main", tags[constants.GitPrBaseBranch])
+					assert.Equal(t, "teamcity-tests", tags[constants.CIJobName])
+				})
+			}
 		})
+	}
+}
+
+func TestTagRefBranchOverrideNormalizesOnce(t *testing.T) {
+	for _, branch := range []string{"refs/tags/origin/release", "refs/tags/tags/release", "refs/tags/refs/heads/release"} {
+		for _, tag := range []string{"", "refs/tags/explicit"} {
+			t.Run(branch+"/tag="+tag, func(t *testing.T) {
+				ResetCITags()
+				t.Cleanup(ResetCITags)
+				bazel.ResetForTesting()
+				t.Cleanup(bazel.ResetForTesting)
+				for _, key := range []string{"DD_GIT_COMMIT_SHA", "DD_GIT_REPOSITORY_URL"} {
+					t.Setenv(key, "")
+				}
+				t.Setenv("DD_GIT_BRANCH", branch)
+				t.Setenv("DD_GIT_TAG", tag)
+				oldProvider, oldGit, oldFile := getProviderTagsFunc, getLocalGitDataFunc, applyEnvironmentalDataIfRequiredFunc
+				t.Cleanup(func() {
+					getProviderTagsFunc, getLocalGitDataFunc, applyEnvironmentalDataIfRequiredFunc = oldProvider, oldGit, oldFile
+				})
+				getProviderTagsFunc = func() map[string]string { return map[string]string{constants.CIJobName: "tests"} }
+				getLocalGitDataFunc = func() (localGitData, error) { return localGitData{}, errors.New("unreadable") }
+				applyEnvironmentalDataIfRequiredFunc = func(map[string]string) {}
+				tags := GetCITags()
+				assert.Equal(t, normalizeRef(branch), tags[constants.GitBranch])
+				wantTag := normalizeRef(branch)
+				if tag != "" {
+					wantTag = normalizeRef(tag)
+				}
+				assert.Equal(t, wantTag, tags[constants.GitTag])
+				assert.Equal(t, "tests", tags[constants.CIJobName])
+			})
+		}
 	}
 }
