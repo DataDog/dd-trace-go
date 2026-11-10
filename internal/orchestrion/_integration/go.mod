@@ -12,7 +12,7 @@ require (
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/otelc/all/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
-	github.com/DataDog/go-libddwaf/v5 v5.0.1
+	github.com/DataDog/go-libddwaf/v5 v5.1.0
 	github.com/DataDog/orchestrion v1.14.0
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
