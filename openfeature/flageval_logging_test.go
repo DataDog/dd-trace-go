@@ -57,11 +57,11 @@ func TestDefaultEvalCapSizing(t *testing.T) {
 	}
 }
 
-// TestFlattenAndPruneContextEquivalence verifies the merged single-pass
-// flattenAndPruneContext must produce a pruned result byte-for-byte identical to the prior
-// two-step flattenContext + pruneContext pipeline across nested and oversized inputs that
-// stay within the caps. Inputs that exceed a cap intentionally diverge (bounded subset)
-// and are covered in TestFlattenAndPruneContextBoundedTraversal.
+// TestFlattenAndPruneContextEquivalence compares non-nil, in-bounds inputs with
+// the test oracle flattenContext + pruneContext. The oracle drops nil-valued
+// fields through the exposure walker; evaluation contexts intentionally retain
+// them. Nil retention and bounded-subset behavior are tested separately in
+// TestFlattenAndPruneContextBoundedTraversal.
 func TestFlattenAndPruneContextEquivalence(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -1480,6 +1480,18 @@ func TestFlattenAndPruneContextReportsTruncationReasons(t *testing.T) {
 // Each case constructs an adversarial input and asserts the retained set is capped, the matching
 // reason fires, and the call terminates (no infinite recursion / stack overflow).
 func TestFlattenAndPruneContextBoundedTraversal(t *testing.T) {
+	t.Run("nil-valued fields are retained", func(t *testing.T) {
+		attrs := map[string]any{"u": nil, "nested": map[string]any{"v": nil}, "keep": "value"}
+		got, reasons := flattenAndPruneContext(attrs)
+		want := map[string]any{"u": nil, "nested.v": nil, "keep": "value"}
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("nil-valued evaluation fields must be retained: got %v, want %v", got, want)
+		}
+		if len(reasons) != 0 {
+			t.Fatalf("nil values must not report truncation: %v", reasons)
+		}
+	})
+
 	t.Run("deep chain is truncated at maxSnapshotDepth", func(t *testing.T) {
 		var node any = map[string]any{"val": "bottom"}
 		for i := range 100 { // far deeper than maxSnapshotDepth

@@ -1133,15 +1133,14 @@ func appendContextValue(buf []byte, v any) []byte {
 	return appendLengthDelimited(buf, tmp)
 }
 
-// pruneContext applies 256-field / 256-char limits before buffering.
-// Mirrors worker.ts MAX_EVALUATION_CONTEXT_FIELDS / MAX_FIELD_LENGTH exactly.
-// Must be called AFTER flattenContext() (from flatten.go) to expand nested objects first.
+// pruneContext is a test oracle for the former sorted-then-capped pruning policy.
+// It expects already-flattened attributes and scans all keys to choose a stable
+// subset before applying the 256-field and string-length caps.
 //
-// The kept subset is DETERMINISTIC: keys are sorted BEFORE the oversized-string skip and the
-// 256-field cap are applied, so two logically-identical contexts always prune to the exact
-// same subset (and therefore the same canonicalContextKey). Ranging the map directly (Go map
-// iteration is randomized) would cut a different 256-field subset each call and fragment
-// otherwise-identical contexts into separate aggregation buckets.
+// Production uses flattenAndPruneContext instead: it bounds map sampling before
+// sorting, retaining an unspecified subset of oversized maps to limit caller-thread
+// work. That subset may vary between evaluations and split otherwise-identical
+// contexts across aggregation buckets; the aggregation caps still apply.
 func pruneContext(raw map[string]any) map[string]any {
 	if len(raw) == 0 {
 		return nil
