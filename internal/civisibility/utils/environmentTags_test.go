@@ -793,3 +793,101 @@ func TestCheckoutBranchNamesAreNotNormalizedAsProviderRefs(t *testing.T) {
 		})
 	}
 }
+
+func TestEnvironmentalFileRefNamesRemainLiteral(t *testing.T) {
+	for _, mode := range []string{"payload", "unavailable"} {
+		for _, tc := range []struct {
+			name, branch, tag, overrideBranch, overrideTag, overrideSHA, providerBranch, providerTag, wantBranch, wantTag string
+		}{
+			{name: "literal branch and tag", branch: "origin/release", tag: "tags/release", wantBranch: "origin/release", wantTag: "tags/release"},
+			{name: "tag-like literal branch", branch: "refs/tags/release", wantBranch: "refs/tags/release"},
+			{name: "literal tag prefix", tag: "refs/tags/release", wantTag: "refs/tags/release"},
+			{name: "explicit refs", branch: "origin/release", tag: "tags/release", overrideBranch: "refs/heads/user", overrideTag: "refs/tags/user", wantBranch: "user", wantTag: "user"},
+			{name: "explicit branch keeps file tag", branch: "origin/release", tag: "tags/release", overrideBranch: "refs/heads/user", wantBranch: "user", wantTag: "tags/release"},
+			{name: "explicit tag ref", branch: "origin/release", tag: "tags/release", overrideBranch: "refs/tags/user", wantBranch: "user", wantTag: "user"},
+			{name: "changed SHA drops tag", branch: "origin/release", tag: "tags/release", overrideSHA: strings.Repeat("b", 40), wantBranch: "origin/release"},
+			{name: "changed SHA drops tag-like branch", branch: "refs/tags/release", tag: "tags/release", overrideSHA: strings.Repeat("b", 40)},
+			{name: "provider tag trigger", branch: "origin/release", tag: "tags/release", providerBranch: "refs/tags/provider", wantBranch: "provider", wantTag: "provider"},
+			{name: "provider ref priority", branch: "origin/release", tag: "tags/release", providerBranch: "refs/heads/provider", providerTag: "refs/tags/provider", wantBranch: "provider", wantTag: "provider"},
+		} {
+			t.Run(mode+"/"+tc.name, func(t *testing.T) {
+				ResetCITags()
+				t.Cleanup(ResetCITags)
+				bazel.ResetForTesting()
+				t.Cleanup(bazel.ResetForTesting)
+				t.Setenv(bazel.PayloadsInFilesEnv, "false")
+				if mode == "payload" {
+					t.Setenv(bazel.PayloadsInFilesEnv, "true")
+					t.Setenv(bazel.UndeclaredOutputsDirEnv, t.TempDir())
+				}
+				for _, name := range []string{"DD_GIT_COMMIT_SHA", "DD_GIT_BRANCH", "DD_GIT_TAG", "DD_GIT_REPOSITORY_URL", "DD_GIT_PULL_REQUEST_BASE_BRANCH", "DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA"} {
+					t.Setenv(name, "")
+				}
+				t.Setenv("DD_GIT_BRANCH", tc.overrideBranch)
+				t.Setenv("DD_GIT_TAG", tc.overrideTag)
+				t.Setenv("DD_GIT_COMMIT_SHA", tc.overrideSHA)
+				file := filepath.Join(t.TempDir(), "environment.json")
+				t.Setenv(constants.CIVisibilityEnvironmentDataFilePath, file)
+				assert.NoError(t, writeEnvironmentalDataToFile(file, map[string]string{
+					constants.GitCommitSHA: strings.Repeat("a", 40), constants.GitBranch: tc.branch,
+					constants.GitTag: tc.tag, constants.CIJobName: "file-job",
+				}))
+				originalProvider, originalGit, originalEnvironmental := getProviderTagsFunc, getLocalGitDataFunc, applyEnvironmentalDataIfRequiredFunc
+				t.Cleanup(func() {
+					getProviderTagsFunc, getLocalGitDataFunc, applyEnvironmentalDataIfRequiredFunc = originalProvider, originalGit, originalEnvironmental
+				})
+				getProviderTagsFunc = func() map[string]string {
+					return map[string]string{constants.GitBranch: tc.providerBranch, constants.GitTag: tc.providerTag}
+				}
+				getLocalGitDataFunc = func() (localGitData, error) { return localGitData{}, errors.New("checkout unavailable") }
+				applyEnvironmentalDataIfRequiredFunc = applyEnvironmentalDataIfRequired
+
+				tags := GetCITags()
+				assert.Equal(t, tc.wantBranch, tags[constants.GitBranch])
+				assert.Equal(t, tc.wantTag, tags[constants.GitTag])
+				assert.Equal(t, "file-job", tags[constants.CIJobName])
+			})
+		}
+	}
+}
+
+func TestReadableCheckoutWithoutRemoteDoesNotBackfillProviderURL(t *testing.T) {
+	for _, override := range []string{"", "https://example.com/explicit.git"} {
+		t.Run("override="+override, func(t *testing.T) {
+			repo := usePackFilesGitFixture(t)
+			sha := runFixtureGit(t, repo, "rev-parse", "HEAD")
+			assert.Empty(t, runFixtureGit(t, repo, "remote"))
+			ResetCITags()
+			t.Cleanup(ResetCITags)
+			bazel.ResetForTesting()
+			t.Cleanup(bazel.ResetForTesting)
+			t.Setenv(bazel.PayloadsInFilesEnv, "false")
+			for _, name := range []string{"DD_GIT_COMMIT_SHA", "DD_GIT_BRANCH", "DD_GIT_TAG", "DD_GIT_REPOSITORY_URL", "DD_GIT_PULL_REQUEST_BASE_BRANCH", "DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA"} {
+				t.Setenv(name, "")
+			}
+			t.Setenv("DD_GIT_REPOSITORY_URL", override)
+			file := filepath.Join(t.TempDir(), "environment.json")
+			t.Setenv(constants.CIVisibilityEnvironmentDataFilePath, file)
+			assert.NoError(t, writeEnvironmentalDataToFile(file, map[string]string{
+				constants.GitRepositoryURL: "https://example.com/file.git", constants.CINodeName: "file-node",
+			}))
+			originalProvider, originalGit, originalEnvironmental := getProviderTagsFunc, getLocalGitDataFunc, applyEnvironmentalDataIfRequiredFunc
+			t.Cleanup(func() {
+				getProviderTagsFunc, getLocalGitDataFunc, applyEnvironmentalDataIfRequiredFunc = originalProvider, originalGit, originalEnvironmental
+			})
+			getProviderTagsFunc = func() map[string]string {
+				return map[string]string{constants.GitRepositoryURL: "https://example.com/provider.git", constants.GitCommitSHA: "provider-sha", constants.CIJobName: "provider-job", constants.GitHeadCommit: sha}
+			}
+			getLocalGitDataFunc = getLocalGitData
+			applyEnvironmentalDataIfRequiredFunc = applyEnvironmentalDataIfRequired
+
+			tags := GetCITags()
+			assert.Equal(t, sha, tags[constants.GitCommitSHA])
+			assert.Equal(t, override, tags[constants.GitRepositoryURL])
+			assert.Equal(t, "main", tags[constants.GitBranch])
+			assert.Equal(t, "provider-job", tags[constants.CIJobName])
+			assert.Equal(t, "file-node", tags[constants.CINodeName])
+			assert.Equal(t, sha, tags[constants.GitHeadCommit])
+		})
+	}
+}

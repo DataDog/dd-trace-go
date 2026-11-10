@@ -117,3 +117,5 @@ A detached checkout's single local tag is not inferred for a CI branch or pull-r
 Short branch names read from Git remain literal, including prefixes such as `tags/` or `origin/`. Provider refs and explicit branch overrides retain their existing normalization.
 
 Local tag names retain their literal prefixes too. Detached tag inference considers explicit branch overrides and environmental-file job refs before checkout metadata replaces fallback fields; explicit tag overrides still win.
+
+Environmental files also store short branch and tag names verbatim. Preserve these literal names when Git is unavailable or payload-file mode is active; provider refs and explicit overrides retain their existing normalization.

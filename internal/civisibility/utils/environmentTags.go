@@ -253,7 +253,9 @@ func createCITagsMap() map[string]string {
 	}
 
 	commitShaOverride := env.Get("DD_GIT_COMMIT_SHA")
+	providerBranch, providerTag := localTags[constants.GitBranch], localTags[constants.GitTag]
 	var checkoutBranch string
+	var readableCheckout bool
 	if bazel.IsPayloadFilesModeEnabled() {
 		// Payload-file mode relies on the environmental data file instead of invoking the Git CLI.
 		applyEnvironmentalDataIfRequiredFunc(localTags)
@@ -277,6 +279,7 @@ func createCITagsMap() map[string]string {
 		}
 
 		if gitData.CommitSha != "" {
+			readableCheckout = true
 			checkoutBranch = gitData.Branch
 			for key := range localTags {
 				if strings.HasPrefix(key, "git.") && !strings.HasPrefix(key, "git.commit.head.") && !strings.HasPrefix(key, "git.pull_request.") {
@@ -352,15 +355,33 @@ func createCITagsMap() map[string]string {
 		}
 	}
 
+	// Checkout and environmental-file refs are already short names, not provider refs.
+	literalBranch := checkoutBranch
+	var literalTag string
+	if !readableCheckout {
+		if providerBranch == "" {
+			literalBranch = localTags[constants.GitBranch]
+		}
+		if providerTag == "" {
+			literalTag = localTags[constants.GitTag]
+		}
+	}
 	replaceWithUserSpecificTags(localTags)
-	// Git already returned a short name; prefixes in it belong to the actual branch.
-	preserveCheckoutBranch := checkoutBranch != "" && env.Get("DD_GIT_BRANCH") == ""
-	if preserveCheckoutBranch {
+	preserveBranch := literalBranch != "" && env.Get("DD_GIT_BRANCH") == ""
+	preserveTag := literalTag != "" && env.Get("DD_GIT_TAG") == "" && !isTagRef(env.Get("DD_GIT_BRANCH")) &&
+		(preserveBranch || !isTagRef(localTags[constants.GitBranch]))
+	if preserveBranch {
 		delete(localTags, constants.GitBranch)
 	}
+	if preserveTag {
+		delete(localTags, constants.GitTag)
+	}
 	normalizeTags(localTags)
-	if preserveCheckoutBranch {
-		localTags[constants.GitBranch] = checkoutBranch
+	if preserveBranch {
+		localTags[constants.GitBranch] = literalBranch
+	}
+	if preserveTag {
+		localTags[constants.GitTag] = literalTag
 	}
 	for key, value := range localTags {
 		if value == "" {
