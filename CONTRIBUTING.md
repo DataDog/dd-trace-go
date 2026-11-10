@@ -84,6 +84,10 @@ Our CI pipeline includes several automated checks:
 
 - **Config Audit**: Runs `make config-audit` to report the migration status of each `DD_*` environment-variable configuration relative to `internal/config`. The check is non-blocking — it does not prevent a PR from merging, but posts the audit results as a PR comment. Run locally with `make config-audit`.
 
+#### Error Tracking Audit Workflow
+
+- **Errtrack Audit**: `errtrack-audit.yml` runs `scripts/errtrackaudit` on pull requests that touch root-module code. It reports the `internal/log` `Error`/`Warn` call sites that have not adopted the Error Tracking reporting API, grouped by `CODEOWNERS` team and labeled with heuristic triage classifications. The check is non-blocking: it uploads the audit as an artifact and posts the results as a PR comment. Run locally with `make errtrack-audit`.
+
 #### Customer Simulation Platform (CuSim)
 
 - **CuSim Deployment**: Scheduled GitLab `deploy_to_reliability_env` (from the one-pipeline template) runs deploy [all Go apps](https://github.com/DataDog/datadog-reliability-env/tree/master/apps/go) to CuSim using the latest dd-trace-go release (`released`), the HEAD of `main` (`candidate`), and custom configurations (`experimental`). The job can be triggered by anyone, but CuSim resources are only accessible to Datadog internal contributors.
