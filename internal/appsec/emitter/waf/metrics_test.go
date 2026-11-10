@@ -8,6 +8,7 @@ package waf
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -151,25 +152,38 @@ func TestUpdateClosestToZero(t *testing.T) {
 	})
 }
 
+// TestUpdateClosestToZeroConcurrent checks that updateClosestToZero loses no update. Each worker
+// sends one different code, all the workers start at the same time, and every round uses a fresh
+// target. A load/check/store that is not atomic stores a code that is not the closest to zero.
 func TestUpdateClosestToZeroConcurrent(t *testing.T) {
+	const rounds = 500
+
+	// One code per worker. -1 is the closest to zero, whatever the worker that sends it.
+	negative := []int32{-127}
+	for code := int32(-2); code >= -40; code-- {
+		negative = append(negative, code)
+	}
+	negative = append(negative, -1)
+
 	for name, codes := range map[string][]int32{
-		"negative_only":      {-127, -3, -2, -1},
-		"with_ignored_codes": {-127, -3, -2, -1, 0, 4},
+		"negative_only":      negative,
+		"with_ignored_codes": append(slices.Clone(negative), 0, 4, 100),
 	} {
 		t.Run(name, func(t *testing.T) {
-			var target atomic.Int32
-			var wg sync.WaitGroup
-			for range 64 {
-				wg.Go(func() {
-					for range 100 {
-						for _, code := range codes {
-							updateClosestToZero(&target, code)
-						}
-					}
-				})
+			for round := range rounds {
+				var target atomic.Int32
+				start := make(chan struct{})
+				var wg sync.WaitGroup
+				for _, code := range codes {
+					wg.Go(func() {
+						<-start
+						updateClosestToZero(&target, code)
+					})
+				}
+				close(start)
+				wg.Wait()
+				require.Equal(t, int32(-1), target.Load(), "round %d", round)
 			}
-			wg.Wait()
-			require.Equal(t, int32(-1), target.Load())
 		})
 	}
 }
