@@ -126,6 +126,10 @@ type DatadogProvider struct {
 	agentless *agentlessSource
 	// shutdownCalled reports whether ShutdownWithContext has already run. // +checklocks:mu
 	shutdownCalled bool
+	// teardownDone is closed when the teardown goroutine started by
+	// ShutdownWithContext finishes; nil until shutdown is called. It is
+	// written once under mu. // +checklocks:mu
+	teardownDone chan struct{}
 	// deliveryErr is set when no delivery source could start; permanent for the process. // +checklocks:mu
 	deliveryErr error
 	// writersStarted ensures updateConfiguration only starts the periodic
@@ -594,6 +598,8 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 		return nil
 	}
 	p.shutdownCalled = true
+	teardownDone := make(chan struct{})
+	p.teardownDone = teardownDone
 	source := p.source
 	agentless := p.agentless
 	p.configuration = nil
@@ -610,6 +616,7 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 
 	done := make(chan error, 1)
 	go func() {
+		defer close(teardownDone)
 		var err error
 		// An agentless provider never registered an RC capability, so it
 		// must not unregister one.

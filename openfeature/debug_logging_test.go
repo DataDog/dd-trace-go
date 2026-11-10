@@ -179,6 +179,7 @@ func TestDebugLoggingHook_EndToEnd(t *testing.T) {
 	logger := withLogLevel(t, log.LevelDebug)
 
 	p := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, p)
 	p.updateConfiguration(createTestConfig())
 
 	const domain = "debug-logging-hook-e2e"
@@ -260,6 +261,7 @@ func TestDebugLogging_AfterHookFailure(t *testing.T) {
 			logger := withLogLevel(t, log.LevelDebug)
 
 			p := newDatadogProvider(ProviderConfig{})
+			cleanupProvider(t, p)
 			p.updateConfiguration(createTestConfig())
 			domain := "debug-logging-after-hook-failure-" + tc.flagType
 			registerDebugLoggingProvider(t, domain, p)
@@ -283,6 +285,7 @@ func TestDebugLogging_AfterHookFailure(t *testing.T) {
 func newDebugLoggingMultiProviderClient(t *testing.T, ddHooks ...of.Hook) *of.Client {
 	t.Helper()
 	p := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, p)
 	p.updateConfiguration(createTestConfig())
 	mem := memprovider.NewInMemoryProvider(map[string]memprovider.InMemoryFlag{
 		"only-in-mem": {Key: "only-in-mem", State: memprovider.Enabled, DefaultVariant: "on", Variants: map[string]any{"on": true}},
@@ -464,6 +467,7 @@ func TestAgentlessDebugLogs_NeverContainEndpointSecrets(t *testing.T) {
 		}
 		p, err := startWithAgentless(ProviderConfig{}, settings)
 		require.NoError(t, err)
+		cleanupProvider(t, p)
 		require.Eventually(t, func() bool {
 			return logger.countContaining("returned HTTP") > 0
 		}, 2*time.Second, time.Millisecond)
@@ -492,6 +496,7 @@ func TestInitWithContext_DebugLogs(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		logger := withLogLevel(t, log.LevelDebug)
 		p := newDatadogProvider(ProviderConfig{})
+		cleanupProvider(t, p)
 		p.updateConfiguration(createTestConfig())
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -505,6 +510,7 @@ func TestInitWithContext_DebugLogs(t *testing.T) {
 	t.Run("timeout", func(t *testing.T) {
 		logger := withLogLevel(t, log.LevelDebug)
 		p := newDatadogProvider(ProviderConfig{})
+		cleanupProvider(t, p)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
@@ -519,6 +525,7 @@ func TestInitWithContext_DebugLogs(t *testing.T) {
 		logger := withLogLevel(t, log.LevelDebug)
 		p, err := startWithAgentless(ProviderConfig{}, internalffe.Settings{PollInterval: time.Hour, RequestTimeout: time.Second})
 		require.NoError(t, err)
+		cleanupProvider(t, p)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -570,6 +577,7 @@ func TestNewDatadogProvider_DebugLogs(t *testing.T) {
 
 		p, err := NewDatadogProvider(ProviderConfig{})
 		require.NoError(t, err)
+		cleanupProvider(t, p)
 		t.Cleanup(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -589,6 +597,7 @@ func TestNewDatadogProvider_DebugLogs(t *testing.T) {
 
 		p, err := NewDatadogProvider(ProviderConfig{})
 		require.NoError(t, err)
+		cleanupProvider(t, p)
 		t.Cleanup(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
@@ -608,6 +617,7 @@ func TestRemoteConfig_DebugLogs(t *testing.T) {
 	require.NoError(t, remoteconfig.Start(rcConfig))
 	t.Cleanup(remoteconfig.Stop)
 	p := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, p)
 	cfg := createTestConfig()
 	data, err := json.Marshal(cfg)
 	require.NoError(t, err)
@@ -640,6 +650,7 @@ func TestDebugLoggingHook_ContainsMarshalerPanics(t *testing.T) {
 	logger := withLogLevel(t, log.LevelDebug)
 
 	p := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, p)
 	p.updateConfiguration(createTestConfig())
 	const domain = "debug-logging-hook-panic"
 	registerDebugLoggingProvider(t, domain, p)
@@ -674,6 +685,7 @@ func TestDebugLoggingHook_LogsNotReadyEvaluations(t *testing.T) {
 	logger := withLogLevel(t, log.LevelDebug)
 
 	p := newDatadogProvider(ProviderConfig{}) // no configuration: Init keeps waiting
+	cleanupProvider(t, p)
 	// An isolated API starts with no state. On the global API, a domain inherits
 	// the default domain's state, which other tests leave READY.
 	api := isolated.NewAPI()
@@ -701,6 +713,7 @@ func TestDebugLogging_EvaluationInputs(t *testing.T) {
 	evaluate := func(t *testing.T, lvl log.Level) *capturingLogger {
 		logger := withLogLevel(t, lvl)
 		p := newDatadogProvider(ProviderConfig{})
+		cleanupProvider(t, p)
 		p.updateConfiguration(createTestConfig())
 		domain := "debug-logging-evaluation-inputs-" + lvl.String()
 		registerDebugLoggingProvider(t, domain, p)
@@ -938,6 +951,7 @@ func TestRejectedFlags_DebugLogs(t *testing.T) {
 	t.Run("remote_config", func(t *testing.T) {
 		logger := withLogLevel(t, log.LevelDebug)
 		p := newDatadogProvider(ProviderConfig{})
+		cleanupProvider(t, p)
 
 		processConfigUpdate(p, "path/config", []byte(ufcWithRejectedFlag))
 
@@ -951,6 +965,7 @@ func TestLifecycle_DebugLogs(t *testing.T) {
 	t.Run("first configuration before Init returns is not a recovery", func(t *testing.T) {
 		logger := withLogLevel(t, log.LevelDebug)
 		p := newDatadogProvider(ProviderConfig{})
+		cleanupProvider(t, p)
 		p.updateConfiguration(createTestConfig())
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -962,6 +977,7 @@ func TestLifecycle_DebugLogs(t *testing.T) {
 	t.Run("recovery, staleness, and shutdown", func(t *testing.T) {
 		logger := withLogLevel(t, log.LevelDebug)
 		p := newDatadogProvider(ProviderConfig{})
+		cleanupProvider(t, p)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 		defer cancel()
@@ -1023,6 +1039,7 @@ func (l *stallingLogger) Log(msg string) {
 
 func TestShutdown_DebugLogsWhenContextExpires(t *testing.T) {
 	p := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, p)
 	logger := &stallingLogger{p: p}
 	prev := log.GetLevel()
 	log.SetLevel(log.LevelDebug)
@@ -1076,6 +1093,7 @@ func (l *lockProbingLogger) assertLoggedWithoutLock(t *testing.T, substr string)
 
 func TestLifecycle_DebugLogsReleaseProviderLock(t *testing.T) {
 	p := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, p)
 	logger := &lockProbingLogger{p: p}
 	prev := log.GetLevel()
 	log.SetLevel(log.LevelDebug)
@@ -1103,6 +1121,7 @@ func TestLifecycle_DebugLogsReleaseProviderLock(t *testing.T) {
 func TestShutdown_WarnsWhenMetricsShutdownFails(t *testing.T) {
 	logger := withLogLevel(t, log.LevelWarn)
 	p := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, p)
 	m, _ := setupTestMetrics(t)
 	// A meter provider fails a second shutdown.
 	require.NoError(t, m.shutdown(context.Background()))
@@ -1120,6 +1139,7 @@ func TestShutdown_WarnsWhenMetricsShutdownFails(t *testing.T) {
 func TestShutdown_ContainsLoggerPanics(t *testing.T) {
 	withLogLevel(t, log.LevelWarn)
 	p := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, p)
 	m, _ := setupTestMetrics(t)
 	// A meter provider fails a second shutdown, so shutdown logs a warning.
 	require.NoError(t, m.shutdown(context.Background()))
@@ -1290,6 +1310,7 @@ func TestAgentlessLifecycle_ContainsLoggerPanics(t *testing.T) {
 			RequestTimeout:   time.Second,
 		})
 		require.NoError(t, err)
+		cleanupProvider(t, p)
 	})
 	t.Cleanup(func() { p.Shutdown() })
 
@@ -1350,6 +1371,7 @@ func TestEvaluationAndExposure_ContainLoggerPanics(t *testing.T) {
 	t.Cleanup(srv.Close)
 	evp := testAgentlessEVPClient(t, nil, srv, "test-api-key")
 	p := newDatadogProviderWithSourceAndEVP(ProviderConfig{ExposureFlushInterval: time.Hour}, internalffe.SourceAgentless, evp)
+	cleanupProvider(t, p)
 
 	var status rc.ApplyStatus
 	require.NotPanics(t, func() { status = processConfigUpdate(p, "path/config", []byte(ufcWithRejectedFlag)) })
@@ -1430,6 +1452,7 @@ func TestDebugLoggingHook_TracerStartupOrder(t *testing.T) {
 			defer tracer.Stop()
 			provider, err := NewDatadogProvider(ProviderConfig{})
 			require.NoError(t, err)
+			cleanupProvider(t, provider)
 			p := provider.(*DatadogProvider)
 			defer p.Shutdown()
 			api := isolated.NewAPI()
@@ -1474,6 +1497,7 @@ func TestRawDebugDataWarning(t *testing.T) {
 	newConfiguredProvider := func(t *testing.T) *DatadogProvider {
 		t.Helper()
 		p := newDatadogProvider(ProviderConfig{})
+		cleanupProvider(t, p)
 		p.updateConfiguration(createTestConfig())
 		t.Cleanup(p.Shutdown)
 		return p
@@ -1517,6 +1541,7 @@ func TestRawDebugDataWarning(t *testing.T) {
 
 		p, err := NewDatadogProvider(ProviderConfig{})
 		require.NoError(t, err)
+		cleanupProvider(t, p)
 		require.IsType(t, &of.NoopProvider{}, p)
 		logger.assertContains(t, "feature flagging is disabled")
 		assert.Zero(t, logger.countContaining(rawDebugDataWarning))
@@ -1541,6 +1566,7 @@ func TestRawDebugDataWarning(t *testing.T) {
 	t.Run("warns once before the first failure when debug logging is enabled later", func(t *testing.T) {
 		logger := withLogLevel(t, log.LevelWarn)
 		p := newDatadogProvider(ProviderConfig{}) // not ready: the SDK reports failures only to Error hooks
+		cleanupProvider(t, p)
 
 		log.SetLevel(log.LevelDebug)
 		findDebugLoggingHook(t, p).Error(context.Background(), hookCtx, of.ProviderNotReadyError, of.HookHints{})

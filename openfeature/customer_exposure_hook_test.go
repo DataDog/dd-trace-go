@@ -457,6 +457,7 @@ func TestCustomerExposureHookRegistrationLevels(t *testing.T) {
 				evp := newEVPClient()
 				evp.httpClient = &http.Client{Transport: sink}
 				p := newDatadogProviderWithSourceAndEVP(ProviderConfig{}, internalffe.SourceAgentless, evp)
+				cleanupProvider(t, p)
 				var flags universalFlagsConfiguration
 				require.NoError(t, json.Unmarshal([]byte(`{"format":"SERVER","environment":{"name":"test"},
                     "flags":{"experiment":{"key":"experiment","enabled":true,"variationType":"BOOLEAN",
