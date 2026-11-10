@@ -433,11 +433,7 @@ func (m *ContextMetrics) IncWafError(addrs addresses.RunAddressData, in error) i
 		return 0
 	}
 
-	// A timeout is not an error. RegisterWafRun counts it: rasp.timeout for RASP,
-	// waf.requests{waf_timeout:true} for the WAF scope. Do not count it again in
-	// rasp.error or waf.error. The code is 0 only when the error tree holds no
-	// real error (only timeouts): a real error is reported even when the tree
-	// also holds a timeout. The scope and rule type checks below still apply.
+	// Still validate the scope and rule type for timeout-only errors.
 	code := waferrors.ToWafReturnCode(in)
 	noErrorToReport := code == 0
 

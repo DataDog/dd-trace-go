@@ -324,9 +324,10 @@ out.
 The `waf_error` tag of `waf.error` and `rasp.error`, and the span tags
 `_dd.appsec.waf.error` and `_dd.appsec.rasp.error`, hold the `ddwaf_run` return
 code (RFC-1012). `waferrors.ToWafReturnCode` (go-libddwaf v5.1.0 and later)
-gives the code, and `-127` for an error that does not come from `ddwaf_run`. It
-returns zero when there is no error to report (only timeouts). A timeout gives
-no code, so a real error is reported even when the run also timed out:
+gives the code of the error that a run returned: `-3`, `-2` or `-1` for the
+three `ddwaf_run` errors, `-127` for any other error (an error from the
+bindings), and `0` when there is no error to report (a `nil` error, or only
+timeouts):
 
 | Error from `Run` | Code |
 |------------------|------|
