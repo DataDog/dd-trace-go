@@ -54,6 +54,7 @@ jobs:
       go-version: "1.27"
       build_tags: "debug"
       rerun-fails: "2"
+      test-timeout: "30m"
     secrets: inherit
 
   test-with-deadlock:
@@ -63,6 +64,7 @@ jobs:
       go-version: "1.27"
       build_tags: "deadlock"
       rerun-fails: "2"
+      test-timeout: "30m"
     secrets: inherit
 
   # Test internal/locking specifically with different Go versions and build tags.
