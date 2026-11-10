@@ -8,6 +8,7 @@
 package containers
 
 import (
+	"os"
 	"sync"
 	"testing"
 
@@ -18,63 +19,41 @@ func WithTestLogConsumer(t testing.TB) testcontainers.CustomizeRequestOption {
 	return testcontainers.WithLogConsumers(TestLogConsumer(t))
 }
 
-// testLogConsumer forwards container log lines to t.Log from a single pump
-// goroutine. testcontainers calls Accept from its own log-production
-// goroutine, which can still be running after the test has completed;
-// calling t.Log from there panics the whole test binary ("Log in goroutine
-// after <test> has completed"). The pump is the only caller of t.Log, and a
-// cleanup registered with the consumer stops and waits for it, so no log
-// line can reach t after the test is done.
 type testLogConsumer struct {
-	t    testing.TB
-	logs chan string
-	// done is closed once by the cleanup to stop the pump.
-	done     chan struct{}
-	stopOnce sync.Once
-	// stopped is closed by the pump when it returns.
-	stopped chan struct{}
+	testing.TB
+
+	// mu guards done and serializes logging against the test cleanup, so the
+	// cleanup cannot mark the consumer done while an admitted t.Log call is
+	// still executing.
+	mu   sync.Mutex
+	done bool
 }
 
 func TestLogConsumer(t testing.TB) testcontainers.LogConsumer {
-	c := &testLogConsumer{
-		t:       t,
-		logs:    make(chan string, 1024),
-		done:    make(chan struct{}),
-		stopped: make(chan struct{}),
-	}
-	t.Cleanup(func() {
-		c.stopOnce.Do(func() { close(c.done) })
-		<-c.stopped
-	})
-	go c.pump()
+	c := &testLogConsumer{TB: t}
+	// Cleanups run in LIFO order, and the consumer is created before
+	// RegisterContainerCleanup registers its StopLogProducer cleanup, so this
+	// runs last. Correctness does not depend on that ordering: markDone blocks
+	// until any in-flight log returns.
+	t.Cleanup(c.markDone)
 	return c
 }
 
-func (c *testLogConsumer) Accept(log testcontainers.Log) {
-	select {
-	case c.logs <- string(log.Content):
-	case <-c.done:
-		// The test is over; the line can no longer be logged safely.
-	}
+func (c *testLogConsumer) markDone() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.done = true
 }
 
-func (c *testLogConsumer) pump() {
-	defer close(c.stopped)
-	for {
-		select {
-		case line := <-c.logs:
-			c.t.Log(line)
-		case <-c.done:
-			// Drain lines already delivered; the cleanup is still
-			// running, so t.Log remains safe.
-			for {
-				select {
-				case line := <-c.logs:
-					c.t.Log(line)
-				default:
-					return
-				}
-			}
-		}
+func (c *testLogConsumer) Accept(log testcontainers.Log) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.done {
+		// The container log producer goroutine can deliver a line after the
+		// test has completed, and t.Log panics then. Drop it to stderr
+		// instead, so late lines are not lost.
+		os.Stderr.WriteString("container log after test completion: " + string(log.Content))
+		return
 	}
+	c.TB.Log(string(log.Content))
 }
