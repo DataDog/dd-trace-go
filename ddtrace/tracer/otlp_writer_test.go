@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -107,6 +108,64 @@ func newTestOTLPWriter(t *testing.T, srv *testOTLPServer, opts ...StartOption) *
 		baseSize:  baseSize,
 		climit:    make(chan struct{}, concurrentConnectionLimit),
 	}
+}
+
+func TestSpanSetMetaStructOverOTLP(t *testing.T) {
+	exports := make(chan []byte, 1)
+	intake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/info":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"span_meta_structs": true,
+				"endpoints":         []string{"/v0.4/traces"},
+			})
+		case "/v1/traces":
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			select {
+			case exports <- body:
+			default:
+				// Drop the payload so a later export cannot block this handler.
+			}
+		default:
+			_, _ = io.Copy(io.Discard, r.Body)
+			_, _ = w.Write([]byte("{}"))
+		}
+	}))
+	defer intake.Close()
+
+	t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", intake.URL+"/v1/traces")
+	tr, _, _, stop, err := startTestTracer(t, WithAgentAddr(intake.Listener.Addr().String()), WithLogStartup(false))
+	require.NoError(t, err)
+	defer stop()
+	require.True(t, tr.otlpExportMode)
+	require.True(t, tr.config.agent.load().metaStructAvailable)
+
+	span := tr.StartSpan("meta_struct.otlp")
+	assert.False(t, span.SetMetaStruct("custom.meta_struct", &testMsgpStruct{A: "test"}))
+	assert.NotContains(t, span.metaStruct, "custom.meta_struct")
+	span.Finish()
+	stop()
+
+	var body []byte
+	select {
+	case body = <-exports:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no OTLP payload received")
+	}
+	var payload otlptrace.TracesData
+	require.NoError(t, proto.Unmarshal(body, &payload))
+	require.Len(t, payload.GetResourceSpans(), 1)
+	scopes := payload.GetResourceSpans()[0].GetScopeSpans()
+	require.Len(t, scopes, 1)
+	spans := scopes[0].GetSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "meta_struct.otlp", spans[0].GetName())
+	assert.NotContains(t, keyValuesToMap(spans[0].GetAttributes()), "custom.meta_struct")
 }
 
 func TestOTLPWriterImplementsTraceWriter(t *testing.T) {
