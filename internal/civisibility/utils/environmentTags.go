@@ -274,7 +274,7 @@ func createCITagsMap() map[string]string {
 			branch = localTags[constants.GitBranch]
 		}
 		tagTrigger := branchOverride == "" && localTags[constants.GitTag] != ""
-		if gitData.Branch == "" && branch != "" && !isTagRef(branch) && !tagTrigger {
+		if gitData.Branch == "" && (localTags[constants.PrNumber] != "" || branch != "" && !isTagRef(branch) && !tagTrigger) {
 			gitData.Tag = ""
 		}
 

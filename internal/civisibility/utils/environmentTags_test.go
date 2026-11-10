@@ -891,3 +891,39 @@ func TestReadableCheckoutWithoutRemoteDoesNotBackfillProviderURL(t *testing.T) {
 		})
 	}
 }
+
+func TestTeamCityPRSuppressesInferredCheckoutTag(t *testing.T) {
+	for _, override := range []string{"", "explicit-tag"} {
+		t.Run("override="+override, func(t *testing.T) {
+			repo := usePackFilesGitFixture(t)
+			runFixtureGit(t, repo, "tag", "v1")
+			runFixtureGit(t, repo, "checkout", "--detach")
+			sha := runFixtureGit(t, repo, "rev-parse", "HEAD")
+			ResetCITags()
+			t.Cleanup(ResetCITags)
+			bazel.ResetForTesting()
+			t.Cleanup(bazel.ResetForTesting)
+			for _, name := range []string{"DD_GIT_COMMIT_SHA", "DD_GIT_BRANCH", "DD_GIT_TAG", "DD_GIT_REPOSITORY_URL", "DD_GIT_PULL_REQUEST_BASE_BRANCH", "DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA"} {
+				t.Setenv(name, "")
+			}
+			t.Setenv("DD_GIT_TAG", override)
+			t.Setenv("TEAMCITY_PULLREQUEST_NUMBER", "42")
+			t.Setenv("TEAMCITY_PULLREQUEST_TARGET_BRANCH", "main")
+			t.Setenv("TEAMCITY_BUILDCONF_NAME", "teamcity-tests")
+			originalProvider, originalEnvironmental := getProviderTagsFunc, applyEnvironmentalDataIfRequiredFunc
+			t.Cleanup(func() {
+				getProviderTagsFunc, applyEnvironmentalDataIfRequiredFunc = originalProvider, originalEnvironmental
+			})
+			getProviderTagsFunc = extractTeamcity
+			applyEnvironmentalDataIfRequiredFunc = func(map[string]string) {}
+
+			tags := GetCITags()
+			assert.Equal(t, override, tags[constants.GitTag])
+			assert.NotContains(t, tags, constants.GitBranch)
+			assert.Equal(t, sha, tags[constants.GitCommitSHA])
+			assert.Equal(t, "42", tags[constants.PrNumber])
+			assert.Equal(t, "main", tags[constants.GitPrBaseBranch])
+			assert.Equal(t, "teamcity-tests", tags[constants.CIJobName])
+		})
+	}
+}
