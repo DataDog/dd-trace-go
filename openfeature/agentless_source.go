@@ -20,6 +20,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/datadog-agent/pkg/trace/traceutil/normalize"
+
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -50,12 +52,10 @@ const maxResponseBodyBytes = 10 << 20 // 10MiB
 // at last-known-good with a warning naming the wrong cause.
 var errResponseTooLarge = errors.New("response exceeds maximum size")
 
-// maxUsageServiceLen is the longest DD-Service value the CDN attributes usage
-// to, the same limit the Agent applies to span service names.
-const maxUsageServiceLen = 100
-
-// usageServicePattern is the DD-Service format the CDN attributes usage to; it
-// drops any other value.
+// usageServicePattern is the DD-Service format that the CDN accepts. The CDN
+// ignores any other value and does not attribute the usage to a service. The
+// check also keeps characters such as a newline out of the header. Go's HTTP
+// client refuses them and fails the poll.
 var usageServicePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,99}$`)
 
 // agentlessSource polls the Agentless configuration endpoint on an interval
@@ -82,9 +82,8 @@ type agentlessSource struct {
 	mu     sync.Mutex
 	etag   string          // +checklocks:mu
 	warned map[string]bool // +checklocks:mu
-	// rawService is the tracer service serviceHeader was last cleaned up
-	// from, so a name is cleaned up, and logged, once rather than on every
-	// poll.
+	// rawService is the tracer service that serviceHeader comes from. With
+	// it, the source normalizes and logs a service once, not on every poll.
 	rawService    string // +checklocks:mu
 	serviceHeader string // +checklocks:mu
 
@@ -131,7 +130,7 @@ func newAgentlessSource(settings internalffe.Settings, apply func(*universalFlag
 	s.retryDelay = func(attempt int) time.Duration {
 		return retryDelay(s.pollInterval, attempt, rand.Float64())
 	}
-	s.usageService() // cleans up the service now rather than on the first poll
+	s.usageService() // normalizes the service now, not on the first poll
 	return s, nil
 }
 
@@ -281,7 +280,7 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 	if s.apiKey != "" {
 		req.Header.Set("DD-API-KEY", s.apiKey)
 	}
-	// Lets the CDN attribute this request's usage to the service.
+	// The CDN uses DD-Service to attribute the usage of this request.
 	if service := s.usageService(); service != "" {
 		req.Header.Set("DD-Service", service)
 	}
@@ -399,9 +398,10 @@ func (s *agentlessSource) requestedEnv() string {
 	}
 }
 
-// usageService returns the DD-Service value for the tracer's service. The
-// service is cleaned up when the source is built, and again only if it
-// changes: the provider can be created before tracer.Start resolves it.
+// usageService returns the DD-Service value for the tracer's service. It
+// normalizes the service when the source is built. It normalizes it again only
+// when the service changes. This occurs when the provider starts before
+// tracer.Start sets the service.
 func (s *agentlessSource) usageService() string {
 	service := internalconfig.Get().ServiceName()
 	s.mu.Lock()
@@ -410,55 +410,35 @@ func (s *agentlessSource) usageService() string {
 	if cached {
 		return header
 	}
-	header = cleanUsageService(service)
+	header = normalizeUsageService(service)
 	s.mu.Lock()
 	s.rawService, s.serviceHeader = service, header
 	s.mu.Unlock()
 	return header
 }
 
-// cleanUsageService returns service cleaned up to send as DD-Service, or ""
-// when nothing the CDN can attribute usage to is left. Without the clean-up,
-// the CDN would drop a name like "My Service", which APM shows as my_service,
-// and Go's HTTP client would refuse one with a newline, failing every poll.
-// Only this header value is cleaned up; the tracer's service stays as
+// normalizeUsageService returns the DD-Service value for service. The value is
+// the service name that APM shows, from the Agent's own NormalizeService. For
+// example, "My Service" becomes my_service. As in APM, a name longer than 100
+// bytes is cut to 100 bytes. It returns "" in two cases:
+//   - The Agent replaces service with its fallback name.
+//   - The CDN does not accept the APM name, for example _svc or café-api.
+//
+// It does not change the APM name to fit the CDN. Thus usage goes only to a
+// service that APM shows, or to no service. The tracer's service stays as
 // configured.
-func cleanUsageService(service string) string {
-	cleaned := normalizeService(service)
-	if usageServicePattern.MatchString(cleaned) {
-		return cleaned
+func normalizeUsageService(service string) string {
+	apmService, err := normalize.NormalizeService(service, "")
+	if errors.Is(err, normalize.ErrEmpty) || errors.Is(err, normalize.ErrInvalid) {
+		apmService = "" // the Agent's fallback name is not the name of this service
+	}
+	if usageServicePattern.MatchString(apmService) {
+		return apmService
 	}
 	if service != "" {
-		logOnboarding("service %q has nothing left the CDN can attribute usage to once cleaned up; DD-Service header not sent", service)
+		logOnboarding("service %q has no APM service name in the format that the CDN accepts; DD-Service header not sent", service)
 	}
 	return ""
-}
-
-// normalizeService cleans up service close to how the Agent cleans up span
-// service names, so the header carries the name APM shows: "My Service"
-// becomes my_service. It lowercases ASCII letters, replaces every other
-// character outside [a-z0-9_:./-] (any non-ASCII character included) with '_',
-// drops leading characters other than [a-z0-9], and cuts the result to
-// maxUsageServiceLen characters.
-func normalizeService(service string) string {
-	var b strings.Builder
-	b.Grow(min(len(service), maxUsageServiceLen))
-	for _, r := range service {
-		switch {
-		case 'a' <= r && r <= 'z', '0' <= r && r <= '9':
-		case 'A' <= r && r <= 'Z':
-			r += 'a' - 'A'
-		case b.Len() == 0:
-			continue // the name must start with [a-z0-9]
-		case r != '_' && r != ':' && r != '.' && r != '/' && r != '-':
-			r = '_'
-		}
-		b.WriteByte(byte(r))
-		if b.Len() == maxUsageServiceLen {
-			break
-		}
-	}
-	return b.String()
 }
 
 func (s *agentlessSource) currentETag() string {

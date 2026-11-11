@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/datadog-agent/pkg/trace/traceutil/normalize"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -588,8 +589,8 @@ func TestAgentlessSource_Headers(t *testing.T) {
 	assert.NotEmpty(t, gotHeaders.Get("DD-Client-Library-Version"))
 }
 
-// TestAgentlessSource_ServiceHeader drives pollOnce directly, so each request
-// is complete before its headers are read.
+// TestAgentlessSource_ServiceHeader calls pollOnce directly. Thus each request
+// is complete before the test reads its headers.
 func TestAgentlessSource_ServiceHeader(t *testing.T) {
 	internalconfig.SetUseFreshConfig(true)
 	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false); internalconfig.CreateNew() })
@@ -646,38 +647,74 @@ func TestAgentlessSource_ServiceHeader(t *testing.T) {
 	})
 }
 
-// TestAgentlessSource_ServiceHeaderCleanup checks the DD-Service value each
-// poll sends: the tracer's service, cleaned up into the format the CDN
-// attributes usage to.
-func TestAgentlessSource_ServiceHeaderCleanup(t *testing.T) {
+// TestAgentlessSource_ServiceHeaderNormalization checks the DD-Service value
+// of each poll. The value is the name that APM shows for the tracer's service.
+// When the CDN does not accept that name, the poll has no DD-Service header.
+func TestAgentlessSource_ServiceHeaderNormalization(t *testing.T) {
 	internalconfig.SetUseFreshConfig(true)
 	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false); internalconfig.CreateNew() })
 	logger := withLogLevel(t, log.LevelDebug)
-	nothingLeftMessage := func(service string) string {
-		return "openfeature: service " + strconv.Quote(service) + " has nothing left the CDN can attribute usage to once cleaned up; DD-Service header not sent"
+	notSentMessage := func(service string) string {
+		return "openfeature: service " + strconv.Quote(service) + " has no APM service name in the format that the CDN accepts; DD-Service header not sent"
 	}
 
+	// The Agent's NormalizeService (datadog-agent v0.82.3) gave each apm value.
+	// The CDN pattern ^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,99}$ on apm gave each
+	// header value.
 	for _, tc := range []struct {
 		name    string
 		service string
-		header  string // "" when no DD-Service header is sent
+		apm     string // NormalizeService output; "" when it returns its fallback name
+		header  string // the DD-Service value; "" when the poll has no header
 	}{
-		// Cleaned up the way APM shows the name, instead of dropped by the CDN.
-		{name: "spaces and uppercase", service: "My Service", header: "my_service"},
-		{name: "uppercase", service: "My-API", header: "my-api"},
-		{name: "leading underscore", service: "_svc", header: "svc"},
-		{name: "newline", service: "bad\nvalue", header: "bad_value"},
-		{name: "too long", service: "a" + strings.Repeat("b", 100), header: "a" + strings.Repeat("b", 99)},
-		// The edges of the format the CDN attributes usage to.
-		{name: "shortest", service: "a", header: "a"},
-		{name: "every allowed character", service: "svc_name.v2:api/edge-1", header: "svc_name.v2:api/edge-1"},
-		{name: "longest", service: "a" + strings.Repeat("b", 99), header: "a" + strings.Repeat("b", 99)},
-		// Nothing usable left once cleaned up.
-		{name: "non-ASCII", service: "支付"},
+		// The poll sends the name that APM shows.
+		{name: "plain", service: "checkout", apm: "checkout", header: "checkout"},
+		{name: "space and uppercase", service: "My Service", apm: "my_service", header: "my_service"},
+		{name: "uppercase", service: "My-API", apm: "my-api", header: "my-api"},
+		{name: "all uppercase", service: "UPPER", apm: "upper", header: "upper"},
+		{name: "newline", service: "bad\nvalue", apm: "bad_value", header: "bad_value"},
+		{name: "tab", service: "a\tb", apm: "a_b", header: "a_b"},
+		{name: "run of invalid characters", service: "a  b!", apm: "a_b", header: "a_b"},
+		{name: "trailing space", service: "svc ", apm: "svc", header: "svc"},
+		{name: "trailing underscore", service: "a_", apm: "a", header: "a"},
+		{name: "trailing hyphen", service: "svc-", apm: "svc-", header: "svc-"},
+		{name: "repeated dots", service: "a..b", apm: "a..b", header: "a..b"},
+		{name: "leading digit", service: "2fa-service", apm: "2fa-service", header: "2fa-service"},
+		{name: "digit then letters", service: "9lives", apm: "9lives", header: "9lives"},
+		{name: "the Agent's fallback name, configured", service: "unnamed-service", apm: "unnamed-service", header: "unnamed-service"},
+		{name: "every allowed character", service: "svc_name.v2:api/edge-1", apm: "svc_name.v2:api/edge-1", header: "svc_name.v2:api/edge-1"},
+		{name: "repeated underscores", service: "my__service", apm: "my_service", header: "my_service"},
+		{name: "spaces and slash", service: "Default Web Site/Shop", apm: "default_web_site/shop", header: "default_web_site/shop"},
+		{name: "longest", service: "a" + strings.Repeat("b", 99), apm: "a" + strings.Repeat("b", 99), header: "a" + strings.Repeat("b", 99)},
+		{name: "too long", service: "a" + strings.Repeat("b", 100), apm: "a" + strings.Repeat("b", 99), header: "a" + strings.Repeat("b", 99)},
+		{name: "cut before a space", service: strings.Repeat("a", 100) + " b", apm: strings.Repeat("a", 100), header: strings.Repeat("a", 100)},
+		{name: "cut inside a multi-byte character", service: strings.Repeat("a", 99) + "é", apm: strings.Repeat("a", 99), header: strings.Repeat("a", 99)},
+		{name: "emoji", service: "a🐶b", apm: "a_b", header: "a_b"},
+		// The CDN does not accept the name that APM shows. The poll sends no header.
+		{name: "leading space", service: " svc", apm: "_svc"},
+		{name: "leading underscore", service: "_svc", apm: "_svc"},
+		{name: "leading hyphen", service: "-svc", apm: "-svc"},
+		{name: "leading dot", service: ".svc", apm: ".svc"},
+		{name: "leading colon", service: ":svc", apm: ":svc"},
+		{name: "only a hyphen", service: "-", apm: "-"},
+		{name: "non-ASCII letter", service: "café-api", apm: "café-api"},
+		{name: "uppercase non-ASCII letter", service: "Café", apm: "café"},
+		{name: "non-Latin script", service: "支付", apm: "支付"},
+		{name: "dotted capital I", service: "İstanbul", apm: "İstanbul"},
+		{name: "too long, non-ASCII", service: strings.Repeat("é", 60), apm: strings.Repeat("é", 50)},
+		// The Agent returns its fallback name. The poll sends no header.
 		{name: "only underscores", service: "___"},
+		{name: "only spaces", service: "   "},
 		{name: "empty", service: ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			apm, err := normalize.NormalizeService(tc.service, "")
+			if tc.apm == "" {
+				assert.True(t, errors.Is(err, normalize.ErrEmpty) || errors.Is(err, normalize.ErrInvalid), "the Agent falls back to %q", apm)
+			} else {
+				assert.Equal(t, tc.apm, apm, "the name APM shows")
+			}
+
 			t.Setenv("DD_SERVICE", tc.service)
 			backend := newFakeUFCBackend(t)
 			backend.setResponses("valid", "not_modified")
@@ -701,7 +738,7 @@ func TestAgentlessSource_ServiceHeaderCleanup(t *testing.T) {
 			if tc.header == "" && tc.service != "" {
 				wantLogs = 1 // once, not on every poll
 			}
-			assert.Equal(t, wantLogs, logger.countContaining(nothingLeftMessage(tc.service)))
+			assert.Equal(t, wantLogs, logger.countContaining(notSentMessage(tc.service)))
 			assert.Equal(t, tc.service, internalconfig.Get().ServiceName(), "the tracer's service stays as configured")
 		})
 	}

@@ -285,21 +285,23 @@ func TestSetProviderAndWait_TimeoutThenLateConfigurationTransitionsToReady(t *te
 }
 
 // TestNewDatadogProvider_SendsTracerServiceStartedLater creates the provider
-// before tracer.Start, as an application may, and checks that the next poll
-// carries the service the tracer resolved, including its inferred default,
-// cleaned up into the format the CDN attributes usage to. The tracer's own
-// service stays as configured.
+// before tracer.Start, as an application can do. The next poll sends the
+// service that the tracer sets, as APM shows it. This includes the inferred
+// default service. When the CDN does not accept the APM name, the poll has no
+// DD-Service header. The tracer's service stays as configured.
 func TestNewDatadogProvider_SendsTracerServiceStartedLater(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		opts    []tracer.StartOption
 		service string // the tracer's service
-		header  string // the DD-Service value sent; "" when none is
+		header  string // the DD-Service value; "" when the poll has no header
 	}{
 		{name: "configured", opts: []tracer.StartOption{tracer.WithService("checkout")}, service: "checkout", header: "checkout"},
 		{name: "inferred", service: filepath.Base(os.Args[0]), header: filepath.Base(os.Args[0])},
-		{name: "cleaned up", opts: []tracer.StartOption{tracer.WithService("My Service")}, service: "My Service", header: "my_service"},
-		{name: "nothing usable left", opts: []tracer.StartOption{tracer.WithService("支付")}, service: "支付"},
+		{name: "normalized", opts: []tracer.StartOption{tracer.WithService("My Service")}, service: "My Service", header: "my_service"},
+		{name: "leading underscore", opts: []tracer.StartOption{tracer.WithService("_svc")}, service: "_svc"},
+		{name: "non-ASCII letter", opts: []tracer.StartOption{tracer.WithService("café-api")}, service: "café-api"},
+		{name: "non-Latin script", opts: []tracer.StartOption{tracer.WithService("支付")}, service: "支付"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Cleanup(func() { internalconfig.CreateNew() })
@@ -332,7 +334,7 @@ func TestNewDatadogProvider_SendsTracerServiceStartedLater(t *testing.T) {
 			require.NoError(t, tracer.Start(append(tc.opts, tracer.WithLogStartup(false), tracer.WithHTTPClient(agent.Client()))...))
 			defer tracer.Stop()
 
-			// Run the next poll now rather than waiting out the poll interval.
+			// Run the next poll now. Do not wait for the poll interval.
 			p.mu.RLock()
 			src := p.agentless
 			p.mu.RUnlock()
