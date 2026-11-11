@@ -8,6 +8,10 @@ package openfeature
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -16,6 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 )
@@ -277,4 +282,62 @@ func TestSetProviderAndWait_TimeoutThenLateConfigurationTransitionsToReady(t *te
 		"country":      "US",
 	})
 	assert.True(t, result.Value, "evaluation must succeed after late readiness recovery")
+}
+
+// TestNewDatadogProvider_SendsTracerServiceStartedLater creates the provider
+// before tracer.Start, as an application may, and checks that the next poll
+// carries the service the tracer resolved, including its inferred default.
+func TestNewDatadogProvider_SendsTracerServiceStartedLater(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		opts    []tracer.StartOption
+		service string
+	}{
+		{name: "configured", opts: []tracer.StartOption{tracer.WithService("checkout")}, service: "checkout"},
+		{name: "inferred", service: filepath.Base(os.Args[0])},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Cleanup(func() { internalconfig.CreateNew() })
+			t.Setenv("DD_SERVICE", "")
+			t.Setenv("DD_API_KEY", "")
+			t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+			t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "false")
+			t.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
+			t.Setenv("DD_METRICS_OTEL_ENABLED", "false")
+			t.Setenv("DD_APPSEC_ENABLED", "false")
+			agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"endpoints":[]}`))
+			}))
+			defer agent.Close()
+			t.Setenv("DD_TRACE_AGENT_URL", agent.URL)
+			backend := newFakeUFCBackend(t)
+			backend.setResponses("valid", "not_modified")
+			t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "agentless")
+			t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL", backend.server.URL)
+			t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS", "3600")
+			internalconfig.CreateNew()
+
+			provider, err := NewDatadogProvider(ProviderConfig{})
+			require.NoError(t, err)
+			p := provider.(*DatadogProvider)
+			defer p.Shutdown()
+			require.Eventually(t, func() bool { return len(backend.headers()) == 1 }, 2*time.Second, time.Millisecond)
+
+			require.NoError(t, tracer.Start(append(tc.opts, tracer.WithLogStartup(false), tracer.WithHTTPClient(agent.Client()))...))
+			defer tracer.Stop()
+
+			// Run the next poll now rather than waiting out the poll interval.
+			p.mu.RLock()
+			src := p.agentless
+			p.mu.RUnlock()
+			outcome, _ := src.pollOnce(1)
+			require.Equal(t, pollOutcomeSuccess, outcome)
+
+			headers := backend.headers()
+			require.Len(t, headers, 2)
+			assert.Empty(t, headers[0].Values("DD-Service"), "no service is resolved before tracer.Start")
+			assert.Equal(t, []string{tc.service}, headers[1].Values("DD-Service"))
+		})
+	}
 }

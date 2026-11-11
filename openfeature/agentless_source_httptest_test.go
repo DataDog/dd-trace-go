@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 )
@@ -59,6 +61,7 @@ type fakeUFCBackend struct {
 	maxInFlight     int
 	lastIfNoneMatch string
 	lastAuthPresent bool
+	requestHeaders  []http.Header // one per request, in arrival order
 }
 
 func newFakeUFCBackend(t *testing.T) *fakeUFCBackend {
@@ -81,6 +84,12 @@ func (b *fakeUFCBackend) status() (requestsTotal, maxInFlight int, lastIfNoneMat
 	return b.requestsTotal, b.maxInFlight, b.lastIfNoneMatch, b.lastAuthPresent
 }
 
+func (b *fakeUFCBackend) headers() []http.Header {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]http.Header(nil), b.requestHeaders...)
+}
+
 func (b *fakeUFCBackend) handle(w http.ResponseWriter, r *http.Request) {
 	b.mu.Lock()
 	b.requestsTotal++
@@ -90,6 +99,7 @@ func (b *fakeUFCBackend) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	b.lastIfNoneMatch = r.Header.Get("If-None-Match")
 	b.lastAuthPresent = r.Header.Get("DD-API-KEY") != ""
+	b.requestHeaders = append(b.requestHeaders, r.Header.Clone())
 	response := b.responses[0]
 	if len(b.responses) > 1 {
 		b.responses = b.responses[1:]
@@ -576,6 +586,107 @@ func TestAgentlessSource_Headers(t *testing.T) {
 	assert.Equal(t, "gzip", gotHeaders.Get("Accept-Encoding"))
 	assert.Equal(t, "go", gotHeaders.Get("DD-Client-Library-Language"))
 	assert.NotEmpty(t, gotHeaders.Get("DD-Client-Library-Version"))
+}
+
+// TestAgentlessSource_ServiceHeader drives pollOnce directly, so each request
+// is complete before its headers are read.
+func TestAgentlessSource_ServiceHeader(t *testing.T) {
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false); internalconfig.CreateNew() })
+
+	t.Run("sent on every poll", func(t *testing.T) {
+		t.Setenv("DD_SERVICE", "checkout")
+		backend := newFakeUFCBackend(t)
+		backend.setResponses("valid", "not_modified")
+		src := newAgentlessSourceOnly(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
+
+		for range 2 {
+			outcome, _ := src.pollOnce(1)
+			require.Equal(t, pollOutcomeSuccess, outcome)
+		}
+
+		headers := backend.headers()
+		require.Len(t, headers, 2)
+		assert.Equal(t, []string{"checkout"}, headers[0].Values("DD-Service"))
+		assert.Equal(t, fakeUFCBackendETag, headers[1].Get("If-None-Match"), "the second poll is the one answered 304")
+		assert.Equal(t, []string{"checkout"}, headers[1].Values("DD-Service"))
+	})
+
+	t.Run("omitted without a service", func(t *testing.T) {
+		for _, service := range []string{"", "  "} {
+			t.Setenv("DD_SERVICE", service)
+			backend := newFakeUFCBackend(t)
+			src := newAgentlessSourceOnly(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
+
+			outcome, _ := src.pollOnce(1)
+			require.Equal(t, pollOutcomeSuccess, outcome)
+
+			headers := backend.headers()
+			require.Len(t, headers, 1)
+			assert.Empty(t, headers[0].Values("DD-Service"), "service %q", service)
+		}
+	})
+
+	t.Run("sent once the service is set after the source is built", func(t *testing.T) {
+		t.Setenv("DD_SERVICE", "")
+		backend := newFakeUFCBackend(t)
+		backend.setResponses("valid", "not_modified")
+		src := newAgentlessSourceOnly(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
+
+		outcome, _ := src.pollOnce(1)
+		require.Equal(t, pollOutcomeSuccess, outcome)
+		t.Setenv("DD_SERVICE", "checkout")
+		outcome, _ = src.pollOnce(1)
+		require.Equal(t, pollOutcomeSuccess, outcome)
+
+		headers := backend.headers()
+		require.Len(t, headers, 2)
+		assert.Empty(t, headers[0].Values("DD-Service"))
+		assert.Equal(t, []string{"checkout"}, headers[1].Values("DD-Service"))
+	})
+}
+
+func TestAgentlessSource_ServiceHeaderFormat(t *testing.T) {
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false); internalconfig.CreateNew() })
+	logger := withLogLevel(t, log.LevelDebug)
+	rejectedMessage := func(service string) string {
+		return "openfeature: service " + strconv.Quote(service) + " does not match the format the CDN attributes usage to; DD-Service header not sent"
+	}
+
+	// The edges of the format the CDN attributes usage to.
+	for _, service := range []string{"a", "svc_name.v2:api/edge-1", "a" + strings.Repeat("b", 99)} {
+		t.Setenv("DD_SERVICE", service)
+		backend := newFakeUFCBackend(t)
+		src := newAgentlessSourceOnly(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
+
+		outcome, _ := src.pollOnce(1)
+		require.Equal(t, pollOutcomeSuccess, outcome)
+
+		headers := backend.headers()
+		require.Len(t, headers, 1)
+		assert.Equal(t, []string{service}, headers[0].Values("DD-Service"))
+		assert.Zero(t, logger.countContaining(rejectedMessage(service)))
+	}
+
+	// The CDN drops any other value, and Go's HTTP client refuses to send a
+	// newline, which would fail every poll.
+	for _, service := range []string{"a" + strings.Repeat("b", 100), "_svc", "my service", "支付", "bad\nvalue"} {
+		t.Setenv("DD_SERVICE", service)
+		backend := newFakeUFCBackend(t)
+		src := newAgentlessSourceOnly(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
+
+		for range 2 {
+			outcome, _ := src.pollOnce(1)
+			require.Equal(t, pollOutcomeSuccess, outcome, "service %q", service)
+		}
+
+		headers := backend.headers()
+		require.Len(t, headers, 2)
+		assert.Empty(t, headers[0].Values("DD-Service"), "service %q", service)
+		assert.Empty(t, headers[1].Values("DD-Service"), "service %q", service)
+		assert.Equal(t, 1, logger.countContaining(rejectedMessage(service)), "logged once, not on every poll: service %q", service)
+	}
 }
 
 func TestAgentlessSource_Gzip(t *testing.T) {

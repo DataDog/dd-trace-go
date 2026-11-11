@@ -14,12 +14,14 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
@@ -48,9 +50,13 @@ const maxResponseBodyBytes = 10 << 20 // 10MiB
 // at last-known-good with a warning naming the wrong cause.
 var errResponseTooLarge = errors.New("response exceeds maximum size")
 
+// usageServicePattern is the DD-Service format the CDN attributes usage to; it
+// drops any other value.
+var usageServicePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,99}$`)
+
 // agentlessSource polls the Agentless configuration endpoint on an interval
 // and applies newly received configuration. All fields other than mu, etag,
-// and warned are immutable after construction.
+// warned, and rejectedService are immutable after construction.
 type agentlessSource struct {
 	// endpoint is the full request URL. SENSITIVE: may embed credentials; never log.
 	endpoint string
@@ -72,6 +78,9 @@ type agentlessSource struct {
 	mu     sync.Mutex
 	etag   string          // +checklocks:mu
 	warned map[string]bool // +checklocks:mu
+	// rejectedService is the last service usageService skipped, so the same
+	// value is logged once rather than on every poll.
+	rejectedService string // +checklocks:mu
 
 	stopCh   chan struct{}
 	doneCh   chan struct{}
@@ -265,6 +274,10 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 	if s.apiKey != "" {
 		req.Header.Set("DD-API-KEY", s.apiKey)
 	}
+	// Lets the CDN attribute this request's usage to the service.
+	if service := s.usageService(); service != "" {
+		req.Header.Set("DD-Service", service)
+	}
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
@@ -377,6 +390,28 @@ func (s *agentlessSource) requestedEnv() string {
 	default:
 		return s.env
 	}
+}
+
+// usageService returns the tracer's service to send as DD-Service, or "" when
+// there is none or the CDN would drop it. It is read on every poll because the
+// provider can be created before tracer.Start resolves the service. Skipping a
+// value the CDN drops also keeps one Go's HTTP client refuses to send, such as
+// one with a newline, from failing every poll.
+func (s *agentlessSource) usageService() string {
+	service := internalconfig.Get().ServiceName()
+	if service == "" || usageServicePattern.MatchString(service) {
+		return service
+	}
+	if log.DebugEnabled() {
+		s.mu.Lock()
+		logged := s.rejectedService == service
+		s.rejectedService = service
+		s.mu.Unlock()
+		if !logged {
+			logOnboarding("service %q does not match the format the CDN attributes usage to; DD-Service header not sent", service)
+		}
+	}
+	return ""
 }
 
 func (s *agentlessSource) currentETag() string {
