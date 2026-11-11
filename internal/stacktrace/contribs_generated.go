@@ -200,6 +200,7 @@ func generatedThirdPartyLibraries() []string {
 		"github.com/aws/aws-sdk-go-v2/service/internal/s3shared",
 		"github.com/aws/aws-sdk-go-v2/service/kinesis",
 		"github.com/aws/aws-sdk-go-v2/service/kms",
+		"github.com/aws/aws-sdk-go-v2/service/lambda",
 		"github.com/aws/aws-sdk-go-v2/service/route53",
 		"github.com/aws/aws-sdk-go-v2/service/s3",
 		"github.com/aws/aws-sdk-go-v2/service/sfn",
