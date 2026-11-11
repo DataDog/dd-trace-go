@@ -19,17 +19,26 @@ const (
 	AWSRetryCount = "aws.retry_count"
 
 	SQSQueueName = "queuename"
+	// SQSQueueURL is the URL of the SQS queue the request is sent to.
+	SQSQueueURL = "aws.sqs.queue.url"
 
 	SNSTargetName = "targetname"
 	SNSTopicName  = "topicname"
+	// SNSTopicARN is the ARN of the SNS topic the request is sent to.
+	SNSTopicARN = "aws.sns.topic_arn"
 
 	DynamoDBTableName = "tablename"
 
 	KinesisStreamName = "streamname"
+	// KinesisStreamARN is the ARN of the Kinesis stream the request is sent to.
+	KinesisStreamARN = "aws.stream.arn"
 
 	EventBridgeRuleName = "rulename"
 
 	SFNStateMachineName = "statemachinename"
+	// SFNStateMachineARN is the ARN of the Step Functions state machine the
+	// request is sent to.
+	SFNStateMachineARN = "aws.step_functions.state_machine.arn"
 
 	S3BucketName = "bucketname"
 )

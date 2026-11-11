@@ -373,6 +373,7 @@ func TestExtraTagsForService(t *testing.T) {
 		accountID := urlParts[len(urlParts)-2]
 		expectedARN := "arn:aws:sqs:us-east-1:" + accountID + ":test-queue-name"
 		assert.Equal(t, expectedARN, s0.Tag("cloud.resource_id"))
+		assert.Equal(t, sqsQueueURL, s0.Tag(ext.SQSQueueURL))
 	})
 	t.Run("S3", func(t *testing.T) {
 		mt := mocktracer.Start()
@@ -407,11 +408,13 @@ func TestExtraTagsForService(t *testing.T) {
 		assert.Equal(t, "sns", s0.Tag("aws_service"))
 		assert.Equal(t, "Publish", s0.Tag("aws.operation"))
 		assert.Equal(t, snsTopicName, s0.Tag("topicname"))
+		assert.Equal(t, snsTopicARN, s0.Tag(ext.SNSTopicARN))
 
 		s1 := spans[1]
 		assert.Equal(t, "sns", s1.Tag("aws_service"))
 		assert.Equal(t, "Publish", s1.Tag("aws.operation"))
 		assert.Equal(t, snsTopicName, s1.Tag("targetname"))
+		assert.Nil(t, s1.Tag(ext.SNSTopicARN))
 	})
 	t.Run("DynamoDB", func(t *testing.T) {
 		mt := mocktracer.Start()
@@ -564,12 +567,12 @@ func TestKinesisTags(t *testing.T) {
 		{
 			name:   "PutRecordInput stream ARN only",
 			params: &kinesis.PutRecordInput{StreamARN: aws.String(streamARN)},
-			want:   map[string]any{ext.KinesisStreamName: streamName},
+			want:   map[string]any{ext.KinesisStreamName: streamName, ext.KinesisStreamARN: streamARN},
 		},
 		{
 			name:   "PutRecordInput stream name takes precedence over ARN",
 			params: &kinesis.PutRecordInput{StreamName: aws.String(namedStream), StreamARN: aws.String(streamARN)},
-			want:   map[string]any{ext.KinesisStreamName: namedStream},
+			want:   map[string]any{ext.KinesisStreamName: namedStream, ext.KinesisStreamARN: streamARN},
 		},
 		{
 			name:   "PutRecordInput no stream identifier",
@@ -579,7 +582,7 @@ func TestKinesisTags(t *testing.T) {
 		{
 			name:   "PutRecordsInput stream ARN only",
 			params: &kinesis.PutRecordsInput{StreamARN: aws.String(streamARN)},
-			want:   map[string]any{ext.KinesisStreamName: streamName},
+			want:   map[string]any{ext.KinesisStreamName: streamName, ext.KinesisStreamARN: streamARN},
 		},
 		{
 			name:   "PutRecordsInput no stream identifier",
@@ -589,7 +592,7 @@ func TestKinesisTags(t *testing.T) {
 		{
 			name:   "AddTagsToStreamInput stream ARN only",
 			params: &kinesis.AddTagsToStreamInput{StreamARN: aws.String(streamARN)},
-			want:   map[string]any{ext.KinesisStreamName: streamName},
+			want:   map[string]any{ext.KinesisStreamName: streamName, ext.KinesisStreamARN: streamARN},
 		},
 		{
 			name:   "AddTagsToStreamInput no stream identifier",
@@ -599,7 +602,7 @@ func TestKinesisTags(t *testing.T) {
 		{
 			name:   "RemoveTagsFromStreamInput stream ARN only",
 			params: &kinesis.RemoveTagsFromStreamInput{StreamARN: aws.String(streamARN)},
-			want:   map[string]any{ext.KinesisStreamName: streamName},
+			want:   map[string]any{ext.KinesisStreamName: streamName, ext.KinesisStreamARN: streamARN},
 		},
 		{
 			name:   "RemoveTagsFromStreamInput no stream identifier",
@@ -620,7 +623,7 @@ func TestKinesisTags(t *testing.T) {
 		{
 			name:   "DeleteStreamInput stream ARN only",
 			params: &kinesis.DeleteStreamInput{StreamARN: aws.String(streamARN)},
-			want:   map[string]any{ext.KinesisStreamName: streamName},
+			want:   map[string]any{ext.KinesisStreamName: streamName, ext.KinesisStreamARN: streamARN},
 		},
 		{
 			name:   "DeleteStreamInput no stream identifier",
@@ -630,7 +633,7 @@ func TestKinesisTags(t *testing.T) {
 		{
 			name:   "DescribeStreamInput stream ARN only",
 			params: &kinesis.DescribeStreamInput{StreamARN: aws.String(streamARN)},
-			want:   map[string]any{ext.KinesisStreamName: streamName},
+			want:   map[string]any{ext.KinesisStreamName: streamName, ext.KinesisStreamARN: streamARN},
 		},
 		{
 			name:   "DescribeStreamInput no stream identifier",
@@ -640,7 +643,7 @@ func TestKinesisTags(t *testing.T) {
 		{
 			name:   "DescribeStreamSummaryInput stream ARN only",
 			params: &kinesis.DescribeStreamSummaryInput{StreamARN: aws.String(streamARN)},
-			want:   map[string]any{ext.KinesisStreamName: streamName},
+			want:   map[string]any{ext.KinesisStreamName: streamName, ext.KinesisStreamARN: streamARN},
 		},
 		{
 			name:   "DescribeStreamSummaryInput no stream identifier",
@@ -650,7 +653,7 @@ func TestKinesisTags(t *testing.T) {
 		{
 			name:   "GetShardIteratorInput stream ARN only",
 			params: &kinesis.GetShardIteratorInput{StreamARN: aws.String(streamARN)},
-			want:   map[string]any{ext.KinesisStreamName: streamName},
+			want:   map[string]any{ext.KinesisStreamName: streamName, ext.KinesisStreamARN: streamARN},
 		},
 		{
 			name:   "GetShardIteratorInput no stream identifier",
@@ -660,18 +663,20 @@ func TestKinesisTags(t *testing.T) {
 		{
 			name:   "ARN without a resource separator",
 			params: &kinesis.DescribeStreamInput{StreamARN: aws.String(invalidStreamARN)},
-			want:   map[string]any{ext.KinesisStreamName: invalidStreamARN},
+			want:   map[string]any{ext.KinesisStreamName: invalidStreamARN, ext.KinesisStreamARN: invalidStreamARN},
 		},
 		{
 			// Only the trailing segment is reported, as in the v2 integration.
 			name:   "ARN with several resource segments",
 			params: &kinesis.DescribeStreamInput{StreamARN: aws.String(streamARN + "/consumer/test-consumer")},
-			want:   map[string]any{ext.KinesisStreamName: "test-consumer"},
+			want:   map[string]any{ext.KinesisStreamName: "test-consumer", ext.KinesisStreamARN: streamARN + "/consumer/test-consumer"},
 		},
 		{
+			// The ARN is reported as sent, even when no stream name can be
+			// derived from it.
 			name:   "ARN with an empty trailing segment",
 			params: &kinesis.DescribeStreamInput{StreamARN: aws.String(streamARN + "/")},
-			want:   nil,
+			want:   map[string]any{ext.KinesisStreamARN: streamARN + "/"},
 		},
 		{
 			name:   "empty stream ARN",
@@ -682,7 +687,7 @@ func TestKinesisTags(t *testing.T) {
 			// An explicitly empty stream name does not fall back to the ARN.
 			name:   "empty stream name alongside an ARN",
 			params: &kinesis.DescribeStreamInput{StreamName: aws.String(emptyStream), StreamARN: aws.String(streamARN)},
-			want:   nil,
+			want:   map[string]any{ext.KinesisStreamARN: streamARN},
 		},
 		{
 			name:   "unhandled input type",
@@ -708,6 +713,262 @@ func TestKinesisTags(t *testing.T) {
 // TestKinesisSpanStreamName covers the panic path: the Send handler reads the
 // stream name off the request parameters, so a request that identifies its
 // stream by ARN only must not dereference a nil StreamName.
+func TestSQSTags(t *testing.T) {
+	const (
+		queueURL = "https://sqs.us-east-1.amazonaws.com/111111111111/test-queue-name"
+		queueARN = "arn:aws:sqs:us-east-1:111111111111:test-queue-name"
+	)
+
+	tests := []struct {
+		name    string
+		params  any
+		want    map[string]any
+		wantErr bool
+	}{
+		{
+			name:   "SendMessageInput",
+			params: &sqs.SendMessageInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
+			name:   "SendMessageBatchInput",
+			params: &sqs.SendMessageBatchInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
+			name:   "ReceiveMessageInput",
+			params: &sqs.ReceiveMessageInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
+			name:   "DeleteMessageInput",
+			params: &sqs.DeleteMessageInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
+			name:   "DeleteMessageBatchInput",
+			params: &sqs.DeleteMessageBatchInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
+			name:   "no queue URL",
+			params: &sqs.SendMessageInput{},
+			want:   nil,
+		},
+		{
+			name:   "empty queue URL",
+			params: &sqs.SendMessageInput{QueueUrl: aws.String("")},
+			want:   nil,
+		},
+		{
+			name:    "unexpected queue URL format",
+			params:  &sqs.SendMessageInput{QueueUrl: aws.String("not-a-url")},
+			wantErr: true,
+		},
+		{
+			name:   "unhandled input type",
+			params: &sqs.ListQueuesInput{},
+			want:   nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := sqsTags(tc.params, "us-east-1", "aws")
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestSNSTags(t *testing.T) {
+	const (
+		topicName = "test-topic-name"
+		topicARN  = "arn:aws:sns:us-east-1:111111111111:test-topic-name"
+		targetARN = "arn:aws:sns:us-east-1:111111111111:endpoint/APNS/app/test-target"
+	)
+
+	tests := []struct {
+		name    string
+		params  any
+		want    map[string]any
+		wantErr bool
+	}{
+		{
+			name:   "PublishInput topic ARN",
+			params: &sns.PublishInput{TopicArn: aws.String(topicARN)},
+			want:   map[string]any{ext.SNSTopicName: topicName, ext.SNSTopicARN: topicARN},
+		},
+		{
+			// A TargetArn is not a topic ARN.
+			name:   "PublishInput target ARN",
+			params: &sns.PublishInput{TargetArn: aws.String(targetARN)},
+			want:   map[string]any{ext.SNSTargetName: "endpoint/APNS/app/test-target"},
+		},
+		{
+			name:   "PublishInput no destination",
+			params: &sns.PublishInput{},
+			want:   nil,
+		},
+		{
+			name:   "GetTopicAttributesInput",
+			params: &sns.GetTopicAttributesInput{TopicArn: aws.String(topicARN)},
+			want:   map[string]any{ext.SNSTopicName: topicName, ext.SNSTopicARN: topicARN},
+		},
+		{
+			name:   "ListSubscriptionsByTopicInput",
+			params: &sns.ListSubscriptionsByTopicInput{TopicArn: aws.String(topicARN)},
+			want:   map[string]any{ext.SNSTopicName: topicName, ext.SNSTopicARN: topicARN},
+		},
+		{
+			name:   "RemovePermissionInput",
+			params: &sns.RemovePermissionInput{TopicArn: aws.String(topicARN)},
+			want:   map[string]any{ext.SNSTopicName: topicName, ext.SNSTopicARN: topicARN},
+		},
+		{
+			name:   "SetTopicAttributesInput",
+			params: &sns.SetTopicAttributesInput{TopicArn: aws.String(topicARN)},
+			want:   map[string]any{ext.SNSTopicName: topicName, ext.SNSTopicARN: topicARN},
+		},
+		{
+			name:   "SubscribeInput",
+			params: &sns.SubscribeInput{TopicArn: aws.String(topicARN)},
+			want:   map[string]any{ext.SNSTopicName: topicName, ext.SNSTopicARN: topicARN},
+		},
+		{
+			name:   "SubscribeInput no topic ARN",
+			params: &sns.SubscribeInput{},
+			want:   nil,
+		},
+		{
+			// CreateTopicInput only carries the name of the topic to create.
+			name:   "CreateTopicInput",
+			params: &sns.CreateTopicInput{Name: aws.String(topicName)},
+			want:   map[string]any{ext.SNSTopicName: topicName},
+		},
+		{
+			name:   "CreateTopicInput no name",
+			params: &sns.CreateTopicInput{},
+			want:   nil,
+		},
+		{
+			name:    "unexpected ARN format",
+			params:  &sns.GetTopicAttributesInput{TopicArn: aws.String("not-an-arn")},
+			wantErr: true,
+		},
+		{
+			name:   "unhandled input type",
+			params: &sns.ListTopicsInput{},
+			want:   nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := snsTags(tc.params)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestSFNTags(t *testing.T) {
+	const (
+		stateMachineName = "test-state-machine-name"
+		stateMachineARN  = "arn:aws:states:us-east-1:111111111111:stateMachine:test-state-machine-name"
+		executionARN     = "arn:aws:states:us-east-1:111111111111:execution:test-state-machine-name:test-execution"
+	)
+
+	tests := []struct {
+		name    string
+		params  any
+		want    map[string]any
+		wantErr bool
+	}{
+		{
+			name:   "CreateStateMachineInput",
+			params: &sfn.CreateStateMachineInput{Name: aws.String(stateMachineName)},
+			want:   map[string]any{ext.SFNStateMachineName: stateMachineName},
+		},
+		{
+			name:   "DescribeStateMachineInput",
+			params: &sfn.DescribeStateMachineInput{StateMachineArn: aws.String(stateMachineARN)},
+			want:   map[string]any{ext.SFNStateMachineName: stateMachineName, ext.SFNStateMachineARN: stateMachineARN},
+		},
+		{
+			name:   "StartExecutionInput",
+			params: &sfn.StartExecutionInput{StateMachineArn: aws.String(stateMachineARN)},
+			want:   map[string]any{ext.SFNStateMachineName: stateMachineName, ext.SFNStateMachineARN: stateMachineARN},
+		},
+		{
+			name:   "ListExecutionsInput",
+			params: &sfn.ListExecutionsInput{StateMachineArn: aws.String(stateMachineARN)},
+			want:   map[string]any{ext.SFNStateMachineName: stateMachineName, ext.SFNStateMachineARN: stateMachineARN},
+		},
+		{
+			name:   "UpdateStateMachineInput",
+			params: &sfn.UpdateStateMachineInput{StateMachineArn: aws.String(stateMachineARN)},
+			want:   map[string]any{ext.SFNStateMachineName: stateMachineName, ext.SFNStateMachineARN: stateMachineARN},
+		},
+		{
+			name:   "DeleteStateMachineInput",
+			params: &sfn.DeleteStateMachineInput{StateMachineArn: aws.String(stateMachineARN)},
+			want:   map[string]any{ext.SFNStateMachineName: stateMachineName, ext.SFNStateMachineARN: stateMachineARN},
+		},
+		{
+			// The state machine ARN is not derived from the execution ARN.
+			name:   "DescribeExecutionInput",
+			params: &sfn.DescribeExecutionInput{ExecutionArn: aws.String(executionARN)},
+			want:   map[string]any{ext.SFNStateMachineName: stateMachineName},
+		},
+		{
+			name:   "StopExecutionInput",
+			params: &sfn.StopExecutionInput{ExecutionArn: aws.String(executionARN)},
+			want:   map[string]any{ext.SFNStateMachineName: stateMachineName},
+		},
+		{
+			name:    "StopExecutionInput no execution ARN",
+			params:  &sfn.StopExecutionInput{},
+			wantErr: true,
+		},
+		{
+			name:   "StartExecutionInput no state machine ARN",
+			params: &sfn.StartExecutionInput{},
+			want:   nil,
+		},
+		{
+			name:   "unhandled input type",
+			params: &sfn.ListStateMachinesInput{},
+			want:   nil,
+		},
+		{
+			name:   "CreateStateMachineInput no name",
+			params: &sfn.CreateStateMachineInput{},
+			want:   nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := sfnTags(tc.params)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
 func TestKinesisSpanStreamName(t *testing.T) {
 	const (
 		streamARN    = "arn:aws:kinesis:us-west-2:111111111111:stream/test-stream-name"

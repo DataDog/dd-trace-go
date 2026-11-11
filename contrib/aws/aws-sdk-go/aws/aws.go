@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -238,16 +239,19 @@ func sqsTags(params interface{}, region string, partition string) (map[string]in
 	var queueURL string
 	switch input := params.(type) {
 	case *sqs.SendMessageInput:
-		queueURL = *input.QueueUrl
+		queueURL = aws.StringValue(input.QueueUrl)
 	case *sqs.DeleteMessageInput:
-		queueURL = *input.QueueUrl
+		queueURL = aws.StringValue(input.QueueUrl)
 	case *sqs.DeleteMessageBatchInput:
-		queueURL = *input.QueueUrl
+		queueURL = aws.StringValue(input.QueueUrl)
 	case *sqs.ReceiveMessageInput:
-		queueURL = *input.QueueUrl
+		queueURL = aws.StringValue(input.QueueUrl)
 	case *sqs.SendMessageBatchInput:
-		queueURL = *input.QueueUrl
+		queueURL = aws.StringValue(input.QueueUrl)
 	default:
+		return nil, nil
+	}
+	if queueURL == "" {
 		return nil, nil
 	}
 
@@ -259,6 +263,7 @@ func sqsTags(params interface{}, region string, partition string) (map[string]in
 	tags := map[string]interface{}{
 		ext.SQSQueueName:    queueName,
 		ext.CloudResourceID: arn,
+		ext.SQSQueueURL:     queueURL,
 	}
 
 	return tags, nil
@@ -313,21 +318,24 @@ func snsTags(params interface{}) (map[string]interface{}, error) {
 		if input.TopicArn != nil {
 			destTag, destARN = ext.SNSTopicName, *input.TopicArn
 		} else {
-			destTag, destARN = ext.SNSTargetName, *input.TargetArn
+			destTag, destARN = ext.SNSTargetName, aws.StringValue(input.TargetArn)
 		}
 	case *sns.GetTopicAttributesInput:
-		destTag, destARN = ext.SNSTopicName, *input.TopicArn
+		destTag, destARN = ext.SNSTopicName, aws.StringValue(input.TopicArn)
 	case *sns.ListSubscriptionsByTopicInput:
-		destTag, destARN = ext.SNSTopicName, *input.TopicArn
+		destTag, destARN = ext.SNSTopicName, aws.StringValue(input.TopicArn)
 	case *sns.RemovePermissionInput:
-		destTag, destARN = ext.SNSTopicName, *input.TopicArn
+		destTag, destARN = ext.SNSTopicName, aws.StringValue(input.TopicArn)
 	case *sns.SetTopicAttributesInput:
-		destTag, destARN = ext.SNSTopicName, *input.TopicArn
+		destTag, destARN = ext.SNSTopicName, aws.StringValue(input.TopicArn)
 	case *sns.SubscribeInput:
-		destTag, destARN = ext.SNSTopicName, *input.TopicArn
+		destTag, destARN = ext.SNSTopicName, aws.StringValue(input.TopicArn)
 	case *sns.CreateTopicInput:
-		destTag, destName = ext.SNSTopicName, *input.Name
+		destTag, destName = ext.SNSTopicName, aws.StringValue(input.Name)
 	default:
+		return nil, nil
+	}
+	if destName == "" && destARN == "" {
 		return nil, nil
 	}
 	if destName == "" {
@@ -337,9 +345,15 @@ func snsTags(params interface{}) (map[string]interface{}, error) {
 		}
 		destName = parts[len(parts)-1]
 	}
-	return map[string]interface{}{
+	tags := map[string]interface{}{
 		destTag: destName,
-	}, nil
+	}
+	// Only a TopicArn is a topic ARN: a TargetArn may be an endpoint or phone
+	// number ARN, and CreateTopicInput only carries the topic name.
+	if destTag == ext.SNSTopicName && destARN != "" {
+		tags[ext.SNSTopicARN] = destARN
+	}
+	return tags, nil
 }
 
 func dynamoDBTags(params interface{}) (map[string]interface{}, error) {
@@ -364,38 +378,41 @@ func dynamoDBTags(params interface{}) (map[string]interface{}, error) {
 }
 
 func kinesisTags(params interface{}) (map[string]interface{}, error) {
-	var streamName string
+	var name, arn *string
 	switch input := params.(type) {
 	case *kinesis.PutRecordInput:
-		streamName = coalesceNameOrArnResource(input.StreamName, input.StreamARN)
+		name, arn = input.StreamName, input.StreamARN
 	case *kinesis.PutRecordsInput:
-		streamName = coalesceNameOrArnResource(input.StreamName, input.StreamARN)
+		name, arn = input.StreamName, input.StreamARN
 	case *kinesis.AddTagsToStreamInput:
-		streamName = coalesceNameOrArnResource(input.StreamName, input.StreamARN)
+		name, arn = input.StreamName, input.StreamARN
 	case *kinesis.RemoveTagsFromStreamInput:
-		streamName = coalesceNameOrArnResource(input.StreamName, input.StreamARN)
+		name, arn = input.StreamName, input.StreamARN
 	case *kinesis.CreateStreamInput:
 		// CreateStreamInput has no StreamARN: the stream does not exist yet.
-		if input.StreamName != nil {
-			streamName = *input.StreamName
-		}
+		name = input.StreamName
 	case *kinesis.DeleteStreamInput:
-		streamName = coalesceNameOrArnResource(input.StreamName, input.StreamARN)
+		name, arn = input.StreamName, input.StreamARN
 	case *kinesis.DescribeStreamInput:
-		streamName = coalesceNameOrArnResource(input.StreamName, input.StreamARN)
+		name, arn = input.StreamName, input.StreamARN
 	case *kinesis.DescribeStreamSummaryInput:
-		streamName = coalesceNameOrArnResource(input.StreamName, input.StreamARN)
+		name, arn = input.StreamName, input.StreamARN
 	case *kinesis.GetShardIteratorInput:
-		streamName = coalesceNameOrArnResource(input.StreamName, input.StreamARN)
+		name, arn = input.StreamName, input.StreamARN
 	default:
 		return nil, nil
 	}
-	if streamName == "" {
+	tags := map[string]interface{}{}
+	if streamName := coalesceNameOrArnResource(name, arn); streamName != "" {
+		tags[ext.KinesisStreamName] = streamName
+	}
+	if streamARN := aws.StringValue(arn); streamARN != "" {
+		tags[ext.KinesisStreamARN] = streamARN
+	}
+	if len(tags) == 0 {
 		return nil, nil
 	}
-	return map[string]interface{}{
-		ext.KinesisStreamName: streamName,
-	}, nil
+	return tags, nil
 }
 
 // coalesceNameOrArnResource returns name when it is set, otherwise the
@@ -442,11 +459,11 @@ func sfnTags(params interface{}) (map[string]interface{}, error) {
 	var stateMachineName, stateMachineArn string
 	switch input := params.(type) {
 	case *sfn.CreateStateMachineInput:
-		stateMachineName = *input.Name
+		stateMachineName = aws.StringValue(input.Name)
 	case *sfn.DescribeStateMachineInput:
-		stateMachineArn = *input.StateMachineArn
+		stateMachineArn = aws.StringValue(input.StateMachineArn)
 	case *sfn.StartExecutionInput:
-		stateMachineArn = *input.StateMachineArn
+		stateMachineArn = aws.StringValue(input.StateMachineArn)
 	case *sfn.StopExecutionInput:
 		name, err := stateMachineNameFromExecutionARN(input.ExecutionArn)
 		if err != nil {
@@ -460,19 +477,27 @@ func sfnTags(params interface{}) (map[string]interface{}, error) {
 		}
 		stateMachineName = name
 	case *sfn.ListExecutionsInput:
-		stateMachineArn = *input.StateMachineArn
+		stateMachineArn = aws.StringValue(input.StateMachineArn)
 	case *sfn.UpdateStateMachineInput:
-		stateMachineArn = *input.StateMachineArn
+		stateMachineArn = aws.StringValue(input.StateMachineArn)
 	case *sfn.DeleteStateMachineInput:
-		stateMachineArn = *input.StateMachineArn
+		stateMachineArn = aws.StringValue(input.StateMachineArn)
 	}
 	if stateMachineName == "" {
 		parts := strings.Split(stateMachineArn, ":")
 		stateMachineName = parts[len(parts)-1]
 	}
-	return map[string]interface{}{
-		ext.SFNStateMachineName: stateMachineName,
-	}, nil
+	tags := map[string]interface{}{}
+	if stateMachineName != "" {
+		tags[ext.SFNStateMachineName] = stateMachineName
+	}
+	if stateMachineArn != "" {
+		tags[ext.SFNStateMachineARN] = stateMachineArn
+	}
+	if len(tags) == 0 {
+		return nil, nil
+	}
+	return tags, nil
 }
 
 // stateMachineNameFromExecutionARN returns the state machine name from the given execution ARN.
