@@ -94,12 +94,15 @@ jobs:
       - name: Generate tags
         if: inputs.push == false
         id: tags
+        env:
+          IMAGE_NAME: ${{ inputs.image }}
+          IMAGE_TAGS: ${{ inputs.tags }}
         run: |
           TAGS=""
           # shellcheck disable=SC2086
-          for tag in ${{ inputs.tags }}; do
+          for tag in $IMAGE_TAGS; do
             if [ -n "$tag" ]; then
-              TAGS="$TAGS,${{ inputs.image }}:$tag"
+              TAGS="$TAGS,${IMAGE_NAME}:$tag"
             fi
           done
           echo "list=${TAGS:1}" >> "$GITHUB_OUTPUT"
@@ -166,14 +169,17 @@ jobs:
 
       - name: Create manifest list and push
         working-directory: /tmp/digests
+        env:
+          IMAGE_NAME: ${{ inputs.image }}
+          IMAGE_TAGS: ${{ inputs.tags }}
         run: |
           TAG_FLAGS=""
           # shellcheck disable=SC2086
-          for tag in ${{ inputs.tags }}; do
+          for tag in $IMAGE_TAGS; do
             if [ -n "$tag" ]; then
-              TAG_FLAGS="$TAG_FLAGS -t ${{ inputs.image }}:$tag"
+              TAG_FLAGS="$TAG_FLAGS -t ${IMAGE_NAME}:$tag"
             fi
           done
           # shellcheck disable=SC2046,SC2086
           docker buildx imagetools create $TAG_FLAGS \
-            $(printf '${{ inputs.image }}@sha256:%s ' *)
+            $(printf "${IMAGE_NAME}@sha256:%s " *)

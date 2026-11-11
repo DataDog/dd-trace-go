@@ -27,11 +27,11 @@ jobs:
         id: check
         env:
           GITHUB_TOKEN: "${{ steps.generate-token.outputs.token }}"
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           set -e
 
           REPO="${{ github.repository }}"
-          PR_NUMBER="${{ github.event.pull_request.number }}"
 
           echo "Checking code freeze status for PR #$PR_NUMBER..."
 
@@ -74,8 +74,9 @@ jobs:
         if: github.event.pull_request.head.repo.full_name == github.repository
         env:
           GITHUB_TOKEN: "${{ steps.generate-token.outputs.token }}"
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          SHA="${{ github.event.pull_request.head.sha }}"
+          SHA="$PR_HEAD_SHA"
           REPO="${{ github.repository }}"
           CONTEXT="code-freeze"
 

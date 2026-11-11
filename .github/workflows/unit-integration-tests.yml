@@ -136,8 +136,10 @@ jobs:
 
       - name: Warn on unsupported seed alias
         if: inputs.go-version != '1.26' && inputs.go-version != '1.27'
+        env:
+          GO_VERSION: ${{ inputs.go-version }}
         run: >-
-          echo "::warning::go-version '${{ inputs.go-version }}' matches
+          echo "::warning::go-version '${GO_VERSION}' matches
           no seed alias; this job restores only"
 
       - name: Setup Go
@@ -388,8 +390,10 @@ jobs:
 
       - name: Warn on unsupported seed alias
         if: inputs.go-version != '1.26' && inputs.go-version != '1.27'
+        env:
+          GO_VERSION: ${{ inputs.go-version }}
         run: >-
-          echo "::warning::go-version '${{ inputs.go-version }}' matches
+          echo "::warning::go-version '${GO_VERSION}' matches
           no seed alias; this job restores only"
 
       - name: Setup Go
@@ -541,8 +545,10 @@ jobs:
 
       - name: Warn on unsupported seed alias
         if: inputs.go-version != '1.26' && inputs.go-version != '1.27'
+        env:
+          GO_VERSION: ${{ inputs.go-version }}
         run: >-
-          echo "::warning::go-version '${{ inputs.go-version }}' matches
+          echo "::warning::go-version '${GO_VERSION}' matches
           no seed alias; this job restores only"
 
       - name: Setup Go

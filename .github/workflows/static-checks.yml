@@ -351,6 +351,9 @@ jobs:
       # Lint only the nested modules this change touches, and report only the
       # issues it adds: those modules still carry pre-existing findings.
       - name: golangci-lint (nested modules)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_BEFORE: ${{ github.event.before }}
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
           # The reviewdog steps install golangci-lint from
@@ -363,8 +366,8 @@ jobs:
             exit 1
           fi
           base="HEAD~1"
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            before="${{ github.event.before }}"
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            before="$EVENT_BEFORE"
             if [[ "$before" == "0000000000000000000000000000000000000000" ]]; then
               # The push creates the branch, so no earlier tip exists to
               # diff against. The step lints nothing.
