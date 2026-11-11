@@ -9,11 +9,30 @@ meta:
   description: Sarama is a Go library for Apache Kafka
 
 aspects:
+  # NewConsumer, NewSyncProducer and NewAsyncProducer take the broker
+  # addresses. They are passed to WithBrokers for the bootstrap servers tag,
+  # and for the cluster ID with Data Streams Monitoring. The arguments are
+  # evaluated once, in order, as in the original call.
   - id: NewConsumer
     join-point:
-      one-of:
-        - function-call: github.com/IBM/sarama.NewConsumer
-        - function-call: github.com/IBM/sarama.NewConsumerClient
+      function-call: github.com/IBM/sarama.NewConsumer
+    advice:
+      - wrap-expression:
+          imports:
+            saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
+            sarama: github.com/IBM/sarama
+          template: |-
+            func(addrs []string, config *sarama.Config) (sarama.Consumer, error) {
+              c, err := sarama.NewConsumer(addrs, config)
+              if c != nil {
+                c = saramatrace.WrapConsumer(c, saramatrace.WithBrokers(addrs))
+              }
+              return c, err
+            }({{ index .AST.Args 0 }}, {{ index .AST.Args 1 }})
+
+  - id: NewConsumerClient
+    join-point:
+      function-call: github.com/IBM/sarama.NewConsumerClient
     advice:
       - wrap-expression:
           imports:
@@ -29,9 +48,24 @@ aspects:
 
   - id: NewSyncProducer
     join-point:
-      one-of:
-        - function-call: github.com/IBM/sarama.NewSyncProducer
-        - function-call: github.com/IBM/sarama.NewSyncProducerFromClient
+      function-call: github.com/IBM/sarama.NewSyncProducer
+    advice:
+      - wrap-expression:
+          imports:
+            saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
+            sarama: github.com/IBM/sarama
+          template: |-
+            func(addrs []string, config *sarama.Config) (sarama.SyncProducer, error) {
+              p, err := sarama.NewSyncProducer(addrs, config)
+              if p != nil {
+                p = saramatrace.WrapSyncProducer(config, p, saramatrace.WithBrokers(addrs))
+              }
+              return p, err
+            }({{ index .AST.Args 0 }}, {{ index .AST.Args 1 }})
+
+  - id: NewSyncProducerFromClient
+    join-point:
+      function-call: github.com/IBM/sarama.NewSyncProducerFromClient
     advice:
       - wrap-expression:
           imports:
@@ -55,9 +89,24 @@ aspects:
 
   - id: NewAsyncProducer
     join-point:
-      one-of:
-        - function-call: github.com/IBM/sarama.NewAsyncProducer
-        - function-call: github.com/IBM/sarama.NewAsyncProducerFromClient
+      function-call: github.com/IBM/sarama.NewAsyncProducer
+    advice:
+      - wrap-expression:
+          imports:
+            saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
+            sarama: github.com/IBM/sarama
+          template: |-
+            func(addrs []string, config *sarama.Config) (sarama.AsyncProducer, error) {
+              p, err := sarama.NewAsyncProducer(addrs, config)
+              if p != nil {
+                p = saramatrace.WrapAsyncProducer(config, p, saramatrace.WithBrokers(addrs))
+              }
+              return p, err
+            }({{ index .AST.Args 0 }}, {{ index .AST.Args 1 }})
+
+  - id: NewAsyncProducerFromClient
+    join-point:
+      function-call: github.com/IBM/sarama.NewAsyncProducerFromClient
     advice:
       - wrap-expression:
           imports:

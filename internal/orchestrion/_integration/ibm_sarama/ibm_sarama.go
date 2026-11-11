@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -111,7 +112,10 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	consumeMessage(t, tc.addrs, tc.cfg)
 }
 
-func (*TestCase) ExpectedTraces() trace.Traces {
+func (tc *TestCase) ExpectedTraces() trace.Traces {
+	// The broker addresses passed to NewSyncProducer and NewConsumer are
+	// tagged as the bootstrap servers.
+	bootstrapServers := strings.Join(tc.addrs, ",")
 	return trace.Traces{
 		{
 			Tags: map[string]any{
@@ -120,8 +124,9 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 				"service": "kafka",
 			},
 			Meta: map[string]string{
-				"span.kind": "producer",
-				"component": "IBM/sarama",
+				"span.kind":                         "producer",
+				"component":                         "IBM/sarama",
+				"messaging.kafka.bootstrap.servers": bootstrapServers,
 			},
 			Children: trace.Traces{
 				{
@@ -131,8 +136,9 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"service": "kafka",
 					},
 					Meta: map[string]string{
-						"span.kind": "consumer",
-						"component": "IBM/sarama",
+						"span.kind":                         "consumer",
+						"component":                         "IBM/sarama",
+						"messaging.kafka.bootstrap.servers": bootstrapServers,
 					},
 				},
 			},
