@@ -6,6 +6,7 @@
 package openfeature
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 var errInvalidSemverComparand = errors.New("invalid semantic version comparand")
 
 func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
+	logOnboarding("starting remote_config configuration source (Agent Remote Configuration)")
 	provider := newDatadogProviderWithSourceAndEVP(
 		config,
 		internalffe.SourceRemoteConfig,
@@ -63,7 +65,7 @@ func (p *DatadogProvider) rcCallback(update remoteconfig.ProductUpdate) map[stri
 func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc.ApplyStatus {
 	// Handle configuration deletion (nil data means the config was removed)
 	if data == nil {
-		log.Debug("openfeature: remote config: removing configuration %q", path)
+		logOnboarding("remote_config configuration %q removed", path)
 		// For now, we treat deletion as clearing the configuration
 		// In a multi-config scenario, we might track configs per path
 		provider.updateConfiguration(nil)
@@ -73,11 +75,11 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	}
 
 	// Parse the configuration
-	log.Debug("openfeature: remote config: processing configuration update %q", path)
+	logOnboarding("remote_config configuration %q received", path)
 
 	var config universalFlagsConfiguration
 	if err := json.Unmarshal(data, &config); err != nil {
-		log.Error("openfeature: remote config: failed to unmarshal configuration %q: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
+		log.Error("openfeature: remote config: failed to unmarshal configuration %q, keeping the last known configuration: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
 		return rc.ApplyStatus{
 			State: rc.ApplyStateError,
 			Error: fmt.Sprintf("failed to unmarshal configuration: %v", err),
@@ -87,7 +89,7 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	// Validate the configuration
 	err := validateConfiguration(&config)
 	if err != nil {
-		log.Error("openfeature: remote config: invalid configuration %q: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
+		log.Error("openfeature: remote config: invalid configuration %q, keeping the last known configuration: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
 		return rc.ApplyStatus{
 			State: rc.ApplyStateError,
 			Error: fmt.Sprintf("invalid configuration: %v", err),
@@ -96,7 +98,15 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 
 	// Update the provider with the new configuration
 	provider.updateConfiguration(&config)
-	log.Debug("openfeature: remote config: successfully applied configuration %q with %d flags", path, len(config.Flags))
+	if log.DebugEnabled() {
+		// sdk_env is the environment the Remote Config client reports to the
+		// Agent; config_env is the one the delivered configuration names.
+		logOnboarding("remote_config configuration %q applied successfully (%d flag(s), %d rejected, sdk_env=%s, config_env=%s, created_at=%s)",
+			path, len(config.Flags), len(config.invalidFlags),
+			cmp.Or(remoteconfig.ActiveEnv(), "unset"), cmp.Or(config.Environment.Name, "unset"),
+			formatCreatedAt(config.CreatedAt))
+		logRejectedFlags(fmt.Sprintf("remote_config configuration %q", path), &config)
+	}
 
 	return rc.ApplyStatus{
 		State: rc.ApplyStateAcknowledged,

@@ -542,6 +542,229 @@ func TestExtraTagsForService(t *testing.T) {
 	})
 }
 
+func TestKinesisTags(t *testing.T) {
+	const (
+		streamName       = "test-stream-name"
+		streamARN        = "arn:aws:kinesis:us-east-1:111111111111:stream/test-stream-name"
+		namedStream      = "named"
+		invalidStreamARN = "not-an-arn"
+		emptyStream      = ""
+	)
+
+	tests := []struct {
+		name   string
+		params any
+		want   map[string]any
+	}{
+		{
+			name:   "PutRecordInput stream name",
+			params: &kinesis.PutRecordInput{StreamName: aws.String(streamName)},
+			want:   map[string]any{ext.KinesisStreamName: streamName},
+		},
+		{
+			name:   "PutRecordInput stream ARN only",
+			params: &kinesis.PutRecordInput{StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: streamName},
+		},
+		{
+			name:   "PutRecordInput stream name takes precedence over ARN",
+			params: &kinesis.PutRecordInput{StreamName: aws.String(namedStream), StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: namedStream},
+		},
+		{
+			name:   "PutRecordInput no stream identifier",
+			params: &kinesis.PutRecordInput{},
+			want:   nil,
+		},
+		{
+			name:   "PutRecordsInput stream ARN only",
+			params: &kinesis.PutRecordsInput{StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: streamName},
+		},
+		{
+			name:   "PutRecordsInput no stream identifier",
+			params: &kinesis.PutRecordsInput{},
+			want:   nil,
+		},
+		{
+			name:   "AddTagsToStreamInput stream ARN only",
+			params: &kinesis.AddTagsToStreamInput{StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: streamName},
+		},
+		{
+			name:   "AddTagsToStreamInput no stream identifier",
+			params: &kinesis.AddTagsToStreamInput{},
+			want:   nil,
+		},
+		{
+			name:   "RemoveTagsFromStreamInput stream ARN only",
+			params: &kinesis.RemoveTagsFromStreamInput{StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: streamName},
+		},
+		{
+			name:   "RemoveTagsFromStreamInput no stream identifier",
+			params: &kinesis.RemoveTagsFromStreamInput{},
+			want:   nil,
+		},
+		{
+			name:   "CreateStreamInput stream name",
+			params: &kinesis.CreateStreamInput{StreamName: aws.String(streamName)},
+			want:   map[string]any{ext.KinesisStreamName: streamName},
+		},
+		{
+			// CreateStreamInput has no StreamARN field to fall back on.
+			name:   "CreateStreamInput no stream name",
+			params: &kinesis.CreateStreamInput{},
+			want:   nil,
+		},
+		{
+			name:   "DeleteStreamInput stream ARN only",
+			params: &kinesis.DeleteStreamInput{StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: streamName},
+		},
+		{
+			name:   "DeleteStreamInput no stream identifier",
+			params: &kinesis.DeleteStreamInput{},
+			want:   nil,
+		},
+		{
+			name:   "DescribeStreamInput stream ARN only",
+			params: &kinesis.DescribeStreamInput{StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: streamName},
+		},
+		{
+			name:   "DescribeStreamInput no stream identifier",
+			params: &kinesis.DescribeStreamInput{},
+			want:   nil,
+		},
+		{
+			name:   "DescribeStreamSummaryInput stream ARN only",
+			params: &kinesis.DescribeStreamSummaryInput{StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: streamName},
+		},
+		{
+			name:   "DescribeStreamSummaryInput no stream identifier",
+			params: &kinesis.DescribeStreamSummaryInput{},
+			want:   nil,
+		},
+		{
+			name:   "GetShardIteratorInput stream ARN only",
+			params: &kinesis.GetShardIteratorInput{StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: streamName},
+		},
+		{
+			name:   "GetShardIteratorInput no stream identifier",
+			params: &kinesis.GetShardIteratorInput{},
+			want:   nil,
+		},
+		{
+			name:   "ARN without a resource separator",
+			params: &kinesis.DescribeStreamInput{StreamARN: aws.String(invalidStreamARN)},
+			want:   map[string]any{ext.KinesisStreamName: invalidStreamARN},
+		},
+		{
+			// Only the trailing segment is reported, as in the v2 integration.
+			name:   "ARN with several resource segments",
+			params: &kinesis.DescribeStreamInput{StreamARN: aws.String(streamARN + "/consumer/test-consumer")},
+			want:   map[string]any{ext.KinesisStreamName: "test-consumer"},
+		},
+		{
+			name:   "ARN with an empty trailing segment",
+			params: &kinesis.DescribeStreamInput{StreamARN: aws.String(streamARN + "/")},
+			want:   nil,
+		},
+		{
+			name:   "empty stream ARN",
+			params: &kinesis.DescribeStreamInput{StreamARN: aws.String(emptyStream)},
+			want:   nil,
+		},
+		{
+			// An explicitly empty stream name does not fall back to the ARN.
+			name:   "empty stream name alongside an ARN",
+			params: &kinesis.DescribeStreamInput{StreamName: aws.String(emptyStream), StreamARN: aws.String(streamARN)},
+			want:   nil,
+		},
+		{
+			name:   "unhandled input type",
+			params: &kinesis.ListStreamsInput{},
+			want:   nil,
+		},
+		{
+			name:   "nil params",
+			params: nil,
+			want:   nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := kinesisTags(tc.params)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// TestKinesisSpanStreamName covers the panic path: the Send handler reads the
+// stream name off the request parameters, so a request that identifies its
+// stream by ARN only must not dereference a nil StreamName.
+func TestKinesisSpanStreamName(t *testing.T) {
+	const (
+		streamARN    = "arn:aws:kinesis:us-west-2:111111111111:stream/test-stream-name"
+		partitionKey = "1"
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-Amz-RequestId", "test_req")
+			w.WriteHeader(200)
+			w.Write([]byte(`{}`))
+		}))
+	defer server.Close()
+
+	cfg := aws.NewConfig().
+		WithRegion("us-west-2").
+		WithDisableSSL(true).
+		WithCredentials(credentials.AnonymousCredentials).
+		WithEndpoint(server.URL)
+	sess := WrapSession(session.Must(session.NewSession(cfg)))
+
+	for _, tc := range []struct {
+		name  string
+		input *kinesis.PutRecordInput
+		want  any
+	}{
+		{
+			name: "stream ARN only",
+			input: &kinesis.PutRecordInput{
+				StreamARN: aws.String(streamARN),
+			},
+			want: "test-stream-name",
+		},
+		{
+			name:  "no stream identifier",
+			input: &kinesis.PutRecordInput{},
+			want:  nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			tc.input.Data = []byte("data")
+			tc.input.PartitionKey = aws.String(partitionKey)
+			_, err := kinesis.New(sess).PutRecord(tc.input)
+			require.NoError(t, err)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			assert.Equal(t, "kinesis", spans[0].Tag("aws_service"))
+			assert.Equal(t, "PutRecord", spans[0].Tag("aws.operation"))
+			assert.Equal(t, tc.want, spans[0].Tag(ext.KinesisStreamName))
+		})
+	}
+}
+
 func TestExtractSQSMetadata(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -926,4 +1149,91 @@ func TestRedactURLQuery(t *testing.T) {
 			assert.Equal(t, tc.want, u.String())
 		})
 	}
+}
+
+func TestWrapSessionTwice(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/x-amz-json-1.0")
+			w.Write([]byte(`{"TableNames":[]}`))
+		}))
+	defer server.Close()
+
+	cfg := aws.NewConfig().
+		WithRegion("us-west-2").
+		WithDisableSSL(true).
+		WithCredentials(credentials.AnonymousCredentials).
+		WithEndpoint(server.URL)
+	base := session.Must(session.NewSession(cfg))
+	sendLen, completeLen := base.Handlers.Send.Len(), base.Handlers.Complete.Len()
+
+	for _, tc := range []struct {
+		name    string
+		opts    [][]Option
+		service string
+	}{
+		{name: "once", opts: [][]Option{nil}, service: "aws.dynamodb"},
+		{name: "twice with defaults", opts: [][]Option{nil, nil}, service: "aws.dynamodb"},
+		{name: "defaults then service", opts: [][]Option{nil, {WithService("second")}}, service: "second"},
+		{name: "service twice", opts: [][]Option{{WithService("first")}, {WithService("second")}}, service: "second"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			sess := base
+			for _, opts := range tc.opts {
+				sess = WrapSession(sess, opts...)
+			}
+			_, err := dynamodb.New(sess).ListTables(&dynamodb.ListTablesInput{})
+			require.NoError(t, err)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			assert.Equal(t, tc.service, spans[0].Tag(ext.ServiceName))
+			assert.Equal(t, sendLen+1, sess.Handlers.Send.Len())
+			assert.Equal(t, completeLen+1, sess.Handlers.Complete.Len())
+		})
+	}
+
+	// WrapSession works on a copy.
+	assert.Equal(t, sendLen, base.Handlers.Send.Len())
+	assert.Equal(t, completeLen, base.Handlers.Complete.Len())
+}
+
+func TestWrapSessionAgainAfterUserHandlers(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/x-amz-json-1.0")
+			w.Write([]byte(`{"TableNames":[]}`))
+		}))
+	defer server.Close()
+
+	cfg := aws.NewConfig().
+		WithRegion("us-west-2").
+		WithDisableSSL(true).
+		WithCredentials(credentials.AnonymousCredentials).
+		WithEndpoint(server.URL)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	// The first wrap stands for the one otelc adds. The application then adds
+	// a Complete handler and wraps the session itself.
+	sess := WrapSession(session.Must(session.NewSession(cfg)))
+	userErr := errors.New("set by a user handler")
+	sess.Handlers.Complete.PushBackNamed(request.NamedHandler{
+		Name: "user.Complete",
+		Fn:   func(r *request.Request) { r.Error = userErr },
+	})
+	sess = WrapSession(sess, WithService("user-service"))
+
+	// The error a Complete handler sets is not returned by the call, but the
+	// tracing Complete handler reads it when it runs after the user's.
+	_, _ = dynamodb.New(sess).ListTables(&dynamodb.ListTablesInput{})
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "user-service", spans[0].Tag(ext.ServiceName))
+	assert.Equal(t, userErr.Error(), spans[0].Tag(ext.ErrorMsg), "the tracing Complete handler must run after the user's")
 }

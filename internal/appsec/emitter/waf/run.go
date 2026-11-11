@@ -59,7 +59,7 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 	}
 
 	wafTimeout := errors.Is(err, waferrors.ErrTimeout)
-	rateLimited := op.AddEvents(result.Events...)
+	op.AddEvents(result.Events...)
 	metrics := op.GetMetricsInstance()
 	// Only a WAF-scope block_request contributes to the waf.requests block outcome.
 	// A monitor-only run never requests a block, so it does not change the block
@@ -90,9 +90,16 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 	}
 	op.AbsorbDerivatives(result.Derivatives)
 
-	// Set the trace to ManualKeep if the WAF instructed us to keep it.
+	// Set the trace to ManualKeep if the WAF instructed us to keep it, and if the limiter admits it.
+	// The limiter only decides about the keep. It never removes events.
+	rateLimited := false
 	if result.Keep {
-		op.SetTag(ext.ManualKeep, samplernames.AppSec)
+		if op.allowKeep() {
+			op.SetTag(ext.ManualKeep, samplernames.AppSec)
+		} else {
+			rateLimited = true
+			log.Error("appsec: this WAF keep request was denied by the AppSec trace rate limit") //errtrack:ignore expected global trace rate limiting on the request path
+		}
 	}
 
 	if result.HasEvents() {
@@ -100,14 +107,14 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 	}
 
 	if metrics != nil {
-		metrics.IncWafError(addrs, err)
+		errCode := metrics.IncWafError(addrs, err)
 		metrics.RegisterWafRun(addrs, result.TimerStats, RequestMilestones{
 			requestBlocked: blocking,
 			blockFailure:   blockFailure,
 			ruleTriggered:  result.HasEvents(),
 			wafTimeout:     wafTimeout,
 			rateLimited:    rateLimited,
-			wafError:       err != nil && !wafTimeout,
+			wafError:       errCode != 0, // a real error is reported also when the run timed out
 		})
 	}
 }
@@ -116,7 +123,7 @@ func (op *ContextOperation) runWAF(eventReceiver dyngo.Operation, runner libddwa
 func RunSimple(ctx context.Context, addrs addresses.RunAddressData, errorLog string) error {
 	parent, _ := dyngo.FromContext(ctx)
 	if parent == nil {
-		log.Error("%s", errorLog)
+		log.Error("%s", errorLog) //errtrack:ignore request context lacks AppSec instrumentation
 		return nil
 	}
 
@@ -137,12 +144,12 @@ func RunSimple(ctx context.Context, addrs addresses.RunAddressData, errorLog str
 func RunSimpleSubcontext(ctx context.Context, addrs addresses.RunAddressData, errorLog string) error {
 	parent, _ := dyngo.FromContext(ctx)
 	if parent == nil {
-		log.Error("%s", errorLog)
+		log.Error("%s", errorLog) //errtrack:ignore request context lacks AppSec instrumentation
 		return nil
 	}
 	ctxOp, ok := dyngo.FindOperation[ContextOperation](ctx)
 	if !ok {
-		log.Error("%s", errorLog)
+		log.Error("%s", errorLog) //errtrack:ignore request context lacks AppSec instrumentation
 		return nil
 	}
 	var err error

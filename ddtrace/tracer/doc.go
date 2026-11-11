@@ -165,12 +165,71 @@
 // or the environment variable DD_TRACE_STATS_ADDITIONAL_TAGS (comma-separated).
 // This feature requires DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED=true.
 //
+// # Payload Queue Size
+//
+// Finished traces wait in an in-process queue before being encoded and sent to
+// the agent. When the queue is full, new traces are dropped and reported through
+// the datadog.tracer.traces_dropped metric with the reason:queue_full tag. The
+// queue's buffer size defaults to 1000 and can be changed with
+// tracer.WithPayloadQueueSize or the DD_TRACE_PAYLOAD_QUEUE_SIZE environment
+// variable. Values outside the range 1 to 10000 are rejected (the default
+// is kept): a value below 1 would leave the queue unbuffered and drop almost
+// every trace, and each slot above that retains a whole trace chunk until the
+// worker drains it, so a larger queue can retain large amounts of memory
+// while the worker is stalled.
+//
+// # Data Streams Monitoring Intake Buffer Size
+//
+// The Data Streams Monitoring processor holds incoming checkpoints and Kafka
+// offsets in a fixed-size ring buffer. When the buffer is full, new entries
+// overwrite the oldest unread ones, and the drop count is reported on the
+// datadog.datastreams.processor.dropped_payloads metric, split by cause into
+// dropped_payloads_agent_stall and dropped_payloads_poll_stall. Raise the
+// buffer size to trade memory for tolerance to bursts or a slow agent:
+//
+//	tracer.Start(tracer.WithDataStreamsIntakeBufferSize(20000))
+//
+// or the environment variable DD_DATA_STREAMS_INTAKE_BUFFER_SIZE. The default
+// is 10000 slots.
+//
+// # OpenTelemetry API with Orchestrion
+//
+// DD_TRACE_OTEL_ENABLED=true links the OpenTelemetry trace API to the tracer in
+// applications that are built with Orchestrion, through the aspects in
+// ddtrace/opentelemetry/orchestrion.yml. trace.SpanFromContext then returns the
+// span that a Datadog integration started. While the Datadog tracer records, the
+// OpenTelemetry global tracer creates Datadog spans until the application calls
+// otel.SetTracerProvider. A call to End on a span from trace.SpanFromContext
+// finishes the Datadog span. The variable is false by default. Without
+// Orchestrion, it does not change the OpenTelemetry API. trace.SpanFromContext
+// returns only spans that a context carries through ContextWithSpan, which
+// StartSpanFromContext also uses. The fasthttp integration stores its span in
+// another way, so trace.SpanFromContext does not return it. If the context also
+// holds a span of another OpenTelemetry SDK, trace.SpanFromContext returns that
+// span, but spans that the global tracer starts take the Datadog span as parent.
+// With the span pool on, a span that trace.SpanFromContext returned does not go
+// back to the pool.
+//
 // # OpenTelemetry Semantic Conventions
 //
 // DD_TRACE_OTEL_SEMANTICS_ENABLED=true enables OpenTelemetry semantic
 // conventions, forces trace export through OTLP, and overrides
 // DD_TRACE_SPAN_ATTRIBUTE_SCHEMA to v0 and DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED
 // to false.
+//
+// # OTLP Trace Export
+//
+// When traces are exported over OTLP (OTEL_TRACES_EXPORTER=otlp), string global
+// tags (DD_TAGS, OTEL_RESOURCE_ATTRIBUTES, WithGlobalTag) are written once per
+// payload as resource attributes. The service, env and version tags are carried
+// as service.name, deployment.environment.name and service.version instead. A
+// span tag with the same key and value as a resource attribute is not repeated
+// as a span attribute; span values that differ from the resource are kept. The
+// resource is built at startup, so global tags changed later through Remote
+// Config are written on spans instead.
+//
+// When exporting traces over OTLP, the tracing library delegates APM RED metrics
+// computation to the OpenTelemetry Collector or Datadog intake by default.
 //
 // # Disabling the OpenTelemetry SDK
 //
@@ -257,4 +316,4 @@
 // dependency and no Remote Config capability advertised. See the openfeature package's
 // documentation for the full set of DD_FEATURE_FLAGS_* environment variables and the source
 // selection rules.
-package tracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+package tracer

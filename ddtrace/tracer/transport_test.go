@@ -228,6 +228,96 @@ func TestFetchAgentFeaturesContainerTagsHash(t *testing.T) {
 	assert.Equal(t, "info-container-hash", processtags.ContainerTagsHash())
 }
 
+// TestFetchAgentFeaturesOversizedBodyIsNotDecodeError pins that a /info
+// response larger than agentInfoBodyLimit is rejected as a transport/capacity
+// failure before decoding, so an oversized but well-formed body is not
+// reported to Error Tracking as a malformed agent response. It also pins the
+// exact boundary: a body of exactly agentInfoBodyLimit bytes still decodes.
+func TestFetchAgentFeaturesOversizedBodyIsNotDecodeError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// Well-formed JSON padded past the limit with a long version string.
+		pad := strings.Repeat("a", agentInfoBodyLimit)
+		w.Write([]byte(`{"version":"` + pad + `"}`))
+	}))
+	defer srv.Close()
+
+	agentURL, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+
+	_, err = fetchAgentFeatures(context.Background(), agentURL, srv.Client())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeds")
+	var decodeErr *agentFeaturesDecodeError
+	assert.False(t, errors.As(err, &decodeErr),
+		"an oversized body is a capacity failure and must not be reported as a decode error")
+}
+
+func TestFetchAgentFeaturesBodyAtLimitDecodes(t *testing.T) {
+	// Pad so the whole document is exactly agentInfoBodyLimit bytes long.
+	padLen := agentInfoBodyLimit - len(`{"version":""}`)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write([]byte(`{"version":"` + strings.Repeat("a", padLen) + `"}`))
+	}))
+	defer srv.Close()
+
+	agentURL, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+
+	features, err := fetchAgentFeatures(context.Background(), agentURL, srv.Client())
+	require.NoError(t, err)
+	assert.Len(t, features.AgentVersion, padLen)
+}
+
+// TestFetchAgentFeaturesBodyReadFailureIsNotDecodeError pins the fix for
+// reporting body-read failures to Error Tracking: a 200 response whose body
+// is interrupted (connection reset mid-stream) is a transport failure, not a
+// malformed agent response, so fetchAgentFeatures must not classify it as
+// agentFeaturesDecodeError — only a JSON-parse failure on the fully read
+// body may be reported.
+func TestFetchAgentFeaturesBodyReadFailureIsNotDecodeError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		// Partial JSON, then drop the connection mid-body.
+		w.Write([]byte(`{"endpoints":["/v0.6/st`))
+		panic(http.ErrAbortHandler)
+	}))
+	defer srv.Close()
+
+	agentURL, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+
+	_, err = fetchAgentFeatures(context.Background(), agentURL, srv.Client())
+	require.Error(t, err)
+	var decodeErr *agentFeaturesDecodeError
+	assert.False(t, errors.As(err, &decodeErr),
+		"an interrupted body read is a transport failure and must not be reported as a decode error")
+}
+
+func TestFetchAgentFeaturesCancellationIsNotDecodeError(t *testing.T) {
+	headersSent := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		close(headersSent)
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	agentURL, err := url.Parse(srv.URL)
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-headersSent
+		cancel()
+	}()
+
+	_, err = fetchAgentFeatures(ctx, agentURL, srv.Client())
+	require.ErrorIs(t, err, context.Canceled)
+	var decodeErr *agentFeaturesDecodeError
+	assert.False(t, errors.As(err, &decodeErr))
+}
+
 func TestTraceCountHeader(t *testing.T) {
 	assert := assert.New(t)
 

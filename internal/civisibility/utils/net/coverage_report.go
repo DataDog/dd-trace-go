@@ -176,7 +176,7 @@ func parseCoverageReportFlags(raw string) []string {
 			constants.CodeCoverageFlagsEnvironmentVariable,
 			len(flags),
 			maxCoverageReportFlags,
-		)
+		) //errtrack:ignore oversized user-provided coverage report
 		return nil
 	}
 	return flags

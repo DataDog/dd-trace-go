@@ -6,6 +6,7 @@
 package gotesting
 
 import (
+	"flag"
 	"reflect"
 	"runtime"
 	"testing"
@@ -79,6 +80,36 @@ func TestFuzzAndExampleDescriptorsReserveWorkloadCounters(t *testing.T) {
 	for name, delta := range want.suites {
 		require.Equal(t, suiteCountersBefore[name]+delta, addSuitesCounters(name, 0))
 	}
+}
+
+func TestInstrumentedAllWorkloads(t *testing.T) {
+	// flag.Set marks a flag as set for good, so use a scratch command line.
+	commandLine := flag.CommandLine
+	t.Cleanup(func() { flag.CommandLine = commandLine })
+	flag.CommandLine = flag.NewFlagSet(commandLine.Name(), flag.ContinueOnError)
+	flag.String("test.bench", "", "")
+
+	var (
+		tests       []testing.InternalTest
+		benchmarks  []testing.InternalBenchmark
+		fuzzTargets []testing.InternalFuzzTarget
+		examples    []testing.InternalExample
+	)
+	claim := &testingMInstrumentationClaim{testDescriptors: &tests, fuzzDescriptors: &fuzzTargets, exampleDescriptors: &examples}
+	require.True(t, claim.instrumentedAllWorkloads())
+
+	// Benchmarks selected outside os.Args run unwrapped, even if the flag is
+	// cleared again before M.Run returns.
+	require.NoError(t, flag.Set("test.bench", "BenchmarkSelected"))
+	require.False(t, claim.instrumentedAllWorkloads())
+	require.NoError(t, flag.Set("test.bench", ""))
+	require.False(t, claim.instrumentedAllWorkloads())
+	claim.benchmarkDescriptors = &benchmarks
+	require.True(t, claim.instrumentedAllWorkloads())
+
+	// Examples run natively when they cannot be wrapped, as on js and wasip1.
+	claim.exampleDescriptors = nil
+	require.False(t, claim.instrumentedAllWorkloads())
 }
 
 func reflectFuncPointer(fn any) uintptr {

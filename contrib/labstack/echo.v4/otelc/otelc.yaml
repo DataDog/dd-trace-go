@@ -1,0 +1,22 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Wraps echo.New call sites, in every package of the build, dependencies
+# included, except echo and the echo contribs. A call inside echo would import
+# the contrib into echo, and the contrib's own tests wrap their instances
+# themselves. The import name differs from the echo v5 rules, so a file that
+# uses both versions does not get the same import name twice.
+echo_v4_new:
+  target:
+    - "**"
+    - not: "github.com/labstack/echo/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/labstack/**"
+  where:
+    function_call: github.com/labstack/echo/v4.New
+  do:
+    - wrap_call:
+        replace: echov4trace.Wrap({{ . }})
+  imports:
+    echov4trace: github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2

@@ -219,6 +219,40 @@ feature and cannot be disabled. Unknown names are ignored with a warning log. Be
 and gRPC messages reach the WAF context without going through the `http` and `grpc` listeners, disabling those features
 also removes their WAF addresses from the supported addresses, so the WAF never evaluates them.
 
+### Error Tracking eligibility
+
+The AppSec package marks each `log.Error` and `log.Warn` site with an
+`//errtrack:ignore` directive when the logged failure is not eligible for Error
+Tracking reporting. The directive carries the reason, so an audit does not have
+to re-derive it from the code.
+
+A site is ineligible only when its failure is outside the SDK's control or is
+reported through another channel:
+
+- The caller used the AppSec API while AppSec is disabled, or without the
+  request instrumentation that the API requires. These failures depend on the
+  application, not on the SDK.
+- The failure comes from a user-provided value, such as a blocked-response
+  template path.
+- The failure comes from the host or the native library, such as a
+  libddwaf compatibility issue on the host.
+- The failure is an expected limit on the request path: the global trace rate
+  limit (`DD_APPSEC_TRACE_RATE_LIMIT`) or the maximum number of WAF events per
+  request.
+- Remote Config reports the failure back to the backend through an apply
+  status. Only a site that always produces an apply status may use this reason.
+
+A site without a directive stays actionable in the audit. Do not add a
+directive to hide an unclassified site; remove or fix the site instead.
+
+Startup timing is not a reason to leave a site unclassified. A report made
+before `telemetry.StartApp` captures its stack trace eagerly at the call site
+and is replayed once telemetry starts, so the stack still points at the real
+call site. The failure mode to watch for is eviction from the 512-entry ring
+buffer shared by every global telemetry call, not a bad stack trace. Prefer a
+site that fires after `StartApp` when you have the choice; see the reporting
+policy in [internal/README.md](../README.md) for the full criteria.
+
 ### AppSec state checks
 
 `Enabled` and `RASPEnabled` load the active AppSec instance and its started state
@@ -278,3 +312,56 @@ monitoring) removes the `block_request` and `redirect_request` actions. It
 reports a removed `block_request` as `block:failure` on `rasp.rule.match`. It
 does not count as a requested block on `waf.requests`, so it cannot hide a
 later block of the same request.
+
+### WAF error telemetry
+
+`ContextMetrics.IncWafError` (`emitter/waf/metrics.go`) reports the errors that
+`Context.Run` returns. A timeout (`waferrors.ErrTimeout`) is not an error: it
+does not get an error code. `RegisterWafRun` counts timeouts. A timeout never
+hides a real error: a real error is reported even when the same run also timed
+out.
+
+The `waf_error` tag of `waf.error` and `rasp.error`, and the span tags
+`_dd.appsec.waf.error` and `_dd.appsec.rasp.error`, hold the `ddwaf_run` return
+code (RFC-1012). `waferrors.ToWafReturnCode` (go-libddwaf v5.1.0 and later)
+gives the code of the error that a run returned: `-3`, `-2` or `-1` for the
+three `ddwaf_run` errors, `-127` for any other error (an error from the
+bindings), and `0` when there is no error to report (a `nil` error, or only
+timeouts):
+
+| Error from `Run` | Code |
+|------------------|------|
+| `ErrInternal` | `-3` |
+| `ErrInvalidObject` | `-2` |
+| `ErrInvalidArgument` | `-1` |
+| Any other error (`ErrOutOfMemory`, `ErrEmptyRuleAddresses`, `ErrContextClosed`, encoder errors, ...) | `-127` (error from the bindings) |
+
+- The boolean `waf_error` tag of `waf.requests` is not a code. It is `true`
+  when `Run` returned a real error (`waferrors.ToWafReturnCode` is not zero),
+  also when the same run timed out.
+- The span tags hold one code per request: the code closest to zero (the least
+  negative). `updateClosestToZero` keeps it, and ignores a code that is not
+  negative. Zero means no error. The RASP tag is the closest code over all rule
+  types.
+- `AddWAFMonitoringTags` sets `_dd.appsec.waf.error` only when `WAFErrorCode`
+  is not zero, and `_dd.appsec.rasp.error` only when one `RASPErrorCodes` entry
+  is not zero.
+
+### Rate limit telemetry and trace keep
+
+The AppSec trace rate limit (`DD_APPSEC_TRACE_RATE_LIMIT`) limits the WAF force-keeps
+(`ManualKeep`). It never removes events. The Node.js and Python tracers use the same model.
+
+- `ContextOperation.AddEvents` stores the events of a WAF or RASP run, and it never calls the
+  limiter. A request accepts no new batch once it has 10 stored events. This cap does not use a token.
+- A WAF or RASP result with `keep=true` calls the limiter through `allowKeep`, also when the cap
+  drops its events. A result without `keep` never calls the limiter. When the limiter allows,
+  the run sets `ManualKeep`.
+- Difference from Node.js and Python: after the first success, the request makes no more limiter
+  calls (`wafKeepAdmitted`). Later `keep` runs set `ManualKeep` again with no token. The flag does
+  not tell the sampling priority.
+- `rate_limited:true` on `waf.requests` means that a `keep` run (WAF or RASP) was denied by the
+  limiter. A request that only reaches the cap of 10 stored events gives `rate_limited:false`.
+- A denied `keep` run keeps its events. They reach the backend when any other source keeps the
+  trace: the sampler, the first-request rules keep, or the API Security schema keep. So the limiter
+  is not a global limit on the traces that have events.

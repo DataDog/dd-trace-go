@@ -6,15 +6,22 @@
 package utils
 
 import (
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -120,7 +127,22 @@ func TestExecGitStringDisabledInPayloadFilesMode(t *testing.T) {
 	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "--version")
 	assert.Empty(t, out)
 	assert.Error(t, err)
-	assert.ErrorContains(t, err, "git CLI is disabled in payload-file mode")
+	assert.ErrorContains(t, err, "git CLI is disabled")
+}
+
+func TestExecGitStringDisabledByInternalEnv(t *testing.T) {
+	t.Setenv(bazel.GitCLIDisabledEnv, "true")
+
+	bazel.ResetForTesting()
+	t.Cleanup(bazel.ResetForTesting)
+
+	if bazel.IsPayloadFilesModeEnabled() {
+		t.Fatal("expected payload-files mode to stay disabled")
+	}
+	out, err := execGitString(telemetry.NotSpecifiedCommandsType, "--version")
+	assert.Empty(t, out)
+	assert.Error(t, err)
+	assert.ErrorContains(t, err, "git CLI is disabled")
 }
 
 func TestGetLocalGitData(t *testing.T) {
@@ -180,6 +202,7 @@ func TestPackFiles(t *testing.T) {
 	shas := GetLastLocalGitCommitShas()
 	shas = shas[:min(len(shas), 5)]
 	packfiles := CreatePackFiles(shas, []string{})
+	t.Cleanup(func() { RemovePackFiles(packfiles) })
 	assert.NotEmpty(t, packfiles)
 }
 
@@ -320,8 +343,7 @@ func resetGitCommandCachesForTesting(t *testing.T) {
 		gitVersionValue = gitVersionData{}
 		safeDirectoryOnce = sync.Once{}
 		safeDirectoryValue = ""
-		isAShallowCloneRepositoryOnce.Store(nil)
-		isAShallowCloneRepositoryValue = false
+		invalidateShallowCloneCache()
 	}
 	reset()
 	t.Cleanup(reset)
@@ -872,6 +894,586 @@ func TestGetBaseBranchShaWithCIBaseBranch(t *testing.T) {
 		assert.Regexp(t, "^[a-f0-9]{40}$", sha, "SHA should be valid hex string")
 		t.Logf("GetBaseBranchSha without CI tags returned valid SHA: %s", sha)
 	}
+}
+
+// CI providers check out one commit by default. Base branch detection must
+// still find where the source branch left its base branch, after the base
+// branch moved on, without losing history that was already enough.
+func TestGetBaseBranchShaInShallowClones(t *testing.T) {
+	const day = 24 * time.Hour
+	tests := []struct {
+		name string
+		// ages of the first, base, feature and main commits; the first one
+		// defaults to a day before the base
+		firstAge, baseAge, featureAge, mainAge time.Duration
+		checkout                               func(t *testing.T, origin, checkout, feature, main string)
+		// pullRequest runs only with a pull request base branch, and gives the
+		// feature commit as the CI provider's head commit.
+		pullRequest bool
+		// stillShallow checks that no full history was fetched.
+		stillShallow bool
+		// noBase expects no base commit: it is older than the fetched month.
+		noBase bool
+		// complete is a checkout with all of its history, not a shallow one.
+		complete bool
+	}{
+		{name: "push checkout", checkout: pushCheckout},
+		// A month of history would cut the base off: the checkout already holds it.
+		{name: "history already enough", baseAge: 90 * day,
+			checkout: func(t *testing.T, origin, checkout, feature, main string) {
+				require.NoError(t, os.Mkdir(checkout, 0o755))
+				runFixtureGit(t, checkout, "init")
+				runFixtureGit(t, checkout, "remote", "add", "origin", fileURL(origin))
+				runFixtureGit(t, checkout, "fetch", "--no-tags", "--depth=2", "origin", "+"+feature+":refs/remotes/origin/feature", "+"+main+":refs/remotes/origin/main")
+				runFixtureGit(t, checkout, "checkout", "--force", "-B", "feature", "refs/remotes/origin/feature")
+			}},
+		{name: "branch older than a month", firstAge: 90 * day, baseAge: 60 * day, noBase: true, stillShallow: true, checkout: pushCheckout},
+		{name: "every commit older than a month", baseAge: 90 * day, featureAge: 89 * day, mainAge: 88 * day, noBase: true, stillShallow: true, checkout: pushCheckout},
+		{name: "local commit", checkout: func(t *testing.T, origin, checkout, feature, main string) {
+			pushCheckout(t, origin, checkout, feature, main)
+			runFixtureGit(t, checkout, "commit", "--allow-empty", "-m", "synthesized merge")
+		}},
+		{name: "deleted branch", checkout: func(t *testing.T, origin, checkout, feature, main string) {
+			runFixtureGit(t, origin, "switch", "-c", "release/old", "HEAD~1")
+			runFixtureGit(t, origin, "commit", "--allow-empty", "-m", "release")
+			runFixtureGit(t, origin, "switch", "main")
+			pushCheckout(t, origin, checkout, feature, main)
+			runFixtureGit(t, checkout, "fetch", "--no-tags", "--depth=1", "origin", "+refs/heads/release/old:refs/remotes/origin/release/old")
+			release := runFixtureGit(t, origin, "rev-parse", "release/old")
+			runFixtureGit(t, origin, "branch", "-D", "release/old")
+			// Without its commit, the remote rejects a fetch that names it.
+			runFixtureGit(t, origin, "reflog", "expire", "--expire=now", "--all")
+			runFixtureGit(t, origin, "gc", "--prune=now", "--quiet")
+			cmd := exec.Command("git", "cat-file", "-e", release)
+			cmd.Dir = origin
+			require.Error(t, cmd.Run())
+		}},
+		// actions/checkout on a pull_request event checks out the merge commit.
+		{name: "pull request merge checkout", pullRequest: true,
+			checkout: func(t *testing.T, origin, checkout, feature, main string) {
+				runFixtureGit(t, origin, "switch", "--detach", main)
+				runFixtureGit(t, origin, "merge", "--no-ff", "-m", "merge", feature)
+				runFixtureGit(t, origin, "update-ref", "refs/pull/1/merge", "HEAD")
+				runFixtureGit(t, origin, "switch", "main")
+				require.NoError(t, os.Mkdir(checkout, 0o755))
+				runFixtureGit(t, checkout, "init")
+				runFixtureGit(t, checkout, "remote", "add", "origin", fileURL(origin))
+				runFixtureGit(t, checkout, "fetch", "--no-tags", "--depth=1", "origin", "+refs/pull/1/merge:refs/remotes/pull/1/merge")
+				runFixtureGit(t, checkout, "checkout", "--force", "--detach", "refs/remotes/pull/1/merge")
+			}},
+		// A base-like branch that never meets the source must not fetch the
+		// full history once main has a merge base.
+		{name: "independent candidate", firstAge: 90 * day, stillShallow: true, checkout: func(t *testing.T, origin, checkout, feature, main string) {
+			runFixtureGit(t, origin, "switch", "--orphan", "prod")
+			runFixtureGit(t, origin, "commit", "--allow-empty", "-m", "prod")
+			runFixtureGit(t, origin, "switch", "main")
+			pushCheckout(t, origin, checkout, feature, main)
+		}},
+		// A complete clone keeps its ancestry: the base branch, missing from it,
+		// must not be fetched as a single commit that hides an old merge base.
+		{name: "complete single-branch clone", firstAge: 90 * day, baseAge: 60 * day, complete: true,
+			checkout: func(t *testing.T, origin, checkout, _, _ string) {
+				runFixtureGit(t, filepath.Dir(checkout), "clone", "--single-branch", "--branch=feature", fileURL(origin), checkout)
+				runFixtureGit(t, checkout, "branch", "main", "HEAD~1")
+			}},
+		{name: "single-branch clone", checkout: func(t *testing.T, origin, checkout, _, _ string) {
+			runFixtureGit(t, filepath.Dir(checkout), "clone", "--depth=1", "--single-branch", "--branch=feature", fileURL(origin), checkout)
+		}},
+	}
+	for _, tt := range tests {
+		for mode, prBaseBranch := range map[string]string{"detected base branch": "", "pull request base branch": "main"} {
+			if (tt.name == "deleted branch" || tt.name == "independent candidate") && prBaseBranch != "" {
+				continue // the pull request base branch is the only candidate
+			}
+			if tt.pullRequest && prBaseBranch == "" {
+				continue
+			}
+			t.Run(tt.name+"/"+mode, func(t *testing.T) {
+				isolateFixtureGit(t)
+				firstAge := tt.firstAge
+				if firstAge == 0 {
+					firstAge = tt.baseAge + day
+				}
+				root, origin, base, feature, main := newBaseBranchOrigin(t, firstAge, tt.baseAge, tt.featureAge, tt.mainAge)
+				checkout := filepath.Join(root, "checkout")
+				tt.checkout(t, origin, checkout, feature, main)
+				require.Equal(t, strconv.FormatBool(!tt.complete), runFixtureGit(t, checkout, "rev-parse", "--is-shallow-repository"))
+
+				t.Chdir(checkout)
+				resetGitCommandCachesForTesting(t)
+				ResetCITags()
+				t.Cleanup(ResetCITags)
+				AddCITags(constants.GitPrBaseBranch, prBaseBranch)
+				// The CI running these tests can give a head commit of its own.
+				headCommit := ""
+				if tt.pullRequest {
+					headCommit = feature
+				}
+				AddCITags(constants.GitHeadCommit, headCommit)
+
+				sha, err := GetBaseBranchSha("")
+				if tt.noBase {
+					assert.ErrorContains(t, err, "merge base")
+					assert.Empty(t, sha)
+				} else {
+					require.NoError(t, err)
+					assert.Equal(t, base, sha)
+				}
+				if tt.stillShallow {
+					assert.Equal(t, "true", runFixtureGit(t, checkout, "rev-parse", "--is-shallow-repository"))
+				}
+			})
+		}
+	}
+}
+
+// newBaseBranchOrigin creates an origin repository whose main and feature
+// branches leave a base commit, with commits as old as the given ages. main
+// moves on after feature leaves it.
+func newBaseBranchOrigin(t *testing.T, firstAge, baseAge, featureAge, mainAge time.Duration) (root, origin, base, feature, main string) {
+	t.Helper()
+	root = t.TempDir()
+	origin = filepath.Join(root, "origin")
+	require.NoError(t, os.Mkdir(origin, 0o755))
+	runFixtureGit(t, origin, "init", "--initial-branch=main")
+	commitFixtureAt(t, origin, "first", firstAge)
+	commitFixtureAt(t, origin, "base", baseAge)
+	base = runFixtureGit(t, origin, "rev-parse", "HEAD")
+	runFixtureGit(t, origin, "switch", "-c", "feature")
+	commitFixtureAt(t, origin, "feature", featureAge)
+	feature = runFixtureGit(t, origin, "rev-parse", "HEAD")
+	runFixtureGit(t, origin, "switch", "main")
+	commitFixtureAt(t, origin, "main moved on", mainAge)
+	main = runFixtureGit(t, origin, "rev-parse", "HEAD")
+	return root, origin, base, feature, main
+}
+
+// The Git upload can complete the history while base branch detection runs,
+// between its first comparison and its own deepening.
+func TestGetBaseBranchShaAfterTheGitUploadCompletesTheHistory(t *testing.T) {
+	isolateFixtureGit(t)
+	root, origin, base, feature, main := newBaseBranchOrigin(t, 24*time.Hour, 0, 0, 0)
+	checkout := filepath.Join(root, "checkout")
+	pushCheckout(t, origin, checkout, feature, main)
+	t.Chdir(checkout)
+	resetGitCommandCachesForTesting(t)
+	ResetCITags()
+	t.Cleanup(ResetCITags)
+	AddCITags(constants.GitPrBaseBranch, "")
+	AddCITags(constants.GitHeadCommit, "")
+
+	require.True(t, isGitFound())
+	testBinary, err := os.Executable()
+	require.NoError(t, err)
+	t.Setenv("DD_TEST_GIT_COMPLETING_UPLOAD", "1")
+	t.Setenv("DD_TEST_REAL_GIT", gitExecutable)
+	t.Setenv("DD_TEST_GIT_UPLOAD_DONE", filepath.Join(root, "upload-done"))
+	gitExecutable = testBinary
+	gitExecutableArgs = []string{"-test.run=^TestFakeGitCompletingUploadHelperProcess$", "--"}
+
+	sha, err := GetBaseBranchSha("")
+	require.NoError(t, err)
+	assert.Equal(t, base, sha)
+	assert.FileExists(t, filepath.Join(root, "upload-done"), "the first merge-base must run before the upload completes")
+}
+
+// TestFakeGitCompletingUploadHelperProcess runs git. Before the first
+// merge-base, it completes the history as the Git upload would, then fails it
+// as the shallow history did.
+func TestFakeGitCompletingUploadHelperProcess(t *testing.T) {
+	if os.Getenv("DD_TEST_GIT_COMPLETING_UPLOAD") != "1" {
+		return
+	}
+	args := os.Args
+	for len(args) > 0 && args[0] != "--" {
+		args = args[1:]
+	}
+	if len(args) > 0 {
+		args = args[1:]
+	}
+	realGit := os.Getenv("DD_TEST_REAL_GIT")
+	done := os.Getenv("DD_TEST_GIT_UPLOAD_DONE")
+	if slices.Contains(args, "merge-base") {
+		if _, err := os.Stat(done); os.IsNotExist(err) {
+			if out, err := exec.Command(realGit, "fetch", "--unshallow", "origin").CombinedOutput(); err != nil {
+				_, _ = os.Stderr.Write(out)
+				os.Exit(2)
+			}
+			_ = os.WriteFile(done, nil, 0o644)
+			os.Exit(1)
+		}
+	}
+	cmd := exec.Command(realGit, args...)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+			os.Exit(exitErr.ExitCode())
+		}
+		os.Exit(2)
+	}
+	os.Exit(0)
+}
+
+// After a pull request's head is fetched without a depth limit, the clone can
+// end at many commits that neither the source nor a candidate reaches: only
+// theirs may cost a fetch.
+func TestGetBaseBranchShaDeepensOnlyTheComparedHistory(t *testing.T) {
+	isolateFixtureGit(t)
+	// History older than the month keeps the clone shallow throughout.
+	root, origin, base, feature, main := newBaseBranchOrigin(t, 90*24*time.Hour, 0, 0, 0)
+	const unrelated = 20
+	for i := range unrelated {
+		// Two commits, so that fetching the tip alone leaves a boundary.
+		name := "topic-" + strconv.Itoa(i)
+		runFixtureGit(t, origin, "switch", "--orphan", name)
+		runFixtureGit(t, origin, "commit", "--allow-empty", "-m", name)
+		runFixtureGit(t, origin, "commit", "--allow-empty", "-m", name+" tip")
+	}
+	runFixtureGit(t, origin, "switch", "main")
+	checkout := filepath.Join(root, "checkout")
+	pushCheckout(t, origin, checkout, feature, main)
+	// One depth-limited fetch, which keeps a boundary at every tip.
+	fetch := make([]string, 0, 5+unrelated)
+	fetch = append(fetch, "fetch", "--no-tags", "--depth=1", "origin", "+"+feature+":refs/remotes/origin/feature")
+	for i := range unrelated {
+		name := "topic-" + strconv.Itoa(i)
+		fetch = append(fetch, "+refs/heads/"+name+":refs/remotes/origin/"+name)
+	}
+	runFixtureGit(t, checkout, fetch...)
+	shallow, err := os.ReadFile(filepath.Join(checkout, ".git", "shallow"))
+	require.NoError(t, err)
+	require.Len(t, strings.Fields(string(shallow)), unrelated+1)
+	t.Chdir(checkout)
+	resetGitCommandCachesForTesting(t)
+	ResetCITags()
+	t.Cleanup(ResetCITags)
+	AddCITags(constants.GitPrBaseBranch, "")
+	AddCITags(constants.GitHeadCommit, "")
+	trace := filepath.Join(root, "trace.log")
+	t.Setenv("GIT_TRACE", trace)
+
+	sha, err := GetBaseBranchSha("")
+	require.NoError(t, err)
+	assert.Equal(t, base, sha)
+	logged, err := os.ReadFile(trace)
+	require.NoError(t, err)
+	fetches := strings.Count(string(logged), "built-in: git fetch '--shallow-since")
+	assert.LessOrEqual(t, fetches, 2, "only the feature and main boundaries need history")
+	assert.Equal(t, "true", runFixtureGit(t, checkout, "rev-parse", "--is-shallow-repository"))
+}
+
+// useBaseBranchCheckout changes to checkout and resets what base branch
+// detection caches, with prBaseBranch as the CI's pull request base branch and
+// no head commit. It returns a function that counts, in git's trace of the
+// commands that follow, the commands that start with prefix.
+func useBaseBranchCheckout(t *testing.T, checkout, prBaseBranch string) (count func(prefix string) int) {
+	t.Helper()
+	t.Chdir(checkout)
+	resetGitCommandCachesForTesting(t)
+	ResetCITags()
+	t.Cleanup(ResetCITags)
+	AddCITags(constants.GitPrBaseBranch, prBaseBranch)
+	AddCITags(constants.GitHeadCommit, "")
+	trace := filepath.Join(t.TempDir(), "trace.log")
+	t.Setenv("GIT_TRACE", trace)
+	return func(prefix string) int {
+		logged, err := os.ReadFile(trace)
+		require.NoError(t, err)
+		return strings.Count(string(logged), "built-in: git "+prefix)
+	}
+}
+
+// Every boundary in the compared history must be deepened before comparing: a
+// merge base found through one side can be older than the one through another.
+func TestGetBaseBranchShaFindsTheBestMergeBase(t *testing.T) {
+	isolateFixtureGit(t)
+	const day = 24 * time.Hour
+	root := t.TempDir()
+	origin := filepath.Join(root, "origin")
+	require.NoError(t, os.Mkdir(origin, 0o755))
+	runFixtureGit(t, origin, "init", "--initial-branch=main")
+	commitFixtureAt(t, origin, "first", 90*day)
+	commitFixtureAt(t, origin, "old base", 20*day)
+	runFixtureGit(t, origin, "branch", "p")
+	commitFixtureAt(t, origin, "new base", 10*day)
+	newBase := runFixtureGit(t, origin, "rev-parse", "HEAD")
+	runFixtureGit(t, origin, "branch", "q")
+	commitFixtureAt(t, origin, "main tip", day)
+	// p, on the old base, is newer than q, on the new one: it is deepened first.
+	runFixtureGit(t, origin, "switch", "q")
+	commitFixtureAt(t, origin, "q", 5*day)
+	runFixtureGit(t, origin, "switch", "p")
+	commitFixtureAt(t, origin, "p", 3*day)
+	runFixtureGit(t, origin, "switch", "-c", "feature")
+	runFixtureGit(t, origin, "merge", "--no-ff", "-m", "merge q", "q")
+	feature := runFixtureGit(t, origin, "rev-parse", "HEAD")
+	runFixtureGit(t, origin, "switch", "main")
+
+	checkout := filepath.Join(root, "checkout")
+	require.NoError(t, os.Mkdir(checkout, 0o755))
+	runFixtureGit(t, checkout, "init")
+	runFixtureGit(t, checkout, "remote", "add", "origin", fileURL(origin))
+	runFixtureGit(t, checkout, "fetch", "--no-tags", "--depth=2", "origin", "+"+feature+":refs/remotes/origin/feature")
+	runFixtureGit(t, checkout, "checkout", "--force", "-B", "feature", "refs/remotes/origin/feature")
+	useBaseBranchCheckout(t, checkout, "main")
+
+	sha, err := GetBaseBranchSha("")
+	require.NoError(t, err)
+	assert.Equal(t, newBase, sha)
+}
+
+// A pull request's base branch is fetched without asking the remote first; a
+// local branch of that name still serves when the remote doesn't have it.
+func TestGetBaseBranchShaFetchesThePullRequestBaseBranchDirectly(t *testing.T) {
+	t.Run("on the remote", func(t *testing.T) {
+		isolateFixtureGit(t)
+		root, origin, base, feature, main := newBaseBranchOrigin(t, 24*time.Hour, 0, 0, 0)
+		checkout := filepath.Join(root, "checkout")
+		pushCheckout(t, origin, checkout, feature, main)
+		count := useBaseBranchCheckout(t, checkout, "main")
+
+		sha, err := GetBaseBranchSha("")
+		require.NoError(t, err)
+		assert.Equal(t, base, sha)
+		assert.Zero(t, count("ls-remote --heads"))
+	})
+	t.Run("only local", func(t *testing.T) {
+		isolateFixtureGit(t)
+		root, origin, base, _, _ := newBaseBranchOrigin(t, 24*time.Hour, 0, 0, 0)
+		checkout := filepath.Join(root, "checkout")
+		runFixtureGit(t, root, "clone", "--single-branch", "--branch=feature", fileURL(origin), checkout)
+		runFixtureGit(t, checkout, "branch", "main", base)
+		runFixtureGit(t, origin, "branch", "-m", "main", "trunk")
+		useBaseBranchCheckout(t, checkout, "main")
+
+		sha, err := GetBaseBranchSha("")
+		require.NoError(t, err)
+		assert.Equal(t, base, sha)
+	})
+	t.Run("nowhere", func(t *testing.T) {
+		isolateFixtureGit(t)
+		root, origin, _, feature, main := newBaseBranchOrigin(t, 24*time.Hour, 0, 0, 0)
+		checkout := filepath.Join(root, "checkout")
+		pushCheckout(t, origin, checkout, feature, main)
+		runFixtureGit(t, origin, "branch", "-m", "main", "trunk")
+		useBaseBranchCheckout(t, checkout, "main")
+
+		sha, err := GetBaseBranchSha("")
+		assert.Error(t, err)
+		assert.Empty(t, sha)
+	})
+}
+
+// The detected base branch candidates are looked up on the remote in one
+// request, and only the ones it has are fetched.
+func TestGetBaseBranchShaAsksTheRemoteOnce(t *testing.T) {
+	isolateFixtureGit(t)
+	root, origin, base, feature, main := newBaseBranchOrigin(t, 24*time.Hour, 0, 0, 0)
+	runFixtureGit(t, origin, "branch", "dev", main)
+	checkout := filepath.Join(root, "checkout")
+	pushCheckout(t, origin, checkout, feature, main)
+	count := useBaseBranchCheckout(t, checkout, "")
+
+	sha, err := GetBaseBranchSha("")
+	require.NoError(t, err)
+	assert.Equal(t, base, sha)
+	assert.Equal(t, 1, count("ls-remote --heads"))
+	assert.Equal(t, 2, count("fetch --recurse-submodules=no --depth 1"), "main and dev")
+}
+
+// A fetch can write the remote-tracking ref of a later candidate through the
+// remote's configured refspec: that candidate is then not fetched again.
+func TestGetBaseBranchShaKeepsRefsWrittenByAnEarlierFetch(t *testing.T) {
+	isolateFixtureGit(t)
+	root, origin, base, feature, main := newBaseBranchOrigin(t, 24*time.Hour, 0, 0, 0)
+	runFixtureGit(t, origin, "switch", "-c", "dev", main)
+	runFixtureGit(t, origin, "commit", "--allow-empty", "-m", "dev")
+	runFixtureGit(t, origin, "switch", "main")
+	checkout := filepath.Join(root, "checkout")
+	pushCheckout(t, origin, checkout, feature, main)
+	runFixtureGit(t, checkout, "config", "--add", "remote.origin.fetch", "+refs/heads/main:refs/remotes/origin/dev")
+	useBaseBranchCheckout(t, checkout, "")
+
+	sha, err := GetBaseBranchSha("")
+	require.NoError(t, err)
+	assert.Equal(t, base, sha)
+	assert.Equal(t, main, runFixtureGit(t, checkout, "rev-parse", "refs/remotes/origin/dev"))
+}
+
+// The boundaries that need history are deepened in one fetch.
+func TestGetBaseBranchShaDeepensInOneFetch(t *testing.T) {
+	isolateFixtureGit(t)
+	root, origin, base, feature, main := newBaseBranchOrigin(t, 90*24*time.Hour, 0, 0, 0)
+	checkout := filepath.Join(root, "checkout")
+	pushCheckout(t, origin, checkout, feature, main)
+	count := useBaseBranchCheckout(t, checkout, "main")
+
+	sha, err := GetBaseBranchSha("")
+	require.NoError(t, err)
+	assert.Equal(t, base, sha)
+	assert.Equal(t, 1, count("fetch '--shallow-since"), "the feature and main boundaries in one fetch")
+}
+
+// Fetching a base branch must not fetch the submodule commits that its history
+// names: base branch detection reads only the repository's own history.
+func TestCheckAndFetchBranchLeavesSubmodulesAlone(t *testing.T) {
+	isolateFixtureGit(t)
+	root := t.TempDir()
+	library := filepath.Join(root, "library")
+	require.NoError(t, os.Mkdir(library, 0o755))
+	runFixtureGit(t, library, "init", "--initial-branch=main")
+	runFixtureGit(t, library, "commit", "--allow-empty", "-m", "s0")
+	s0 := runFixtureGit(t, library, "rev-parse", "HEAD")
+	runFixtureGit(t, library, "switch", "-c", "next")
+	runFixtureGit(t, library, "commit", "--allow-empty", "-m", "s1")
+	s1 := runFixtureGit(t, library, "rev-parse", "HEAD")
+	runFixtureGit(t, library, "switch", "main")
+
+	origin := filepath.Join(root, "origin")
+	require.NoError(t, os.Mkdir(origin, 0o755))
+	runFixtureGit(t, origin, "init", "--initial-branch=main")
+	require.NoError(t, os.WriteFile(filepath.Join(origin, ".gitmodules"), []byte("[submodule \"lib\"]\n\tpath = lib\n\turl = "+fileURL(library)+"\n"), 0o644))
+	runFixtureGit(t, origin, "add", ".gitmodules")
+	runFixtureGit(t, origin, "update-index", "--add", "--cacheinfo", "160000,"+s0+",lib")
+	runFixtureGit(t, origin, "commit", "-m", "base")
+	runFixtureGit(t, origin, "switch", "-c", "feature")
+	runFixtureGit(t, origin, "commit", "--allow-empty", "-m", "feature")
+	runFixtureGit(t, origin, "switch", "main")
+	// main points the submodule at s1, then back at s0.
+	runFixtureGit(t, origin, "update-index", "--cacheinfo", "160000,"+s1+",lib")
+	runFixtureGit(t, origin, "commit", "-m", "library s1")
+	runFixtureGit(t, origin, "update-index", "--cacheinfo", "160000,"+s0+",lib")
+	runFixtureGit(t, origin, "commit", "-m", "library s0")
+
+	checkout := filepath.Join(root, "checkout")
+	runFixtureGit(t, root, "clone", "--single-branch", "--branch=feature", fileURL(origin), checkout)
+	runFixtureGit(t, checkout, "-c", "protocol.file.allow=always", "submodule", "update", "--init", "--depth=1")
+	submodule := filepath.Join(checkout, "lib")
+	require.Equal(t, s0, runFixtureGit(t, submodule, "rev-parse", "HEAD"))
+	hasS1 := func() bool {
+		cmd := exec.Command("git", "cat-file", "-e", s1+"^{commit}")
+		cmd.Dir = submodule
+		return cmd.Run() == nil
+	}
+	require.False(t, hasS1())
+
+	// Let git fetch local submodules, as it would remote ones.
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("GIT_CONFIG_KEY_0", "protocol.file.allow")
+	t.Setenv("GIT_CONFIG_VALUE_0", "always")
+	t.Chdir(checkout)
+	resetGitCommandCachesForTesting(t)
+
+	checkAndFetchBranch("main", "origin")
+
+	runFixtureGit(t, checkout, "rev-parse", "--verify", "refs/remotes/origin/main")
+	assert.False(t, hasS1(), "the submodule must not get the commit that main's history names")
+}
+
+// A failed shallow clone check must not pass for a complete clone: that would
+// fetch a base branch's whole history into a shallow one.
+func TestCheckAndFetchBranchWithoutShallowState(t *testing.T) {
+	resetGitCommandCachesForTesting(t)
+	commands := filepath.Join(t.TempDir(), "commands.log")
+	testBinary, err := os.Executable()
+	require.NoError(t, err)
+	gitExecutable = testBinary
+	gitExecutableArgs = []string{"-test.run=^TestFakeGitWithoutShallowStateHelperProcess$", "--"}
+	t.Setenv("DD_TEST_GIT_WITHOUT_SHALLOW_STATE", "1")
+	t.Setenv("DD_TEST_GIT_COMMANDS", commands)
+
+	checkAndFetchBranch("main", "origin")
+
+	for range 2 {
+		_, err := isAShallowCloneRepository()
+		assert.Error(t, err, "a failed check must not be cached as a complete clone")
+	}
+	logged, err := os.ReadFile(commands)
+	require.NoError(t, err)
+	assert.NotContains(t, string(logged), "fetch")
+}
+
+// TestFakeGitWithoutShallowStateHelperProcess is a git whose shallow clone
+// check fails, with a remote that has main. It logs its commands.
+func TestFakeGitWithoutShallowStateHelperProcess(t *testing.T) {
+	if os.Getenv("DD_TEST_GIT_WITHOUT_SHALLOW_STATE") != "1" {
+		return
+	}
+	args := os.Args
+	for len(args) > 0 && args[0] != "--" {
+		args = args[1:]
+	}
+	if len(args) > 0 {
+		args = args[1:]
+	}
+	for len(args) >= 2 && args[0] == "-c" {
+		args = args[2:]
+	}
+	if f, err := os.OpenFile(os.Getenv("DD_TEST_GIT_COMMANDS"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
+		_, _ = f.WriteString(strings.Join(args, " ") + "\n")
+		_ = f.Close()
+	}
+	switch {
+	case len(args) >= 2 && args[0] == "rev-parse" && args[1] == "--is-shallow-repository":
+		os.Exit(128)
+	case len(args) >= 1 && args[0] == "show-ref":
+		os.Exit(1)
+	case len(args) >= 1 && args[0] == "ls-remote":
+		_, _ = os.Stdout.WriteString("0123456789012345678901234567890123456789\trefs/heads/main\n")
+	}
+	os.Exit(0)
+}
+
+// The Git upload and base branch detection check and invalidate the shallow
+// clone cache from different goroutines; run with -race.
+func TestShallowCloneCacheConcurrentInvalidation(t *testing.T) {
+	usePackFilesGitFixture(t)
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			for range 20 {
+				_, err := isAShallowCloneRepository()
+				assert.NoError(t, err)
+				invalidateShallowCloneCache()
+			}
+		})
+	}
+	wg.Wait()
+	shallow, err := isAShallowCloneRepository()
+	require.NoError(t, err)
+	assert.False(t, shallow)
+}
+
+// pushCheckout checks out feature as actions/checkout does for a push: one
+// commit, then a local branch.
+func pushCheckout(t *testing.T, origin, checkout, feature, _ string) {
+	t.Helper()
+	require.NoError(t, os.Mkdir(checkout, 0o755))
+	runFixtureGit(t, checkout, "init")
+	runFixtureGit(t, checkout, "remote", "add", "origin", fileURL(origin))
+	runFixtureGit(t, checkout, "fetch", "--no-tags", "--depth=1", "origin", "+"+feature+":refs/remotes/origin/feature")
+	runFixtureGit(t, checkout, "checkout", "--force", "-B", "feature", "refs/remotes/origin/feature")
+}
+
+// commitFixtureAt commits in dir as if age ago.
+func commitFixtureAt(t *testing.T, dir, message string, age time.Duration) {
+	t.Helper()
+	date := time.Now().Add(-age).Format(time.RFC3339)
+	cmd := exec.Command("git", "-c", "user.name=CI Fixture", "-c", "user.email=ci-fixture@example.com", "commit", "--allow-empty", "-m", message)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_AUTHOR_DATE="+date, "GIT_COMMITTER_DATE="+date)
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git commit: %s", out)
+}
+
+// fileURL is the file URL of path, which git needs for shallow fetches from a
+// local repository.
+func fileURL(path string) string {
+	path = filepath.ToSlash(path)
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return "file://" + path
 }
 
 func acceptableError(err error) bool {

@@ -105,6 +105,8 @@ func Run(scenario, mode string, run func() int, managedSeeds func(*testing.F), p
 		}
 	} else if scenario == "filtered" {
 		want = []eventExpectation{{name: "TestNormalSelection", status: constants.TestStatusPass}}
+	} else if scenario == "empty" {
+		want = nil
 	} else if scenario == "seed-lifecycle" {
 		wantExitCode = 1
 		want = []eventExpectation{
@@ -188,8 +190,20 @@ func Run(scenario, mode string, run func() int, managedSeeds func(*testing.F), p
 	if server.EventTypeCount(constants.SpanTypeTest) != len(want) {
 		panic(fmt.Sprintf("unexpected native test event count: got %d, want %d", server.EventTypeCount(constants.SpanTypeTest), len(want)))
 	}
-	if server.EventTypeCount(constants.SpanTypeTestSession) != 1 || server.EventTypeCount(constants.SpanTypeTestModule) != 1 || server.EventTypeCount(constants.SpanTypeTestSuite) != 1 {
-		panic("expected one closed session, module, and suite")
+	// Fuzz targets and examples create modules too, so only a run that selects
+	// nothing closes an empty session.
+	wantContainers, wantEmptyReason := 1, ""
+	if scenario == "empty" {
+		wantContainers, wantEmptyReason = 0, constants.TestSessionEmptyReasonZeroTests
+		if status, _ := server.SessionMeta(constants.TestStatus); status != constants.TestStatusSkip {
+			panic("unexpected empty session status: " + status)
+		}
+	}
+	if server.EventTypeCount(constants.SpanTypeTestSession) != 1 || server.EventTypeCount(constants.SpanTypeTestModule) != wantContainers || server.EventTypeCount(constants.SpanTypeTestSuite) != wantContainers {
+		panic(fmt.Sprintf("expected one closed session and %d module and suite", wantContainers))
+	}
+	if reason, _ := server.SessionMeta(constants.TestSessionEmptyReason); reason != wantEmptyReason {
+		panic(fmt.Sprintf("unexpected session empty reason: got %q, want %q", reason, wantEmptyReason))
 	}
 
 	// The controller validates native failure scenarios itself, so a verified

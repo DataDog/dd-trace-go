@@ -215,6 +215,8 @@ func finishRequestSpan(s *tracer.Span, status int, errorFn func(int) bool, otelS
 // an allowlist is set.
 // When DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is set to an empty value, the obfuscation is disabled: the query
 // string is collected as-is, with no redaction of sensitive values. An allowlist still applies.
+// When DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is a custom regexp and the query string is longer than
+// DD_HTTP_SERVER_TAG_QUERY_STRING_SIZE bytes (default 5000, 0 means no limit), the query string is <redacted>.
 // See https://docs.datadoghq.com/tracing/configure_data_security/?tab=net#redact-query-strings for more information.
 func URLFromRequest(r *http.Request, queryString bool) string {
 	return urlFromRequest(r, queryString, false, r.Host)
@@ -228,6 +230,8 @@ func URLFromRequest(r *http.Request, queryString bool) string {
 // an allowlist is set.
 // When DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is set to an empty value, the obfuscation is disabled: the query
 // string is collected as-is, with no redaction of sensitive values. An allowlist still applies.
+// When DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is a custom regexp and the query string is longer than
+// DD_HTTP_SERVER_TAG_QUERY_STRING_SIZE bytes (default 5000, 0 means no limit), the query string is <redacted>.
 // See https://docs.datadoghq.com/tracing/configure_data_security/?tab=net#redact-query-strings for more information.
 func URLFromClientRequest(r *http.Request, queryString bool) string {
 	return urlFromRequest(r, queryString, true, r.Host)
@@ -293,8 +297,10 @@ func skipCollectionCheck(c *obfuscateQueryStringConfig) {
 // as URLFromRequest. It returns "" when query string collection is disabled, when
 // DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is not a valid regexp, or when rawQuery is empty. When
 // DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is set to an empty value, the obfuscation is disabled: it returns
-// rawQuery as-is, with no redaction of sensitive values. An allowlist still applies. Use it for integrations
-// whose request type is not a *http.Request, such as fasthttp.
+// rawQuery as-is, with no redaction of sensitive values. An allowlist still applies. When
+// DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP is a custom regexp and rawQuery is longer than
+// DD_HTTP_SERVER_TAG_QUERY_STRING_SIZE bytes (default 5000, 0 means no limit), it returns "<redacted>".
+// Use it for integrations whose request type is not a *http.Request, such as fasthttp.
 func ObfuscateQueryString(rawQuery string, opts ...ObfuscateQueryStringOption) string {
 	config := obfuscateQueryStringConfig{checkCollection: true}
 	for _, opt := range opts {
@@ -322,6 +328,11 @@ func ObfuscateQueryString(rawQuery string, opts ...ObfuscateQueryStringOption) s
 		return obfuscateQueryStringDefault(rawQuery)
 	}
 	if cfg.queryStringRegexp != nil {
+		if cfg.queryStringSizeLimit > 0 && len(rawQuery) > cfg.queryStringSizeLimit {
+			// Bound the cost of the custom regexp: it cannot stop before it
+			// is done. Do not truncate: the tail can contain a secret.
+			return "<redacted>"
+		}
 		return cfg.queryStringRegexp.ReplaceAllLiteralString(rawQuery, "<redacted>")
 	}
 	return rawQuery

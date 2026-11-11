@@ -135,6 +135,9 @@ type SpanContext struct {
 	errors      atomic.Int32 // number of spans with errors in this trace
 	// atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
 	hasBaggage uint32 // +checkatomic
+	// bridgeState is the state of a borrowed OpenTelemetry view of the span: 0 open, 1 pinned,
+	// 2 released to the span pool, 3 pinned with Ok status. It is in the padding after hasBaggage.
+	bridgeState atomic.Uint32
 
 	trace *trace // reference to the trace that this span belongs too
 
@@ -167,6 +170,11 @@ type SpanContext struct {
 	// links to related spans in separate|external|disconnected traces
 	// +checklocks:mu
 	spanLinks []SpanLink
+
+	// bridgeOwner is the span of this context. Only builds made with Orchestrion set it. The
+	// OpenTelemetry bridge uses it to get the span from the context snapshot. Unlike spanSnapshot,
+	// it keeps the whole span alive as long as the context lives.
+	bridgeOwner *Span
 }
 
 // Private interface for span contexts that can propagate sampling decisions.
@@ -942,8 +950,8 @@ func (t *trace) push(sp *Span) {
 	if len(t.spans) >= traceMaxSize {
 		// capacity is reached, we will not be able to complete this trace.
 		t.full = true
-		t.spans = nil // allow our spans to be collected by GC.
-		log.Error("trace buffer full (%d spans), dropping trace", traceMaxSize)
+		t.spans = nil                                                           // allow our spans to be collected by GC.
+		log.Error("trace buffer full (%d spans), dropping trace", traceMaxSize) //errtrack:ignore per-span capacity limit
 		if tr != nil {
 			tracerstats.Signal(tracerstats.TracesDropped, 1)
 		}

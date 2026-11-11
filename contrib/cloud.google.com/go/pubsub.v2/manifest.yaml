@@ -1,0 +1,13 @@
+_v: 1
+name: cloud.google.com/go/pubsub/v2
+display_name: Google Cloud Pub/Sub v2
+description: Instruments Google Cloud Pub/Sub v2 message publishing and receive handlers with trace propagation, optional
+  producer span links, and topic, subscription, snapshot, and schema administration.
+packages:
+- name: cloud.google.com/go/pubsub/v2
+category:
+- messaging.consumer
+- messaging.producer
+systems:
+- gcp.pubsub
+creation_date: '2025-08-26'

@@ -118,7 +118,7 @@ func (s *Span) spanEventsAsJSONString() string {
 	}
 	events, err := json.Marshal(s.spanEvents)
 	if err != nil {
-		log.Error("failed to marshal span events: %s", err.Error())
+		log.Error("failed to marshal span events: %s", err.Error()) //errtrack:ignore unsupported user-provided span event value
 		return ""
 	}
 	return string(events)
@@ -1014,6 +1014,18 @@ func (s *Span) serializeSpanEvents() {
 	s.meta.Set("events", string(b))
 }
 
+// spanFinished reports whether s finished. It is used by github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry
+// via go:linkname, because a borrowed OpenTelemetry span must stop recording when the
+// integration that owns it finishes it.
+func spanFinished(s *Span) bool {
+	if s == nil {
+		return true
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.finished
+}
+
 // recordFFEEvaluation records a feature flag evaluation for FFE span enrichment.
 // Used by github.com/DataDog/dd-trace-go/v2/openfeature via go:linkname.
 //
@@ -1175,6 +1187,8 @@ func (s *Span) finish(finishTime int64) {
 	tracer, hasTracer := concreteTracerForTrace(getGlobalTracer(), s.context.trace, s.spanType).(*tracer)
 	if hasTracer {
 		if !tracer.config.internalConfig.TracingEnabled() {
+			// The tracer drops the span, but the span is finished.
+			s.finished = true
 			return
 		}
 		if tracer.config.canDropP0s() {
@@ -1222,7 +1236,7 @@ func obfuscatedResource(o *obfuscate.Obfuscator, typ, resource string) string {
 	case "sql", "cassandra":
 		oq, err := o.ObfuscateSQLString(resource)
 		if err != nil {
-			log.Error("Error obfuscating stats group resource %q: %v", resource, err.Error())
+			log.Error("Error obfuscating stats group resource %q: %v", resource, err.Error()) //errtrack:ignore unparseable user-provided resource
 			return textNonParsable
 		}
 		return oq.Query

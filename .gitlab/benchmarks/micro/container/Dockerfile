@@ -1,4 +1,6 @@
-FROM golang:1.27@sha256:f44f6e88636cfb311f9ebace870ded69d943f227bb3cb27d32ffd84ea18c43ea
+# GitLab CI blocks Docker Hub, so this image comes from the internal mirror.
+# Dependabot cannot reach the mirror. Update the digest by hand when you rebuild the image (see ../README.md).
+FROM registry.ddbuild.io/images/mirror/golang:1.27@sha256:2920bb124f1a2e12a1d39f0cab756ae0068441ee1da7655dec7f5e374944095b
 
 ARG CI_JOB_TOKEN
 

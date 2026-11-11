@@ -209,7 +209,7 @@ func NewPropagator(cfg *PropagatorConfig, propagators ...Propagator) Propagator 
 		// valid
 	default:
 		if cfg.BehaviorExtract != "" {
-			log.Warn("unrecognized propagation behavior: %s. Defaulting to continue", cfg.BehaviorExtract)
+			log.Warn("unrecognized propagation behavior: %s. Defaulting to continue", cfg.BehaviorExtract) //errtrack:ignore invalid user configuration
 		}
 		cfg.BehaviorExtract = propagationBehaviorExtractContinue
 	}
@@ -293,9 +293,9 @@ func getPropagators(cfg *PropagatorConfig, ps string) ([]Propagator, string) {
 			listNames = append(listNames, v)
 		case "none":
 			log.Warn("Propagator \"none\" has no effect when combined with other propagators. " +
-				"To disable the propagator, set to `none`")
+				"To disable the propagator, set to `none`") //errtrack:ignore conflicting user configuration
 		default:
-			log.Warn("unrecognized propagator: %s\n", v)
+			log.Warn("unrecognized propagator: %s\n", v) //errtrack:ignore invalid user configuration
 		}
 	}
 	if len(list) == 0 {
@@ -676,13 +676,13 @@ func (p *propagator) marshalPropagatingTags(ctx *SpanContext) string {
 			return true // don't propagate W3C headers with the DD propagator
 		}
 		if err := isValidPropagatableTag(k, v); err != nil {
-			log.Warn("Won't propagate tag %q: %s", k, err.Error())
+			log.Warn("Won't propagate tag %q: %s", k, err.Error()) //errtrack:ignore invalid tag on a request path
 			properr = "encoding_error"
 			return true
 		}
 		if tagLen := sb.Len() + len(k) + len(v); tagLen > p.cfg.MaxTagsHeaderLen {
 			sb.Reset()
-			log.Warn("Won't propagate tag %q: %q length is (%d) which exceeds the maximum len of (%d).", k, v, tagLen, p.cfg.MaxTagsHeaderLen)
+			log.Warn("Won't propagate tag %q: %q length is (%d) which exceeds the maximum len of (%d).", k, v, tagLen, p.cfg.MaxTagsHeaderLen) //errtrack:ignore oversized tag on a request path
 			properr = "inject_max_size"
 			return false
 		}
@@ -737,13 +737,13 @@ func baggageByteCapped(bytes, addBytes int) bool {
 func addOTBaggageItem(baggage map[string]string, baggageBytes int, warned bool, key, val string) (map[string]string, int, bool) {
 	if baggageItemCapped(len(baggage)) {
 		if !warned {
-			log.Warn("baggage item count exceeded limit (%d), dropping remaining ot-baggage-* items", baggageMaxItems)
+			log.Warn("baggage item count exceeded limit (%d), dropping remaining ot-baggage-* items", baggageMaxItems) //errtrack:ignore request baggage exceeds a documented limit
 		}
 		return baggage, baggageBytes, true
 	}
 	if baggageByteCapped(baggageBytes, len(key)+len(val)) {
 		if !warned {
-			log.Warn("baggage byte limit exceeded (%d), dropping remaining ot-baggage-* items", baggageMaxBytes)
+			log.Warn("baggage byte limit exceeded (%d), dropping remaining ot-baggage-* items", baggageMaxBytes) //errtrack:ignore request baggage exceeds a documented limit
 		}
 		return baggage, baggageBytes, true
 	}
@@ -919,13 +919,13 @@ func unmarshalPropagatingTagsIntoTrace(t *trace, v string, maxLen int) *trace {
 		return t
 	}
 	if len(v) > maxLen {
-		log.Warn("Did not extract %s, size limit exceeded: %d. Incoming tags will not be propagated further.", traceTagsHeader, maxLen)
+		log.Warn("Did not extract %s, size limit exceeded: %d. Incoming tags will not be propagated further.", traceTagsHeader, maxLen) //errtrack:ignore incoming request tags exceed a documented limit
 		t.setTag(keyPropagationError, "extract_max_size")
 		return t
 	}
 	tags, err := parsePropagatableTraceTags(v)
 	if err != nil {
-		log.Warn("Did not extract %q: %s. Incoming tags will not be propagated further.", traceTagsHeader, err.Error())
+		log.Warn("Did not extract %q: %s. Incoming tags will not be propagated further.", traceTagsHeader, err.Error()) //errtrack:ignore invalid propagated input on a request path
 		t.setTag(keyPropagationError, "decoding_error")
 	}
 	t.replacePropagatingTags(tags)
@@ -1702,7 +1702,7 @@ func parseTracestate(ctx *SpanContext, header string) {
 		// otherwise stored and re-propagated verbatim regardless of how many
 		// (or how large) non-dd vendors it carries. Treat it like an absent
 		// header rather than trying to selectively trim it.
-		log.Warn("tracestate header exceeds the maximum size (%d), dropping it", tracestateMaxSize)
+		log.Warn("tracestate header exceeds the maximum size (%d), dropping it", tracestateMaxSize) //errtrack:ignore incoming request header exceeds a documented limit
 		return
 	}
 	needsCleaning := false
@@ -2018,18 +2018,18 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 			itemBytes++ // comma separator
 		}
 		if baggageItemCapped(ctr) {
-			log.Warn("baggage item count exceeded limit (%d), dropping remaining items", baggageMaxItems)
+			log.Warn("baggage item count exceeded limit (%d), dropping remaining items", baggageMaxItems) //errtrack:ignore request baggage exceeds a documented limit
 			break
 		}
 		if baggageByteCapped(byteCount, itemBytes) {
-			log.Warn("baggage byte limit exceeded (%d), dropping remaining items", baggageMaxBytes)
+			log.Warn("baggage byte limit exceeded (%d), dropping remaining items", baggageMaxBytes) //errtrack:ignore request baggage exceeds a documented limit
 			break
 		}
 		k, v, ok := strings.Cut(kv, "=")
 		trimmedK := strings.TrimSpace(k)
 		trimmedV := strings.TrimSpace(v)
 		if !ok || trimmedK == "" || trimmedV == "" {
-			log.Warn("invalid baggage item: %q, dropping entire header", kv)
+			log.Warn("invalid baggage item: %q, dropping entire header", kv) //errtrack:ignore invalid propagated input on a request path
 			return nil, nil
 		}
 		key, _ := url.QueryUnescape(trimmedK)

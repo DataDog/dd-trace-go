@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting/fixtures/itrbackfill/internal/mockci"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
@@ -39,14 +40,15 @@ func CheckCorpusLifecycle(t *testing.T, enabled string, corpusSize int) {
 	}
 	server := mockci.Start(net.SettingsResponseData{SubtestFeaturesEnabled: true}, nil, nil)
 	defer server.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), fixtureChildDeadline(fixtureChildTimeout))
 	defer cancel()
-	cmd := exec.CommandContext(ctx, binary, "-test.run=^FuzzCorpus$", "-test.timeout=25s")
+	cmd := exec.CommandContext(ctx, binary, "-test.run=^FuzzCorpus$", "-test.timeout="+fixtureChildTimeout.String())
 	skippedCorpus := enabled == "skip"
 	if skippedCorpus {
 		enabled = "true"
 	}
-	cmd.Env = append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO=corpus-child", "DD_CIVISIBILITY_ENABLED="+enabled)
+	cmd.Env = append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO=corpus-child", "DD_CIVISIBILITY_ENABLED="+enabled,
+		bazel.GitCLIDisabledEnv+"=true")
 	if skippedCorpus {
 		cmd.Env = append(cmd.Env, "DD_FUZZ_CORPUS_SKIP=true")
 	}
@@ -114,7 +116,7 @@ func CheckFatalShutdown(t *testing.T, scenario string, target func(*testing.F)) 
 	}
 	server := mockci.StartWithTestManagement(settings, nil, nil, management)
 	defer server.Close()
-	args := []string{"-test.run=^" + root + "$", "-test.timeout=15s"}
+	args := []string{"-test.run=^" + root + "$", "-test.timeout=" + fixtureChildTimeout.String()}
 	childEnv := append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO=fatal-child", "DD_FUZZ_FATAL_KIND="+scenario)
 	if strings.HasSuffix(scenario, "-error") || strings.HasSuffix(scenario, "-fatal") {
 		// Check the uninstrumented process too: cleanup Fatal replaces the
@@ -318,9 +320,14 @@ func fuzzTargetName(target func(*testing.F)) string {
 
 func printedDuration(t *testing.T, output, name string) string {
 	t.Helper()
-	match := regexp.MustCompile(`--- PASS: ` + regexp.QuoteMeta(name) + ` \(([0-9.]+)s\)`).FindStringSubmatch(output)
+	match := regexp.MustCompile(`--- PASS: ` + regexp.QuoteMeta(name) + ` \((-?[0-9.]+)s\)`).FindStringSubmatch(output)
 	if len(match) != 2 {
 		t.Fatalf("missing Go duration for %s: %s", name, output)
+	}
+	// On Windows, testing and the parallel-wait offset use different clocks.
+	// Normalize negative zero at Go's printed precision, but retain nonzero values.
+	if match[1] == "-0.00" {
+		return "0.00"
 	}
 	return match[1]
 }
@@ -333,7 +340,7 @@ func runLifecycleChild(t *testing.T, root, enabled string, extraEnv ...string) (
 	}
 	childEnv := append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO=lifecycle-child", "DD_CIVISIBILITY_ENABLED="+enabled)
 	childEnv = append(childEnv, extraEnv...)
-	output, err := runFixtureChild(binary, childEnv, "-test.run=^"+root+"$", "-test.v=true", "-test.parallel=1", "-test.timeout=15s")
+	output, err := runFixtureChild(binary, childEnv, "-test.run=^"+root+"$", "-test.v=true", "-test.parallel=1", "-test.timeout="+fixtureChildTimeout.String())
 	if err == nil {
 		return string(output), 0
 	}
@@ -344,10 +351,43 @@ func runLifecycleChild(t *testing.T, root, enabled string, extraEnv ...string) (
 	return "", -1
 }
 
+// fixtureChildTimeout is the native test budget the harness gives each child.
+// A healthy child finishes in about one second. The hosted Windows runners
+// stall fixture children for tens of seconds, and a stall consumes the
+// child's own budget, so a tight value turns a runner stall into a failure.
+const fixtureChildTimeout = time.Minute
+
+// fixtureChildGrace is the wall-clock time the harness grants beyond the
+// child's own -test.timeout. The child spends that margin printing goroutine
+// stacks and exiting after its budget expires. The harness deadline must
+// stay behind the child's own timeout: when it fires first, the harness kills
+// the child and the run reports the cancellation instead of the child's result.
+const fixtureChildGrace = 45 * time.Second
+
+// fixtureChildDeadline returns the harness deadline for a child that runs
+// with the given native -test.timeout budget.
+func fixtureChildDeadline(childTimeout time.Duration) time.Duration {
+	return childTimeout + fixtureChildGrace
+}
+
+// fixtureChildHarnessTimeout returns the runFixtureChild deadline for the
+// child's arguments. It follows the child's own -test.timeout when the flag
+// is present. A child without the flag runs under the grace budget alone.
+func fixtureChildHarnessTimeout(args []string) time.Duration {
+	for _, arg := range args {
+		if value, ok := strings.CutPrefix(arg, "-test.timeout="); ok {
+			if child, err := time.ParseDuration(value); err == nil {
+				return fixtureChildDeadline(child)
+			}
+		}
+	}
+	return fixtureChildGrace
+}
+
 // Each invocation owns its deadline: the CI-disabled reference run must not
 // consume the CI-enabled child's budget.
 func runFixtureChild(binary string, childEnv []string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), fixtureChildHarnessTimeout(args))
 	defer cancel()
 	cacheRoot, err := os.MkdirTemp("", "dd-trace-go-fuzz-child-")
 	if err != nil {
@@ -357,7 +397,10 @@ func runFixtureChild(binary string, childEnv []string, args ...string) ([]byte, 
 	cmd := exec.CommandContext(ctx, binary, args...)
 	// Distinct mock backends can reuse an address. Their settings must not
 	// survive in a shared read cache and change a later child's directives.
+	// Children also skip the Git CLI: their short test timeouts must not be
+	// spent on repository git work such as shallow-clone fetches.
 	cmd.Env = append(slices.Clone(childEnv),
+		bazel.GitCLIDisabledEnv+"=true",
 		"HOME="+filepath.Join(cacheRoot, "home"),
 		"XDG_CACHE_HOME="+filepath.Join(cacheRoot, "cache"),
 		"LOCALAPPDATA="+filepath.Join(cacheRoot, "cache"),

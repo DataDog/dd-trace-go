@@ -26,6 +26,19 @@ const (
 	SourceRemoteConfig
 )
 
+// String returns the DD_FEATURE_FLAGS_CONFIGURATION_SOURCE spelling of s, or
+// "disabled" for SourceDisabled.
+func (s Source) String() string {
+	switch s {
+	case SourceAgentless:
+		return "agentless"
+	case SourceRemoteConfig:
+		return "remote_config"
+	default:
+		return "disabled"
+	}
+}
+
 // Settings is the resolved, ready-to-use configuration for starting a
 // feature-flag delivery source.
 type Settings struct {

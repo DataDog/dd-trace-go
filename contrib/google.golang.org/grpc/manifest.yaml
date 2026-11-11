@@ -1,0 +1,13 @@
+_v: 1
+name: google.golang.org/grpc
+display_name: gRPC
+description: Instruments unary and streaming gRPC client and server calls and messages with distributed tracing, plus optional
+  server request and response security monitoring and blocking.
+packages:
+- name: google.golang.org/grpc
+category:
+- rpc.client
+- rpc.server
+systems:
+- grpc
+creation_date: '2016-10-27'

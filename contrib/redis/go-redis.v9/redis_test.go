@@ -105,6 +105,78 @@ func TestSkipRaw(t *testing.T) {
 	})
 }
 
+// Stop before network I/O so this covers resource extraction independently of
+// Redis availability, including applications which have not started a tracer.
+type stopProcessHook struct {
+	err error
+}
+
+func (h stopProcessHook) DialHook(next redis.DialHook) redis.DialHook { return next }
+func (h stopProcessHook) ProcessHook(redis.ProcessHook) redis.ProcessHook {
+	return func(context.Context, redis.Cmder) error { return h.err }
+}
+func (h stopProcessHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
+	return next
+}
+
+// These no-network regressions intentionally retain this package's INTEGRATION
+// gate; run with INTEGRATION=1 even though no Redis server is required.
+func TestGenericCommands(t *testing.T) {
+	cases := []struct {
+		name     string
+		args     []any
+		resource string
+		raw      string
+	}{
+		{"PING", []any{"PING"}, "PING", "PING"},
+		{"TIME", []any{"TIME"}, "TIME", "TIME"},
+		{"FLUSHALL", []any{"FLUSHALL"}, "FLUSHALL", "FLUSHALL"},
+		{"GET-with-args", []any{"GET", "k"}, "GET", "GET k"},
+		{"multi-word-first-arg", []any{"GET mykey"}, "GET", "GET mykey"},
+	}
+	for _, tracing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("tracing=%t", tracing), func(t *testing.T) {
+			var mt mocktracer.Tracer
+			if tracing {
+				mt = mocktracer.Start()
+				defer mt.Stop()
+			}
+			for _, cluster := range []bool{false, true} {
+				for _, skipRaw := range []bool{false, true} {
+					for _, tc := range cases {
+						t.Run(fmt.Sprintf("cluster=%t/skipRaw=%t/%s", cluster, skipRaw, tc.name), func(t *testing.T) {
+							var client redis.UniversalClient
+							if cluster {
+								client = redis.NewClusterClient(&redis.ClusterOptions{Addrs: []string{"127.0.0.1:0"}})
+							} else {
+								client = redis.NewClient(&redis.Options{Addr: "127.0.0.1:0"})
+							}
+							t.Cleanup(func() { require.NoError(t, client.Close()) })
+							WrapClient(client, WithSkipRawCommand(skipRaw))
+							stopped := errors.New("stopped before network I/O")
+							client.AddHook(stopProcessHook{err: stopped})
+							require.NotPanics(t, func() {
+								require.ErrorIs(t, client.Do(context.Background(), tc.args...).Err(), stopped)
+							})
+							if tracing {
+								spans := mt.FinishedSpans()
+								require.Len(t, spans, 1)
+								assert.Equal(t, tc.resource, spans[0].Tag(ext.ResourceName))
+								raw, rawPresent := spans[0].Tags()["redis.raw_command"]
+								assert.Equal(t, !skipRaw, rawPresent)
+								if rawPresent {
+									assert.Equal(t, tc.raw, raw)
+								}
+								mt.Reset()
+							}
+						})
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestClientEvalSha(t *testing.T) {
 	ctx := context.Background()
 	opts := &redis.Options{Addr: "127.0.0.1:6379"}

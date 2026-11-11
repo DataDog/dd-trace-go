@@ -19,6 +19,17 @@ on:
         required: false
         type: string
         default: ""
+      test-timeout:
+        description: >-
+          Per-binary go test -timeout for the core test suite. Empty keeps
+          Go's 10m default. Set only by the dynamic-analysis lanes, because
+          -race plus debug/deadlock instrumented binaries run several times
+          slower on a degraded runner and blow the 10m budget; gotestsum
+          --rerun-fails cannot rescue a whole-binary timeout (rerun aborted,
+          suspected panic).
+        required: false
+        type: string
+        default: ""
       contrib-modules:
         description: >-
           Space-separated contrib/instrumentation module directories to test, or
@@ -77,7 +88,7 @@ jobs:
           set -euo pipefail
           # One module per line; ALL (or an unset value) means every module.
           printf '%s' "${CONTRIB_MODULES:-ALL}" | tr ' ' '\n' > "${RUNNER_TEMP}/contrib-select.txt"
-          matrix="$(go run ./scripts/ci_contrib_matrix.go -select "${RUNNER_TEMP}/contrib-select.txt")"
+          matrix="$(go run ./scripts/ci_contrib_matrix.go -shards -select "${RUNNER_TEMP}/contrib-select.txt")"
           echo "matrix=${matrix}" >> "${GITHUB_OUTPUT}"
           # An empty matrix would still schedule nothing useful while making the
           # downstream job look mysteriously absent; gate it explicitly instead.
@@ -91,8 +102,13 @@ jobs:
   test-contrib-matrix:
     needs: set-up
     if: needs.set-up.outputs.has-contribs == 'true'
+    name: test-contrib-matrix (${{ matrix.chunk.shard }})
     runs-on:
       group: "APM Larger Runners"
+    # Without this the job inherits GitHub's 360-minute default, so a hang (for
+    # example in docker compose up) burns six hours of a larger runner and holds
+    # the merge queue. A healthy chunk takes under 22 minutes (p99 about 12).
+    timeout-minutes: 45
     env:
       INTEGRATION: true
       COMPOSE_FILE: .github/testservices/docker-compose.yaml
@@ -118,6 +134,12 @@ jobs:
       - name: Start CI service containers
         run: docker compose up -d
 
+      - name: Warn on unsupported seed alias
+        if: inputs.go-version != '1.26' && inputs.go-version != '1.27'
+        run: >-
+          echo "::warning::go-version '${{ inputs.go-version }}' matches
+          no seed alias; this job restores only"
+
       - name: Setup Go
         id: setup-go
         uses: ./.github/actions/setup-go
@@ -125,11 +147,26 @@ jobs:
           go-version: ${{ inputs.go-version }}
           check-latest: "true"
           workload: unit-contrib
+          # The variant names the fixed shard, not the module list. The
+          # set-up job assigns every module to a shard before it applies
+          # the pull request selection, so a narrowed pull request shares
+          # the nightly shard keys by construction.
           variant: |-
             {"runner":"APM Larger Runners",
-             "modules":${{ toJson(matrix.chunk) }},
+             "shard":${{ toJSON(matrix.chunk.shard) }},
              "tags":${{ toJSON(inputs.build_tags || 'standard') }},
              "coverage":"contrib"}
+          # Default-branch seed set: the nightly main runs of this
+          # workflow (Go 1.26 and 1.27) save the standard-variant keys,
+          # and the nightly dynamic-checks runs (Go 1.27 only) save the
+          # debug and deadlock families; every other run, including all
+          # PR and merge-queue runs, restores only. Narrowed PR matrices
+          # keep the nightly shard keys by construction: the variant
+          # names the fixed shard, not the module list, so any pull
+          # request restores the seed. The seed comparison uses the
+          # raw input: pass the alias ("1.27"), not a resolved
+          # version ("1.27.2"), or the job stops seeding.
+          seed: ${{ inputs.go-version == '1.26' || inputs.go-version == '1.27' }}
 
       - name: Restore and install development tools
         id: tools
@@ -151,7 +188,7 @@ jobs:
           RERUN_FAILS: ${{ inputs.rerun-fails }}
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
-          ./scripts/ci_test_contrib.sh default ${{ toJson(matrix.chunk) }}
+          ./scripts/ci_test_contrib.sh default ${{ toJson(matrix.chunk.modules) }}
 
       - name: Get Datadog credentials
         id: dd-sts
@@ -213,8 +250,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p /tmp/trace-check-results
-          RESPONSE_CODE=$(curl -s -w "%{http_code}" -o /tmp/trace-check-results/failures-${{ strategy.job-index }}.json "http://127.0.0.1:9126/test/trace_check/failures?return_all=true")
-          curl -s -o /tmp/trace-check-results/summary-${{ strategy.job-index }}.json "http://127.0.0.1:9126/test/trace_check/summary?return_all=true"
+          RESPONSE_CODE=$(curl -s --retry 5 --retry-delay 2 --retry-connrefused -w "%{http_code}" -o /tmp/trace-check-results/failures-${{ strategy.job-index }}.json "http://127.0.0.1:9126/test/trace_check/failures?return_all=true")
+          curl -fsS --retry 5 --retry-delay 2 --retry-connrefused -o /tmp/trace-check-results/summary-${{ strategy.job-index }}.json "http://127.0.0.1:9126/test/trace_check/summary?return_all=true"
           echo "$RESPONSE_CODE" > /tmp/trace-check-results/response_code-${{ strategy.job-index }}.txt
           echo "APM Test Agent Check Traces Summary Results:"
           jq "." /tmp/trace-check-results/summary-${{ strategy.job-index }}.json
@@ -232,7 +269,13 @@ jobs:
         continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: trace-check-results-${{ strategy.job-index }}
+          # The version and build tags are part of the name: callers run
+          # one matrix of this workflow per version, and dynamic-checks
+          # runs two lanes (debug, deadlock) per version, so a job index
+          # alone would collide across versions and lanes in the same
+          # run, silently dropping results (continue-on-error above
+          # would hide it).
+          name: trace-check-results-${{ inputs.go-version }}-${{ inputs.build_tags || 'standard' }}-${{ strategy.job-index }}
           path: /tmp/trace-check-results/
           retention-days: 1
           if-no-files-found: ignore
@@ -255,7 +298,10 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: /tmp/trace-check-results
-          pattern: trace-check-results-*
+          # Scoped to this version's and lane's artifacts: the merge would
+          # otherwise overwrite the same job-index files across versions
+          # and dynamic-checks lanes.
+          pattern: trace-check-results-${{ inputs.go-version }}-${{ inputs.build_tags || 'standard' }}-*
           merge-multiple: true
 
       - name: Aggregate Trace Check Results
@@ -314,7 +360,10 @@ jobs:
       group: "APM Larger Runners"
     # Without this the job inherits GitHub's 360-minute default, so a hang burns
     # six hours of a larger runner. A healthy run is well under 20 minutes.
-    timeout-minutes: 45
+    # The cap rises only when test-timeout is set (dynamic-analysis lanes),
+    # where healthy runs are 8-13m but a degraded runner absorbs the raised
+    # per-binary budget (30m) before finishing.
+    timeout-minutes: ${{ inputs.test-timeout != '' && 75 || 45 }}
     env:
       INTEGRATION: true
       COMPOSE_FILE: .github/testservices/docker-compose.yaml
@@ -337,6 +386,12 @@ jobs:
       - name: Start CI service containers
         run: docker compose up -d datadog-agent
 
+      - name: Warn on unsupported seed alias
+        if: inputs.go-version != '1.26' && inputs.go-version != '1.27'
+        run: >-
+          echo "::warning::go-version '${{ inputs.go-version }}' matches
+          no seed alias; this job restores only"
+
       - name: Setup Go
         id: setup-go
         uses: ./.github/actions/setup-go
@@ -349,6 +404,7 @@ jobs:
              "modules":["core"],
              "tags":${{ toJSON(inputs.build_tags || 'standard') }},
              "coverage":"core"}
+          seed: ${{ inputs.go-version == '1.26' || inputs.go-version == '1.27' }}
 
       - name: Restore and install development tools
         id: tools
@@ -356,6 +412,11 @@ jobs:
         with:
           go-version: ${{ steps.setup-go.outputs.go-version }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
+      # The gotesting fixture tests invoke this binary directly; without it
+      # they pay `go run` module resolution inside their per-test timeouts.
+      - name: Install orchestrion binary
+        uses: ./.github/actions/install-orchestrion
 
       # Containers were started (non-blocking) before Go setup above, so most of
       # the wait time already overlapped with it; this just waits out whatever's left.
@@ -368,6 +429,7 @@ jobs:
           TEST_RESULTS: ${{ env.TEST_RESULT_PATH }}
           BUILD_TAGS: ${{ inputs.build_tags }}
           RERUN_FAILS: ${{ inputs.rerun-fails }}
+          GO_TEST_TIMEOUT: ${{ inputs.test-timeout }}
         run: |
           set -euo pipefail
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -477,6 +539,12 @@ jobs:
           clean: false
           submodules: recursive
 
+      - name: Warn on unsupported seed alias
+        if: inputs.go-version != '1.26' && inputs.go-version != '1.27'
+        run: >-
+          echo "::warning::go-version '${{ inputs.go-version }}' matches
+          no seed alias; this job restores only"
+
       - name: Setup Go
         id: setup-go
         uses: ./.github/actions/setup-go
@@ -488,6 +556,7 @@ jobs:
             {"runner":"APM Larger Runners",
              "modules":["internal/apps/telemetry-errors"],
              "coverage":"none"}
+          seed: ${{ inputs.go-version == '1.26' || inputs.go-version == '1.27' }}
 
       - name: Restore and install development tools
         id: tools

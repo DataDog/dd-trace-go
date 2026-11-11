@@ -63,11 +63,13 @@ func TestCompleteFuzzParallelSeedsOffsetsNativeDurationOnce(t *testing.T) {
 				completeFuzzParallelSeeds(f)
 
 				event := fuzzTestEvent{native: f}
-				_, _, duration := event.nativeResult(true)
+				_, _, duration, durationRead := event.nativeResult(true)
+				require.True(t, durationRead)
 				require.Equal(t, 20*time.Millisecond-tc.wait, duration, "exclude exactly the drained wait")
 				require.Empty(t, *fields.sub)
 				completeFuzzParallelSeeds(f)
-				_, _, repeated := event.nativeResult(true)
+				_, _, repeated, reread := event.nativeResult(true)
+				require.True(t, reread)
 				require.Equal(t, duration, repeated, "a second drain must not subtract the wait again")
 			})
 		})

@@ -11,7 +11,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace/stats v0.82.0
 	github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.82.0
 	github.com/DataDog/datadog-go/v5 v5.9.0
-	github.com/DataDog/go-libddwaf/v5 v5.0.0
+	github.com/DataDog/go-libddwaf/v5 v5.1.0
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d
 	github.com/DataDog/sketches-go v1.4.8
 	github.com/cenkalti/backoff/v5 v5.0.3
@@ -19,7 +19,7 @@ require (
 	github.com/google/pprof v0.0.0-20250403155104-27863c87afa6
 	github.com/google/uuid v1.6.0
 	github.com/json-iterator/go v1.1.12
-	github.com/klauspost/compress v1.18.7
+	github.com/klauspost/compress v1.20.2
 	github.com/linkdata/deadlock v0.5.5
 	github.com/minio/simdjson-go v0.4.5
 	github.com/open-feature/go-sdk v1.18.0
@@ -47,12 +47,12 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/exp v0.0.0-20260529124908-c761662dc8c9
 	golang.org/x/mod v0.41.0
-	golang.org/x/net v0.60.0
-	golang.org/x/sync v0.23.0
-	golang.org/x/sys v0.48.0
+	golang.org/x/sync v0.24.0
+	golang.org/x/sys v0.49.0
 	golang.org/x/time v0.15.0
 	golang.org/x/tools v0.51.0
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da
+	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca
 )
 
@@ -99,10 +99,10 @@ require (
 	go.uber.org/mock v0.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d // indirect
-	google.golang.org/grpc v1.83.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 

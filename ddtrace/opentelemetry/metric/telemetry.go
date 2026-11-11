@@ -17,9 +17,6 @@ import (
 // Environment variable names for telemetry reporting
 // Note: envOtelMetricsExporter and envDDMetricsOtelEnabled are defined in meter_provider.go
 const (
-	// Generic OTLP exporter configurations (apply to all signals)
-	envOTLPTimeout = "OTEL_EXPORTER_OTLP_TIMEOUT"
-
 	// Metrics-specific OTLP exporter configurations
 	envOTLPMetricsTimeout = "OTEL_EXPORTER_OTLP_METRICS_TIMEOUT"
 
@@ -32,37 +29,13 @@ const (
 //
 // Transport configuration is reported by internal/config.
 func registerTelemetry(cfg *config) {
-	telemetryConfigs := []telemetry.Configuration{}
-
-	// ===========================================
-	// Generic OTLP Exporter Configurations
-	// (These apply to all signals, not just metrics)
-	// ===========================================
-
-	// OTEL_EXPORTER_OTLP_TIMEOUT
-	if timeout := env.Get(envOTLPTimeout); timeout != "" {
-		if ms, err := parseMilliseconds(timeout); err == nil {
-			telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
-				Name:   envOTLPTimeout,
-				Value:  ms,
-				Origin: telemetry.OriginEnvVar,
-			})
-		}
-	}
-
-	// ===========================================
-	// Metrics-specific OTLP Exporter Configurations
-	// ===========================================
-
 	// OTEL_EXPORTER_OTLP_METRICS_TIMEOUT
 	metricsTimeout := getMillisecondsConfig(envOTLPMetricsTimeout, defaultOTLPTimeoutMs)
-	telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{
+	telemetry.RegisterAppConfigs(telemetry.Configuration{
 		Name:   envOTLPMetricsTimeout,
 		Value:  metricsTimeout.value,
 		Origin: metricsTimeout.origin,
 	})
-
-	telemetry.RegisterAppConfigs(telemetryConfigs...)
 }
 
 // registerNoopTelemetry reports that OTel metrics are disabled.

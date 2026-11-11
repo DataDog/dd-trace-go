@@ -35,7 +35,7 @@ permissions:
   packages: write
 
 env:
-  SYSTEM_TESTS_REF: 73e4f2ed0d6e5e3a1df1f04d1c75319028a5c945 # Automated: Updated by .github/workflows/update-system-tests.yml.
+  SYSTEM_TESTS_REF: ce31fc70349292e5973dca01c25309ceb613e7ca # Automated: Updated by .github/workflows/update-system-tests.yml.
 
 jobs:
   # Classifies the PR diff against .github/ci-components.yml. Fails open: every
@@ -156,6 +156,10 @@ jobs:
     # Note: Not using large runners because the jobs spawned by this pipeline
     # don't seem to get a noticable speedup from using larger runners.
     runs-on: ubuntu-latest
+    # Without this the job inherits GitHub's 360-minute default, so a hung
+    # scenario holds the merge queue for hours. A healthy scenario takes under
+    # 16 minutes (p99 about 12).
+    timeout-minutes: 30
     needs:
       - changes
       - warm-repo-cache
@@ -468,19 +472,55 @@ jobs:
       push: ${{ github.ref == 'refs/heads/main' }}
       platforms: '["linux/amd64"]'
 
+  build-system-tests-binaries:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout dd-trace-go
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          path: 'binaries/dd-trace-go'
+
+      - name: Pin agent and callout image names
+        run: |
+          # Keep testing against the agent's main branch, as dev mode did.
+          echo "datadog/agent-dev:master-py3" > binaries/agent-image
+          echo "ghcr.io/datadog/dd-trace-go/service-extensions-callout:dev" > binaries/golang-service-extensions-callout-image
+          echo "ghcr.io/datadog/dd-trace-go/haproxy-spoa:dev" > binaries/golang-haproxy-spoa-image
+          echo "ghcr.io/datadog/dd-trace-go/apim-callout:dev" > binaries/golang-apim-callout-image
+
+      - name: Upload binaries artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: system_tests_binaries
+          path: binaries/
+          if-no-files-found: error
+          retention-days: 1
+
   tracer-release:
     if: github.event_name == 'schedule'
-    uses: DataDog/system-tests/.github/workflows/system-tests.yml@73e4f2ed0d6e5e3a1df1f04d1c75319028a5c945 # Automated: Updated by .github/workflows/update-system-tests.yml.
+    needs:
+      - build-system-tests-binaries
+      # The callout images are pulled through the :dev tags these jobs push.
+      - build-service-extensions-callout
+      - build-haproxy
+      - build-apim-callout
+    uses: DataDog/system-tests/.github/workflows/system-tests.yml@ce31fc70349292e5973dca01c25309ceb613e7ca # Automated: Updated by .github/workflows/update-system-tests.yml.
     permissions:
       contents: read
       id-token: write
     with:
       library: golang
       scenarios_groups: tracer-release
-      _system_tests_dev_mode: true
+      binaries_artifact: system_tests_binaries
       push_to_test_optimization: true
       desired_execution_time: 300
-      ref: 73e4f2ed0d6e5e3a1df1f04d1c75319028a5c945 # Automated: Updated by .github/workflows/update-system-tests.yml.
+      ref: ce31fc70349292e5973dca01c25309ceb613e7ca # Automated: Updated by .github/workflows/update-system-tests.yml.
 
   system-tests-done:
     name: System Tests
@@ -492,6 +532,7 @@ jobs:
       - build-haproxy
       - build-apim-callout
       - system-tests
+      - build-system-tests-binaries
       - tracer-release
     runs-on: ubuntu-latest
     if: '!cancelled()'
@@ -503,8 +544,9 @@ jobs:
       # carry this gate green. Every image build is therefore a dependency here,
       # and when the gate is on the system-tests job must have really succeeded.
       #
-      # tracer-release needs no strict clause -- it is schedule-only, so its
-      # skip is legitimate and the allowlist below is enough.
+      # build-system-tests-binaries and tracer-release need no strict clause
+      # -- they are schedule-only, so their skip is legitimate and the
+      # allowlist below is enough.
       - name: Failure
         if: >-
           needs.changes.result != 'success'
@@ -514,6 +556,7 @@ jobs:
           || contains(fromJSON('["failure", "cancelled"]'), needs.build-haproxy.result)
           || contains(fromJSON('["failure", "cancelled"]'), needs.build-apim-callout.result)
           || contains(fromJSON('["failure", "cancelled"]'), needs.system-tests.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.build-system-tests-binaries.result)
           || contains(fromJSON('["failure", "cancelled"]'), needs.tracer-release.result)
           || (needs.changes.outputs.system-tests == 'true'
               && needs.system-tests.result != 'success')
