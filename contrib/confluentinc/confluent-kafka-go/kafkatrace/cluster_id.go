@@ -59,7 +59,7 @@ func (f *ClusterIDFetch) Start() {
 	f.started.Store(true)
 	c, err := f.newClient()
 	if err != nil {
-		f.tr.instr.Logger().Warn("failed to create admin client for cluster ID, not adding cluster_id tags: %s", err)
+		f.logFailure("failed to create admin client for cluster ID, not adding cluster_id tags: %s", err)
 		return
 	}
 	f.stop = f.run(c)
@@ -101,7 +101,7 @@ func (f *ClusterIDFetch) run(c ClusterIDClient) func() {
 			if ctx.Err() == context.Canceled {
 				return
 			}
-			f.tr.instr.Logger().Warn("failed to fetch Kafka cluster ID: %s", err)
+			f.logFailure("failed to fetch Kafka cluster ID: %s", err)
 			return
 		}
 		f.tr.SetClusterID(clusterID)
@@ -109,5 +109,16 @@ func (f *ClusterIDFetch) run(c ClusterIDClient) func() {
 	return func() {
 		cancel()
 		<-done
+	}
+}
+
+// logFailure logs a failed lookup. Data Streams Monitoring needs the cluster
+// ID, so the failure is a warning with it, and a debug message otherwise,
+// where only the span tag is missing.
+func (f *ClusterIDFetch) logFailure(msg string, err error) {
+	if f.tr.DSMEnabled() {
+		f.tr.instr.Logger().Warn(msg, err)
+	} else {
+		f.tr.instr.Logger().Debug(msg, err)
 	}
 }
