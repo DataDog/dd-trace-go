@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -225,7 +224,7 @@ func TestConsumerFunctionalWithClusterIDWithoutDataStreams(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.False(t, p.tracer.DSMEnabled())
-	require.False(t, p.clusterID.started.Load(), "the cluster ID must not be fetched before the first produce")
+	require.False(t, p.clusterID.Started(), "the cluster ID must not be fetched before the first produce")
 
 	produced := make([]*kafka.Message, 0, 2)
 	for i := range 2 {
@@ -252,7 +251,7 @@ func TestConsumerFunctionalWithClusterIDWithoutDataStreams(t *testing.T) {
 		"enable.auto.offset.store": false,
 	})
 	require.NoError(t, err)
-	require.False(t, c.clusterID.started.Load(), "the cluster ID must not be fetched before the first consume")
+	require.False(t, c.clusterID.Started(), "the cluster ID must not be fetched before the first consume")
 	err = c.Assign([]kafka.TopicPartition{
 		{Topic: &testTopic, Partition: 0, Offset: produced[0].TopicPartition.Offset},
 	})
@@ -286,7 +285,7 @@ func TestConsumerFunctionalWithClusterIDWithoutDataStreams(t *testing.T) {
 
 // TestClusterIDFetchStartsOnFirstUse checks that, when data streams
 // monitoring is disabled, the cluster ID fetch starts on the first produce or
-// consume and at most once, and that a client closed without being used does
+// consume, and that a client closed without being used does
 // not start it nor block in Close. It needs no broker.
 func TestClusterIDFetchStartsOnFirstUse(t *testing.T) {
 	newProducer := func(t *testing.T, opts ...Option) *Producer {
@@ -313,33 +312,28 @@ func TestClusterIDFetchStartsOnFirstUse(t *testing.T) {
 			}
 		}()
 	}
-	fetchStop := func(f *clusterIDFetch) func() {
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		return f.stop
-	}
 
 	t.Run("producer closed without use", func(t *testing.T) {
 		p := newProducer(t)
 		require.False(t, p.tracer.DSMEnabled())
-		assert.False(t, p.clusterID.started.Load())
+		assert.False(t, p.clusterID.Started())
 		// The events channel is only wrapped for data streams monitoring.
 		assert.Equal(t, p.Producer.Events(), p.Events())
 
 		start := time.Now()
 		p.Close()
 		assert.Less(t, time.Since(start), time.Second, "Close must not wait for a cluster ID fetch")
-		assert.False(t, p.clusterID.started.Load())
+		assert.False(t, p.clusterID.Started())
 	})
 	t.Run("consumer closed without use", func(t *testing.T) {
 		c := newConsumer(t, false)
 		require.False(t, c.tracer.DSMEnabled())
-		assert.False(t, c.clusterID.started.Load())
+		assert.False(t, c.clusterID.Started())
 
 		start := time.Now()
 		require.NoError(t, c.Close())
 		assert.Less(t, time.Since(start), time.Second, "Close must not wait for a cluster ID fetch")
-		assert.False(t, c.clusterID.started.Load())
+		assert.False(t, c.clusterID.Started())
 	})
 	t.Run("producer starts on first produce", func(t *testing.T) {
 		p := newProducer(t)
@@ -350,19 +344,16 @@ func TestClusterIDFetchStartsOnFirstUse(t *testing.T) {
 		topic := ""
 		msg := &kafka.Message{TopicPartition: kafka.TopicPartition{Topic: &topic}}
 		require.Error(t, p.Produce(msg, nil))
-		assert.True(t, p.clusterID.started.Load())
-		stop := fetchStop(p.clusterID)
-		require.NotNil(t, stop)
-
+		assert.True(t, p.clusterID.Started())
+		// Starting at most once is covered by the kafkatrace tests.
 		require.Error(t, p.Produce(msg, nil))
-		assert.Equal(t, reflect.ValueOf(stop).Pointer(), reflect.ValueOf(fetchStop(p.clusterID)).Pointer(), "the fetch must start only once")
 	})
 	t.Run("producer starts on first message on the produce channel", func(t *testing.T) {
 		p := newProducer(t)
 		defer p.Close()
 
 		p.ProduceChannel() <- &kafka.Message{TopicPartition: kafka.TopicPartition{Topic: &testTopic, Partition: 0}}
-		assert.Eventually(t, p.clusterID.started.Load, time.Second, 10*time.Millisecond)
+		assert.Eventually(t, p.clusterID.Started, time.Second, 10*time.Millisecond)
 	})
 	t.Run("consumer starts on first message", func(t *testing.T) {
 		c := newConsumer(t, true)
@@ -371,7 +362,7 @@ func TestClusterIDFetchStartsOnFirstUse(t *testing.T) {
 		c.Consumer.Events() <- &kafka.Message{TopicPartition: kafka.TopicPartition{Topic: &testTopic, Partition: 0}}
 		<-c.Events()
 		drain(c.Events())
-		assert.True(t, c.clusterID.started.Load())
+		assert.True(t, c.clusterID.Started())
 	})
 	t.Run("data streams starts on wrap", func(t *testing.T) {
 		p := newProducer(t, WithDataStreams())
@@ -380,8 +371,8 @@ func TestClusterIDFetchStartsOnFirstUse(t *testing.T) {
 		c := newConsumer(t, false, WithDataStreams())
 		defer c.Close()
 
-		assert.True(t, p.clusterID.started.Load())
-		assert.True(t, c.clusterID.started.Load())
+		assert.True(t, p.clusterID.Started())
+		assert.True(t, c.clusterID.Started())
 	})
 }
 
