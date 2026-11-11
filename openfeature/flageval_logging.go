@@ -137,6 +137,7 @@ const (
 // bounded by the number of full-tier buckets (globalCap) and the pruned context size
 // (256 fields × 256 chars), and measured in BenchmarkFlagEvaluationOTelPlusEVPParallel.
 type evaluationAggregationKey struct {
+	environment    environment
 	flagKey        string
 	variant        string
 	allocationKey  string
@@ -160,6 +161,7 @@ type evaluationAggregationKey struct {
 // Consent is intentionally not a dimension: the degraded payload emits neither targeting_key
 // nor context, so consent-differing rows would be byte-identical on the wire.
 type evaluationDegradedKey struct {
+	environment    environment
 	flagKey        string
 	variant        string
 	allocationKey  string
@@ -237,6 +239,7 @@ type flagEvalLoggingAggregator struct {
 // flagEvalLoggingEvent matches flagevaluation.json — required fields always present;
 // optional fields use omitempty (absent = schema-valid for the degraded tier).
 type flagEvalLoggingEvent struct {
+	Environment     *environment          `json:"environment,omitempty"`
 	Timestamp       int64                 `json:"timestamp"`
 	Flag            flagEvalFlag          `json:"flag"`
 	FirstEvaluation int64                 `json:"first_evaluation"`
@@ -341,6 +344,7 @@ type evalEvent struct {
 // evalDetails holds extracted flag evaluation fields for EVP aggregation.
 // Used only by flagEvalLoggingHook; does NOT replace extraction in flageval_metrics.go.
 type evalDetails struct {
+	environment    environment
 	flagKey        string
 	variant        string
 	allocationKey  string
@@ -551,6 +555,9 @@ func (w *flagEvalLoggingWriter) buildFlushEvents(flushTimeMs int64) []flagEvalLo
 	// runtime_default_used decorates this tier when the caller default was returned.
 	for key, e := range full {
 		ev := baseFlagEvalLoggingEvent(key.flagKey, e, flushTimeMs)
+		if key.environment != (environment{}) {
+			ev.Environment = &key.environment
+		}
 		ev.RuntimeDefault = e.runtimeDefault
 		// Consent-on emits raw targeting_key + context; consent-off emits the hashed key and
 		// omits context (absent, not empty). Consent is read from the bucket snapshot, never
@@ -579,6 +586,9 @@ func (w *flagEvalLoggingWriter) buildFlushEvents(flushTimeMs int64) []flagEvalLo
 	// runtime_default_used decorates this tier when the caller default was returned.
 	for key, e := range degraded {
 		ev := baseFlagEvalLoggingEvent(key.flagKey, e, flushTimeMs)
+		if key.environment != (environment{}) {
+			ev.Environment = &key.environment
+		}
 		ev.RuntimeDefault = e.runtimeDefault
 		if key.variant != "" {
 			ev.Variant = &flagEvalVariant{Key: key.variant}
@@ -1172,6 +1182,7 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 	// Build the full key from schema-visible dimensions including the canonical context encoding.
 	// No hash, so distinct contexts get distinct buckets.
 	fullKey := evaluationAggregationKey{
+		environment:               d.environment,
 		flagKey:                   d.flagKey,
 		variant:                   d.variant,
 		allocationKey:             d.allocationKey,
@@ -1242,6 +1253,7 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 // dynamic/abusive flag key) and the dropped counter makes such overflow observable.
 func (a *flagEvalLoggingAggregator) addToDegraded(d evalDetails, featuresKey string, evaluationTimeMs int64) {
 	degKey := evaluationDegradedKey{
+		environment:    d.environment,
 		flagKey:        d.flagKey,
 		variant:        d.variant,
 		allocationKey:  d.allocationKey,
@@ -1423,6 +1435,8 @@ func pruneContext(raw map[string]any) map[string]any {
 func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluationDetails) evalDetails {
 	allocationKey, _ := details.FlagMetadata[metadataAllocationKey].(string)
 	evalTimeMs, _ := details.FlagMetadata[metadataEvalTimeKey].(int64)
+	environmentID, _ := details.FlagMetadata[metadataEnvironmentIDKey].(string)
+	environmentName, _ := details.FlagMetadata[metadataEnvironmentNameKey].(string)
 	// Fail closed: a missing or non-bool consent stamp yields false, so an evaluation that
 	// never passed through the evaluator cannot emit raw PII.
 	observeFullEvaluationData, _ := details.FlagMetadata[metadataObserveFullEvaluationDataKey].(bool)
@@ -1444,6 +1458,7 @@ func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluati
 		errMsg = string(details.ErrorCode)
 	}
 	return evalDetails{
+		environment:               environment{ID: environmentID, Name: environmentName},
 		flagKey:                   hookContext.FlagKey(),
 		variant:                   details.Variant,
 		allocationKey:             allocationKey,

@@ -85,6 +85,7 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 
 // environment represents environment information for the configuration.
 type environment struct {
+	ID string `json:"id,omitempty"`
 	// Name is the environment name (e.g., "production", "staging")
 	Name string `json:"name"`
 }

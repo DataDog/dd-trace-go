@@ -355,6 +355,7 @@ func TestEvaluationTelemetryOptOutProviderNotReady(t *testing.T) {
 	require.Zero(t, beforeCalls, "the SDK must skip Before hooks on its not-ready path")
 	p.flagEvalLoggingWriter.drainAndFlush()
 	h.assertCounts(t, 1, 0, 2)
+	assert.Nil(t, h.sink.events[0].Environment, "no configuration was evaluated while the provider was not ready")
 }
 
 // The gate delegates Before, After, and Error unchanged. Guard the assumption
