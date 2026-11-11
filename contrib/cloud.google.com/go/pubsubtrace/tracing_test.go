@@ -35,6 +35,8 @@ func TestPublishTopicName(t *testing.T) {
 		project any
 	}{
 		{name: "full path", topic: "projects/commerce/topics/orders", want: "projects/commerce/topics/orders", project: "commerce"},
+		// Projects created under an organization domain have a domain-scoped ID.
+		{name: "domain-scoped project", topic: "projects/example.com:commerce/topics/orders", want: "projects/example.com:commerce/topics/orders", project: "example.com:commerce"},
 		{name: "short name", topic: "orders"},
 		{name: "deleted topic placeholder", topic: "_deleted-topic_"},
 		{name: "subscription path", topic: "projects/commerce/subscriptions/orders", project: "commerce"},
@@ -70,6 +72,7 @@ func TestReceiveSubscriptionName(t *testing.T) {
 		project      any
 	}{
 		{name: "full path", subscription: "projects/analytics/subscriptions/warehouse-orders", want: "projects/analytics/subscriptions/warehouse-orders", project: "analytics"},
+		{name: "domain-scoped project", subscription: "projects/example.com:analytics/subscriptions/warehouse-orders", want: "projects/example.com:analytics/subscriptions/warehouse-orders", project: "example.com:analytics"},
 		{name: "short name", subscription: "warehouse-orders"},
 		{name: "topic path", subscription: "projects/analytics/topics/orders", project: "analytics"},
 		{name: "missing subscription", subscription: "projects/analytics/subscriptions/", project: "analytics"},
@@ -107,6 +110,7 @@ func TestTopicAndSubscriptionNames(t *testing.T) {
 	}{
 		{name: "same project", topic: "projects/commerce/topics/orders", subscription: "projects/commerce/subscriptions/warehouse-orders"},
 		{name: "across projects", topic: "projects/commerce/topics/orders", subscription: "projects/analytics/subscriptions/warehouse-orders"},
+		{name: "across domain-scoped projects", topic: "projects/example.com:commerce/topics/orders", subscription: "projects/example.com:analytics/subscriptions/warehouse-orders"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
