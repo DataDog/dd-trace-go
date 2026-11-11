@@ -3,6 +3,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
+//go:build linux || !githubci
+
 package main
 
 import (
@@ -17,7 +19,8 @@ import (
 // TestOtelcStartsTracer is the only check that the tracer lifecycle rule in
 // ddtrace/tracer/otelc.yaml works. Every other suite runs under the integration
 // harness, which calls tracertest.Bootstrap itself and so has a running tracer
-// either way.
+// either way. It also checks the gorilla/mux and httprouter spans of an app
+// that doesn't import their contribs (see routers.go).
 //
 // The plain build is the control: without it, a passing otelc case would only
 // show that a span reached an agent, not that otelc started the tracer.
@@ -44,6 +47,16 @@ func TestOtelcStartsTracer(t *testing.T) {
 				assert.NotNilf(t, span,
 					"no %q span reached the agent across %d request(s): otelc did not start the tracer",
 					spanName, agent.Requests())
+				for resource, component := range map[string]string{
+					muxResource:    "gorilla/mux",
+					routerResource: "julienschmidt/httprouter",
+				} {
+					assert.NotNilf(t, agent.FindSpan(agenttest.With().
+						Operation("http.request").
+						Resource(resource).
+						Tag("component", component)),
+						"no %s span for %q: the rules module did not link the contrib", component, resource)
+				}
 				return
 			}
 			assert.Nilf(t, span,

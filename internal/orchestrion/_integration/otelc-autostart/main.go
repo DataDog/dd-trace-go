@@ -42,6 +42,8 @@ func main() {
 	span := tracer.StartSpan(spanName)
 	span.Finish()
 
+	serveRouters()
+
 	// The injected `defer tracer.Stop()` is what flushes the span, so main has to
 	// return normally. os.Exit here would skip it and drop the span.
 	fmt.Fprintln(os.Stderr, "otelc-autostart: done")
