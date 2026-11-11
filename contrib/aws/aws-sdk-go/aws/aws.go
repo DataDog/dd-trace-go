@@ -248,6 +248,16 @@ func sqsTags(params interface{}, region string, partition string) (map[string]in
 		queueURL = aws.StringValue(input.QueueUrl)
 	case *sqs.SendMessageBatchInput:
 		queueURL = aws.StringValue(input.QueueUrl)
+	case *sqs.ChangeMessageVisibilityInput:
+		queueURL = aws.StringValue(input.QueueUrl)
+	case *sqs.ChangeMessageVisibilityBatchInput:
+		queueURL = aws.StringValue(input.QueueUrl)
+	case *sqs.GetQueueAttributesInput:
+		queueURL = aws.StringValue(input.QueueUrl)
+	case *sqs.PurgeQueueInput:
+		queueURL = aws.StringValue(input.QueueUrl)
+	case *sqs.SetQueueAttributesInput:
+		queueURL = aws.StringValue(input.QueueUrl)
 	default:
 		return nil, nil
 	}
@@ -320,6 +330,8 @@ func snsTags(params interface{}) (map[string]interface{}, error) {
 		} else {
 			destTag, destARN = ext.SNSTargetName, aws.StringValue(input.TargetArn)
 		}
+	case *sns.PublishBatchInput:
+		destTag, destARN = ext.SNSTopicName, aws.StringValue(input.TopicArn)
 	case *sns.GetTopicAttributesInput:
 		destTag, destARN = ext.SNSTopicName, aws.StringValue(input.TopicArn)
 	case *sns.ListSubscriptionsByTopicInput:
@@ -399,6 +411,9 @@ func kinesisTags(params interface{}) (map[string]interface{}, error) {
 		name, arn = input.StreamName, input.StreamARN
 	case *kinesis.GetShardIteratorInput:
 		name, arn = input.StreamName, input.StreamARN
+	case *kinesis.GetRecordsInput:
+		// GetRecordsInput identifies the stream by ARN only.
+		arn = input.StreamARN
 	default:
 		return nil, nil
 	}
@@ -463,6 +478,8 @@ func sfnTags(params interface{}) (map[string]interface{}, error) {
 	case *sfn.DescribeStateMachineInput:
 		stateMachineArn = aws.StringValue(input.StateMachineArn)
 	case *sfn.StartExecutionInput:
+		stateMachineArn = aws.StringValue(input.StateMachineArn)
+	case *sfn.StartSyncExecutionInput:
 		stateMachineArn = aws.StringValue(input.StateMachineArn)
 	case *sfn.StopExecutionInput:
 		name, err := stateMachineNameFromExecutionARN(input.ExecutionArn)

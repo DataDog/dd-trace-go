@@ -1572,6 +1572,56 @@ func TestResourceTagsFromParams(t *testing.T) {
 			},
 		},
 		{
+			name:    "SQS ChangeMessageVisibility",
+			service: "SQS",
+			input:   &sqs.ChangeMessageVisibilityInput{QueueUrl: aws.String(queueURL)},
+			expected: map[string]string{
+				ext.SQSQueueName:    "MyQueueName",
+				ext.CloudResourceID: "arn:aws:sqs:eu-west-1:123456789012:MyQueueName",
+				ext.SQSQueueURL:     queueURL,
+			},
+		},
+		{
+			name:    "SQS ChangeMessageVisibilityBatch",
+			service: "SQS",
+			input:   &sqs.ChangeMessageVisibilityBatchInput{QueueUrl: aws.String(queueURL)},
+			expected: map[string]string{
+				ext.SQSQueueName:    "MyQueueName",
+				ext.CloudResourceID: "arn:aws:sqs:eu-west-1:123456789012:MyQueueName",
+				ext.SQSQueueURL:     queueURL,
+			},
+		},
+		{
+			name:    "SQS GetQueueAttributes",
+			service: "SQS",
+			input:   &sqs.GetQueueAttributesInput{QueueUrl: aws.String(queueURL)},
+			expected: map[string]string{
+				ext.SQSQueueName:    "MyQueueName",
+				ext.CloudResourceID: "arn:aws:sqs:eu-west-1:123456789012:MyQueueName",
+				ext.SQSQueueURL:     queueURL,
+			},
+		},
+		{
+			name:    "SQS PurgeQueue",
+			service: "SQS",
+			input:   &sqs.PurgeQueueInput{QueueUrl: aws.String(queueURL)},
+			expected: map[string]string{
+				ext.SQSQueueName:    "MyQueueName",
+				ext.CloudResourceID: "arn:aws:sqs:eu-west-1:123456789012:MyQueueName",
+				ext.SQSQueueURL:     queueURL,
+			},
+		},
+		{
+			name:    "SQS SetQueueAttributes",
+			service: "SQS",
+			input:   &sqs.SetQueueAttributesInput{QueueUrl: aws.String(queueURL)},
+			expected: map[string]string{
+				ext.SQSQueueName:    "MyQueueName",
+				ext.CloudResourceID: "arn:aws:sqs:eu-west-1:123456789012:MyQueueName",
+				ext.SQSQueueURL:     queueURL,
+			},
+		},
+		{
 			name:     "SQS SendMessage without queue URL",
 			service:  "SQS",
 			input:    &sqs.SendMessageInput{},
@@ -1651,6 +1701,15 @@ func TestResourceTagsFromParams(t *testing.T) {
 			},
 		},
 		{
+			name:    "Kinesis GetShardIterator with ARN",
+			service: "Kinesis",
+			input:   &kinesis.GetShardIteratorInput{StreamARN: aws.String(streamARN)},
+			expected: map[string]string{
+				ext.KinesisStreamName: "my-stream",
+				ext.KinesisStreamARN:  streamARN,
+			},
+		},
+		{
 			name:    "Kinesis PutRecord with name",
 			service: "Kinesis",
 			input:   &kinesis.PutRecordInput{StreamName: aws.String("my-stream")},
@@ -1662,6 +1721,15 @@ func TestResourceTagsFromParams(t *testing.T) {
 			name:    "SFN StartExecution",
 			service: "SFN",
 			input:   &sfn.StartExecutionInput{StateMachineArn: aws.String(stateMachineARN)},
+			expected: map[string]string{
+				ext.SFNStateMachineName: "MyStateMachine",
+				ext.SFNStateMachineARN:  stateMachineARN,
+			},
+		},
+		{
+			name:    "SFN StartSyncExecution",
+			service: "SFN",
+			input:   &sfn.StartSyncExecutionInput{StateMachineArn: aws.String(stateMachineARN)},
 			expected: map[string]string{
 				ext.SFNStateMachineName: "MyStateMachine",
 				ext.SFNStateMachineARN:  stateMachineARN,

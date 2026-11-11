@@ -248,6 +248,16 @@ func queueURL(requestInput middleware.InitializeInput) string {
 		return aws.ToString(params.QueueUrl)
 	case *sqs.SendMessageBatchInput:
 		return aws.ToString(params.QueueUrl)
+	case *sqs.ChangeMessageVisibilityInput:
+		return aws.ToString(params.QueueUrl)
+	case *sqs.ChangeMessageVisibilityBatchInput:
+		return aws.ToString(params.QueueUrl)
+	case *sqs.GetQueueAttributesInput:
+		return aws.ToString(params.QueueUrl)
+	case *sqs.PurgeQueueInput:
+		return aws.ToString(params.QueueUrl)
+	case *sqs.SetQueueAttributesInput:
+		return aws.ToString(params.QueueUrl)
 	}
 	return ""
 }
@@ -377,6 +387,8 @@ func streamIdentifiers(requestInput middleware.InitializeInput) (name *string, a
 		return params.StreamName, params.StreamARN
 	case *kinesis.DescribeStreamSummaryInput:
 		return params.StreamName, params.StreamARN
+	case *kinesis.GetShardIteratorInput:
+		return params.StreamName, params.StreamARN
 	case *kinesis.GetRecordsInput:
 		return nil, params.StreamARN
 	}
@@ -435,6 +447,8 @@ func stateMachineARN(requestInput middleware.InitializeInput) string {
 	case *sfn.DescribeStateMachineInput:
 		return aws.ToString(params.StateMachineArn)
 	case *sfn.StartExecutionInput:
+		return aws.ToString(params.StateMachineArn)
+	case *sfn.StartSyncExecutionInput:
 		return aws.ToString(params.StateMachineArn)
 	case *sfn.ListExecutionsInput:
 		return aws.ToString(params.StateMachineArn)
