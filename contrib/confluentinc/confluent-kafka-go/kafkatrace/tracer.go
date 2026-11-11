@@ -69,6 +69,7 @@ func (c *dsmEdgeTagCache) getOrStore(key uint64, tags []string) []string {
 
 type Tracer struct {
 	PrevSpan            *tracer.Span
+	instr               *instrumentation.Instrumentation
 	ctx                 context.Context
 	consumerServiceName string
 	producerServiceName string
@@ -125,6 +126,7 @@ func (fn OptionFn) apply(cfg *Tracer) {
 
 func NewKafkaTracer(instr *instrumentation.Instrumentation, ckgoVersion CKGoVersion, librdKafkaVersion int, opts ...Option) *Tracer {
 	tr := &Tracer{
+		instr:             instr,
 		ctx:               context.Background(),
 		analyticsRate:     instr.AnalyticsRate(false),
 		ckgoVersion:       ckgoVersion,

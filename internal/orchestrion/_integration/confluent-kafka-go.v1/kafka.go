@@ -31,6 +31,7 @@ var (
 type TestCase struct {
 	container *kafkatest.KafkaContainer
 	addr      []string
+	clusterID string
 }
 
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
@@ -43,6 +44,7 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	tc.produceMessage(t)
 	tc.consumeMessage(ctx, t)
+	tc.produceAndConsumeWithClusterID(ctx, t)
 }
 
 func (tc *TestCase) kafkaBootstrapServers() string {
@@ -108,8 +110,97 @@ func (tc *TestCase) consumeMessage(_ context.Context, t *testing.T) {
 	require.Equal(t, "key2", string(m.Key))
 }
 
-func (*TestCase) ExpectedTraces() trace.Traces {
+// produceAndConsumeWithClusterID produces and consumes two messages with a
+// new producer and consumer. The first message starts the cluster ID lookup,
+// so the second one is tagged with the cluster ID.
+func (tc *TestCase) produceAndConsumeWithClusterID(ctx context.Context, t *testing.T) {
+	t.Helper()
+
+	admin, err := kafka.NewAdminClient(&kafka.ConfigMap{"bootstrap.servers": tc.kafkaBootstrapServers()})
+	require.NoError(t, err)
+	tc.clusterID, err = admin.ClusterID(ctx)
+	admin.Close()
+	require.NoError(t, err)
+	require.NotEmpty(t, tc.clusterID)
+
+	producer, err := kafka.NewProducer(&kafka.ConfigMap{
+		"bootstrap.servers":   tc.kafkaBootstrapServers(),
+		"go.delivery.reports": true,
+	})
+	require.NoError(t, err, "failed to create producer")
+	var first kafka.TopicPartition
+	for i, key := range []string{"cluster-id-1", "cluster-id-2"} {
+		if i > 0 {
+			// Let the lookup started by the first message complete.
+			time.Sleep(time.Second)
+		}
+		delivery := make(chan kafka.Event, 1)
+		err = producer.Produce(&kafka.Message{
+			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: partition},
+			Key:            []byte(key),
+			Value:          []byte(key),
+		}, delivery)
+		require.NoError(t, err, "failed to send message")
+		msg := (<-delivery).(*kafka.Message)
+		require.NoError(t, msg.TopicPartition.Error)
+		if i == 0 {
+			first = msg.TopicPartition
+		}
+	}
+	producer.Close()
+
+	c, err := kafka.NewConsumer(&kafka.ConfigMap{
+		"group.id":                 consumerGroup + "_cluster_id",
+		"bootstrap.servers":        tc.kafkaBootstrapServers(),
+		"fetch.wait.max.ms":        500,
+		"socket.timeout.ms":        1500,
+		"session.timeout.ms":       1500,
+		"enable.auto.offset.store": false,
+	})
+	require.NoError(t, err, "failed to create consumer")
+	defer c.Close()
+	require.NoError(t, c.Assign([]kafka.TopicPartition{first}))
+	for i, key := range []string{"cluster-id-1", "cluster-id-2"} {
+		if i > 0 {
+			// Let the lookup started by the first message complete.
+			time.Sleep(time.Second)
+		}
+		m, err := backoff.RetryWithData(
+			func() (*kafka.Message, error) { return c.ReadMessage(3 * time.Second) },
+			backoff.NewExponentialBackOff(),
+		)
+		require.NoError(t, err)
+		require.Equal(t, key, string(m.Key))
+	}
+}
+
+func (tc *TestCase) ExpectedTraces() trace.Traces {
 	return trace.Traces{
+		{
+			Tags: map[string]any{
+				"name":     "kafka.produce",
+				"resource": "Produce Topic " + topic,
+			},
+			Meta: map[string]string{
+				"span.kind":                         "producer",
+				"component":                         "confluentinc/confluent-kafka-go/kafka",
+				"messaging.kafka.bootstrap.servers": "localhost",
+				"messaging.kafka.cluster_id":        tc.clusterID,
+			},
+			Children: trace.Traces{
+				{
+					Tags: map[string]any{
+						"name":     "kafka.consume",
+						"resource": "Consume Topic " + topic,
+					},
+					Meta: map[string]string{
+						"span.kind":                  "consumer",
+						"component":                  "confluentinc/confluent-kafka-go/kafka",
+						"messaging.kafka.cluster_id": tc.clusterID,
+					},
+				},
+			},
+		},
 		{
 			Tags: map[string]any{
 				"name":     "kafka.produce",
