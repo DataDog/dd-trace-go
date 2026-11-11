@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/constant"
 	"go/token"
 	"go/types"
@@ -200,6 +201,10 @@ func loadPlatform(root string, platform buildPlatform) ([]*packages.Package, err
 		Env:   env,
 	}
 	patterns, err := loadPatterns(root)
+	if err != nil {
+		return nil, err
+	}
+	patterns, err = buildablePatterns(root, patterns, platform)
 	if err != nil {
 		return nil, err
 	}
@@ -507,6 +512,35 @@ func loadPatterns(root string) ([]string, error) {
 		return nil, fmt.Errorf("finding dot-prefixed packages under %s: %w", root, err)
 	}
 	return patterns, nil
+}
+
+// buildablePatterns drops the explicit dot-directory patterns whose directory
+// has no non-test Go file for platform. "./..." skips such directories on its
+// own, but an explicit directory pattern makes packages.Load report "build
+// constraints exclude all Go files", which would fail the whole audit.
+func buildablePatterns(root string, patterns []string, platform buildPlatform) ([]string, error) {
+	ctx := build.Default
+	ctx.CgoEnabled = false
+	if platform.goos != "" {
+		ctx.GOOS, ctx.GOARCH = platform.goos, platform.goarch
+	}
+	out := make([]string, 0, len(patterns))
+	for _, p := range patterns {
+		if p == "./..." {
+			out = append(out, p)
+			continue
+		}
+		_, err := ctx.ImportDir(filepath.Join(root, filepath.FromSlash(p)), 0)
+		var noGo *build.NoGoError
+		switch {
+		case errors.As(err, &noGo):
+			continue
+		case err != nil:
+			// Other errors surface through packages.Load, which reports them.
+		}
+		out = append(out, p)
+	}
+	return out, nil
 }
 
 // underDotDir reports whether a slash-separated file path has a directory

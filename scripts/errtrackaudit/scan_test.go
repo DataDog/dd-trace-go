@@ -399,3 +399,29 @@ func TestScan_DirectiveBinding(t *testing.T) {
 		t.Errorf("ignored by message = %v, want %v", got, want)
 	}
 }
+
+func TestScan_DotDirectoriesFollowBuildPlatform(t *testing.T) {
+	// A dot-directory package built only on Windows, or holding only tests,
+	// has no buildable files on Linux. Listing it explicitly must not fail
+	// the Linux load, and the Windows load must still find its site.
+	dir := filepath.Join("testdata", "dotdir")
+	sites, err := scan(dir, scanOptions{
+		logPackagePath: fixtureLogPath,
+		platforms: []buildPlatform{
+			{goos: "linux", goarch: "amd64"},
+			{goos: "windows", goarch: "amd64"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	found := false
+	for _, s := range sites {
+		if s.File == ".github/actions/winonly/w.go" && s.Message == "windows only" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("windows-only dot-directory site missing: %+v", sites)
+	}
+}
