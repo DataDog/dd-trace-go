@@ -28,6 +28,13 @@ const (
 	SNSTopicARN = "aws.sns.topic_arn"
 
 	DynamoDBTableName = "tablename"
+	// DynamoDBTableARN is the ARN of the DynamoDB table the request is sent
+	// to, set when the request names the table by its ARN.
+	DynamoDBTableARN = "aws.table.arn"
+
+	// LambdaFunctionARN is the ARN of the Lambda function the request is sent
+	// to, set when the request names the function by its full ARN.
+	LambdaFunctionARN = "aws.function.arn"
 
 	KinesisStreamName = "streamname"
 	// KinesisStreamARN is the ARN of the Kinesis stream the request is sent to.

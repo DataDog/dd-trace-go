@@ -23,6 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/eventbridge"
 	"github.com/aws/aws-sdk-go/service/kinesis"
+	"github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sfn"
 	"github.com/aws/aws-sdk-go/service/sns"
@@ -221,6 +222,8 @@ func extraTagsForService(req *request.Request) map[string]interface{} {
 		extraTags, err = dynamoDBTags(req.Params)
 	case kinesis.ServiceName:
 		extraTags, err = kinesisTags(req.Params)
+	case lambda.ServiceName:
+		extraTags, err = lambdaTags(req.Params)
 	case eventbridge.ServiceName:
 		extraTags, err = eventBridgeTags(req.Params)
 	case sfn.ServiceName:
@@ -372,20 +375,92 @@ func dynamoDBTags(params interface{}) (map[string]interface{}, error) {
 	var tableName string
 	switch input := params.(type) {
 	case *dynamodb.GetItemInput:
-		tableName = *input.TableName
+		tableName = aws.StringValue(input.TableName)
 	case *dynamodb.PutItemInput:
-		tableName = *input.TableName
+		tableName = aws.StringValue(input.TableName)
 	case *dynamodb.QueryInput:
-		tableName = *input.TableName
+		tableName = aws.StringValue(input.TableName)
 	case *dynamodb.ScanInput:
-		tableName = *input.TableName
+		tableName = aws.StringValue(input.TableName)
 	case *dynamodb.UpdateItemInput:
-		tableName = *input.TableName
+		tableName = aws.StringValue(input.TableName)
 	default:
 		return nil, nil
 	}
-	return map[string]interface{}{
+	if tableName == "" {
+		return nil, nil
+	}
+	tags := map[string]any{
 		ext.DynamoDBTableName: tableName,
+	}
+	if arn := dynamoDBTableARN(tableName); arn != "" {
+		tags[ext.DynamoDBTableARN] = arn
+	}
+	return tags, nil
+}
+
+// dynamoDBTableARN returns tableName if it is a DynamoDB table ARN,
+// arn:<partition>:dynamodb:<region>:<account>:table/<name>, and "" otherwise.
+func dynamoDBTableARN(tableName string) string {
+	parts := strings.SplitN(tableName, ":", 6)
+	if len(parts) != 6 || parts[0] != "arn" || parts[1] == "" || parts[2] != "dynamodb" ||
+		parts[3] == "" || parts[4] == "" {
+		return ""
+	}
+	name, ok := strings.CutPrefix(parts[5], "table/")
+	if !ok || name == "" || strings.Contains(name, "/") {
+		return ""
+	}
+	return tableName
+}
+
+// lambdaFunctionARN returns functionName if it is a full function ARN, and ""
+// otherwise. Like dd-trace-java, it is tagged as sent, including a version or
+// alias qualifier, and a partial ARN (account:function:name) or a name is
+// not, because its partition and region are unknown.
+func lambdaFunctionARN(functionName string) string {
+	if strings.HasPrefix(functionName, "arn:") {
+		return functionName
+	}
+	return ""
+}
+
+func lambdaTags(params any) (map[string]any, error) {
+	var functionName string
+	switch input := params.(type) {
+	case *lambda.InvokeInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.InvokeAsyncInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.InvokeWithResponseStreamInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.GetFunctionInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.GetFunctionConfigurationInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.DeleteFunctionInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.UpdateFunctionCodeInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.UpdateFunctionConfigurationInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.PublishVersionInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.AddPermissionInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.RemovePermissionInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.GetPolicyInput:
+		functionName = aws.StringValue(input.FunctionName)
+	default:
+		return nil, nil
+	}
+	arn := lambdaFunctionARN(functionName)
+	if arn == "" {
+		return nil, nil
+	}
+	return map[string]any{
+		ext.LambdaFunctionARN: arn,
 	}, nil
 }
 

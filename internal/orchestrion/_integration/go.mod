@@ -614,6 +614,7 @@ require (
 	github.com/sony/gobreaker v0.5.0 // indirect
 	go.einride.tech/aip v0.73.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.45.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/lambda v1.101.0 // indirect
 )
 
 replace github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 => ../../../contrib/gorilla/mux/otelc
