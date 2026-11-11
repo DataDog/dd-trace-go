@@ -579,8 +579,11 @@ func TestConvertSpanAttributesMaxLimit(t *testing.T) {
 // limit drops user tags before the keys Datadog ingestion depends on.
 func TestConvertSpanAttributesKeepsDatadogKeysOverLimit(t *testing.T) {
 	s := newBasicSpan("op")
-	for i := range 100 {
+	// The user meta keys alone exceed the limit, so meta must keep the Datadog keys too.
+	for i := range 200 {
 		s.meta.Set(fmt.Sprintf("user-meta-%d", i), "val")
+	}
+	for i := range 100 {
 		s.metrics[fmt.Sprintf("user-metric-%d", i)] = float64(i)
 	}
 	s.meta.Set("_dd.appsec.json", `{"triggers":[]}`)
@@ -591,7 +594,7 @@ func TestConvertSpanAttributesKeepsDatadogKeysOverLimit(t *testing.T) {
 	for _, otelSemantics := range []bool{false, true} {
 		attrs := convertSpanAttributes(s, "", otelSemantics, nil)
 		m := keyValuesToMap(attrs)
-		assert.LessOrEqual(t, len(attrs), maxAttributesCount)
+		assert.Equal(t, maxAttributesCount, len(attrs))
 		assert.Equal(t, `{"triggers":[]}`, m["_dd.appsec.json"])
 		assert.Equal(t, "-4", m["_dd.p.dm"])
 		assert.Equal(t, 1.0, m["_dd.appsec.enabled"])
@@ -609,7 +612,6 @@ func BenchmarkConvertSpanAttributes(b *testing.B) {
 	} {
 		b.Run(bc.name, func(b *testing.B) {
 			s := newBasicSpan("op")
-			s.metrics = make(map[string]float64)
 			for i := range bc.count / 2 {
 				s.meta.Set(fmt.Sprintf("user-meta-%d", i), "val")
 				s.metrics[fmt.Sprintf("user-metric-%d", i)] = float64(i)
