@@ -605,3 +605,114 @@ func TestDisabledExposureDeliveryDoesNotStartWorker(t *testing.T) {
 	w.stop()
 	w.stop()
 }
+
+func TestDisabledExposureDeliveryPublishesAndCachesDependenciesForCustomerHooks(t *testing.T) {
+	internalconfig.SetUseFreshConfig(true)
+	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false); internalconfig.CreateNew() })
+	t.Setenv("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", "false")
+	h := newOptOutHarness(t, ProviderConfig{})
+	h.provider.mu.Lock()
+	h.provider.configuration = dependencyTestConfig(
+		dependencyTestFlag("dependency", "dependency-on", nil),
+		dependencyTestFlag("root", "root-on", dependencyCondition("dependency", operatorOneOf, "dependency-on")),
+	)
+	h.provider.mu.Unlock()
+
+	var rows []ExposureEvaluation
+	h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) { rows = append(rows, e) }))
+	evalCtx := of.NewEvaluationContext("subject", nil)
+	_, err := h.client.BooleanValue(context.Background(), "root", false, evalCtx)
+	require.NoError(t, err)
+	_, err = h.client.BooleanValue(context.Background(), "dependency", false, evalCtx)
+	require.NoError(t, err)
+
+	require.Len(t, rows, 3)
+	assert.Equal(t, "dependency", rows[0].Details.FlagKey)
+	assert.True(t, rows[0].ShouldSend())
+	assert.Equal(t, "root", rows[1].Details.FlagKey)
+	assert.True(t, rows[1].ShouldSend())
+	assert.Equal(t, "dependency", rows[2].Details.FlagKey)
+	assert.True(t, rows[2].IsCacheHit(), "the prerequisite callback shares the direct-read cache")
+	require.Empty(t, h.provider.exposureWriter.buffer)
+}
+
+func TestCustomerExposureHookDependenciesRequireFinalRootSuccess(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		configure  func(*universalFlagsConfiguration)
+		rejectRoot bool
+	}{
+		{
+			name:       "application_after_rejects_root",
+			rejectRoot: true,
+		},
+		{
+			name: "dependency_graph_fails",
+			configure: func(config *universalFlagsConfiguration) {
+				config.Flags["root"].Allocations[0].Rules[0].Conditions = append(
+					config.Flags["root"].Allocations[0].Rules[0].Conditions,
+					dependencyCondition("missing", operatorOneOf, "on"))
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newOptOutHarness(t, ProviderConfig{})
+			config := dependencyTestConfig(
+				dependencyTestFlag("dependency", "dependency-on", nil),
+				dependencyTestFlag("root", "root-on", dependencyCondition("dependency", operatorOneOf, "dependency-on")),
+			)
+			if test.configure != nil {
+				test.configure(config)
+			}
+			h.provider.mu.Lock()
+			h.provider.configuration = config
+			h.provider.mu.Unlock()
+			var rows []ExposureEvaluation
+			h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) { rows = append(rows, e) }))
+			var options []of.Option
+			if test.rejectRoot {
+				options = append(options, of.WithHooks(rejectExposureResultHook{}))
+			}
+			_, err := h.client.BooleanValue(context.Background(), "root", false,
+				of.NewEvaluationContext("subject", nil), options...)
+			require.Error(t, err)
+			require.Len(t, rows, 1, "failed roots must not replay transactionally selected prerequisites")
+			assert.Equal(t, "root", rows[0].Details.FlagKey)
+			assert.False(t, rows[0].IsExposure())
+			h.provider.exposureWriter.flush()
+			assert.Empty(t, h.sink.exposures)
+		})
+	}
+}
+
+func TestCustomerExposureHookDependencyFeaturesAreDetached(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{})
+	dependency := dependencyTestFlag("dependency", "dependency-on", nil)
+	dependency.Allocations[0].Splits[0].Features = splitFeatures{
+		{Key: "cohort", Value: "control", Destinations: []string{"HOOK"}},
+	}
+	h.provider.mu.Lock()
+	h.provider.configuration = dependencyTestConfig(
+		dependency,
+		dependencyTestFlag("root", "root-on", dependencyCondition("dependency", operatorOneOf, "dependency-on")),
+	)
+	h.provider.mu.Unlock()
+
+	h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) {
+		if e.Details.FlagKey == "dependency" {
+			features := e.Features()
+			require.Equal(t, map[string]any{"cohort": "control"}, features)
+			features["cohort"] = "caller mutation"
+			e.Details.FlagMetadata[metadataHookFeaturePrefix+"cohort"] = "metadata mutation"
+		}
+	}))
+	var second []ExposureEvaluation
+	h.client.AddHooks(NewExposureHook(func(e ExposureEvaluation) { second = append(second, e) }))
+
+	_, err := h.client.BooleanValue(context.Background(), "root", false, of.NewEvaluationContext("subject", nil))
+	require.NoError(t, err)
+	require.Len(t, second, 2)
+	require.Equal(t, "dependency", second[0].Details.FlagKey)
+	require.Equal(t, map[string]any{"cohort": "control"}, second[0].Features())
+	require.Equal(t, "control", dependency.Allocations[0].Splits[0].featureMetadata()[metadataHookFeaturePrefix+"cohort"])
+}

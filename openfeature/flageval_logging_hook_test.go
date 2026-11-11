@@ -7,6 +7,7 @@ package openfeature
 
 import (
 	"context"
+	"runtime"
 	"testing"
 	"time"
 
@@ -66,6 +67,15 @@ type panicStringer struct{}
 
 func (panicStringer) String() string {
 	panic("String must not be called when the queue is already full")
+}
+
+type callbackFlagEvalStringer struct {
+	callback func()
+}
+
+func (s callbackFlagEvalStringer) String() string {
+	s.callback()
+	return "reentered"
 }
 
 // TestIsRuntimeDefault verifies the runtime-default detection rule.
@@ -348,5 +358,60 @@ func TestFlagEvaluationBackpressureDropsBeforeContextSnapshot(t *testing.T) {
 	}
 	if got := len(w.events); got != cap(w.events) {
 		t.Fatalf("full queue length changed: got %d, want %d", got, cap(w.events))
+	}
+}
+
+func TestFlagEvaluationStringerCanReenterWhileStopIsPending(t *testing.T) {
+	w := setupTestWriter(t)
+	details := makeEvalDetails("on", of.TargetingMatchReason, "", of.FlagMetadata{
+		metadataObserveFullEvaluationDataKey: true,
+	})
+	inner := makeHookContext("inner", "subject", nil)
+	stopDone := make(chan struct{})
+	outer := makeHookContext("outer", "subject", map[string]any{
+		"reentrant": callbackFlagEvalStringer{callback: func() {
+			go func() {
+				defer close(stopDone)
+				w.stop()
+			}()
+			// Wait until stop either completes (the safe path) or its writer
+			// lock prevents a new reader. In the old lock scope, the latter
+			// made the recursive record wait behind stop while the outer
+			// record still held the read lock: a three-way deadlock.
+			for {
+				select {
+				case <-stopDone:
+					w.record(inner, details)
+					return
+				default:
+				}
+				if !w.enqueueMu.TryRLock() {
+					break
+				}
+				w.enqueueMu.RUnlock()
+				runtime.Gosched()
+			}
+			w.record(inner, details)
+		}},
+	})
+
+	outerDone := make(chan struct{})
+	go func() {
+		defer close(outerDone)
+		w.record(outer, details)
+	}()
+
+	for name, done := range map[string]<-chan struct{}{
+		"reentrant evaluation": outerDone,
+		"writer stop":          stopDone,
+	} {
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatalf("%s deadlocked", name)
+		}
+	}
+	if got := len(w.events); got != 0 {
+		t.Fatalf("events queued after stop = %d, want 0", got)
 	}
 }

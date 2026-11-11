@@ -250,7 +250,7 @@ func TestDebugLogging_AfterHookFailure(t *testing.T) {
 			name:     "ObjectValueDetails keeps the resolved value",
 			flagType: "object",
 			evaluate: func(c *of.Client) (any, error) {
-				details, err := c.ObjectValueDetails(context.Background(), "bool-flag", false, evalCtx)
+				details, err := c.ObjectValueDetails(context.Background(), "bool-flag", anyEvaluationDefault{}, evalCtx)
 				return details.Value, err
 			},
 			want: true,
@@ -270,8 +270,12 @@ func TestDebugLogging_AfterHookFailure(t *testing.T) {
 			require.ErrorContains(t, err, "application after hook failed")
 			require.Equal(t, tc.want, value)
 
-			logger.assertContains(t, `openfeature: provider resolved "bool-flag": type=`+tc.flagType+`, value=true, default=false, variant="on", reason=TARGETING_MATCH, allocation="allocation1", serial_id=, error_code=, error_message=""`)
-			logger.assertContains(t, `openfeature: evaluation of "bool-flag" failed: after hook: application after hook failed (default value false, targeting_key="user-1", attributes={"country":"US"})`)
+			defaultValue := "false"
+			if tc.flagType == "object" {
+				defaultValue = "{}"
+			}
+			logger.assertContains(t, `openfeature: provider resolved "bool-flag": type=`+tc.flagType+`, value=true, default=`+defaultValue+`, variant="on", reason=TARGETING_MATCH, allocation="allocation1", serial_id=, error_code=, error_message=""`)
+			logger.assertContains(t, `openfeature: evaluation of "bool-flag" failed: after hook: application after hook failed (default value `+defaultValue+`, targeting_key="user-1", attributes={"country":"US"})`)
 			assertNoReturnedValueClaims(t, logger, "bool-flag")
 		})
 	}

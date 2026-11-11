@@ -96,6 +96,8 @@ func (h *exposureHook) Finally(
 	if flagEvaluationDetails.ErrorCode != "" || flagEvaluationDetails.Reason == of.ErrorReason {
 		return
 	}
+	subject := newExposureSubjectSnapshot(hookContext.EvaluationContext())
+	h.appendDependencyExposures(subject, flagEvaluationDetails.FlagMetadata)
 	// The provider checks cancellation before resolving. Cancellation after a
 	// successful resolution must not discard an exposure for the returned value.
 	evaluation := ExposureEvaluation{Details: flagEvaluationDetails}
@@ -104,52 +106,15 @@ func (h *exposureHook) Finally(
 		return
 	}
 
-	allocationKey, _ := evaluation.AllocationKey() // IsExposure established its presence.
-	var serialID *uint32
-	if id, ok := evaluation.SplitSerialID(); ok {
-		serialID = new(id)
-	}
-
-	// Get targeting key (subject ID) from evaluation context
-	evalContext := hookContext.EvaluationContext()
-	targetingKey := evalContext.TargetingKey()
-
-	// Build flat context from evaluation context
-	flatContext := make(map[string]any)
-	flatContext[of.TargetingKey] = targetingKey
-	maps.Copy(flatContext, evalContext.Attributes())
-
-	// Flatten attributes for exposure event
-	flattenedAttrs := flattenContext(flatContext)
-
-	// Extract only primitive attributes for the subject
-	subjectAttrs := extractPrimitiveAttributes(flattenedAttrs)
-
-	// Create exposure event
-	event := exposureEvent{
-		Timestamp: time.Now().UnixMilli(),
-		Allocation: exposureAllocation{
-			Key: allocationKey,
-		},
-		Flag: exposureFlag{
-			Key: hookContext.FlagKey(),
-		},
-		Variant: exposureVariant{
-			Key: flagEvaluationDetails.Variant,
-		},
-		Subject: exposureSubject{
-			ID:         targetingKey,
-			Type:       "",           // Type is optional
-			Attributes: subjectAttrs, // Flattened, primitive-only attributes
-		},
-		SerialID:    serialID,
-		featuresKey: featureValuesKey(flagEvaluationDetails.FlagMetadata, metadataExposureFeaturesKey),
-	}
+	event, _ := makeExposureEvent(hookContext.FlagKey(), flagEvaluationDetails.Variant,
+		flagEvaluationDetails.FlagMetadata, subject.targetingKey)
+	targetingKey := event.Subject.ID
+	allocationKey := event.Allocation.Key
 
 	// Send to writer for buffering and eventual flushing
 	// Decide once for all destinations. Customer hooks run after provider hooks
 	// and read this stamp without consuming another cache entry.
-	isNew, known := h.writer.appendWithDecision(event)
+	isNew, known := h.writer.appendWithDecisionAndAttributes(event, subject.attributes)
 	if known {
 		flagEvaluationDetails.FlagMetadata[metadataExposureCacheHitKey] = !isNew
 	}
@@ -172,6 +137,75 @@ func (h *exposureHook) Finally(
 		logOnboarding("queued exposure event for flag %q (allocation=%q, variant=%q, subject=%q)",
 			hookContext.FlagKey(), allocationKey, flagEvaluationDetails.Variant, targetingKey)
 	}
+}
+
+func (h *exposureHook) appendDependencyExposures(subject *exposureSubjectSnapshot, metadata of.FlagMetadata) {
+	encoded, _ := metadata[metadataDependencyExposuresKey].(string)
+	candidates := decodeDependencyExposureCandidates(encoded)
+	if len(candidates) == 0 {
+		return
+	}
+	for i, candidate := range candidates {
+		event, eligible := makeExposureEvent(candidate.FlagKey, candidate.Result.VariantKey,
+			candidate.Result.Metadata, subject.targetingKey)
+		if eligible {
+			isNew, known := h.writer.appendWithDecisionAndAttributes(event, subject.attributes)
+			if known {
+				candidates[i].Result.Metadata[metadataExposureCacheHitKey] = !isNew
+			}
+		}
+	}
+	metadata[metadataDependencyExposuresKey] = encodeDependencyExposureCandidates(candidates)
+}
+
+type exposureSubjectSnapshot struct {
+	targetingKey string
+	context      of.EvaluationContext
+	detached     map[string]any
+	ready        bool
+}
+
+func newExposureSubjectSnapshot(context of.EvaluationContext) *exposureSubjectSnapshot {
+	return &exposureSubjectSnapshot{targetingKey: context.TargetingKey(), context: context}
+}
+
+func (s *exposureSubjectSnapshot) attributes() map[string]any {
+	if !s.ready {
+		flatContext := make(map[string]any, len(s.context.Attributes())+1)
+		flatContext[of.TargetingKey] = s.targetingKey
+		maps.Copy(flatContext, s.context.Attributes())
+		s.detached = extractPrimitiveAttributes(flattenContext(flatContext))
+		s.ready = true
+	}
+	return s.detached
+}
+
+func makeExposureEvent(
+	flagKey string,
+	variantKey string,
+	metadata of.FlagMetadata,
+	targetingKey string,
+) (exposureEvent, bool) {
+	allocationKey, hasAllocation := metadata[metadataAllocationKey].(string)
+	doLog, _ := metadata[metadataDoLogKey].(bool)
+	if !hasAllocation || !doLog || variantKey == "" {
+		return exposureEvent{}, false
+	}
+	var serialID *uint32
+	if id, ok := metadata[metadataSplitSerialIDKey].(uint32); ok {
+		serialID = new(id)
+	}
+	return exposureEvent{
+		Timestamp:  time.Now().UnixMilli(),
+		Allocation: exposureAllocation{Key: allocationKey},
+		Flag:       exposureFlag{Key: flagKey},
+		Variant:    exposureVariant{Key: variantKey},
+		Subject: exposureSubject{
+			ID: targetingKey,
+		},
+		SerialID:    serialID,
+		featuresKey: featureValuesKey(metadata, metadataExposureFeaturesKey),
+	}, true
 }
 
 // ExposureEvaluation describes a completed evaluation. Its cache decision
@@ -225,8 +259,9 @@ func (e ExposureEvaluation) ShouldSend() bool {
 }
 
 // ExposureHook calls customer code after completed evaluations, including errors,
-// non-exposures and cache hits. Register it with the OpenFeature API, a client, or
-// an evaluation, retaining the provider's hooks. The callback runs synchronously: enqueue
+// non-exposures and cache hits. A successful dependent evaluation calls the hook
+// once per selected prerequisite before the root. Register it with the OpenFeature API,
+// a client, or an evaluation, retaining the provider's hooks. The callback runs synchronously: enqueue
 // copied scalar fields for background delivery. It can run concurrently.
 // Treat Details.Value as read-only. JSON maps and slices can share provider state;
 // copy them before modification or background processing.
@@ -254,7 +289,8 @@ func NewExposureHook(callback func(ExposureEvaluation)) *ExposureHook {
 	return &ExposureHook{callback: callback}
 }
 
-// Finally invokes the callback with the shared exposure decision.
+// Finally invokes the callback for each transactionally selected prerequisite,
+// followed by the root, using the shared exposure decisions.
 func (h *ExposureHook) Finally(_ context.Context, ctx of.HookContext, details of.InterfaceEvaluationDetails, _ of.HookHints) {
 	if h.callback == nil {
 		return
@@ -265,20 +301,41 @@ func (h *ExposureHook) Finally(_ context.Context, ctx of.HookContext, details of
 		})
 		return
 	}
-	defer func() {
-		if recover() != nil {
-			if h.panicWarned.CompareAndSwap(false, true) {
-				log.Warn("openfeature: customer exposure callback panicked for flag %q; later panics are logged at debug level", ctx.FlagKey()) //errtrack:ignore customer callback
-			} else {
-				log.Debug("openfeature: customer exposure callback panicked for flag %q", ctx.FlagKey())
-			}
-		}
-	}()
 	// TODO(open-feature/go-sdk#623): Remove normalization and marker cleanup when
 	// go.mod requires the fixed release; retain the metadata copy for isolation.
 	details = exposureFinalDetails(ctx, details)
+	if details.ErrorCode == "" && details.Reason != of.ErrorReason {
+		encoded, _ := details.FlagMetadata[metadataDependencyExposuresKey].(string)
+		for _, candidate := range decodeDependencyExposureCandidates(encoded) {
+			dependencyDetails := of.InterfaceEvaluationDetails{
+				EvaluationDetails: of.EvaluationDetails{
+					FlagKey: candidate.FlagKey,
+					ResolutionDetail: of.ResolutionDetail{
+						Variant:      candidate.Result.VariantKey,
+						Reason:       candidate.Result.Reason,
+						FlagMetadata: maps.Clone(candidate.Result.Metadata),
+					},
+				},
+			}
+			h.invoke(ctx.EvaluationContext(), candidate.FlagKey, dependencyDetails)
+		}
+	}
+
 	// Isolate metadata edits from the other callbacks and returned evaluation.
 	details.FlagMetadata = maps.Clone(details.FlagMetadata)
 	delete(details.FlagMetadata, metadataExposureAfterErrorKey)
-	h.callback(ExposureEvaluation{Context: ctx.EvaluationContext(), Details: details})
+	h.invoke(ctx.EvaluationContext(), ctx.FlagKey(), details)
+}
+
+func (h *ExposureHook) invoke(evaluationContext of.EvaluationContext, flagKey string, details of.InterfaceEvaluationDetails) {
+	defer func() {
+		if recover() != nil {
+			if h.panicWarned.CompareAndSwap(false, true) {
+				log.Warn("openfeature: customer exposure callback panicked for flag %q; later panics are logged at debug level", flagKey) //errtrack:ignore customer callback
+			} else {
+				log.Debug("openfeature: customer exposure callback panicked for flag %q", flagKey)
+			}
+		}
+	}()
+	h.callback(ExposureEvaluation{Context: evaluationContext, Details: details})
 }

@@ -225,7 +225,7 @@ func TestProviderStampsConsentFromEvaluatedConfig(t *testing.T) {
 
 			res := p.evaluate(context.Background(), "pii-flag", "fallback", of.FlattenedContext{
 				of.TargetingKey: piiCanonicalTargetingKey,
-			})
+			}, "")
 
 			got, ok := res.Metadata[metadataObserveFullEvaluationDataKey]
 			if !ok {
@@ -242,7 +242,7 @@ func TestProviderStampsConsentFromEvaluatedConfig(t *testing.T) {
 
 		res := p.evaluate(context.Background(), "no-such-flag", "fallback", of.FlattenedContext{
 			of.TargetingKey: piiCanonicalTargetingKey,
-		})
+		}, "")
 		if res.Metadata[metadataObserveFullEvaluationDataKey] != true {
 			t.Errorf("FLAG_NOT_FOUND must still carry consent, got %v", res.Metadata)
 		}
@@ -600,7 +600,7 @@ func TestConsentIsNotReReadAfterEvaluation(t *testing.T) {
 			// provider would.
 			res := p.evaluate(context.Background(), "pii-flag", "fallback", of.FlattenedContext{
 				of.TargetingKey: piiCanonicalTargetingKey,
-			})
+			}, "")
 			hookCtx := makeHookContext("pii-flag", piiCanonicalTargetingKey, map[string]any{"plan": "enterprise"})
 			details := makeEvalDetails(res.VariantKey, res.Reason, "", of.FlagMetadata(res.Metadata))
 			w.record(hookCtx, details)

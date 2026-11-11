@@ -1097,6 +1097,114 @@ func TestRecordAfterStopIsNoop(t *testing.T) {
 	}
 }
 
+func TestDependencyLoggingSnapshotsContextAfterAdmission(t *testing.T) {
+	details := of.InterfaceEvaluationDetails{
+		Value: true,
+		EvaluationDetails: of.EvaluationDetails{
+			FlagKey:  "dependency",
+			FlagType: of.Boolean,
+			ResolutionDetail: of.ResolutionDetail{
+				Variant: "on",
+				Reason:  of.TargetingMatchReason,
+				FlagMetadata: of.FlagMetadata{
+					metadataObserveFullEvaluationDataKey: true,
+				},
+			},
+		},
+	}
+
+	t.Run("full queue skips snapshot", func(t *testing.T) {
+		flatCtx := make(of.FlattenedContext, maxContextFields+2)
+		flatCtx[of.TargetingKey] = "subject"
+		for i := 0; i <= maxContextFields; i++ {
+			flatCtx[fmt.Sprintf("field-%03d", i)] = i
+		}
+		batch := newDependencyEvaluationLoggingBatch(flatCtx)
+		w := newFlagEvalLoggingWriter(ProviderConfig{})
+		w.events = make(chan evalEvent, 1)
+		w.events <- evalEvent{}
+
+		w.recordDependency(&batch, "dependency", details)
+
+		if batch.snapshotReady {
+			t.Fatal("full queue must reject the record before walking the caller context")
+		}
+		if got := w.preQueueOverflow.Load(); got != 1 {
+			t.Fatalf("preQueueOverflow = %d, want 1", got)
+		}
+	})
+
+	t.Run("stopped writer skips snapshot", func(t *testing.T) {
+		flatCtx := of.FlattenedContext{
+			of.TargetingKey: "subject",
+			"country":       "CA",
+		}
+		batch := newDependencyEvaluationLoggingBatch(flatCtx)
+		w := newFlagEvalLoggingWriter(ProviderConfig{})
+		w.stopped.Store(true)
+
+		w.recordDependency(&batch, "dependency", details)
+
+		if batch.snapshotReady {
+			t.Fatal("stopped writer must reject the record before walking the caller context")
+		}
+		if got := w.closedDrop.Load(); got != 1 {
+			t.Fatalf("closedDrop = %d, want 1", got)
+		}
+	})
+
+	t.Run("batch shares bounded detached snapshot", func(t *testing.T) {
+		flatCtx := make(of.FlattenedContext, maxContextFields+1)
+		flatCtx[of.TargetingKey] = "subject"
+		for i := range maxContextFields {
+			flatCtx[fmt.Sprintf("field-%03d", i)] = i
+		}
+		batch := newDependencyEvaluationLoggingBatch(flatCtx)
+		w := newFlagEvalLoggingWriter(ProviderConfig{})
+		w.events = make(chan evalEvent, 2)
+
+		w.recordDependency(&batch, "dependency-a", details)
+		flatCtx["field-000"] = "caller mutation"
+		w.recordDependency(&batch, "dependency-b", details)
+
+		if !batch.snapshotReady {
+			t.Fatal("admitted consented record must create a bounded snapshot")
+		}
+		first, second := <-w.events, <-w.events
+		if got := len(first.contextAttrs); got != maxContextFields {
+			t.Fatalf("first context fields = %d, want %d", got, maxContextFields)
+		}
+		if got := first.contextAttrs["field-000"]; got != 0 {
+			t.Fatalf("snapshot retained caller mutation: got %#v, want 0", got)
+		}
+		if got := second.contextAttrs["field-000"]; got != 0 {
+			t.Fatalf("shared snapshot retained caller mutation: got %#v, want 0", got)
+		}
+	})
+
+	t.Run("truncation counter remains per admitted record", func(t *testing.T) {
+		flatCtx := make(of.FlattenedContext, maxContextFields+2)
+		flatCtx[of.TargetingKey] = "subject"
+		for i := 0; i <= maxContextFields; i++ {
+			flatCtx[fmt.Sprintf("field-%03d", i)] = i
+		}
+		batch := newDependencyEvaluationLoggingBatch(flatCtx)
+		w := newFlagEvalLoggingWriter(ProviderConfig{})
+		w.events = make(chan evalEvent, 2)
+
+		w.recordDependency(&batch, "dependency-a", details)
+		w.recordDependency(&batch, "dependency-b", details)
+
+		counter, ok := w.contextTruncatedByReason.Load(truncReasonMaxContextFields)
+		if !ok || counter.(*atomic.Int64).Load() != 2 {
+			t.Fatalf("max-field truncation count = %v, want 2", counter)
+		}
+		if first, second := <-w.events, <-w.events; first.contextAttrs != nil || second.contextAttrs != nil {
+			t.Fatal("oversized contexts must be omitted from every queued record")
+		}
+	})
+}
+
 // TestBuildFlagEvalPayloads covers the size-bounded payload splitter (the Go mirror of
 // Java's FlagEvaluationPayloads.buildPayloads): small flushes produce one payload, a flush
 // over payloadSizeLimitBytes is split into multiple payloads, a single oversized event is

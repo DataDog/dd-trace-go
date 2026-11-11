@@ -5,7 +5,11 @@
 
 package openfeature
 
-import "github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
+import (
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
+)
 
 // ResetForTest resets the global rcState for test isolation.
 func ResetForTest() {
@@ -13,7 +17,11 @@ func ResetForTest() {
 	defer rcState.Unlock()
 	rcState.subscribed = false
 	rcState.callback = nil
+	rcState.callbackToken = 0
 	rcState.buffered = nil
+	rcState.providerSubscription = 0
+	rcState.providerToken = 0
+	rcState.providerCapabilities = nil
 }
 
 // SetSubscribedForTest sets the subscribed flag without actually calling Subscribe.
@@ -35,4 +43,9 @@ func GetBufferedForTest() remoteconfig.ProductUpdate {
 	rcState.Lock()
 	defer rcState.Unlock()
 	return rcState.buffered
+}
+
+// ForwardForTest delivers an update through the tracer-owned forwarding path.
+func ForwardForTest(update remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+	return forwardingCallback(update)
 }
