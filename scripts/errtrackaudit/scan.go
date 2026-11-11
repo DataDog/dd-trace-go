@@ -530,13 +530,16 @@ func buildablePatterns(root string, patterns []string, platform buildPlatform) (
 			out = append(out, p)
 			continue
 		}
-		_, err := ctx.ImportDir(filepath.Join(root, filepath.FromSlash(p)), 0)
+		pkg, err := ctx.ImportDir(filepath.Join(root, filepath.FromSlash(p)), 0)
 		var noGo *build.NoGoError
 		switch {
 		case errors.As(err, &noGo):
 			continue
 		case err != nil:
 			// Other errors surface through packages.Load, which reports them.
+		case len(pkg.GoFiles)+len(pkg.CgoFiles) == 0:
+			// Only test files build here, and the scan loads no tests.
+			continue
 		}
 		out = append(out, p)
 	}

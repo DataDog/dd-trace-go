@@ -425,3 +425,17 @@ func TestScan_DotDirectoriesFollowBuildPlatform(t *testing.T) {
 		t.Errorf("windows-only dot-directory site missing: %+v", sites)
 	}
 }
+
+func TestBuildablePatterns_DropsTestOnlyDirectories(t *testing.T) {
+	// The scan loads no tests, so a dot directory holding only test files
+	// has nothing to scan and must not be passed to packages.Load.
+	dir := filepath.Join("testdata", "dotdir")
+	got, err := buildablePatterns(dir, []string{"./...", "./.github/actions/testsonly", "./.github/actions/tool"}, buildPlatform{goos: "linux", goarch: "amd64"})
+	if err != nil {
+		t.Fatalf("buildablePatterns: %v", err)
+	}
+	want := []string{"./...", "./.github/actions/tool"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("buildablePatterns = %v, want %v", got, want)
+	}
+}
