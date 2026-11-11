@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
@@ -139,10 +140,10 @@ func TestEnrichOperation(t *testing.T) {
 			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
 			span, spanCtx := tracer.StartSpanFromContext(ctx, "test-span")
 
-			NewEnricher(true).EnrichOperation(spanCtx, span, tt.input, tt.operation)
+			input := NewEnricher(true).EnrichOperation(spanCtx, span, tt.input, tt.operation)
 
 			if tt.check != nil {
-				tt.check(t, tt.input, span, spanCtx)
+				tt.check(t, input, span, spanCtx)
 			}
 		})
 	}
@@ -189,7 +190,8 @@ func TestInjectTraceContext(t *testing.T) {
 
 			traceContext, err := getTraceContext(spanCtx, span, "test-queue", 42)
 			assert.NoError(t, err)
-			injectTraceContext(traceContext, messageAttributes)
+			budget := traceBudget{remaining: maxMessageBytes}
+			budget.inject(traceContext, messageAttributes)
 
 			if tt.expectInjection {
 				assert.Contains(t, messageAttributes, datadogKey)
@@ -252,4 +254,77 @@ func BenchmarkEnrichOperation(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestMessageSizeLimit(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "produce")
+	defer span.Finish()
+	enricher := NewEnricher(true)
+	const limit = 1 << 20
+	small := &sqs.SendMessageInput{MessageBody: aws.String("a")}
+	enricher.EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: small}, "SendMessage")
+	require.Contains(t, small.MessageAttributes, datadogKey)
+	trace := small.MessageAttributes[datadogKey]
+	traceValueBytes := len(aws.ToString(trace.StringValue))
+	traceSize := len(datadogKey) + len(aws.ToString(trace.DataType)) + traceValueBytes
+
+	t.Run("single message", func(t *testing.T) {
+		params := &sqs.SendMessageInput{MessageBody: aws.String(strings.Repeat("a", limit))}
+		enricher.EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: params}, "SendMessage")
+		require.NotContains(t, params.MessageAttributes, datadogKey)
+	})
+
+	t.Run("existing trace attribute at the size limit", func(t *testing.T) {
+		old := "\xff" + strings.Repeat("x", traceValueBytes-2)
+		params := &sqs.SendMessageInput{
+			MessageAttributes: map[string]types.MessageAttributeValue{datadogKey: {DataType: aws.String("String"), StringValue: aws.String(old)}},
+			MessageBody:       aws.String(strings.Repeat("a", limit-len(datadogKey)-len("String")-len(strings.ToValidUTF8(old, "\uFFFD")))),
+		}
+		enricher.EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: params}, "SendMessage")
+		replacement := aws.ToString(params.MessageAttributes[datadogKey].StringValue)
+		require.NotEmpty(t, replacement)
+		require.NotEqual(t, old, replacement)
+		require.LessOrEqual(t, sendMessageSize(params), int64(limit))
+	})
+
+	t.Run("batch shares the message size budget", func(t *testing.T) {
+		const sharedSize = len("format") + len("Binary.custom") + 2
+		sendBatch := func(secondBodyBytes int) []types.SendMessageBatchRequestEntry {
+			shared := map[string]types.MessageAttributeValue{"format": {DataType: aws.String("Binary.custom"), BinaryValue: []byte{0, 1}}}
+			params := &sqs.SendMessageBatchInput{Entries: []types.SendMessageBatchRequestEntry{
+				{MessageBody: aws.String("a"), MessageAttributes: shared},
+				{MessageBody: aws.String(strings.Repeat("b", secondBodyBytes)), MessageAttributes: shared},
+			}}
+			sent := enricher.EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: params}, "SendMessageBatch")
+			shared["format"] = types.MessageAttributeValue{DataType: aws.String("Binary.custom"), BinaryValue: []byte{1, 2}}
+			require.Equal(t, shared["format"], params.Entries[1].MessageAttributes["format"])
+			require.NotContains(t, shared, datadogKey)
+			return sent.Parameters.(*sqs.SendMessageBatchInput).Entries
+		}
+
+		exactFit := limit - 1 - traceSize - 2*sharedSize
+		entries := sendBatch(exactFit)
+		require.Contains(t, entries[0].MessageAttributes, datadogKey)
+		require.NotContains(t, entries[1].MessageAttributes, datadogKey)
+
+		entries = sendBatch(exactFit + 1)
+		require.NotContains(t, entries[0].MessageAttributes, datadogKey)
+		require.NotContains(t, entries[1].MessageAttributes, datadogKey)
+
+		t.Run("SDK expands malformed string attributes", func(t *testing.T) {
+			const rawAttrSize = len("x") + len("String") + len("\xff")
+			params := &sqs.SendMessageBatchInput{Entries: []types.SendMessageBatchRequestEntry{
+				{MessageBody: aws.String("a")},
+				{MessageBody: aws.String(strings.Repeat("b", limit-1-traceSize-rawAttrSize)), MessageAttributes: map[string]types.MessageAttributeValue{
+					"x": {DataType: aws.String("String"), StringValue: aws.String("\xff")},
+				}},
+			}}
+			sent := enricher.EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: params}, "SendMessageBatch")
+			for _, entry := range sent.Parameters.(*sqs.SendMessageBatchInput).Entries {
+				require.NotContains(t, entry.MessageAttributes, datadogKey)
+			}
+		})
+	})
 }
