@@ -661,6 +661,16 @@ func TestKinesisTags(t *testing.T) {
 			want:   nil,
 		},
 		{
+			name:   "GetRecordsInput stream ARN",
+			params: &kinesis.GetRecordsInput{StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: streamName, ext.KinesisStreamARN: streamARN},
+		},
+		{
+			name:   "GetRecordsInput no stream identifier",
+			params: &kinesis.GetRecordsInput{},
+			want:   nil,
+		},
+		{
 			name:   "ARN without a resource separator",
 			params: &kinesis.DescribeStreamInput{StreamARN: aws.String(invalidStreamARN)},
 			want:   map[string]any{ext.KinesisStreamName: invalidStreamARN, ext.KinesisStreamARN: invalidStreamARN},
@@ -751,6 +761,31 @@ func TestSQSTags(t *testing.T) {
 			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
 		},
 		{
+			name:   "ChangeMessageVisibilityInput",
+			params: &sqs.ChangeMessageVisibilityInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
+			name:   "ChangeMessageVisibilityBatchInput",
+			params: &sqs.ChangeMessageVisibilityBatchInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
+			name:   "GetQueueAttributesInput",
+			params: &sqs.GetQueueAttributesInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
+			name:   "PurgeQueueInput",
+			params: &sqs.PurgeQueueInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
+			name:   "SetQueueAttributesInput",
+			params: &sqs.SetQueueAttributesInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
 			name:   "no queue URL",
 			params: &sqs.SendMessageInput{},
 			want:   nil,
@@ -813,6 +848,11 @@ func TestSNSTags(t *testing.T) {
 			name:   "PublishInput no destination",
 			params: &sns.PublishInput{},
 			want:   nil,
+		},
+		{
+			name:   "PublishBatchInput",
+			params: &sns.PublishBatchInput{TopicArn: aws.String(topicARN)},
+			want:   map[string]any{ext.SNSTopicName: topicName, ext.SNSTopicARN: topicARN},
 		},
 		{
 			name:   "GetTopicAttributesInput",
@@ -906,6 +946,11 @@ func TestSFNTags(t *testing.T) {
 		{
 			name:   "StartExecutionInput",
 			params: &sfn.StartExecutionInput{StateMachineArn: aws.String(stateMachineARN)},
+			want:   map[string]any{ext.SFNStateMachineName: stateMachineName, ext.SFNStateMachineARN: stateMachineARN},
+		},
+		{
+			name:   "StartSyncExecutionInput",
+			params: &sfn.StartSyncExecutionInput{StateMachineArn: aws.String(stateMachineARN)},
 			want:   map[string]any{ext.SFNStateMachineName: stateMachineName, ext.SFNStateMachineARN: stateMachineARN},
 		},
 		{
