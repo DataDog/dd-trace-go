@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/IBM/sarama"
+	"github.com/IBM/sarama/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -182,4 +183,85 @@ func TestWrapConsumerWithCustomConsumerSpanOptions(t *testing.T) {
 	assert.Equal(t, "test key", s.Tag("messaging.kafka.key"))
 
 	assertDSMConsumerPathway(t, topic, "", msg1, false)
+}
+
+// TestWrapConsumerSharesConfigWithPartitionConsumers checks that partition
+// consumers created via a wrapped consumer use the consumer's config: they
+// report the cluster ID fetched by the consumer and start no fetch of their
+// own. It needs no broker.
+func TestWrapConsumerSharesConfigWithPartitionConsumers(t *testing.T) {
+	const topic = "test-topic"
+	// Nothing listens on these addresses, so the consumer's cluster ID fetch
+	// fails quickly and the test sets the cluster ID itself.
+	brokers := []string{"127.0.0.1:1", "127.0.0.1:2"}
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	mc := mocks.NewConsumer(t, nil)
+	mc.ExpectConsumePartition(topic, 0, sarama.OffsetOldest).YieldMessage(&sarama.ConsumerMessage{Topic: topic})
+	mc.ExpectConsumePartition(topic, 1, sarama.OffsetOldest).YieldMessage(&sarama.ConsumerMessage{Topic: topic, Partition: 1})
+
+	c := WrapConsumer(mc, WithDataStreams(), WithBrokers(brokers))
+	wc := c.(*consumer)
+	require.Len(t, wc.closeAsync, 1, "the consumer fetches the cluster ID")
+	wc.cfg.SetClusterID("test-cluster-id")
+
+	for partition := range int32(2) {
+		pc, err := c.ConsumePartition(topic, partition, sarama.OffsetOldest)
+		require.NoError(t, err)
+		wpc := pc.(*partitionConsumer)
+		assert.Empty(t, wpc.closeAsync, "the partition consumer must not fetch the cluster ID again")
+		assert.Same(t, wc.cfg, wpc.dispatcher.(*wrappedDispatcher).cfg)
+
+		<-pc.Messages()
+		require.NoError(t, pc.Close())
+		// wait for the channel to be closed
+		<-pc.Messages()
+	}
+	require.NoError(t, c.Close())
+	waitForSpans(t, mt, 2, 5*time.Second)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 2)
+	for _, s := range spans {
+		assert.Equal(t, "test-cluster-id", s.Tag(ext.MessagingKafkaClusterID))
+		assert.Equal(t, "127.0.0.1:1,127.0.0.1:2", s.Tag(ext.KafkaBootstrapServers))
+	}
+}
+
+func TestWrapPartitionConsumerBootstrapServers(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		opts     []Option
+		expected any
+	}{
+		{name: "without brokers", expected: nil},
+		{name: "with brokers", opts: []Option{WithBrokers([]string{"broker-1:9092", "broker-2:9092"})}, expected: "broker-1:9092,broker-2:9092"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			const topic = "test-topic"
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			mc := mocks.NewConsumer(t, nil)
+			mc.ExpectConsumePartition(topic, 0, sarama.OffsetOldest).YieldMessage(&sarama.ConsumerMessage{Topic: topic})
+			pc, err := mc.ConsumePartition(topic, 0, sarama.OffsetOldest)
+			require.NoError(t, err)
+
+			// Data streams is disabled, so no cluster ID fetch is started.
+			wpc := WrapPartitionConsumer(pc, tt.opts...)
+			assert.Empty(t, wpc.(*partitionConsumer).closeAsync)
+			<-wpc.Messages()
+			require.NoError(t, wpc.Close())
+			<-wpc.Messages()
+			waitForSpans(t, mt, 1, 5*time.Second)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			assert.Equal(t, tt.expected, spans[0].Tag(ext.KafkaBootstrapServers))
+			assert.Nil(t, spans[0].Tag(ext.MessagingKafkaClusterID))
+		})
+	}
 }
