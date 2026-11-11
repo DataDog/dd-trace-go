@@ -149,6 +149,7 @@ func TestSpanSetMetaStructOverOTLP(t *testing.T) {
 	assert.False(t, span.SetMetaStruct("custom.meta_struct", &testMsgpStruct{A: "test"}))
 	assert.NotContains(t, span.metaStruct, "custom.meta_struct")
 	span.Finish()
+	// Stop drains the queued chunk and waits for the OTLP send. Flush does not wait.
 	stop()
 
 	var body []byte
