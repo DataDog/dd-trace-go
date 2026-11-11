@@ -512,6 +512,58 @@ func TestGroupName(t *testing.T) {
 	}
 }
 
+func TestBootstrapServers(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		opts []kgo.Opt
+		want string
+	}{
+		{
+			name: "single seed broker",
+			want: "127.0.0.1:1",
+		},
+		{
+			name: "several seed brokers",
+			opts: []kgo.Opt{kgo.SeedBrokers("broker-1:9092", "broker-2")},
+			want: "broker-1:9092,broker-2",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			h := newTracingHook()
+			newOfflineClient(t, h, tc.opts...)
+
+			produced := &kgo.Record{Topic: "topic", Context: context.Background()}
+			h.OnProduceRecordBuffered(produced)
+			h.OnProduceRecordUnbuffered(produced, nil)
+			h.OnFetchRecordUnbuffered(&kgo.Record{Topic: "topic"}, true)
+			h.finishAndClearActiveSpans()
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 2)
+			for _, s := range spans {
+				assert.Equal(t, tc.want, s.Tag(ext.KafkaBootstrapServers))
+			}
+		})
+	}
+}
+
+func TestBootstrapServersWithoutClient(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	// The hook is not attached to a client, so the seed brokers are unknown.
+	h := newTracingHook()
+	h.OnFetchRecordUnbuffered(&kgo.Record{Topic: "topic"}, true)
+	h.finishAndClearActiveSpans()
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Nil(t, spans[0].Tag(ext.KafkaBootstrapServers))
+}
+
 func TestHookAttachedToTwoClients(t *testing.T) {
 	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
 	h := newTracingHook()

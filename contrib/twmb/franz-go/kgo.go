@@ -8,6 +8,7 @@ package kgo
 import (
 	"context"
 	"regexp"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -55,6 +56,9 @@ type tracingHook struct {
 	// every record.
 	consumerSpanCfg *tracer.StartSpanConfig
 	producerSpanCfg *tracer.StartSpanConfig
+	// bootstrapServers is set in OnNewClient from the client's seed brokers
+	// and read by the record hooks, like group.
+	bootstrapServers atomic.Pointer[string]
 }
 
 func newTracingHook(opts ...Option) *tracingHook {
@@ -92,7 +96,7 @@ func (h *tracingHook) finishAndClearActiveSpans() {
 
 // OnNewClient is a kgo hook called when the client is initialized
 // before any client goroutines are started. It resolves the group name
-// used for DSM.
+// used for DSM and the bootstrap servers tagged on spans.
 //
 // The hook holds per-client state. Attach the Opt returned by WithTracing
 // to one client only. A hook attached to two clients logs a warning and
@@ -106,6 +110,18 @@ func (h *tracingHook) OnNewClient(c *kgo.Client) {
 		g = &groupInfo{name: name, isShareGroup: isShareGroup}
 	}
 	h.group.Store(g)
+	var bs *string
+	if s := bootstrapServers(c); s != "" {
+		bs = &s
+	}
+	h.bootstrapServers.Store(bs)
+}
+
+// bootstrapServers returns the client's seed brokers as configured, joined
+// with ",". It does not include brokers discovered from the cluster metadata.
+func bootstrapServers(c optValuer) string {
+	seeds, _ := c.OptValue(kgo.SeedBrokers).([]string)
+	return strings.Join(seeds, ",")
 }
 
 // groupInfo is the consumer or share group a client was configured with.
@@ -224,6 +240,9 @@ func (h *tracingHook) startConsumeSpan(ctx context.Context, r *kgo.Record) *trac
 		"offset":                     r.Offset,
 		ext.MessagingDestinationName: r.Topic,
 	}
+	if bs := h.bootstrapServers.Load(); bs != nil {
+		tags[ext.KafkaBootstrapServers] = *bs
+	}
 	opts := []tracer.StartSpanOption{
 		tracer.WithTags(tags),
 		tracer.WithStartSpanConfig(h.consumerSpanCfg),
@@ -262,6 +281,9 @@ func (h *tracingHook) startProduceSpan(ctx context.Context, r *kgo.Record) *trac
 	tags := map[string]any{
 		ext.ResourceName:             "Produce Topic " + r.Topic,
 		ext.MessagingDestinationName: r.Topic,
+	}
+	if bs := h.bootstrapServers.Load(); bs != nil {
+		tags[ext.KafkaBootstrapServers] = *bs
 	}
 	opts := []tracer.StartSpanOption{
 		tracer.WithTags(tags),
