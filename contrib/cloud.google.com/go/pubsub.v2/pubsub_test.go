@@ -563,3 +563,45 @@ func TestTopicAndSubscriptionNames(t *testing.T) {
 		})
 	}
 }
+
+// TestShortIDs creates the publisher and the subscriber from IDs: the SDK
+// resolves them to full paths under the client's project, which are tagged.
+func TestShortIDs(t *testing.T) {
+	srv := pstest.NewServer()
+	t.Cleanup(func() { assert.NoError(t, srv.Close()) })
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	conn, err := grpc.NewClient(srv.Addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, conn.Close()) })
+	client, err := pubsub.NewClient(ctx, "commerce", option.WithGRPCConn(conn))
+	require.NoError(t, err)
+	_, err = client.TopicAdminClient.CreateTopic(ctx, &pubsubpb.Topic{Name: "projects/commerce/topics/orders"})
+	require.NoError(t, err)
+	_, err = client.SubscriptionAdminClient.CreateSubscription(ctx, &pubsubpb.Subscription{
+		Name:  "projects/commerce/subscriptions/warehouse-orders",
+		Topic: "projects/commerce/topics/orders",
+	})
+	require.NoError(t, err)
+	pub := client.Publisher("orders")
+	defer pub.Stop()
+	sub := client.Subscriber("warehouse-orders")
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	_, err = Publish(ctx, pub, &pubsub.Message{Data: []byte("hello")}).Get(ctx)
+	require.NoError(t, err)
+	rctx, rcancel := context.WithCancel(ctx)
+	err = sub.Receive(rctx, WrapReceiveHandler(sub, func(_ context.Context, msg *pubsub.Message) {
+		msg.Ack()
+		rcancel()
+	}))
+	require.NoError(t, err)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 2)
+	assert.Equal(t, "projects/commerce/topics/orders", spans[0].Tag(ext.PubsubTopicName))
+	assert.Equal(t, "projects/commerce/subscriptions/warehouse-orders", spans[1].Tag(ext.PubsubSubscriptionName))
+	assert.Nil(t, spans[1].Tag(ext.PubsubTopicName))
+}
