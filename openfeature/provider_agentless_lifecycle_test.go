@@ -286,15 +286,20 @@ func TestSetProviderAndWait_TimeoutThenLateConfigurationTransitionsToReady(t *te
 
 // TestNewDatadogProvider_SendsTracerServiceStartedLater creates the provider
 // before tracer.Start, as an application may, and checks that the next poll
-// carries the service the tracer resolved, including its inferred default.
+// carries the service the tracer resolved, including its inferred default,
+// cleaned up into the format the CDN attributes usage to. The tracer's own
+// service stays as configured.
 func TestNewDatadogProvider_SendsTracerServiceStartedLater(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		opts    []tracer.StartOption
-		service string
+		service string // the tracer's service
+		header  string // the DD-Service value sent; "" when none is
 	}{
-		{name: "configured", opts: []tracer.StartOption{tracer.WithService("checkout")}, service: "checkout"},
-		{name: "inferred", service: filepath.Base(os.Args[0])},
+		{name: "configured", opts: []tracer.StartOption{tracer.WithService("checkout")}, service: "checkout", header: "checkout"},
+		{name: "inferred", service: filepath.Base(os.Args[0]), header: filepath.Base(os.Args[0])},
+		{name: "cleaned up", opts: []tracer.StartOption{tracer.WithService("My Service")}, service: "My Service", header: "my_service"},
+		{name: "nothing usable left", opts: []tracer.StartOption{tracer.WithService("支付")}, service: "支付"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Cleanup(func() { internalconfig.CreateNew() })
@@ -337,7 +342,12 @@ func TestNewDatadogProvider_SendsTracerServiceStartedLater(t *testing.T) {
 			headers := backend.headers()
 			require.Len(t, headers, 2)
 			assert.Empty(t, headers[0].Values("DD-Service"), "no service is resolved before tracer.Start")
-			assert.Equal(t, []string{tc.service}, headers[1].Values("DD-Service"))
+			if tc.header == "" {
+				assert.Empty(t, headers[1].Values("DD-Service"))
+			} else {
+				assert.Equal(t, []string{tc.header}, headers[1].Values("DD-Service"))
+			}
+			assert.Equal(t, tc.service, internalconfig.Get().ServiceName(), "the tracer's service stays as configured")
 		})
 	}
 }

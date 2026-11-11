@@ -646,46 +646,64 @@ func TestAgentlessSource_ServiceHeader(t *testing.T) {
 	})
 }
 
-func TestAgentlessSource_ServiceHeaderFormat(t *testing.T) {
+// TestAgentlessSource_ServiceHeaderCleanup checks the DD-Service value each
+// poll sends: the tracer's service, cleaned up into the format the CDN
+// attributes usage to.
+func TestAgentlessSource_ServiceHeaderCleanup(t *testing.T) {
 	internalconfig.SetUseFreshConfig(true)
 	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false); internalconfig.CreateNew() })
 	logger := withLogLevel(t, log.LevelDebug)
-	rejectedMessage := func(service string) string {
-		return "openfeature: service " + strconv.Quote(service) + " does not match the format the CDN attributes usage to; DD-Service header not sent"
+	nothingLeftMessage := func(service string) string {
+		return "openfeature: service " + strconv.Quote(service) + " has nothing left the CDN can attribute usage to once cleaned up; DD-Service header not sent"
 	}
 
-	// The edges of the format the CDN attributes usage to.
-	for _, service := range []string{"a", "svc_name.v2:api/edge-1", "a" + strings.Repeat("b", 99)} {
-		t.Setenv("DD_SERVICE", service)
-		backend := newFakeUFCBackend(t)
-		src := newAgentlessSourceOnly(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
+	for _, tc := range []struct {
+		name    string
+		service string
+		header  string // "" when no DD-Service header is sent
+	}{
+		// Cleaned up the way APM shows the name, instead of dropped by the CDN.
+		{name: "spaces and uppercase", service: "My Service", header: "my_service"},
+		{name: "uppercase", service: "My-API", header: "my-api"},
+		{name: "leading underscore", service: "_svc", header: "svc"},
+		{name: "newline", service: "bad\nvalue", header: "bad_value"},
+		{name: "too long", service: "a" + strings.Repeat("b", 100), header: "a" + strings.Repeat("b", 99)},
+		// The edges of the format the CDN attributes usage to.
+		{name: "shortest", service: "a", header: "a"},
+		{name: "every allowed character", service: "svc_name.v2:api/edge-1", header: "svc_name.v2:api/edge-1"},
+		{name: "longest", service: "a" + strings.Repeat("b", 99), header: "a" + strings.Repeat("b", 99)},
+		// Nothing usable left once cleaned up.
+		{name: "non-ASCII", service: "支付"},
+		{name: "only underscores", service: "___"},
+		{name: "empty", service: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DD_SERVICE", tc.service)
+			backend := newFakeUFCBackend(t)
+			backend.setResponses("valid", "not_modified")
+			src := newAgentlessSourceOnly(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
 
-		outcome, _ := src.pollOnce(1)
-		require.Equal(t, pollOutcomeSuccess, outcome)
+			for range 2 {
+				outcome, _ := src.pollOnce(1)
+				require.Equal(t, pollOutcomeSuccess, outcome)
+			}
 
-		headers := backend.headers()
-		require.Len(t, headers, 1)
-		assert.Equal(t, []string{service}, headers[0].Values("DD-Service"))
-		assert.Zero(t, logger.countContaining(rejectedMessage(service)))
-	}
-
-	// The CDN drops any other value, and Go's HTTP client refuses to send a
-	// newline, which would fail every poll.
-	for _, service := range []string{"a" + strings.Repeat("b", 100), "_svc", "my service", "支付", "bad\nvalue"} {
-		t.Setenv("DD_SERVICE", service)
-		backend := newFakeUFCBackend(t)
-		src := newAgentlessSourceOnly(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
-
-		for range 2 {
-			outcome, _ := src.pollOnce(1)
-			require.Equal(t, pollOutcomeSuccess, outcome, "service %q", service)
-		}
-
-		headers := backend.headers()
-		require.Len(t, headers, 2)
-		assert.Empty(t, headers[0].Values("DD-Service"), "service %q", service)
-		assert.Empty(t, headers[1].Values("DD-Service"), "service %q", service)
-		assert.Equal(t, 1, logger.countContaining(rejectedMessage(service)), "logged once, not on every poll: service %q", service)
+			headers := backend.headers()
+			require.Len(t, headers, 2)
+			for i, h := range headers {
+				if tc.header == "" {
+					assert.Empty(t, h.Values("DD-Service"), "poll %d", i+1)
+				} else {
+					assert.Equal(t, []string{tc.header}, h.Values("DD-Service"), "poll %d", i+1)
+				}
+			}
+			wantLogs := 0
+			if tc.header == "" && tc.service != "" {
+				wantLogs = 1 // once, not on every poll
+			}
+			assert.Equal(t, wantLogs, logger.countContaining(nothingLeftMessage(tc.service)))
+			assert.Equal(t, tc.service, internalconfig.Get().ServiceName(), "the tracer's service stays as configured")
+		})
 	}
 }
 
