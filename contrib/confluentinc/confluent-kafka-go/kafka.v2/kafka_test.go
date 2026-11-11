@@ -217,6 +217,54 @@ func TestConsumerFunctionalWithClusterID(t *testing.T) {
 	assert.Equal(t, expected.GetHash(), p.GetHash())
 }
 
+// TestConsumerFunctionalWithClusterIDWithoutDataStreams checks that the
+// cluster ID is fetched and tagged on spans when data streams monitoring is
+// disabled.
+func TestConsumerFunctionalWithClusterIDWithoutDataStreams(t *testing.T) {
+	action := func(c *Consumer) (*kafka.Message, error) {
+		return c.ReadMessage(3000 * time.Millisecond)
+	}
+	spans, _ := produceThenConsume(t, action, nil, nil, false)
+	require.Len(t, spans, 2)
+
+	s0 := spans[0] // produce
+	s1 := spans[1] // consume
+	clusterID, ok := s0.Tag(ext.MessagingKafkaClusterID).(string)
+	require.True(t, ok, "produce span should have a cluster ID tag")
+	assert.NotEmpty(t, clusterID)
+	assert.Equal(t, clusterID, s1.Tag(ext.MessagingKafkaClusterID))
+}
+
+// TestWrapStartsClusterIDFetchWithoutDataStreams checks that wrapping a
+// producer or consumer starts the cluster ID fetch when data streams
+// monitoring is disabled, without doing any data streams work. It needs no
+// broker: the fetch is cancelled on Close.
+func TestWrapStartsClusterIDFetchWithoutDataStreams(t *testing.T) {
+	t.Run("producer", func(t *testing.T) {
+		p, err := NewProducer(&kafka.ConfigMap{
+			"bootstrap.servers": "127.0.0.1:9092",
+		})
+		require.NoError(t, err)
+		defer p.Close()
+
+		require.False(t, p.tracer.DSMEnabled())
+		assert.Len(t, p.closeAsync, 1)
+		// The events channel is only wrapped for data streams monitoring.
+		assert.Equal(t, p.Producer.Events(), p.Events())
+	})
+	t.Run("consumer", func(t *testing.T) {
+		c, err := NewConsumer(&kafka.ConfigMap{
+			"group.id":          testGroupID,
+			"bootstrap.servers": "127.0.0.1:9092",
+		})
+		require.NoError(t, err)
+		defer c.Close()
+
+		require.False(t, c.tracer.DSMEnabled())
+		assert.Len(t, c.closeAsync, 1)
+	})
+}
+
 // This tests the deprecated behavior of using cfg.context as the context passed via kafka messages
 // instead of the one passed in the message.
 func TestDeprecatedContext(t *testing.T) {
