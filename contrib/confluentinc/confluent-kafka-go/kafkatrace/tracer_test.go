@@ -12,7 +12,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
@@ -96,4 +99,39 @@ func TestClusterIDConcurrency(t *testing.T) {
 	wg.Wait()
 
 	assert.NotEmpty(t, tr.ClusterID())
+}
+
+// TestClusterIDTagWithoutDataStreams checks that the cluster ID is a span tag
+// whether or not data streams monitoring is enabled.
+func TestClusterIDTagWithoutDataStreams(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		clusterID string
+	}{
+		{name: "cluster ID set", clusterID: "test-cluster-id"},
+		{name: "cluster ID not fetched yet"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			tr := NewKafkaTracer(testInstr, CKGoVersion1, 0)
+			require.False(t, tr.DSMEnabled())
+			tr.SetClusterID(tt.clusterID)
+
+			msg := &simpleMessage{tp: simpleTopicPartition{topic: "test-topic"}}
+			tr.StartProduceSpan(msg).Finish()
+			tr.StartConsumeSpan(msg).Finish()
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 2)
+			for _, s := range spans {
+				if tt.clusterID == "" {
+					assert.Nil(t, s.Tag(ext.MessagingKafkaClusterID))
+				} else {
+					assert.Equal(t, tt.clusterID, s.Tag(ext.MessagingKafkaClusterID))
+				}
+			}
+		})
+	}
 }
