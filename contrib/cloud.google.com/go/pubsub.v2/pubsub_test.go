@@ -9,6 +9,9 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -85,6 +88,7 @@ func TestPropagation(t *testing.T) {
 		ext.MessagingOperationName: "send",
 		ext.MessagingMessageID:     srvID,
 		ext.GCPProjectID:           "project",
+		ext.PubsubTopicName:        "projects/project/topics/topic",
 		ext.SpanName:               "pubsub.publish",
 	}, spans[0].Tags())
 	assert.Equal("cloud.google.com/go/pubsub.v2", spans[0].Integration())
@@ -106,6 +110,7 @@ func TestPropagation(t *testing.T) {
 		ext.MessagingOperationName: "receive",
 		ext.MessagingMessageID:     msgID,
 		ext.GCPProjectID:           "project",
+		ext.PubsubSubscriptionName: "projects/project/subscriptions/subscription",
 		ext.ServiceName:            "",
 		ext.SpanName:               "pubsub.receive",
 	}, spans[2].Tags())
@@ -445,4 +450,116 @@ func setup(t *testing.T) (context.Context, context.CancelFunc, mocktracer.Tracer
 
 	sub := client.Subscriber(subscription.Name)
 	return ctx, cancel, mt, publisher, sub
+}
+
+// recordMethods returns gRPC dial options that record the methods of the
+// requests sent on the connection.
+func recordMethods() ([]grpc.DialOption, func() []string) {
+	var (
+		mu      sync.Mutex
+		methods []string
+	)
+	record := func(method string) {
+		mu.Lock()
+		defer mu.Unlock()
+		methods = append(methods, method)
+	}
+	return []grpc.DialOption{
+		grpc.WithChainUnaryInterceptor(func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+			record(method)
+			return invoker(ctx, method, req, reply, cc, opts...)
+		}),
+		grpc.WithChainStreamInterceptor(func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+			record(method)
+			return streamer(ctx, desc, cc, method, opts...)
+		}),
+	}, func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(methods)
+	}
+}
+
+// requireDataPlaneMethods fails when a request other than publishing,
+// pulling and acknowledging messages was sent: the tracer must not fetch
+// topic or subscription metadata.
+func requireDataPlaneMethods(t *testing.T, methods []string) {
+	t.Helper()
+	for _, m := range methods {
+		switch m {
+		case "/google.pubsub.v1.Publisher/Publish",
+			"/google.pubsub.v1.Subscriber/StreamingPull",
+			"/google.pubsub.v1.Subscriber/Acknowledge",
+			"/google.pubsub.v1.Subscriber/ModifyAckDeadline":
+		default:
+			require.Failf(t, "unexpected request", "%s", m)
+		}
+	}
+}
+
+// TestTopicAndSubscriptionNames publishes to a topic and receives from a
+// differently named subscription, in the same project and across projects.
+// The publish span carries the topic path and the receive span the
+// subscription path, each with its own project. The topic of the
+// subscription is not known to the consumer, so it is omitted, and no
+// metadata request is sent.
+func TestTopicAndSubscriptionNames(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		topic        string
+		subscription string
+	}{
+		{name: "same project", topic: "projects/commerce/topics/orders", subscription: "projects/commerce/subscriptions/warehouse-orders"},
+		{name: "across projects", topic: "projects/commerce/topics/orders", subscription: "projects/analytics/subscriptions/warehouse-orders"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := pstest.NewServer()
+			t.Cleanup(func() { assert.NoError(t, srv.Close()) })
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			dialOpts, methods := recordMethods()
+			conn, err := grpc.NewClient(srv.Addr, append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))...)
+			require.NoError(t, err)
+			t.Cleanup(func() { assert.NoError(t, conn.Close()) })
+			client, err := pubsub.NewClient(ctx, "analytics", option.WithGRPCConn(conn))
+			require.NoError(t, err)
+
+			_, err = client.TopicAdminClient.CreateTopic(ctx, &pubsubpb.Topic{Name: tc.topic})
+			require.NoError(t, err)
+			_, err = client.SubscriptionAdminClient.CreateSubscription(ctx, &pubsubpb.Subscription{Name: tc.subscription, Topic: tc.topic})
+			require.NoError(t, err)
+			pub := client.Publisher(tc.topic)
+			sub := client.Subscriber(tc.subscription)
+			adminRequests := len(methods())
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			_, err = Publish(ctx, pub, &pubsub.Message{Data: []byte("hello")}).Get(ctx)
+			require.NoError(t, err)
+			rctx, rcancel := context.WithCancel(ctx)
+			err = sub.Receive(rctx, WrapReceiveHandler(sub, func(_ context.Context, msg *pubsub.Message) {
+				msg.Ack()
+				rcancel()
+			}))
+			require.NoError(t, err)
+			pub.Stop()
+			requireDataPlaneMethods(t, methods()[adminRequests:])
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 2)
+			publish, receive := spans[0], spans[1]
+			assert.Equal(t, "pubsub.publish", publish.OperationName())
+			assert.Equal(t, tc.topic, publish.Tag(ext.PubsubTopicName))
+			assert.Nil(t, publish.Tag(ext.PubsubSubscriptionName))
+			assert.Equal(t, "pubsub.receive", receive.OperationName())
+			assert.Equal(t, tc.subscription, receive.Tag(ext.PubsubSubscriptionName))
+			assert.Nil(t, receive.Tag(ext.PubsubTopicName))
+			// The existing tags are unchanged.
+			assert.Equal(t, tc.topic, publish.Tag(ext.ResourceName))
+			assert.Equal(t, tc.subscription, receive.Tag(ext.ResourceName))
+			assert.Equal(t, "commerce", publish.Tag(ext.GCPProjectID))
+			assert.Equal(t, strings.Split(tc.subscription, "/")[1], receive.Tag(ext.GCPProjectID))
+		})
+	}
 }

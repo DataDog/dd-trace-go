@@ -71,6 +71,10 @@ func (tr *Tracer) TracePublish(ctx context.Context, topic Topic, msg *Message, o
 	if projectID := projectIDFromResourceName(topic.String()); projectID != "" {
 		spanOpts = append(spanOpts, tracer.Tag(ext.GCPProjectID, projectID))
 	}
+	// The topic the publish request is sent to.
+	if isResourcePath(topic.String(), "topics") {
+		spanOpts = append(spanOpts, tracer.Tag(ext.PubsubTopicName, topic.String()))
+	}
 	if cfg.serviceName != "" {
 		spanOpts = append(spanOpts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
 	}
@@ -161,6 +165,12 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 		if projectID := projectIDFromResourceName(s.String()); projectID != "" {
 			opts = append(opts, tracer.Tag(ext.GCPProjectID, projectID))
 		}
+		// The subscription the message is received from. The topic of the
+		// subscription is not tagged: neither the SDK nor the message carries
+		// it, and it is not derived from the subscription.
+		if isResourcePath(s.String(), "subscriptions") {
+			opts = append(opts, tracer.Tag(ext.PubsubSubscriptionName, s.String()))
+		}
 		if cfg.serviceName != "" {
 			opts = append(opts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
 		}
@@ -231,4 +241,15 @@ func projectIDFromResourceName(name string) string {
 	rest := name[len(prefix):]
 	project, _, _ := strings.Cut(rest, "/")
 	return project
+}
+
+// isResourcePath reports whether name is a full Pub/Sub resource path of the
+// given collection: projects/<project>/<collection>/<id>, with a non-empty
+// project and ID. Short names and placeholders such as _deleted-topic_ are
+// not.
+func isResourcePath(name, collection string) bool {
+	parts := strings.Split(name, "/")
+	return len(parts) == 4 &&
+		parts[0] == "projects" && parts[1] != "" &&
+		parts[2] == collection && parts[3] != ""
 }
