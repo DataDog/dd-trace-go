@@ -28,6 +28,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/eventbridge"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/kinesis"
+	"github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sfn"
 	"github.com/aws/aws-sdk-go/service/sns"
@@ -916,6 +917,162 @@ func TestSNSTags(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestDynamoDBTags(t *testing.T) {
+	const tableARN = "arn:aws:dynamodb:eu-west-1:123456789012:table/MyTableName"
+	for _, tc := range []struct {
+		name   string
+		params any
+		want   map[string]any
+	}{
+		{
+			name:   "GetItemInput name",
+			params: &dynamodb.GetItemInput{TableName: new("MyTableName")},
+			want:   map[string]any{ext.DynamoDBTableName: "MyTableName"},
+		},
+		{
+			name:   "GetItemInput ARN",
+			params: &dynamodb.GetItemInput{TableName: new(tableARN)},
+			want:   map[string]any{ext.DynamoDBTableName: tableARN, ext.DynamoDBTableARN: tableARN},
+		},
+		{
+			name:   "PutItemInput ARN",
+			params: &dynamodb.PutItemInput{TableName: new(tableARN)},
+			want:   map[string]any{ext.DynamoDBTableName: tableARN, ext.DynamoDBTableARN: tableARN},
+		},
+		{
+			name:   "QueryInput ARN",
+			params: &dynamodb.QueryInput{TableName: new(tableARN)},
+			want:   map[string]any{ext.DynamoDBTableName: tableARN, ext.DynamoDBTableARN: tableARN},
+		},
+		{
+			name:   "ScanInput ARN",
+			params: &dynamodb.ScanInput{TableName: new(tableARN)},
+			want:   map[string]any{ext.DynamoDBTableName: tableARN, ext.DynamoDBTableARN: tableARN},
+		},
+		{
+			name:   "UpdateItemInput ARN",
+			params: &dynamodb.UpdateItemInput{TableName: new(tableARN)},
+			want:   map[string]any{ext.DynamoDBTableName: tableARN, ext.DynamoDBTableARN: tableARN},
+		},
+		{
+			name:   "GetItemInput no table",
+			params: &dynamodb.GetItemInput{},
+			want:   nil,
+		},
+		{
+			name:   "unhandled input type",
+			params: &dynamodb.ListTablesInput{},
+			want:   nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := dynamoDBTags(tc.params)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestLambdaTags(t *testing.T) {
+	const functionARN = "arn:aws:lambda:eu-west-1:123456789012:function:my-function"
+	for _, tc := range []struct {
+		name   string
+		params any
+		want   map[string]any
+	}{
+		{
+			name:   "InvokeInput ARN",
+			params: &lambda.InvokeInput{FunctionName: new(functionARN)},
+			want:   map[string]any{ext.LambdaFunctionARN: functionARN},
+		},
+		{
+			name:   "InvokeInput qualified ARN",
+			params: &lambda.InvokeInput{FunctionName: new(functionARN + ":prod")},
+			want:   map[string]any{ext.LambdaFunctionARN: functionARN + ":prod"},
+		},
+		{
+			name:   "InvokeAsyncInput ARN",
+			params: &lambda.InvokeAsyncInput{FunctionName: new(functionARN)},
+			want:   map[string]any{ext.LambdaFunctionARN: functionARN},
+		},
+		{
+			name:   "GetFunctionInput ARN",
+			params: &lambda.GetFunctionInput{FunctionName: new(functionARN)},
+			want:   map[string]any{ext.LambdaFunctionARN: functionARN},
+		},
+		{
+			name:   "InvokeInput name",
+			params: &lambda.InvokeInput{FunctionName: new("my-function")},
+			want:   nil,
+		},
+		{
+			name:   "InvokeInput partial ARN",
+			params: &lambda.InvokeInput{FunctionName: new("123456789012:function:my-function")},
+			want:   nil,
+		},
+		{
+			name:   "InvokeInput no function",
+			params: &lambda.InvokeInput{},
+			want:   nil,
+		},
+		{
+			name:   "unhandled input type",
+			params: &lambda.ListFunctionsInput{},
+			want:   nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := lambdaTags(tc.params)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestDynamoDBTableARN(t *testing.T) {
+	for _, tc := range []struct {
+		tableName string
+		want      string
+	}{
+		{tableName: "arn:aws:dynamodb:eu-west-1:123456789012:table/MyTableName", want: "arn:aws:dynamodb:eu-west-1:123456789012:table/MyTableName"},
+		{tableName: "arn:aws-cn:dynamodb:cn-north-1:123456789012:table/MyTableName", want: "arn:aws-cn:dynamodb:cn-north-1:123456789012:table/MyTableName"},
+		{tableName: "MyTableName"},
+		{tableName: ""},
+		{tableName: "arn:aws:dynamodb:eu-west-1:123456789012:table/MyTableName/index/MyIndex"},
+		{tableName: "arn:aws:dynamodb:eu-west-1:123456789012:table/"},
+		{tableName: "arn:aws:dynamodb:eu-west-1::table/MyTableName"},
+		{tableName: "arn:aws:dynamodb::123456789012:table/MyTableName"},
+		{tableName: "arn:aws:lambda:eu-west-1:123456789012:table/MyTableName"},
+		{tableName: "arn:aws:dynamodb:eu-west-1:123456789012:MyTableName"},
+	} {
+		t.Run(tc.tableName, func(t *testing.T) {
+			assert.Equal(t, tc.want, dynamoDBTableARN(tc.tableName))
+		})
+	}
+}
+
+func TestLambdaFunctionARN(t *testing.T) {
+	for _, tc := range []struct {
+		functionName string
+		want         string
+	}{
+		{functionName: "arn:aws:lambda:eu-west-1:123456789012:function:my-function", want: "arn:aws:lambda:eu-west-1:123456789012:function:my-function"},
+		// The qualifier is kept, as dd-trace-java does.
+		{functionName: "arn:aws:lambda:eu-west-1:123456789012:function:my-function:prod", want: "arn:aws:lambda:eu-west-1:123456789012:function:my-function:prod"},
+		{functionName: "arn:aws:lambda:eu-west-1:123456789012:function:my-function:7", want: "arn:aws:lambda:eu-west-1:123456789012:function:my-function:7"},
+		{functionName: "arn:aws-us-gov:lambda:us-gov-west-1:123456789012:function:my-function", want: "arn:aws-us-gov:lambda:us-gov-west-1:123456789012:function:my-function"},
+		// A partial ARN has no partition and region.
+		{functionName: "123456789012:function:my-function"},
+		{functionName: "my-function"},
+		{functionName: "my-function:prod"},
+		{functionName: ""},
+	} {
+		t.Run(tc.functionName, func(t *testing.T) {
+			assert.Equal(t, tc.want, lambdaFunctionARN(tc.functionName))
 		})
 	}
 }

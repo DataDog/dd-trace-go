@@ -19,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
@@ -218,7 +219,11 @@ func resourceTagsFromParams(requestInput middleware.InitializeInput, awsService 
 		tags[k] = v
 		tags[ext.SNSTopicARN] = topicARN(requestInput)
 	case "DynamoDB":
-		tags[ext.DynamoDBTableName] = tableName(requestInput)
+		name := tableName(requestInput)
+		tags[ext.DynamoDBTableName] = name
+		tags[ext.DynamoDBTableARN] = dynamoDBTableARN(name)
+	case "Lambda":
+		tags[ext.LambdaFunctionARN] = lambdaFunctionARN(functionName(requestInput))
 	case "Kinesis":
 		name, arn := streamIdentifiers(requestInput)
 		tags[ext.KinesisStreamName] = coalesceNameOrArnResource(name, arn)
@@ -347,17 +352,75 @@ func topicARN(requestInput middleware.InitializeInput) string {
 func tableName(requestInput middleware.InitializeInput) string {
 	switch params := requestInput.Parameters.(type) {
 	case *dynamodb.GetItemInput:
-		return *params.TableName
+		return aws.ToString(params.TableName)
 	case *dynamodb.PutItemInput:
-		return *params.TableName
+		return aws.ToString(params.TableName)
 	case *dynamodb.QueryInput:
-		return *params.TableName
+		return aws.ToString(params.TableName)
 	case *dynamodb.ScanInput:
-		return *params.TableName
+		return aws.ToString(params.TableName)
 	case *dynamodb.UpdateItemInput:
-		return *params.TableName
+		return aws.ToString(params.TableName)
 	case *dynamodb.DeleteItemInput:
-		return *params.TableName
+		return aws.ToString(params.TableName)
+	}
+	return ""
+}
+
+// dynamoDBTableARN returns tableName if it is a DynamoDB table ARN,
+// arn:<partition>:dynamodb:<region>:<account>:table/<name>, and "" otherwise.
+func dynamoDBTableARN(tableName string) string {
+	parts := strings.SplitN(tableName, ":", 6)
+	if len(parts) != 6 || parts[0] != "arn" || parts[1] == "" || parts[2] != "dynamodb" ||
+		parts[3] == "" || parts[4] == "" {
+		return ""
+	}
+	name, ok := strings.CutPrefix(parts[5], "table/")
+	if !ok || name == "" || strings.Contains(name, "/") {
+		return ""
+	}
+	return tableName
+}
+
+// lambdaFunctionARN returns functionName if it is a full function ARN, and ""
+// otherwise. Like dd-trace-java, it is tagged as sent, including a version or
+// alias qualifier, and a partial ARN (account:function:name) or a name is
+// not, because its partition and region are unknown.
+func lambdaFunctionARN(functionName string) string {
+	if strings.HasPrefix(functionName, "arn:") {
+		return functionName
+	}
+	return ""
+}
+
+// functionName returns the FunctionName of a Lambda request, which can be a
+// name, a partial ARN or a full ARN, or "" if the request has none.
+func functionName(requestInput middleware.InitializeInput) string {
+	switch params := requestInput.Parameters.(type) {
+	case *lambda.InvokeInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.InvokeAsyncInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.InvokeWithResponseStreamInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.GetFunctionInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.GetFunctionConfigurationInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.DeleteFunctionInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.UpdateFunctionCodeInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.UpdateFunctionConfigurationInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.PublishVersionInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.AddPermissionInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.RemovePermissionInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.GetPolicyInput:
+		return aws.ToString(params.FunctionName)
 	}
 	return ""
 }
