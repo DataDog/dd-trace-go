@@ -59,6 +59,10 @@ type tracingHook struct {
 	// bootstrapServers is set in OnNewClient from the client's seed brokers
 	// and read by the record hooks, like group.
 	bootstrapServers atomic.Pointer[string]
+	// client is set in OnNewClient. The cluster ID is looked up with it on
+	// the first produced or consumed record.
+	client    atomic.Pointer[kgo.Client]
+	clusterID clusterIDLookup
 }
 
 func newTracingHook(opts ...Option) *tracingHook {
@@ -96,15 +100,19 @@ func (h *tracingHook) finishAndClearActiveSpans() {
 
 // OnNewClient is a kgo hook called when the client is initialized
 // before any client goroutines are started. It resolves the group name
-// used for DSM and the bootstrap servers tagged on spans.
+// used for DSM and the bootstrap servers tagged on spans, and keeps the
+// client to look up the cluster ID on the first produced or consumed record.
 //
 // The hook holds per-client state. Attach the Opt returned by WithTracing
 // to one client only. A hook attached to two clients logs a warning and
-// reports the group of the client created last for both clients.
+// reports the group and the bootstrap servers of the client created last,
+// and the cluster ID of the first client that produced or consumed, for
+// both clients.
 func (h *tracingHook) OnNewClient(c *kgo.Client) {
 	if !h.clientBound.CompareAndSwap(false, true) {
-		instr.Logger().Warn("contrib/twmb/franz-go: the result of a single WithTracing call was passed to more than one kgo.NewClient call; call WithTracing separately for each client, otherwise Data Streams Monitoring reports the consumer group of the most recently created client for all of them")
+		instr.Logger().Warn("contrib/twmb/franz-go: the result of a single WithTracing call was passed to more than one kgo.NewClient call; call WithTracing separately for each client, otherwise spans and Data Streams Monitoring report the consumer group, bootstrap servers and cluster ID of another client")
 	}
+	h.client.Store(c)
 	var g *groupInfo
 	if name, isShareGroup := groupName(c); name != "" {
 		g = &groupInfo{name: name, isShareGroup: isShareGroup}
@@ -171,15 +179,29 @@ func (h *tracingHook) OnPollStart(_ context.Context) {
 }
 
 // OnClientClosed is a kgo hook called when the client is closed.
-// It finishes any remaining active consume spans.
+// It stops the cluster ID lookup and finishes any remaining active consume
+// spans.
 func (h *tracingHook) OnClientClosed(*kgo.Client) {
+	h.clusterID.close()
 	h.finishAndClearActiveSpans()
+}
+
+// startClusterIDLookup starts the cluster ID lookup with the client, if it is
+// known and the lookup was not started yet.
+func (h *tracingHook) startClusterIDLookup() {
+	if h.clusterID.started.Load() {
+		return
+	}
+	if cl := h.client.Load(); cl != nil {
+		h.clusterID.start(cl)
+	}
 }
 
 // OnProduceRecordBuffered is a kgo hook called when a produced record is added
 // to the producer's buffer. It starts the produce span and injects it into the
 // record's headers.
 func (h *tracingHook) OnProduceRecordBuffered(r *kgo.Record) {
+	h.startClusterIDLookup()
 	span := h.startProduceSpan(r.Context, r)
 	r.Context = tracer.ContextWithSpan(r.Context, span)
 	h.setProduceDSMCheckpoint(r)
@@ -210,6 +232,7 @@ func (h *tracingHook) OnFetchRecordUnbuffered(r *kgo.Record, polled bool) {
 		r.Context = context.Background()
 	}
 
+	h.startClusterIDLookup()
 	span := h.startConsumeSpan(r.Context, r)
 	r.Context = tracer.ContextWithSpan(r.Context, span)
 	h.setConsumeDSMCheckpoint(r)
@@ -242,6 +265,9 @@ func (h *tracingHook) startConsumeSpan(ctx context.Context, r *kgo.Record) *trac
 	}
 	if bs := h.bootstrapServers.Load(); bs != nil {
 		tags[ext.KafkaBootstrapServers] = *bs
+	}
+	if id := h.clusterID.get(); id != "" {
+		tags[ext.MessagingKafkaClusterID] = id
 	}
 	opts := []tracer.StartSpanOption{
 		tracer.WithTags(tags),
@@ -284,6 +310,9 @@ func (h *tracingHook) startProduceSpan(ctx context.Context, r *kgo.Record) *trac
 	}
 	if bs := h.bootstrapServers.Load(); bs != nil {
 		tags[ext.KafkaBootstrapServers] = *bs
+	}
+	if id := h.clusterID.get(); id != "" {
+		tags[ext.MessagingKafkaClusterID] = id
 	}
 	opts := []tracer.StartSpanOption{
 		tracer.WithTags(tags),
