@@ -74,9 +74,7 @@ until the suite is green.
 ### Package main and dependency modules
 
 The harness suites never build a `package main`, and only exercise call sites inside the
-`_integration` module. Do not add a `mainapp` per suite: each one is a separate otelc build that
-recompiles most of the dependency closure and takes minutes in CI. otelc's own tests cover rules
-applying in `package main`. Add a test for each case your rules reach:
+`_integration` module. Add a test for each case your rules reach:
 
 - **Call-site rules.** Add a harness test case for each constructor or call form the rules wrap,
   and one that calls the library under an import alias, in its own file where the library is only
