@@ -34,9 +34,9 @@ func hasIgnoreDirective(text string) bool {
 // comments.
 //
 // Directive semantics (exact): a directive suppresses a call when the comment
-// sits on a line spanned by the call itself — a trailing comment on the
-// call's first line, or a comment anywhere between a multi-line call's opening
-// and closing parenthesis. A standalone comment line above the call does NOT
+// follows the call's start on the call's first line (a trailing comment), or
+// sits on a later line between a multi-line call's parentheses. A comment
+// before the call on its first line does not suppress it. A standalone comment line above the call does NOT
 // suppress it: there is no reliable way to bind a preceding comment to the
 // next statement, and a broad "comment near the call" rule would silently
 // swallow directives meant for other lines. When multiple calls share a
@@ -60,62 +60,47 @@ func ignoreDirectiveLines(file *ast.File, fset *token.FileSet) map[int][]int {
 
 // applyIgnoreDirectives sets Ignored on each site in sites, mutating them in
 // place, from the directive comment columns collected by
-// ignoreDirectiveLines. Each binding rule lives in its own helper:
-// applySpannedDirectives for multi-line calls, applySameLineDirectives for
-// single-line calls.
+// ignoreDirectiveLines. Each directive suppresses at most one call, chosen by
+// bindDirective.
 func applyIgnoreDirectives(sites []Site, suppressed map[int][]int) {
-	for i := range sites {
-		if sites[i].Line != sites[i].endLine {
-			applySpannedDirectives(&sites[i], suppressed)
-		}
-	}
-	for line, idxs := range sameLineCalls(sites) {
-		applySameLineDirectives(sites, idxs, suppressed[line])
-	}
-}
-
-// applySpannedDirectives carries the multi-line rule: a call spanning more
-// than one line is suppressed by any directive on a line it spans.
-func applySpannedDirectives(site *Site, suppressed map[int][]int) {
-	for line := site.Line; line <= site.endLine; line++ {
-		if len(suppressed[line]) > 0 {
-			site.Ignored = true
-			return
-		}
-	}
-}
-
-// sameLineCalls groups, by line, the indices of the single-line calls in
-// sites.
-func sameLineCalls(sites []Site) map[int][]int {
-	sameLine := map[int][]int{}
-	for i := range sites {
-		if sites[i].Line == sites[i].endLine {
-			sameLine[sites[i].Line] = append(sameLine[sites[i].Line], i)
-		}
-	}
-	return sameLine
-}
-
-// applySameLineDirectives carries the single-line rule: a directive at column
-// c suppresses the nearest call whose own column is at or before c, so
-// "log.Error(a); log.Warn(b) //errtrack:ignore" binds the directive to Warn,
-// not to both calls on the line.
-func applySameLineDirectives(sites []Site, idxs []int, cols []int) {
-	if len(cols) == 0 {
-		return
-	}
-	slices.SortFunc(idxs, func(a, b int) int { return sites[a].column - sites[b].column })
-	for _, c := range cols {
-		nearest := -1
-		for _, i := range idxs {
-			if sites[i].column > c {
-				break
+	for line, cols := range suppressed {
+		for _, col := range cols {
+			if i := bindDirective(sites, line, col); i >= 0 {
+				sites[i].Ignored = true
 			}
+		}
+	}
+}
+
+// bindDirective returns the index of the call that a directive at line and
+// col suppresses, or -1 when it suppresses none:
+//
+//   - The nearest call starting on the same line at or before the directive,
+//     so "log.Error(a); log.Warn(b) //errtrack:ignore" binds to Warn only.
+//   - Otherwise the innermost multi-line call that started on an earlier
+//     line and spans this one, for a comment between its parentheses.
+//
+// A directive placed before every call on its line, such as a leading
+// "/*errtrack:ignore*/ log.Error(...)", binds to no call that starts there:
+// leading comments are not a supported form, and binding them to the
+// following call could hide a site the directive was not written for.
+func bindDirective(sites []Site, line, col int) int {
+	nearest := -1
+	for i := range sites {
+		s := &sites[i]
+		if s.Line == line && s.column <= col && (nearest < 0 || s.column > sites[nearest].column) {
 			nearest = i
 		}
-		if nearest >= 0 {
-			sites[nearest].Ignored = true
+	}
+	if nearest >= 0 {
+		return nearest
+	}
+	for i := range sites {
+		s := &sites[i]
+		if s.Line < line && line <= s.endLine && (nearest < 0 || s.Line > sites[nearest].Line ||
+			(s.Line == sites[nearest].Line && s.column > sites[nearest].column)) {
+			nearest = i
 		}
 	}
+	return nearest
 }

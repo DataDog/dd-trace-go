@@ -7,6 +7,7 @@ package main
 
 import (
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -368,5 +369,33 @@ func TestScan_IncludesDotPrefixedDirectories(t *testing.T) {
 	}
 	if len(sites) != len(want) {
 		t.Errorf("got %d sites, want %d: %+v", len(sites), len(want), sites)
+	}
+}
+
+func TestScan_DirectiveBinding(t *testing.T) {
+	// A directive suppresses the call it trails or sits inside. A leading
+	// block directive before a call must not suppress it, single-line or
+	// multi-line.
+	dir := filepath.Join("testdata", "leading")
+	sites, err := scan(dir, scanOptions{
+		logPackagePath: "example.com/leading/internal/log",
+		platforms:      []buildPlatform{{goos: "linux", goarch: "amd64"}},
+	})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	want := map[string]bool{
+		"leading single": false,
+		"leading multi":  false,
+		"trailing multi": true,
+		"inside multi":   true,
+		"plain":          false,
+	}
+	got := map[string]bool{}
+	for _, s := range sites {
+		got[s.Message] = s.Ignored
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("ignored by message = %v, want %v", got, want)
 	}
 }
