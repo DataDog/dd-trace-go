@@ -26,8 +26,9 @@ import (
 )
 
 const (
-	topic     = "ibm_sarama_default_test"
-	partition = int32(0)
+	topic      = "ibm_sarama_default_test"
+	asyncTopic = "ibm_sarama_async_test"
+	partition  = int32(0)
 )
 
 type TestCase struct {
@@ -43,7 +44,7 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	tc.cfg.Version = sarama.V0_11_0_0
 	tc.cfg.Producer.Return.Successes = true
 
-	container, addr := containers.StartKafkaTestContainer(t, []string{topic})
+	container, addr := containers.StartKafkaTestContainer(t, []string{topic, asyncTopic})
 	tc.server = container
 	tc.addrs = []string{addr}
 }
@@ -107,9 +108,31 @@ func consumeMessage(t *testing.T, addrs []string, cfg *sarama.Config) {
 	}
 }
 
+func produceMessageAsync(t *testing.T, addrs []string, cfg *sarama.Config) {
+	t.Helper()
+
+	producer, err := sarama.NewAsyncProducer(addrs, cfg)
+	require.NoError(t, err, "failed to create async producer")
+	defer func() { assert.NoError(t, producer.Close(), "failed to close async producer") }()
+
+	producer.Input() <- &sarama.ProducerMessage{
+		Topic:     asyncTopic,
+		Partition: partition,
+		Value:     sarama.StringEncoder("Hello, async World!"),
+	}
+	select {
+	case <-producer.Successes():
+	case err := <-producer.Errors():
+		require.NoError(t, err, "failed to send message")
+	case <-time.After(15 * time.Second):
+		t.Fatal("timed out waiting for the message to be sent")
+	}
+}
+
 func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	produceMessage(ctx, t, tc.addrs, tc.cfg)
 	consumeMessage(t, tc.addrs, tc.cfg)
+	produceMessageAsync(t, tc.addrs, tc.cfg)
 }
 
 func (tc *TestCase) ExpectedTraces() trace.Traces {
@@ -117,6 +140,19 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 	// tagged as the bootstrap servers.
 	bootstrapServers := strings.Join(tc.addrs, ",")
 	return trace.Traces{
+		{
+			Tags: map[string]any{
+				"name":     "kafka.produce",
+				"type":     "queue",
+				"service":  "kafka",
+				"resource": "Produce Topic " + asyncTopic,
+			},
+			Meta: map[string]string{
+				"span.kind":                         "producer",
+				"component":                         "IBM/sarama",
+				"messaging.kafka.bootstrap.servers": bootstrapServers,
+			},
+		},
 		{
 			Tags: map[string]any{
 				"name":    "kafka.produce",

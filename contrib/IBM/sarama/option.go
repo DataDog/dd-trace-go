@@ -139,6 +139,19 @@ func WithBrokers(addrs []string) OptionFn {
 	}
 }
 
+// WithSaramaConfig provides the sarama configuration of a wrapped consumer,
+// partition consumer or consumer group handler. With Data Streams Monitoring,
+// the cluster ID is fetched from the brokers set with WithBrokers over a new
+// connection, which then uses this configuration, so that it has the same
+// TLS, SASL and protocol version settings as the client. Without it, the
+// default sarama configuration is used. Producers use the configuration
+// passed to WrapSyncProducer or WrapAsyncProducer instead.
+func WithSaramaConfig(saramaConfig *sarama.Config) OptionFn {
+	return func(cfg *config) {
+		cfg.saramaConfig = saramaConfig
+	}
+}
+
 // startClusterIDFetch launches a goroutine to fetch the cluster ID from one of
 // the configured brokers. It returns a stop function that cancels the fetch and
 // waits for the goroutine to exit.

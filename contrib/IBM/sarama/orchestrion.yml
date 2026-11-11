@@ -10,9 +10,13 @@ meta:
 
 aspects:
   # NewConsumer, NewSyncProducer and NewAsyncProducer take the broker
-  # addresses. They are passed to WithBrokers for the bootstrap servers tag,
-  # and for the cluster ID with Data Streams Monitoring. The arguments are
-  # evaluated once, in order, as in the original call.
+  # addresses and the sarama configuration. The call is rewritten so that its
+  # arguments are evaluated once, in order, and passed to the wrapper: the
+  # addresses with WithBrokers for the bootstrap servers tag, and for the
+  # cluster ID with Data Streams Monitoring, which connects to the brokers with
+  # the same configuration as the client. A call with a single multi-value
+  # argument, such as NewConsumer(brokersAndConfig()), cannot be rewritten
+  # and is wrapped as is.
   - id: NewConsumer
     join-point:
       function-call: github.com/IBM/sarama.NewConsumer
@@ -22,29 +26,42 @@ aspects:
             saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
             sarama: github.com/IBM/sarama
           template: |-
+            {{- if eq (len .AST.Args) 2 -}}
             func(addrs []string, config *sarama.Config) (sarama.Consumer, error) {
               c, err := sarama.NewConsumer(addrs, config)
               if c != nil {
-                c = saramatrace.WrapConsumer(c, saramatrace.WithBrokers(addrs))
+                c = saramatrace.WrapConsumer(c, saramatrace.WithBrokers(addrs), saramatrace.WithSaramaConfig(config))
               }
               return c, err
             }({{ index .AST.Args 0 }}, {{ index .AST.Args 1 }})
-
-  - id: NewConsumerClient
-    join-point:
-      function-call: github.com/IBM/sarama.NewConsumerClient
-    advice:
-      - wrap-expression:
-          imports:
-            saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
-            sarama: github.com/IBM/sarama
-          template: |-
+            {{- else -}}
             func(c sarama.Consumer, err error) (sarama.Consumer, error) {
               if c != nil {
                 c = saramatrace.WrapConsumer(c)
               }
               return c, err
             }({{ . }})
+            {{- end -}}
+
+  # The ...FromClient variants take a client: its configuration is passed to
+  # the wrapper. The function was listed as NewConsumerClient, which does not
+  # exist in sarama, so consumers created from a client were not traced.
+  - id: NewConsumerFromClient
+    join-point:
+      function-call: github.com/IBM/sarama.NewConsumerFromClient
+    advice:
+      - wrap-expression:
+          imports:
+            saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
+            sarama: github.com/IBM/sarama
+          template: |-
+            func(client sarama.Client) (sarama.Consumer, error) {
+              c, err := sarama.NewConsumerFromClient(client)
+              if c != nil {
+                c = saramatrace.WrapConsumer(c, saramatrace.WithSaramaConfig(client.Config()))
+              }
+              return c, err
+            }({{ index .AST.Args 0 }})
 
   - id: NewSyncProducer
     join-point:
@@ -55,6 +72,7 @@ aspects:
             saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
             sarama: github.com/IBM/sarama
           template: |-
+            {{- if eq (len .AST.Args) 2 -}}
             func(addrs []string, config *sarama.Config) (sarama.SyncProducer, error) {
               p, err := sarama.NewSyncProducer(addrs, config)
               if p != nil {
@@ -62,16 +80,7 @@ aspects:
               }
               return p, err
             }({{ index .AST.Args 0 }}, {{ index .AST.Args 1 }})
-
-  - id: NewSyncProducerFromClient
-    join-point:
-      function-call: github.com/IBM/sarama.NewSyncProducerFromClient
-    advice:
-      - wrap-expression:
-          imports:
-            saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
-            sarama: github.com/IBM/sarama
-          template: |-
+            {{- else -}}
             {{- $cfg := .Function.ArgumentOfType "sarama.Config" -}}
             func(p sarama.SyncProducer, err error) (sarama.SyncProducer, error) {
               if p != nil {
@@ -86,6 +95,24 @@ aspects:
               }
               return p, err
             }({{ . }})
+            {{- end -}}
+
+  - id: NewSyncProducerFromClient
+    join-point:
+      function-call: github.com/IBM/sarama.NewSyncProducerFromClient
+    advice:
+      - wrap-expression:
+          imports:
+            saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
+            sarama: github.com/IBM/sarama
+          template: |-
+            func(client sarama.Client) (sarama.SyncProducer, error) {
+              p, err := sarama.NewSyncProducerFromClient(client)
+              if p != nil {
+                p = saramatrace.WrapSyncProducer(client.Config(), p)
+              }
+              return p, err
+            }({{ index .AST.Args 0 }})
 
   - id: NewAsyncProducer
     join-point:
@@ -96,6 +123,7 @@ aspects:
             saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
             sarama: github.com/IBM/sarama
           template: |-
+            {{- if eq (len .AST.Args) 2 -}}
             func(addrs []string, config *sarama.Config) (sarama.AsyncProducer, error) {
               p, err := sarama.NewAsyncProducer(addrs, config)
               if p != nil {
@@ -103,16 +131,7 @@ aspects:
               }
               return p, err
             }({{ index .AST.Args 0 }}, {{ index .AST.Args 1 }})
-
-  - id: NewAsyncProducerFromClient
-    join-point:
-      function-call: github.com/IBM/sarama.NewAsyncProducerFromClient
-    advice:
-      - wrap-expression:
-          imports:
-            saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
-            sarama: github.com/IBM/sarama
-          template: |-
+            {{- else -}}
             {{- $cfg := .Function.ArgumentOfType "sarama.Config" -}}
             func(p sarama.AsyncProducer, err error) (sarama.AsyncProducer, error) {
               if p != nil {
@@ -127,3 +146,21 @@ aspects:
               }
               return p, err
             }({{ . }})
+            {{- end -}}
+
+  - id: NewAsyncProducerFromClient
+    join-point:
+      function-call: github.com/IBM/sarama.NewAsyncProducerFromClient
+    advice:
+      - wrap-expression:
+          imports:
+            saramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
+            sarama: github.com/IBM/sarama
+          template: |-
+            func(client sarama.Client) (sarama.AsyncProducer, error) {
+              p, err := sarama.NewAsyncProducerFromClient(client)
+              if p != nil {
+                p = saramatrace.WrapAsyncProducer(client.Config(), p)
+              }
+              return p, err
+            }({{ index .AST.Args 0 }})
