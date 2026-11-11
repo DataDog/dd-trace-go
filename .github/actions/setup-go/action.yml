@@ -46,10 +46,14 @@
 #   2. Align GOROOT with the selected toolchain BEFORE any step asks `go env`
 #      for cache paths, so stale GOROOT values exported by earlier tools
 #      cannot redirect GOCACHE/GOMODCACHE.
-#   3. With caching enabled, hand the RESOLVED, exact Go version to the
-#      isolated-cache provider (cloudx-io/setup-go, pinned). Its nested
-#      installer must find that exact version already on disk; if it ever
-#      downloads one, that is a bug to investigate, not normal behaviour.
+#   3. With caching enabled, hand the go-version ALIAS (e.g., "1.27")
+#      to the isolated-cache provider (cloudx-io/setup-go, pinned). The
+#      alias keeps the cache key stable across Go patch releases: the
+#      provider keys on the literal input string, so "1.27" survives
+#      1.27.3 → 1.27.4. The provider's nested installer resolves the alias
+#      and finds the exact binary the select-go step already installed
+#      on disk; if it ever downloads one, that is a bug to investigate,
+#      not normal behaviour.
 #   4. With caching disabled, or with cache-provider github-cache, the cloudx
 #      provider is never invoked: no restore, no trimming, no save.
 #
@@ -265,7 +269,12 @@ runs:
       # Dependabot ignores cloudx-io/setup-go versions <= 1.0.0.
       uses: cloudx-io/setup-go@0bbd76c0381c065220668df9b6694845b937aaa0 # main (includes cloudx-io/setup-go#8)
       with:
-        go-version: ${{ steps.select-go.outputs.go-version }}
+        # The alias (e.g., "1.27"), not the resolved patch: the provider
+        # keys on the literal input string, so the alias keeps the cache
+        # key stable across Go patch releases. The provider's nested
+        # installer resolves the alias and finds the exact binary the
+        # select-go step above just installed on disk.
+        go-version: ${{ inputs.go-version }}
         cache-key-prefix: ${{ steps.cache-key.outputs.prefix }}
         max-staleness-hours: "2"
         # Verified to expand to go.mod, go.sum and go.work files only in this
