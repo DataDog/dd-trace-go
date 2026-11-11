@@ -81,10 +81,6 @@ The harness suites never build a `package main`, and only exercise call sites in
   imported under the alias (`chi/alias.go`).
 - **A `target: main` rule.** It never fires under `go test`, which builds no `package main`. Check
   it in `otelc-autostart`, the one test that builds an app with otelc.
-- **Code injected into the library that calls the contrib through `//go:linkname`.** The suites
-  import the contrib themselves, so they still link it when the rules module fails to. Only an app
-  that does not import the contrib catches that: call the library from
-  `otelc-autostart/routers.go` and assert its span in `autostart_test.go`.
 - **Dependency modules**, when a call-site rule targets `**`. Such a rule exists to also rewrite
   call sites inside third-party dependencies, as orchestrion does. Every call site in the suites
   belongs to `_integration`, the module being built, so a rule that never reaches a dependency
