@@ -357,7 +357,7 @@ func snsTags(params interface{}) (map[string]interface{}, error) {
 		}
 		destName = parts[len(parts)-1]
 	}
-	tags := map[string]interface{}{
+	tags := map[string]any{
 		destTag: destName,
 	}
 	// Only a TopicArn is a topic ARN: a TargetArn may be an endpoint or phone
@@ -417,7 +417,7 @@ func kinesisTags(params interface{}) (map[string]interface{}, error) {
 	default:
 		return nil, nil
 	}
-	tags := map[string]interface{}{}
+	tags := map[string]any{}
 	if streamName := coalesceNameOrArnResource(name, arn); streamName != "" {
 		tags[ext.KinesisStreamName] = streamName
 	}
@@ -504,7 +504,7 @@ func sfnTags(params interface{}) (map[string]interface{}, error) {
 		parts := strings.Split(stateMachineArn, ":")
 		stateMachineName = parts[len(parts)-1]
 	}
-	tags := map[string]interface{}{}
+	tags := map[string]any{}
 	if stateMachineName != "" {
 		tags[ext.SFNStateMachineName] = stateMachineName
 	}

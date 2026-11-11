@@ -792,12 +792,12 @@ func TestSQSTags(t *testing.T) {
 		},
 		{
 			name:   "empty queue URL",
-			params: &sqs.SendMessageInput{QueueUrl: aws.String("")},
+			params: &sqs.SendMessageInput{QueueUrl: new("")},
 			want:   nil,
 		},
 		{
 			name:    "unexpected queue URL format",
-			params:  &sqs.SendMessageInput{QueueUrl: aws.String("not-a-url")},
+			params:  &sqs.SendMessageInput{QueueUrl: new("not-a-url")},
 			wantErr: true,
 		},
 		{
@@ -897,7 +897,7 @@ func TestSNSTags(t *testing.T) {
 		},
 		{
 			name:    "unexpected ARN format",
-			params:  &sns.GetTopicAttributesInput{TopicArn: aws.String("not-an-arn")},
+			params:  &sns.GetTopicAttributesInput{TopicArn: new("not-an-arn")},
 			wantErr: true,
 		},
 		{
