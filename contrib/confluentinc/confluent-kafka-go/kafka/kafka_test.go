@@ -349,11 +349,17 @@ func TestClusterIDFetchStartsOnFirstUse(t *testing.T) {
 		require.Error(t, p.Produce(msg, nil))
 	})
 	t.Run("producer starts on first message on the produce channel", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
 		p := newProducer(t)
 		defer p.Close()
 
 		p.ProduceChannel() <- &kafka.Message{TopicPartition: kafka.TopicPartition{Topic: &testTopic, Partition: 0}}
 		assert.Eventually(t, p.clusterID.Started, time.Second, 10*time.Millisecond)
+		// The goroutine that forwards the message to the producer finishes the
+		// produce span after the send. Wait for it, so Close does not close
+		// the producer's channel while the goroutine still sends on it.
+		require.Eventually(t, func() bool { return len(mt.FinishedSpans()) == 1 }, time.Second, 10*time.Millisecond)
 	})
 	t.Run("consumer starts on first message", func(t *testing.T) {
 		c := newConsumer(t, true)
