@@ -44,7 +44,16 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	tc.produceMessage(t)
 	tc.consumeMessage(ctx, t)
-	tc.produceAndConsumeWithClusterID(ctx, t)
+	// The previous steps leave a produce span active in the goroutine-local
+	// context Orchestrion keeps, which would become the parent of the spans
+	// of this step. Run it in a new goroutine, so its spans start their own
+	// trace.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		tc.produceAndConsumeWithClusterID(ctx, t)
+	}()
+	<-done
 }
 
 func (tc *TestCase) kafkaBootstrapServers() string {
@@ -131,8 +140,9 @@ func (tc *TestCase) produceAndConsumeWithClusterID(ctx context.Context, t *testi
 	var first kafka.TopicPartition
 	for i, key := range []string{"cluster-id-1", "cluster-id-2"} {
 		if i > 0 {
-			// Let the lookup started by the first message complete.
-			time.Sleep(time.Second)
+			// Let the lookup started by the first message complete: it
+			// gives up after 2s.
+			time.Sleep(2500 * time.Millisecond)
 		}
 		delivery := make(chan kafka.Event, 1)
 		err = producer.Produce(&kafka.Message{
@@ -162,8 +172,9 @@ func (tc *TestCase) produceAndConsumeWithClusterID(ctx context.Context, t *testi
 	require.NoError(t, c.Assign([]kafka.TopicPartition{first}))
 	for i, key := range []string{"cluster-id-1", "cluster-id-2"} {
 		if i > 0 {
-			// Let the lookup started by the first message complete.
-			time.Sleep(time.Second)
+			// Let the lookup started by the first message complete: it
+			// gives up after 2s.
+			time.Sleep(2500 * time.Millisecond)
 		}
 		m, err := backoff.RetryWithData(
 			func() (*kafka.Message, error) { return c.ReadMessage(3 * time.Second) },
