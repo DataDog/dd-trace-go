@@ -442,6 +442,8 @@ type selectionResponse struct {
 	status int
 	// ignored, when set, is sent as DD-Flag-Selection-Ignored.
 	ignored *string
+	// ignoredFields, when set, are sent as repeated DD-Flag-Selection-Ignored fields.
+	ignoredFields []string
 }
 
 const selectionBackendETag = `"ufc-v1-selection"`
@@ -467,6 +469,9 @@ func (b *selectionBackend) handle(w http.ResponseWriter, r *http.Request) {
 
 	if resp.ignored != nil {
 		w.Header()[flagSelectionIgnoredHeader] = []string{*resp.ignored}
+	}
+	if resp.ignoredFields != nil {
+		w.Header()[flagSelectionIgnoredHeader] = resp.ignoredFields
 	}
 	switch resp.status {
 	case http.StatusOK:
@@ -672,6 +677,31 @@ func TestAgentlessSource_FlagSelectionIgnoredHeader(t *testing.T) {
 				assert.NotContains(t, key, flagSelectionIgnoredMetric)
 				return true
 			})
+		})
+	}
+
+	for name, fields := range map[string][]string{
+		"distinct repeated fields":         {"invalid_tag", "tag_load_failed"},
+		"identical repeated fields":        {"invalid_tag", "invalid_tag"},
+		"fields with an empty first value": {"", "invalid_tag"},
+		"repeated empty fields":            {"", ""},
+	} {
+		t.Run(name+" sanitize to unknown", func(t *testing.T) {
+			resetFlagSelectionReports(t)
+			logger := withLogLevel(t, log.LevelWarn)
+			log.Flush()
+			backend := newSelectionBackend(t, selectionResponse{status: http.StatusOK, ignoredFields: fields})
+			src := newSelectionSource(t, backend.server.URL, selection, nil)
+
+			outcome, _ := src.pollOnce(1)
+			require.Equal(t, pollOutcomeSuccess, outcome)
+			assert.Equal(t, selectionBackendETag, src.currentETag())
+			assert.True(t, flagSelectionReportedFor(flagSelectionIgnoredMetric, "unknown"))
+			for _, reason := range []string{"invalid_tag", "tag_load_failed"} {
+				assert.False(t, flagSelectionReportedFor(flagSelectionIgnoredMetric, reason))
+			}
+			log.Flush()
+			assert.Equal(t, 1, logger.countContaining(wantIgnored("unknown")))
 		})
 	}
 }

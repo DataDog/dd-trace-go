@@ -6,6 +6,7 @@
 package telemetry
 
 import (
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -14,6 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
@@ -106,4 +109,42 @@ func TestCountPayloadNoInterval(t *testing.T) {
 	assert.Zero(t, payload.Interval)
 	require.Len(t, payload.Points, 1)
 	assert.Equal(t, 1.0, payload.Points[0][1])
+}
+
+type panickingLogger struct{}
+
+func (panickingLogger) Log(string) { panic("logger failure") }
+
+// TestUnknownMetricContainsPanickingLogger pins that a Logger panic in the
+// unknown-metric warning neither reaches the caller nor leaves the global
+// metric map locked: the warning runs inside that map's xsync compute.
+func TestUnknownMetricContainsPanickingLogger(t *testing.T) {
+	telemetryEnabledOnce = sync.Once{}
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
+
+	tracerConfig := internal.TracerConfig{Service: "test-service", Env: "test-env", Version: "1.0.0"}
+	config := defaultConfig(ClientConfig{})
+	config.AgentURL = "http://localhost:8126"
+	config.FlushInterval = internal.Range[time.Duration]{Min: time.Hour, Max: time.Hour}
+	c, err := newClient(tracerConfig, config)
+	require.NoError(t, err)
+	t.Cleanup(func() { c.Close() })
+	SwapClient(c)
+	t.Cleanup(func() { SwapClient(nil) })
+	defer log.UseLogger(panickingLogger{})()
+
+	const name = "test.unknown_metric_with_panicking_logger"
+	assert.NotPanics(t, func() { Count(NamespaceTracers, name, nil).Submit(1) })
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		Count(NamespaceTracers, name, nil).Submit(1)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a panicking Logger left the global metric map locked")
+	}
 }

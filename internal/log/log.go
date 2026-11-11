@@ -313,13 +313,20 @@ func flushLocked() {
 		} else {
 			extra = fmt.Sprintf(" (occurred: %s)", report.first.Format(time.RFC822))
 		}
-		printMsg(LevelError, "%v%s", report.err, extra)
+		printReport(report.err, extra)
 	}
 	for k := range erragg {
 		// compiler-optimized map-clearing post go1.11 (golang/go#20138)
 		delete(erragg, k)
 	}
 	erron = false
+}
+
+// printReport contains a panicking Logger: Flush runs on a timer goroutine,
+// where nothing would recover it, and the remaining reports must still print.
+func printReport(err error, extra string) {
+	defer func() { _ = recover() }()
+	printMsg(LevelError, "%v%s", err, extra)
 }
 
 // printMsg checks the threshold itself so that Warn and Info stay small enough

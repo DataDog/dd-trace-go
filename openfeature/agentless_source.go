@@ -360,7 +360,9 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 	s.apply(config)
 	s.setETag(etag)
 	if s.selectionSent {
-		if ignored := resp.Header.Get(flagSelectionIgnoredHeader); ignored != "" {
+		// Repeated fields are joined, so they sanitize to unknown rather than
+		// reporting only the first one.
+		if ignored := strings.Join(resp.Header.Values(flagSelectionIgnoredHeader), ", "); ignored != "" {
 			reportFlagSelectionIgnored(ignored)
 		}
 	}
