@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026-present Datadog, Inc.
 
-package ddlambda
+package wrapper
 
 import (
 	"bytes"
@@ -17,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
-	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/wrapper"
 )
 
 type listenerKey string
@@ -52,72 +51,51 @@ func (l *recordingListener) HandlerFinished(ctx context.Context, err error) {
 	l.finishedCtx, l.finishedErr = ctx, err
 }
 
-// useListeners installs listeners for invokeOrchestrion, resets the cold-start
-// flag, and restores both when the test ends.
-func useListeners(t *testing.T, listeners ...wrapper.HandlerListener) {
-	t.Helper()
-	prevListeners, prevCold := orchListeners, orchCold
-	orchListeners, orchCold = listeners, true
-	t.Cleanup(func() {
-		orchListeners, orchCold = prevListeners, prevCold
-		wrapper.CurrentContext = nil
-	})
-}
-
 func okNext(context.Context, []byte) (io.Reader, error) {
 	return bytes.NewBufferString(`"ok"`), nil
 }
 
-func TestSetupOrchestrionBuildsListeners(t *testing.T) {
-	t.Setenv(DatadogTraceEnabledEnvVar, "false") // avoid starting a real tracer
-	useListeners(t)
-
-	setupOrchestrion()
-
-	require.NotEmpty(t, orchListeners)
-}
-
-func TestInvokeOrchestrionColdStart(t *testing.T) {
+func TestWrapHandlerFuncColdStart(t *testing.T) {
 	var events []string
 	l := &recordingListener{name: "a", events: &events}
-	useListeners(t, l)
+	invoke := WrapHandlerFuncWithListeners(okNext, l)
 
 	cold := make([]any, 0, 3)
 	for range 3 {
-		_, err := invokeOrchestrion(context.Background(), []byte(`{}`), okNext)
+		_, err := invoke(context.Background(), []byte(`{}`))
 		require.NoError(t, err)
 		cold = append(cold, l.startedCtx.Value("cold_start"))
 	}
 	require.Equal(t, []any{true, false, false}, cold)
 }
 
-func TestInvokeOrchestrionListenerOrder(t *testing.T) {
+func TestWrapHandlerFuncListenerOrder(t *testing.T) {
 	var events []string
-	useListeners(t,
+	invoke := WrapHandlerFuncWithListeners(func(ctx context.Context, p []byte) (io.Reader, error) {
+		events = append(events, "next")
+		return okNext(ctx, p)
+	},
 		&recordingListener{name: "a", events: &events},
 		&recordingListener{name: "b", events: &events},
 	)
 
-	_, err := invokeOrchestrion(context.Background(), []byte(`{}`), func(ctx context.Context, p []byte) (io.Reader, error) {
-		events = append(events, "next")
-		return okNext(ctx, p)
-	})
+	_, err := invoke(context.Background(), []byte(`{}`))
 	require.NoError(t, err)
 	require.Equal(t, []string{"a.started", "b.started", "next", "a.finished", "b.finished"}, events)
 }
 
-func TestInvokeOrchestrionChainsListeners(t *testing.T) {
+func TestWrapHandlerFuncChainsListeners(t *testing.T) {
 	var events []string
 	a := &recordingListener{name: "a", events: &events, msgOut: json.RawMessage(`{"from":"a"}`)}
 	b := &recordingListener{name: "b", events: &events, msgOut: json.RawMessage(`{"from":"b"}`)}
-	useListeners(t, a, b)
-
 	var nextCtx context.Context
 	var nextPayload []byte
-	_, err := invokeOrchestrion(context.Background(), []byte(`{"from":"runtime"}`), func(ctx context.Context, p []byte) (io.Reader, error) {
+	invoke := WrapHandlerFuncWithListeners(func(ctx context.Context, p []byte) (io.Reader, error) {
 		nextCtx, nextPayload = ctx, p
 		return okNext(ctx, p)
-	})
+	}, a, b)
+
+	_, err := invoke(context.Background(), []byte(`{"from":"runtime"}`))
 	require.NoError(t, err)
 
 	// Each step gets the previous step's payload...
@@ -130,31 +108,31 @@ func TestInvokeOrchestrionChainsListeners(t *testing.T) {
 	require.Equal(t, true, nextCtx.Value(listenerKey("b")))
 }
 
-func TestInvokeOrchestrionCurrentContext(t *testing.T) {
+func TestWrapHandlerFuncCurrentContext(t *testing.T) {
 	var events []string
-	useListeners(t, &recordingListener{name: "a", events: &events})
-
 	var during context.Context
 	var handlerCtx context.Context
-	_, err := invokeOrchestrion(context.Background(), []byte(`{}`), func(ctx context.Context, p []byte) (io.Reader, error) {
-		handlerCtx, during = ctx, GetContext()
+	invoke := WrapHandlerFuncWithListeners(func(ctx context.Context, p []byte) (io.Reader, error) {
+		handlerCtx, during = ctx, CurrentContext
 		return okNext(ctx, p)
-	})
+	}, &recordingListener{name: "a", events: &events})
+
+	_, err := invoke(context.Background(), []byte(`{}`))
 	require.NoError(t, err)
 	require.Equal(t, handlerCtx, during)
-	require.Nil(t, GetContext())
+	require.Nil(t, CurrentContext)
 }
 
-func TestInvokeOrchestrionReturnsNextResult(t *testing.T) {
+func TestWrapHandlerFuncReturnsNextResult(t *testing.T) {
 	var events []string
 	l := &recordingListener{name: "a", events: &events}
-	useListeners(t, l)
 
 	t.Run("response", func(t *testing.T) {
 		want := strings.NewReader("body")
-		got, err := invokeOrchestrion(context.Background(), []byte(`{}`), func(context.Context, []byte) (io.Reader, error) {
+		invoke := WrapHandlerFuncWithListeners(func(context.Context, []byte) (io.Reader, error) {
 			return want, nil
-		})
+		}, l)
+		got, err := invoke(context.Background(), []byte(`{}`))
 		require.NoError(t, err)
 		require.Same(t, want, got)
 		require.NoError(t, l.finishedErr)
@@ -162,9 +140,10 @@ func TestInvokeOrchestrionReturnsNextResult(t *testing.T) {
 
 	t.Run("error", func(t *testing.T) {
 		boom := errors.New("boom")
-		got, err := invokeOrchestrion(context.Background(), []byte(`{}`), func(context.Context, []byte) (io.Reader, error) {
+		invoke := WrapHandlerFuncWithListeners(func(context.Context, []byte) (io.Reader, error) {
 			return nil, boom
-		})
+		}, l)
+		got, err := invoke(context.Background(), []byte(`{}`))
 		require.Nil(t, got)
 		require.Same(t, boom, err)
 		require.Same(t, boom, l.finishedErr)
@@ -172,12 +151,11 @@ func TestInvokeOrchestrionReturnsNextResult(t *testing.T) {
 }
 
 // The extension reads the response from the context passed to HandlerFinished.
-func TestInvokeOrchestrionResponseReachesListeners(t *testing.T) {
+func TestWrapHandlerFuncResponseReachesListeners(t *testing.T) {
 	var events []string
 	l := &recordingListener{name: "a", events: &events}
-	useListeners(t, l)
 
-	_, err := invokeOrchestrion(context.Background(), []byte(`{}`), okNext)
+	_, err := WrapHandlerFuncWithListeners(okNext, l)(context.Background(), []byte(`{}`))
 	require.NoError(t, err)
 	raw, ok := l.finishedCtx.Value(extension.DdLambdaResponse).(json.RawMessage)
 	require.True(t, ok)

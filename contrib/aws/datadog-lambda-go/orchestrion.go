@@ -6,79 +6,18 @@
 package ddlambda
 
 import (
-	"context"
-	"encoding/json"
-	"io"
-	"net/http"
 	_ "unsafe" // for go:linkname
 
-	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
-	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/httptransport"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/wrapper"
 )
 
-// setupOrchestrion, invokeOrchestrion and transportOrchestrion are called
-// through go:linkname from the Orchestrion aspects injected into aws-lambda-go.
-// They stay unexported so they are not part of the public API. The signatures
-// have no variadic arguments so the injected declarations can reference them.
-
-//go:linkname setupOrchestrion
-func setupOrchestrion() {
-	setupAppSec()
-	orchListeners = initializeListeners(nil)
-}
-
-//go:linkname invokeOrchestrion
-func invokeOrchestrion(ctx context.Context, payload []byte, next func(context.Context, []byte) (io.Reader, error)) (io.Reader, error) {
-	cold := orchCold
-	orchCold = false
-
-	//nolint
-	ctx = context.WithValue(ctx, "cold_start", cold)
-	msg := json.RawMessage(payload)
-	for _, listener := range orchListeners {
-		ctx, msg = listener.HandlerStarted(ctx, msg)
-	}
-	wrapper.CurrentContext = ctx
-	reader, err := next(ctx, msg)
-	ctx = withLambdaResponse(ctx, reader)
-	for _, listener := range orchListeners {
-		listener.HandlerFinished(ctx, err)
-	}
-	wrapper.CurrentContext = nil
-	return reader, err
-}
-
-// transportOrchestrion is the transport for aws-lambda-go's Runtime API and
-// Extensions API clients. Orchestrion does not trace it, so fetching events
-// and sending responses don't create spans.
+// wrapOrchestrion is called through go:linkname from the Orchestrion aspect
+// injected into aws-lambda-go's start function, once per process. It sets up
+// ddlambda and returns handler wrapped with the trace, metrics, and payload
+// listeners. It stays unexported so it is not part of the public API.
 //
-//go:linkname transportOrchestrion
-func transportOrchestrion() *http.Transport {
-	return httptransport.New()
-}
-
-var (
-	orchCold      = true
-	orchListeners []wrapper.HandlerListener
-)
-
-// byteBuffer is implemented by the buffer Lambda uses for an ordinary JSON
-// response. Bytes does not advance the reader, so the runtime can still send it.
-type byteBuffer interface {
-	Bytes() []byte
-}
-
-// withLambdaResponse stores a copy of a buffered JSON response for the
-// extension's end-invocation POST. A streaming reader is left unread, and the
-// extension receives an empty object, matching WrapFunction.
-func withLambdaResponse(ctx context.Context, reader io.Reader) context.Context {
-	if reader == nil {
-		return ctx
-	}
-	if buf, ok := reader.(byteBuffer); ok {
-		raw := append([]byte(nil), buf.Bytes()...)
-		return context.WithValue(ctx, extension.DdLambdaResponse, json.RawMessage(raw))
-	}
-	return context.WithValue(ctx, extension.DdLambdaResponse, struct{}{})
+//go:linkname wrapOrchestrion
+func wrapOrchestrion(handler wrapper.HandlerFunc) wrapper.HandlerFunc {
+	setupAppSec()
+	return wrapper.WrapHandlerFuncWithListeners(handler, initializeListeners(nil)...)
 }

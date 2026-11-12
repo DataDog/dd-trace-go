@@ -32,41 +32,19 @@ aspects:
     advice:
       - inject-declarations:
           # ddlambda imports aws-lambda-go, so the injected code cannot import
-          # it back. go:linkname reaches the helpers without an import.
+          # it back. go:linkname reaches the helper without an import.
           links:
             - github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2
           imports:
             context: context
-            http: net/http
             io: io
           template: |-
-            //go:linkname __dd_lambda_setup github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2.setupOrchestrion
-            func __dd_lambda_setup()
-
-            //go:linkname __dd_lambda_invoke github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2.invokeOrchestrion
-            func __dd_lambda_invoke(ctx context.Context, payload []byte, next func(context.Context, []byte) (io.Reader, error)) (io.Reader, error)
-
-            // Used by the lambda.http.Client aspect. It is declared here because
-            // start is matched once per build, and a declaration injected by
-            // each matched literal would be duplicated.
-            //go:linkname __dd_lambda_transport github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2.transportOrchestrion
-            func __dd_lambda_transport() *http.Transport
+            //go:linkname __dd_lambda_wrap github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2.wrapOrchestrion
+            func __dd_lambda_wrap(func(context.Context, []byte) (io.Reader, error)) func(context.Context, []byte) (io.Reader, error)
       - prepend-statements:
-          # The same imports as the declarations above. entry.go does not import
-          # io, and the alias orchestrion assigns is only applied where the
-          # imports map names the selector.
-          imports:
-            context: context
-            io: io
           template: |-
             {{ $h := .Function.Argument 0 }}
-            __dd_lambda_setup()
-            __dd_orig := {{ $h }}.handlerFunc
-            {{ $h }}.handlerFunc = func(ctx context.Context, payload []byte) (io.Reader, error) {
-              return __dd_lambda_invoke(ctx, payload, func(ctx context.Context, payload []byte) (io.Reader, error) {
-                return __dd_orig(ctx, payload)
-              })
-            }
+            {{ $h }}.handlerFunc = __dd_lambda_wrap({{ $h }}.handlerFunc)
 
   # aws-lambda-go's Runtime API and Extensions API clients use
   # http.DefaultTransport, so Orchestrion's net/http instrumentation would
@@ -80,9 +58,13 @@ aspects:
             type: net/http.Client
     advice:
       - wrap-expression:
+          # httptransport only imports the standard library, so this import
+          # does not create a cycle.
+          imports:
+            __dd_httptransport: github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/httptransport
           template: |-
             {{- .AST.Type -}}{
-              Transport: __dd_lambda_transport(),
+              Transport: __dd_httptransport.New(),
               {{ range .AST.Elts }}{{ . }},
               {{ end }}
             }
