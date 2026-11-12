@@ -210,11 +210,8 @@ func flushIsOnWire(w http.ResponseWriter) bool {
 	if tc, ok := w.(trackerCarrier); ok {
 		return tc.tracker().flushed
 	}
-	return isKnownServerWriter(w)
+	return knownServerWriter(w)
 }
-
-// isKnownServerWriter is a variable so that the unit tests can know their fake writer.
-var isKnownServerWriter = knownServerWriter
 
 // knownServerWriters are the writers whose Flush always sends the headers
 // ("package path.type name"). Their types are not exported, and their names depend
