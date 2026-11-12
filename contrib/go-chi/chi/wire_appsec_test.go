@@ -14,6 +14,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -136,7 +137,7 @@ func (s wireServer) do(t *testing.T, rec *metricsRecorder, capture *opCapture, m
 	for id := range seen {
 		out.events = append(out.events, id)
 	}
-	sortStrings(out.events)
+	slices.Sort(out.events)
 	return out
 }
 
@@ -584,6 +585,56 @@ func TestAppSecWireSpecial(t *testing.T) {
 			assert.Contains(t, res.body, `{"errors":`)
 			assert.EqualValues(t, 1, res.requestBlocked())
 			assert.Zero(t, res.blockFailure())
+		})
+	}
+
+	// A direct Flush() through the tracker (no unwrapOnly): a writer below chi that
+	// ignores the flush must not mark the response as sent. The result is the result
+	// of main: 200 (chi's status after a flush) and the block body.
+	for _, h2 := range []bool{false, true} {
+		for _, kind := range []string{"flusher", "controller"} {
+			name := "direct-ignored-flush-" + kind
+			if h2 {
+				name += "-h2"
+			}
+			t.Run(name, func(t *testing.T) {
+				res := wireOnce(t, []string{ruleHeaderBlock}, func(cap *opCapture, ran *bool) (wireServer, string) {
+					r, target := simpleRouter(cap.middleware, true, readyHandler(ran, func(w http.ResponseWriter) {
+						if kind == "flusher" {
+							w.(http.Flusher).Flush()
+						} else {
+							_ = http.NewResponseController(w).Flush()
+						}
+					}))
+					return wireServer{router: r, http2: h2, wrap: wrapWriter(func(w http.ResponseWriter) http.ResponseWriter {
+						return &ignoreFlushWriter{ResponseWriter: w}
+					})}, target
+				})
+				assert.Contains(t, res.body, `{"errors":`, "the block body is written, as on main")
+				assert.EqualValues(t, 1, res.requestBlocked())
+				assert.Zero(t, res.blockFailure())
+			})
+		}
+	}
+
+	// A direct Flush() that reaches a known server writer is on the wire: no block
+	// body follows it.
+	for _, h2 := range []bool{false, true} {
+		name := "direct-known-writer"
+		if h2 {
+			name += "-h2"
+		}
+		t.Run(name, func(t *testing.T) {
+			res := wireOnce(t, []string{ruleHeaderBlock}, func(cap *opCapture, ran *bool) (wireServer, string) {
+				r, target := simpleRouter(cap.middleware, true, readyHandler(ran, func(w http.ResponseWriter) {
+					w.(http.Flusher).Flush()
+				}))
+				return wireServer{router: r, http2: h2}, target
+			})
+			assert.Equal(t, 200, res.status)
+			assert.Empty(t, res.body, "no block body after the flushed response")
+			assert.Zero(t, res.requestBlocked())
+			assert.EqualValues(t, 1, res.blockFailure())
 		})
 	}
 

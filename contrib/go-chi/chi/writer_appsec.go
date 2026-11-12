@@ -138,7 +138,6 @@ func (t *commitTracker) Status() int {
 	return 0
 }
 
-// markFlushed records a successful flush.
 func (t *commitTracker) markFlushed() {
 	t.flushed = true
 	if t.flushStatus == 0 {
@@ -149,9 +148,16 @@ func (t *commitTracker) markFlushed() {
 	}
 }
 
+// flush is the Flush method of the trackers whose chi writer has Flush. The chi
+// writer sends the flush to the writer under it, which is the writer that is
+// classified (see flushError for the rule). A flush that nothing sends does not
+// mark the response as sent, as without the tracker.
 func (t *commitTracker) flush() {
+	target := t.WrapResponseWriter.Unwrap()
 	t.WrapResponseWriter.(http.Flusher).Flush()
-	t.markFlushed()
+	if flushIsOnWire(target) {
+		t.markFlushed()
+	}
 }
 
 // flushError is the FlushError method of the trackers whose chi writer has no
@@ -204,8 +210,11 @@ func flushIsOnWire(w http.ResponseWriter) bool {
 	if tc, ok := w.(trackerCarrier); ok {
 		return tc.tracker().flushed
 	}
-	return knownServerWriter(w)
+	return isKnownServerWriter(w)
 }
+
+// isKnownServerWriter is a variable so that the unit tests can know their fake writer.
+var isKnownServerWriter = knownServerWriter
 
 // knownServerWriters are the writers whose Flush always sends the headers
 // ("package path.type name"). Their types are not exported, and their names depend

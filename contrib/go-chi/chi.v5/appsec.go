@@ -93,18 +93,10 @@ func withAppsec(next http.Handler, span trace.TagSetter, cfg *config, cache *syn
 				return
 			}
 			finalRoute := reportedRoute(rc, cfg, cache)
-			// The final parameters (the last value of a name) are added to the baseline
-			// input of the WAF that all the tracers of the request share. If they
-			// contradict it (another value for a name that a tracer gave), only the
-			// route is reported. The same when a tracer that shares the WAF context
-			// could not share the set (shared.uncertain). So the WAF keeps the baseline
-			// input, and no rule can match a mix of a baseline value and a final value
-			// of this update. The guard protects the baseline input that is already known
-			// when the late update happens: it cannot undo a match that the WAF kept
-			// earlier, when a later tracer replaces the baseline input or sets the flag
-			// (TestSequentialRouterCombination), and a predicted value that the WAF got
-			// early can still combine with a final value across the 2 runs
-			// (TestPredictionPhaseCombination). These are documented limits.
+			// Invariant: final parameters that contradict the shared baseline input (or
+			// that a tracer marked as uncertain) are not sent: only the route is. The
+			// WAF keeps condition matches between runs, so this does not undo a match
+			// from an earlier run.
 			var finalParams map[string]string
 			if complete && !shared.uncertain {
 				if merged, ok := addPrediction(shared.get(), routeParams(rc)); ok {

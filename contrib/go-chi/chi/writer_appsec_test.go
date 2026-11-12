@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -284,12 +285,32 @@ func (f fakeChi) Write(b []byte) (int, error) { return f.fakeRaw.Write(b) }
 func (f fakeChi) WriteHeader(c int)           { f.fakeRaw.WriteHeader(c) }
 func (f fakeChi) Status() int                 { return 0 }
 func (f fakeChi) BytesWritten() int           { return 0 }
-func (f fakeChi) Unwrap() http.ResponseWriter { return nil }
+func (f fakeChi) Unwrap() http.ResponseWriter { return f.fakeRaw }
+
+// fakeRawIsKnown makes the tracker treat the fakeRaw writer, and the anonymous
+// structs that rawWith builds around it, as a known server writer.
+func fakeRawIsKnown(t *testing.T) {
+	t.Helper()
+	old := isKnownServerWriter
+	t.Cleanup(func() { isKnownServerWriter = old })
+	isKnownServerWriter = func(w http.ResponseWriter) bool {
+		if _, ok := w.(*fakeRaw); ok {
+			return true
+		}
+		v := reflect.ValueOf(w)
+		if v.Kind() == reflect.Struct && v.Type().Name() == "" && v.NumField() > 0 && v.Type().Field(0).IsExported() {
+			_, ok := v.Field(0).Interface().(*fakeRaw)
+			return ok
+		}
+		return knownServerWriter(w)
+	}
+}
 
 // TestCommitTrackerGeneratedTypes builds each of the 24 generated types, and calls
 // each method that the type declares: it must reach the chi writer, and the
 // tracker must record the state.
 func TestCommitTrackerGeneratedTypes(t *testing.T) {
+	fakeRawIsKnown(t)
 	n := 0
 	for flags := range uint8(32) {
 		if flags&hasFlusher != 0 && flags&hasFlushError != 0 {
@@ -349,6 +370,7 @@ func TestCommitTrackerGeneratedTypes(t *testing.T) {
 
 // TestCommitTrackerState checks when a tracker reports that the response is sent.
 func TestCommitTrackerState(t *testing.T) {
+	fakeRawIsKnown(t)
 	full := func() (http.ResponseWriter, *commitTracker, middleware.WrapResponseWriter, *fakeRaw) {
 		f := newFakeRaw()
 		tw, ct, ww := track(t, rawWith(f, rawFlusher|rawHijacker|rawReaderFrom), 1, nil)
@@ -568,6 +590,7 @@ func wrapN(w http.ResponseWriter, n int) http.ResponseWriter {
 
 // TestCommitTrackerParent checks how a tracker reads the state of an outer tracker.
 func TestCommitTrackerParent(t *testing.T) {
+	fakeRawIsKnown(t)
 	// outer returns an outer tracker with its context.
 	outer := func() (http.ResponseWriter, *commitTracker, context.Context, *fakeRaw) {
 		f := newFakeRaw()

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -88,17 +89,9 @@ func serveFixtureWith(t *testing.T, rec *metricsRecorder, capture *opCapture, f 
 	for id := range seen {
 		o.events = append(o.events, id)
 	}
-	sortStrings(o.events)
+	slices.Sort(o.events)
 	o.metrics = rec.since(before)
 	return o
-}
-
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j] < s[j-1]; j-- {
-			s[j], s[j-1] = s[j-1], s[j]
-		}
-	}
 }
 
 // TestAppSecRouteSetups checks the AppSec route, the path parameters that the WAF

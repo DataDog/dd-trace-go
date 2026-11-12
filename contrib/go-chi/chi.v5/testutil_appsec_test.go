@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -83,7 +82,6 @@ const blockActions = `[
 	{"id":"block","type":"block_request","parameters":{"status_code":403,"type":"auto"}},
 	{"id":"redirect","type":"redirect_request","parameters":{"status_code":303,"location":"/blocked"}}]`
 
-// rulesJSON builds a ruleset from rule definitions.
 func rulesJSON(rules ...string) string {
 	return fmt.Sprintf(`{"version":"2.2","metadata":{"rules_version":"1.0.0"},"rules":[%s],"actions":%s}`,
 		strings.Join(rules, ","), blockActions)
@@ -101,28 +99,24 @@ func startAppSecRules(t *testing.T, rules ...string) *metricsRecorder {
 	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1s")
 	rec := testutils.StartTelemetryRecorder(t)
 	testutils.StartAppSec(t)
-	return &metricsRecorder{rec: rec}
+	return &metricsRecorder{snap: func() map[string]float64 {
+		out := map[string]float64{}
+		for key, handle := range rec.Metrics {
+			if value := handle.Get(); value != 0 {
+				out[key.Name+"{"+key.Tags+"}"] = value
+			}
+		}
+		return out
+	}}
 }
 
 // metricsRecorder reads the telemetry metrics that AppSec recorded.
 type metricsRecorder struct {
-	rec any
+	snap func() map[string]float64
 }
 
 // snapshot returns the value of each metric that has one, by "name{tags}".
-func (m *metricsRecorder) snapshot() map[string]float64 {
-	out := map[string]float64{}
-	metrics := reflect.ValueOf(m.rec).Elem().FieldByName("Metrics")
-	for _, key := range metrics.MapKeys() {
-		handle := metrics.MapIndex(key).Interface().(interface{ Get() float64 })
-		value := handle.Get()
-		if value == 0 {
-			continue
-		}
-		out[key.FieldByName("Name").String()+"{"+key.FieldByName("Tags").String()+"}"] = value
-	}
-	return out
-}
+func (m *metricsRecorder) snapshot() map[string]float64 { return m.snap() }
 
 // since returns the metrics that changed since the snapshot before.
 func (m *metricsRecorder) since(before map[string]float64) map[string]float64 {

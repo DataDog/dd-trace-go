@@ -84,8 +84,8 @@ func init() {
 // sent, it does not change; AppSec reports a failed block (a redirect is not
 // counted as a block). A flush that returns an error does not itself mark the
 // response as sent: if it wrote part of the response, a block can add its body
-// after that output. A flush through http.ResponseController that reaches a writer
-// that does not send it (for example a compressing writer that ignores a flush
+// after that output. A flush (direct, or through http.ResponseController) that
+// reaches a writer that does not send it (for example a compressing writer that ignores a flush
 // before the first write, or a buffering writer that returns nil) does not mark
 // the response as sent either, unless the writer that really flushes is a known
 // server writer (net/http HTTP/1 and HTTP/2, golang.org/x/net/http2,
