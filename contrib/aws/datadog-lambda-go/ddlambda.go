@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -131,9 +132,15 @@ const (
 	awsLambdaServerPortEnvVar = "_LAMBDA_SERVER_PORT"
 )
 
+// manuallyWrapped records that the application wrapped its handler with
+// WrapFunction or WrapLambdaHandlerInterface. Both run before aws-lambda-go's
+// start, so wrapOrchestrion can check it to avoid wrapping the handler twice.
+var manuallyWrapped atomic.Bool
+
 // WrapLambdaHandlerInterface is used to instrument your lambda functions.
 // It returns a modified handler that can be passed directly to the lambda.StartHandler function from aws-lambda-go.
 func WrapLambdaHandlerInterface(handler lambda.Handler, cfg *Config) lambda.Handler {
+	manuallyWrapped.Store(true)
 	setupAppSec()
 	listeners := initializeListeners(cfg)
 	return wrapper.WrapHandlerInterfaceWithListeners(handler, listeners...)
@@ -142,6 +149,7 @@ func WrapLambdaHandlerInterface(handler lambda.Handler, cfg *Config) lambda.Hand
 // WrapFunction is used to instrument your lambda functions.
 // It returns a modified handler that can be passed directly to the lambda.Start function from aws-lambda-go.
 func WrapFunction(handler interface{}, cfg *Config) interface{} {
+	manuallyWrapped.Store(true)
 	setupAppSec()
 	listeners := initializeListeners(cfg)
 	return wrapper.WrapHandlerWithListeners(handler, listeners...)
