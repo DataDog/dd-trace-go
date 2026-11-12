@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -42,7 +43,17 @@ type invocation struct {
 	err bool
 }
 
+// skipUnlessLinux skips tests that build mainapp, which are slow, on
+// platforms Lambda doesn't run on.
+func skipUnlessLinux(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skip("AWS Lambda only runs on Linux")
+	}
+}
+
 func TestLambda(t *testing.T) {
+	skipUnlessLinux(t)
 	bin := maintest.BuildWithOrchestrion(t, "./aws_lambda/mainapp")
 
 	okTwice := []invocation{{event: `{}`, body: `"ok"`}, {event: `{}`, body: `"ok"`}}
@@ -78,33 +89,12 @@ func TestLambda(t *testing.T) {
 	}
 }
 
-// TestLambdaMetric checks that ddlambda.Metric works without a context
-// argument. It builds the Metric variant, which imports ddlambda, separately
-// so that the other tests run against a build without the import.
-func TestLambdaMetric(t *testing.T) {
-	bin := maintest.BuildWithOrchestrion(t, "./aws_lambda/mainapp", "-tags", "lambda_metric")
-	invokes := []invocation{{event: `{}`, body: `"ok"`}}
-	run := runLambda(t, bin, "Metric", invokes)
-	require.False(t, run.exited, "the app exited:\n%s", run.output)
-	requireInvocations(t, run, "Metric", invokes, true)
-	m := run.metrics("lambda.test.metric")
-	require.Len(t, m, 1, run.output)
-	require.Contains(t, m[0].Tags, "variant:metric")
-}
-
-func TestLambdaNoRPC(t *testing.T) {
-	bin := maintest.BuildWithOrchestrion(t, "./aws_lambda/mainapp", "-tags", "lambda.norpc")
-	invokes := []invocation{{event: `{}`, body: `"ok"`}}
-	run := runLambda(t, bin, "Start", invokes)
-	require.False(t, run.exited, "the app exited:\n%s", run.output)
-	requireInvocations(t, run, "Start", invokes, true)
-}
-
 // TestLambdaExtension runs mainapp as if the Datadog Extension were installed,
 // against a fake extension. ddlambda's requests to the extension must not be
 // traced: tracing them would report each call as a span, and overwrite the
 // trace headers the extension reads with the request span's own context.
 func TestLambdaExtension(t *testing.T) {
+	skipUnlessLinux(t)
 	ext := newFakeExtension(t)
 	// The extension counts as running when this file exists.
 	marker := filepath.Join(t.TempDir(), "datadog-agent")

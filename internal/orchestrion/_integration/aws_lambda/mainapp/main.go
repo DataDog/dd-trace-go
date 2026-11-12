@@ -34,9 +34,6 @@ var (
 	httpURL = os.Getenv("LAMBDA_HTTP_URL") //nolint:forbidigo // set by the test, not a tracer setting
 )
 
-// taggedVariants holds the variants that are only built with a build tag.
-var taggedVariants = map[string]func(){}
-
 type ctxKey struct{}
 
 type structHandler struct{}
@@ -159,10 +156,6 @@ func main() {
 			return "ok", nil
 		})
 	default:
-		start, ok := taggedVariants[variant]
-		if !ok {
-			panic("unknown LAMBDA_VARIANT " + variant)
-		}
-		start()
+		panic("unknown LAMBDA_VARIANT " + variant)
 	}
 }
