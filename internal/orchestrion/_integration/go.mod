@@ -7,7 +7,7 @@ require (
 	cloud.google.com/go/pubsub/v2 v2.0.0
 	connectrpc.com/connect v1.21.1
 	github.com/99designs/gqlgen v0.17.97
-	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 v2.13.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.13.0-dev.1
