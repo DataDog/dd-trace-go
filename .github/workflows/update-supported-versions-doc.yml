@@ -5,7 +5,8 @@ on:
     # be used as the latest supported version in our docs.
     workflows: ["Smoke Tests"]
     branches:
-      - mq-working-branch-**
+      - release-v*
+      - main
     types:
       - completed
 
