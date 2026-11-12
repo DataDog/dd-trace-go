@@ -264,9 +264,12 @@ jobs:
           # and rebuilt that closure every time, which made the lane take hours.
           # shellcheck disable=SC2086
           gotestsum --junitfile "${XML_PATH}" --raw-command -- \
-            otelc go test -json -shuffle=on ${PACKAGE_NAMES}
+            otelc go test ${OTELC_TEST_FLAGS} -json -shuffle=on ${PACKAGE_NAMES}
         working-directory: internal/orchestrion/_integration
         env:
+          # Concurrent test application builds time out on Windows with Go 1.26.
+          # Set -p on the outer go test so each nested build can still compile in parallel.
+          OTELC_TEST_FLAGS: ${{ runner.os == 'Windows' && startsWith(steps.setup-go.outputs.go-version, '1.26.') && '-p=1' || '' }}
           # otelc-autostart shells out to a nested `otelc go build`, which
           # recompiles the dependency closure, so this lane needs more headroom
           # than a normal test run.
