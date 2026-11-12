@@ -18,19 +18,26 @@ import "net/http"
 // This code is generated because we have to account for all the permutations
 // of the interfaces.
 //
+// The Flush and the Hijack of the generated struct go through the monitored
+// writer (see flusher and hijacker in response_writer.go), so that it records a
+// Flush that is on the wire and a successful Hijack. The set of optional
+// interfaces does not change.
+//
 // In case of any new interfaces or methods we didn't consider here, we also
 // implement the rwUnwrapper interface, which is used internally by
 // the standard library: https://github.com/golang/go/blob/6d89b38ed86e0bfa0ddaba08dc4071e6bb300eea/src/net/http/responsecontroller.go#L42-L44
 func wrapResponseWriter(w http.ResponseWriter) (http.ResponseWriter, *responseWriter) {
-	hFlusher, okFlusher := w.(http.Flusher)
+	_, okFlusher := w.(http.Flusher)
 	hPusher, okPusher := w.(http.Pusher)
 	hCloseNotifier, okCloseNotifier := w.(http.CloseNotifier)
-	hHijacker, okHijacker := w.(http.Hijacker)
+	_, okHijacker := w.(http.Hijacker)
 
 	mw := newResponseWriter(w)
 	type monitoredResponseWriter interface {
 		http.ResponseWriter
 		Status() int
+		Committed() bool
+		wireCommitted() bool
 		Unwrap() http.ResponseWriter
 	}
 	switch {
@@ -41,53 +48,53 @@ func wrapResponseWriter(w http.ResponseWriter) (http.ResponseWriter, *responseWr
 			http.Pusher
 			http.CloseNotifier
 			http.Hijacker
-		}{mw, hFlusher, hPusher, hCloseNotifier, hHijacker}
+		}{mw, flusher{mw}, hPusher, hCloseNotifier, hijacker{mw}}
 	case okFlusher && okPusher && okCloseNotifier:
 		w = struct {
 			monitoredResponseWriter
 			http.Flusher
 			http.Pusher
 			http.CloseNotifier
-		}{mw, hFlusher, hPusher, hCloseNotifier}
+		}{mw, flusher{mw}, hPusher, hCloseNotifier}
 	case okFlusher && okPusher && okHijacker:
 		w = struct {
 			monitoredResponseWriter
 			http.Flusher
 			http.Pusher
 			http.Hijacker
-		}{mw, hFlusher, hPusher, hHijacker}
+		}{mw, flusher{mw}, hPusher, hijacker{mw}}
 	case okFlusher && okCloseNotifier && okHijacker:
 		w = struct {
 			monitoredResponseWriter
 			http.Flusher
 			http.CloseNotifier
 			http.Hijacker
-		}{mw, hFlusher, hCloseNotifier, hHijacker}
+		}{mw, flusher{mw}, hCloseNotifier, hijacker{mw}}
 	case okPusher && okCloseNotifier && okHijacker:
 		w = struct {
 			monitoredResponseWriter
 			http.Pusher
 			http.CloseNotifier
 			http.Hijacker
-		}{mw, hPusher, hCloseNotifier, hHijacker}
+		}{mw, hPusher, hCloseNotifier, hijacker{mw}}
 	case okFlusher && okPusher:
 		w = struct {
 			monitoredResponseWriter
 			http.Flusher
 			http.Pusher
-		}{mw, hFlusher, hPusher}
+		}{mw, flusher{mw}, hPusher}
 	case okFlusher && okCloseNotifier:
 		w = struct {
 			monitoredResponseWriter
 			http.Flusher
 			http.CloseNotifier
-		}{mw, hFlusher, hCloseNotifier}
+		}{mw, flusher{mw}, hCloseNotifier}
 	case okFlusher && okHijacker:
 		w = struct {
 			monitoredResponseWriter
 			http.Flusher
 			http.Hijacker
-		}{mw, hFlusher, hHijacker}
+		}{mw, flusher{mw}, hijacker{mw}}
 	case okPusher && okCloseNotifier:
 		w = struct {
 			monitoredResponseWriter
@@ -99,18 +106,18 @@ func wrapResponseWriter(w http.ResponseWriter) (http.ResponseWriter, *responseWr
 			monitoredResponseWriter
 			http.Pusher
 			http.Hijacker
-		}{mw, hPusher, hHijacker}
+		}{mw, hPusher, hijacker{mw}}
 	case okCloseNotifier && okHijacker:
 		w = struct {
 			monitoredResponseWriter
 			http.CloseNotifier
 			http.Hijacker
-		}{mw, hCloseNotifier, hHijacker}
+		}{mw, hCloseNotifier, hijacker{mw}}
 	case okFlusher:
 		w = struct {
 			monitoredResponseWriter
 			http.Flusher
-		}{mw, hFlusher}
+		}{mw, flusher{mw}}
 	case okPusher:
 		w = struct {
 			monitoredResponseWriter
@@ -125,7 +132,7 @@ func wrapResponseWriter(w http.ResponseWriter) (http.ResponseWriter, *responseWr
 		w = struct {
 			monitoredResponseWriter
 			http.Hijacker
-		}{mw, hHijacker}
+		}{mw, hijacker{mw}}
 	default:
 		w = mw
 	}
