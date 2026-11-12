@@ -603,3 +603,24 @@ func TestBorrowedSpanEndTimestamp(t *testing.T) {
 	// The msgp JSON numbers lose nanosecond precision at these magnitudes.
 	assert.InDelta(t, float64(end.UnixNano()), start+duration, 1000)
 }
+
+func TestSpanContextStableAfterEndWithReuse(t *testing.T) {
+	tp, _, cleanup := mockTracerProvider(t)
+	defer cleanup()
+
+	_, sp := tp.Tracer("").Start(context.Background(), "otel.op")
+	want := sp.SpanContext()
+	sp.End()
+	other, _ := tracer.StartSpanFromContext(context.Background(), "dd.other")
+	defer other.Finish()
+	// Simulate the span pool reusing the ended span's Datadog span.
+	sp.(*span).mu.Lock()
+	sp.(*span).DD = other
+	sp.(*span).mu.Unlock()
+
+	got := sp.SpanContext()
+	assert.Equal(t, want.TraceID(), got.TraceID())
+	assert.Equal(t, want.SpanID(), got.SpanID())
+	assert.Equal(t, want.TraceFlags(), got.TraceFlags())
+	assert.Equal(t, want.TraceState().String(), got.TraceState().String())
+}
