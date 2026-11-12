@@ -12,6 +12,9 @@ source "${SCRIPT_DIR}/../.github/workflows/apps/go-retry.sh"
 
 [[ -d ./contrib ]] || exit 0
 
+# See issue #5815.
+[[ "$1" == default ]] && export GOWORK=off
+
 BUILD_TAGS="${BUILD_TAGS:-}"
 
 if [ $# -eq 2 ]; then
