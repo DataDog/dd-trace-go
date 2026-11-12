@@ -31,6 +31,11 @@ func (tc *TestCaseAliasedImport) Run(ctx context.Context, t *testing.T) {
 	serve(ctx, t, tc.handler, "/alias")
 }
 
+// ExpectedSpanCount is the chi span.
+func (*TestCaseAliasedImport) ExpectedSpanCount() int {
+	return 1
+}
+
 func (*TestCaseAliasedImport) ExpectedTraces() trace.Traces {
 	return expectChiSpan("GET /alias")
 }

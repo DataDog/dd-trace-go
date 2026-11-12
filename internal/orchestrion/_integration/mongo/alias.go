@@ -27,13 +27,19 @@ import (
 // TestCaseAliasedImport connects with client options built from the options
 // package imported under another name.
 type TestCaseAliasedImport struct {
+	uri    string
 	client *mongo.Client
 }
 
-func (tc *TestCaseAliasedImport) Setup(ctx context.Context, t *testing.T) {
+// PreBootstrap starts the container before the tracer, so the Docker API
+// calls it makes are not counted.
+func (tc *TestCaseAliasedImport) PreBootstrap(_ context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
-	_, uri := containers.StartMongoDBTestContainer(t)
-	client, err := mongo.Connect(ctx, mongooptions.Client().ApplyURI(uri))
+	_, tc.uri = containers.StartMongoDBTestContainer(t)
+}
+
+func (tc *TestCaseAliasedImport) Setup(ctx context.Context, t *testing.T) {
+	client, err := mongo.Connect(ctx, mongooptions.Client().ApplyURI(tc.uri))
 	require.NoError(t, err)
 	tc.client = client
 	t.Cleanup(func() {
@@ -48,6 +54,11 @@ func (tc *TestCaseAliasedImport) Run(ctx context.Context, t *testing.T) {
 	defer span.Finish()
 	_, err := tc.client.Database("test").Collection("alias").InsertOne(ctx, bson.M{"test_key": "test_value"})
 	require.NoError(t, err)
+}
+
+// ExpectedSpanCount is test.root and the insert.
+func (*TestCaseAliasedImport) ExpectedSpanCount() int {
+	return 2
 }
 
 func (*TestCaseAliasedImport) ExpectedTraces() trace.Traces {

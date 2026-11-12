@@ -32,6 +32,11 @@ func (tc *TestCaseNewMux) Run(ctx context.Context, t *testing.T) {
 	serve(ctx, t, tc.handler, "/mux")
 }
 
+// ExpectedSpanCount is the chi span.
+func (*TestCaseNewMux) ExpectedSpanCount() int {
+	return 1
+}
+
 func (*TestCaseNewMux) ExpectedTraces() trace.Traces {
 	return expectChiSpan("GET /mux")
 }
