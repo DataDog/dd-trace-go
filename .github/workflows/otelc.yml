@@ -267,8 +267,9 @@ jobs:
             otelc go test ${OTELC_TEST_FLAGS} -json -shuffle=on ${PACKAGE_NAMES}
         working-directory: internal/orchestrion/_integration
         env:
-          # Concurrent test application builds time out on Windows with Go 1.26.
-          # Set -p on the outer go test so each nested build can still compile in parallel.
+          # Windows Go 1.26 times out when test packages build their applications concurrently.
+          # Remove -p=1 when #5875 removes those nested builds from Windows CI.
+          # See https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1704 for the related go.mod race.
           OTELC_TEST_FLAGS: ${{ runner.os == 'Windows' && startsWith(steps.setup-go.outputs.go-version, '1.26.') && '-p=1' || '' }}
           # otelc-autostart shells out to a nested `otelc go build`, which
           # recompiles the dependency closure, so this lane needs more headroom

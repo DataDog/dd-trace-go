@@ -193,8 +193,8 @@ func WithErrorCheck(errCheck func(error) bool) OptionFn {
 }
 
 // WithCustomTag adds a tag to each request span. A string value for "service.name"
-// overrides the middleware's service name. The middleware sets "resource.name"
-// and "span.kind" after applying custom tags.
+// overrides the middleware's service name. The middleware sets tags such as
+// "component", "span.kind", and "resource.name" after applying custom tags.
 func WithCustomTag(key string, value any) OptionFn {
 	return func(cfg *config) {
 		// The nil check is redundant in practice because defaults() always

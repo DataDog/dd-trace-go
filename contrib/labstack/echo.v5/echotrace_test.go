@@ -138,7 +138,7 @@ func TestTrace200(t *testing.T) {
 	var called, traced bool
 
 	router := echo.New()
-	router.Use(Middleware(WithService("foobar")))
+	router.Use(Middleware(WithService("foobar"), WithCustomTag(ext.ServiceName, "custom-service")))
 	router.GET("/user/:id", func(c *echo.Context) error {
 		called = true
 		var span *tracer.Span
@@ -147,7 +147,7 @@ func TestTrace200(t *testing.T) {
 
 		// we patch the span on the request context.
 		span.SetTag("test.echo", "echony")
-		assert.Equal(ms.Tag(ext.ServiceName), "foobar")
+		assert.Equal("custom-service", ms.Tag(ext.ServiceName))
 		return c.NoContent(200)
 	})
 
@@ -168,7 +168,7 @@ func TestTrace200(t *testing.T) {
 	span := spans[0]
 	assert.Equal("http.request", span.OperationName())
 	assert.Equal(ext.SpanTypeWeb, span.Tag(ext.SpanType))
-	assert.Equal("foobar", span.Tag(ext.ServiceName))
+	assert.Equal("custom-service", span.Tag(ext.ServiceName))
 	assert.Equal("echony", span.Tag("test.echo"))
 	assert.Contains(span.Tag(ext.ResourceName), "/user/:id")
 	assert.Equal("200", span.Tag(ext.HTTPCode))
