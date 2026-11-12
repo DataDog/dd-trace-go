@@ -9,7 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"maps"
-	"reflect"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -50,7 +49,7 @@ func NewEnricher(inject bool) *Enricher {
 func (e *Enricher) EnrichOperation(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, operation string) middleware.InitializeInput {
 	switch operation {
 	case "SendMessage":
-		e.handleSendMessage(ctx, span, in)
+		e.handleSendMessage(ctx, span, &in)
 	case "SendMessageBatch":
 		e.handleSendMessageBatch(ctx, span, &in)
 	}
@@ -58,7 +57,7 @@ func (e *Enricher) EnrichOperation(ctx context.Context, span *tracer.Span, in mi
 	return in
 }
 
-func (e *Enricher) handleSendMessage(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
+func (e *Enricher) handleSendMessage(ctx context.Context, span *tracer.Span, in *middleware.InitializeInput) {
 	params, ok := in.Parameters.(*sqs.SendMessageInput)
 	if !ok {
 		instr.Logger().Debug("Unable to read SendMessage params")
@@ -75,12 +74,12 @@ func (e *Enricher) handleSendMessage(ctx context.Context, span *tracer.Span, in 
 		return
 	}
 
-	if params.MessageAttributes == nil {
-		params.MessageAttributes = make(map[string]types.MessageAttributeValue)
-	}
-
 	budget := newTraceBudget(messageSize, func() int64 { return messageTextExpansion(params.MessageBody, params.MessageAttributes) })
-	budget.inject(traceContext, params.MessageAttributes)
+	if attrs := budget.inject(traceContext, params.MessageAttributes); attrs != nil {
+		message := *params
+		message.MessageAttributes = attrs
+		in.Parameters = &message
+	}
 }
 
 func (e *Enricher) handleSendMessageBatch(ctx context.Context, span *tracer.Span, in *middleware.InitializeInput) {
@@ -91,10 +90,12 @@ func (e *Enricher) handleSendMessageBatch(ctx context.Context, span *tracer.Span
 	}
 
 	var budget traceBudget
-	canInject := !e.noInject && len(params.Entries) <= maxBatchEntries
+	canInject := !e.noInject
+	if canInject && len(params.Entries) > maxBatchEntries {
+		instr.Logger().Debug("Cannot inject trace context: SQS batch has %d entries (maximum %d)", len(params.Entries), maxBatchEntries)
+		canInject = false
+	}
 	if canInject {
-		params = isolateSharedAttributes(params)
-		in.Parameters = params
 		var batchSize int64
 		for i := range params.Entries {
 			batchSize += sendMessageBatchEntrySize(&params.Entries[i])
@@ -109,6 +110,7 @@ func (e *Enricher) handleSendMessageBatch(ctx context.Context, span *tracer.Span
 		})
 	}
 
+	original := params
 	for i := range params.Entries {
 		traceContext, err := getTraceContext(ctx, span, queueName(params.QueueUrl), sendMessageBatchEntrySize(&params.Entries[i]))
 		if err != nil {
@@ -118,32 +120,16 @@ func (e *Enricher) handleSendMessageBatch(ctx context.Context, span *tracer.Span
 		if !canInject {
 			continue
 		}
-		if params.Entries[i].MessageAttributes == nil {
-			params.Entries[i].MessageAttributes = make(map[string]types.MessageAttributeValue)
-		}
-		budget.inject(traceContext, params.Entries[i].MessageAttributes)
-	}
-}
-
-func isolateSharedAttributes(params *sqs.SendMessageBatchInput) *sqs.SendMessageBatchInput {
-	seen := make([]uintptr, 0, maxBatchEntries)
-	for i := range params.Entries {
-		attrs := params.Entries[i].MessageAttributes
-		if attrs == nil || len(attrs) >= maxMessageAttributes {
-			continue
-		}
-		id := reflect.ValueOf(attrs).Pointer()
-		if slices.Contains(seen, id) {
-			batch := *params
-			batch.Entries = slices.Clone(params.Entries)
-			for i := range batch.Entries {
-				batch.Entries[i].MessageAttributes = maps.Clone(batch.Entries[i].MessageAttributes)
+		if attrs := budget.inject(traceContext, params.Entries[i].MessageAttributes); attrs != nil {
+			if params == original {
+				batch := *params
+				batch.Entries = slices.Clone(params.Entries)
+				params = &batch
+				in.Parameters = params
 			}
-			return &batch
+			params.Entries[i].MessageAttributes = attrs
 		}
-		seen = append(seen, id)
 	}
-	return params
 }
 
 func getTraceContext(ctx context.Context, span *tracer.Span, queue string, payloadSize int64) (types.MessageAttributeValue, error) {
@@ -188,19 +174,20 @@ type traceBudget struct {
 
 func newTraceBudget(originalSize int64, textExpansion func() int64) traceBudget {
 	return traceBudget{
-		remaining:     maxMessageBytes - originalSize,
+		remaining: maxMessageBytes - originalSize,
+		// The SDK replaces each invalid byte with the three-byte U+FFFD, adding at most two bytes per original byte.
 		maxExpansion:  int64(len("\uFFFD")-1) * originalSize,
 		textExpansion: textExpansion,
 	}
 }
 
-func (budget *traceBudget) inject(traceContext types.MessageAttributeValue, messageAttributes map[string]types.MessageAttributeValue) {
+func (budget *traceBudget) inject(traceContext types.MessageAttributeValue, messageAttributes map[string]types.MessageAttributeValue) map[string]types.MessageAttributeValue {
 	// SQS only allows a maximum of 10 message attributes.
 	// https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-message-metadata.html#sqs-message-attributes
 	// Only inject if there's room.
 	if len(messageAttributes) >= maxMessageAttributes {
 		instr.Logger().Info("Cannot inject trace context: message already has maximum allowed attributes")
-		return
+		return nil
 	}
 
 	added := attributeSize(datadogKey, traceContext)
@@ -215,10 +202,14 @@ func (budget *traceBudget) inject(traceContext types.MessageAttributeValue, mess
 	if replacing && budget.textExpansion == nil {
 		added -= attributeTextExpansion(old)
 	}
-	if added <= budget.remaining {
-		budget.remaining -= added
-		messageAttributes[datadogKey] = traceContext
+	if added > budget.remaining {
+		return nil
 	}
+	budget.remaining -= added
+	attrs := make(map[string]types.MessageAttributeValue, len(messageAttributes)+1)
+	maps.Copy(attrs, messageAttributes)
+	attrs[datadogKey] = traceContext
+	return attrs
 }
 
 func messageTextExpansion(body *string, attrs map[string]types.MessageAttributeValue) int64 {
