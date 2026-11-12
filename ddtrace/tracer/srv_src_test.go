@@ -155,3 +155,23 @@ func TestServiceSource(t *testing.T) {
 		assert.Equal(t, serviceSourceManual, kss)
 	})
 }
+
+// TestServiceSourceDeterministicWithServiceOverride checks that a span started
+// with both ext.ServiceName and a ServiceOverride always gets the same service.
+func TestServiceSourceDeterministicWithServiceOverride(t *testing.T) {
+	t.Skip("reproduces #5807; remove when fixed")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	seen := map[string]int{}
+	for range 200 {
+		span := tracer.StartSpan("test.op",
+			Tag(ext.ServiceName, "user-service"),
+			Tag(ext.KeyServiceSource, sharedinternal.ServiceOverride{Name: "integration-service", Source: "opt.integration"}),
+		)
+		seen[span.service+"|"+span.serviceSource]++
+		span.Finish()
+	}
+	assert.Len(t, seen, 1, "span service must be deterministic, got %v", seen)
+}
