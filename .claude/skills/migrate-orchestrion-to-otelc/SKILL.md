@@ -88,6 +88,20 @@ The harness suites never build a `package main`, and only exercise call sites in
   `example.com/<lib>dep`) that calls the library, `require` and `replace` it in
   `_integration/go.mod`, and add a `TestCaseDependency` that calls it (`chi/dependency.go`). It has
   to be a separate module, not a package of `_integration`, to count as a dependency.
+- **The rules module bringing its contrib into an application**, when a rule adds an import of the
+  contrib (`imports:`) or the hook package uses it. The suites can't check this, because
+  `_integration/go.mod` requires every contrib. Call the library from
+  `internal/apps/otelc-external-app/libraries.go`, a separate module that never imports the
+  contribs, and make the library a direct require there (`GOWORK=off go mod tidy` in that
+  directory). The External Application Build job then fails if the rules module stops pulling in
+  its contrib. Use one call a rule matches that needs no network: a constructor for a call rule
+  (`gin.New()`, `options.Client()`), or one in-process use of the hooked type for a hook rule (an
+  `httptest` request, `fasthttp.ServeConn` on a closed `net.Pipe`). Never import the contrib in the
+  app, or the build passes either way. Skip it when:
+  - the rules reach no contrib package;
+  - building the library needs cgo or a system library, or it can't be linked into the same binary
+    as a library the app already uses;
+  - even constructing the library needs a server or the network.
 
 `otelc-autostart` builds its app with `maintest`, which runs the first `otelc` on `PATH`, even
 under `orchestrion go test`, and skips when there is none. Put the CLI at `OTELC_VERSION` first
