@@ -505,9 +505,26 @@ to run the integration test locally:
 // delivery reports for messages produced with a nil delivery channel are in
 // flight does not panic with "send on closed channel".
 func TestProduceNilDeliveryChannelClose(t *testing.T) {
+	testProduceEventsDeliveryClose(t, false, false)
+}
+
+// TestProduceEventsDeliveryChannelClose is like
+// TestProduceNilDeliveryChannelClose, but passes p.Events() explicitly as the
+// delivery channel, with and without data streams (which wraps Events()).
+func TestProduceEventsDeliveryChannelClose(t *testing.T) {
+	t.Run("explicit", func(t *testing.T) { testProduceEventsDeliveryClose(t, true, false) })
+	t.Run("explicit-dsm", func(t *testing.T) { testProduceEventsDeliveryClose(t, true, true) })
+	t.Run("nil-dsm", func(t *testing.T) { testProduceEventsDeliveryClose(t, false, true) })
+}
+
+func testProduceEventsDeliveryClose(t *testing.T, explicit, dsm bool) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
+	var opts []Option
+	if dsm {
+		opts = append(opts, WithDataStreams())
+	}
 	// A one-slot Events() channel that is no longer read makes a delivery
 	// forwarder block on its send, so Producer.Close closes the channel
 	// under it.
@@ -515,14 +532,18 @@ func TestProduceNilDeliveryChannelClose(t *testing.T) {
 		"bootstrap.servers":      "127.0.0.1:1",
 		"message.timeout.ms":     1,
 		"go.events.channel.size": 1,
-	})
+	}, opts...)
 	require.NoError(t, err)
+	var deliveryChan chan kafka.Event
+	if explicit {
+		deliveryChan = p.Events()
+	}
 	topic := "gotest"
 	for range 5 {
 		require.NoError(t, p.Produce(&kafka.Message{
 			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
 			Value:          []byte("x"),
-		}, nil))
+		}, deliveryChan))
 	}
 	// Read Events() until the first delivery report, then stop reading.
 	gotReport := make(chan struct{})
