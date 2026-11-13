@@ -19,6 +19,10 @@ func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
 
+func TestAliasedImport(t *testing.T) {
+	harness.Run(t, new(TestCaseAliasedImport))
+}
+
 func TestAsyncProducer(t *testing.T) {
 	harness.Run(t, new(TestCaseAsyncProducer))
 }
@@ -37,6 +41,10 @@ func TestConsumerFromClient(t *testing.T) {
 
 func TestDependency(t *testing.T) {
 	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestPackageVar(t *testing.T) {
+	harness.Run(t, new(TestCasePackageVar))
 }
 
 func TestSyncProducer(t *testing.T) {
