@@ -55,6 +55,8 @@ env:
     contrib/go-chi/chi.v5/otelc
     contrib/gofiber/fiber.v2
     contrib/gofiber/fiber.v2/otelc
+    contrib/gocql/gocql
+    contrib/gocql/gocql/otelc
     contrib/julienschmidt/httprouter
     contrib/julienschmidt/httprouter/otelc
     contrib/gomodule/redigo
@@ -97,6 +99,7 @@ env:
     echo.v5
     aws.v1
     valyala_fasthttp
+    gocql
 
 jobs:
   # Classifies the PR diff against .github/ci-components.yml. Fails open: every

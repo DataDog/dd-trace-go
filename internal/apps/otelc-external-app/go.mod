@@ -7,6 +7,7 @@ go 1.26.0
 require (
 	github.com/DataDog/dd-trace-go/otelc/all/v2 v2.0.0
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
+	github.com/gocql/gocql v1.7.0
 )
 
 require (
@@ -221,12 +222,16 @@ replace github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 => ../../../contrib/gofiber/fiber.v2
 
 require (
+	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 v2.13.0-dev.1 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
+	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.1.2 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
+	gopkg.in/inf.v0 v0.9.1 // indirect
 )
 
 replace github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 => ../../../contrib/valyala/fasthttp/otelc
@@ -240,6 +245,10 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 => ../../../c
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../../../contrib/labstack/echo.v5/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 => ../../../contrib/labstack/echo.v5
+
+replace github.com/DataDog/dd-trace-go/contrib/gocql/gocql/otelc/v2 => ../../../contrib/gocql/gocql/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 => ../../../contrib/gocql/gocql
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../../contrib/aws/aws-sdk-go/otelc
 

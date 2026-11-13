@@ -61,7 +61,10 @@ type Session struct {
 
 // CreateSession calls the underlying gocql.ClusterConfig's CreateSession method and returns a new Session augmented with tracing.
 func (c *ClusterConfig) CreateSession() (*Session, error) {
-	s, err := c.ClusterConfig.CreateSession()
+	// gocql.ClusterConfig.CreateSession only calls gocql.NewSession. Calling
+	// NewSession directly skips the otelc hook on CreateSession, which would
+	// add observers and trace each query a second time.
+	s, err := gocql.NewSession(*c.ClusterConfig)
 	if err != nil {
 		return nil, err
 	}
