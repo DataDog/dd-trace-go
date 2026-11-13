@@ -218,10 +218,8 @@ create_tracer:
 # reached. A //dd:span in a package the tracer imports would make an import
 # cycle.
 #
-# The imports keep the plain aliases. In package main, create_tracer already
-# adds `tracer`, and otelc rejects another alias for that path there. A
-# package-level `tracer` or `context` identifier in a file that does not import
-# them breaks the build.
+# A package-level `tracer` or `context` identifier in a file that does not
+# import them breaks the build.
 dd_span:
   target: "**"
   where:
