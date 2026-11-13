@@ -245,7 +245,7 @@ func createTestConfig() *universalFlagsConfiguration {
 
 // defaultHookCount is the number of hooks a provider registers with default
 // settings: exposure + OTel flag eval metrics + EVP flagevaluation (enabled by
-// default via DD_FLAGGING_EVALUATION_COUNTS_ENABLED=true) + debug logging.
+// default via DD_FEATURE_FLAGS_EVALUATION_COUNTS_ENABLED=true) + debug logging.
 // Span enrichment is opt-in and not counted. Update it when adding a
 // default-on hook.
 const defaultHookCount = 4
