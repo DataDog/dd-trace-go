@@ -62,18 +62,27 @@ func StartApp(client Client) {
 	}
 
 	client.AppStart()
-	// Increment the WaitGroup before SwapClient makes the client visible so
-	// StopApp cannot observe a zero counter and return before the flush goroutine runs.
+	// Increment the WaitGroups before SwapClient makes the client visible so
+	// neither StopApp nor Close can observe a zero counter and return before the
+	// flush goroutine runs.
 	startAppFlushWg.Add(1)
-	if SwapClient(client) != nil {
-		// A concurrent StartApp call already set the client; undo the Add.
+	flushDone := trackStartAppFlush(client)
+	// Install only if no client is set yet. Using SwapClient here would let a
+	// concurrent StartApp with the same client close it while this call's
+	// registration is still pending, which deadlocks in Close.
+	if !casGlobalClient(client) {
+		// A concurrent StartApp call already set the client; undo the Adds.
+		flushDone()
 		startAppFlushWg.Done()
 		log.Debug("telemetry: StartApp called multiple times, ignoring")
 		return
 	}
 
+	installClient(client)
+
 	go func() {
 		defer startAppFlushWg.Done()
+		defer flushDone()
 		client.Flush()
 	}()
 }
@@ -98,14 +107,31 @@ func SwapClient(client Client) Client {
 		return oldClient
 	}
 
+	installClient(client)
+	return oldClient
+}
+
+// casGlobalClient sets client as the global client only if none is set.
+func casGlobalClient(client Client) bool {
+	for {
+		old := globalClient.Load()
+		if old != nil && *old != nil {
+			return false
+		}
+		if globalClient.CompareAndSwap(old, &client) {
+			return true
+		}
+	}
+}
+
+// installClient replays recorded actions and swaps metric handles to client.
+func installClient(client Client) {
 	globalClientRecorder.Replay(client)
 	// Swap all metrics hot pointers to the new MetricHandle
 	metricsHandleSwappablePointers.Range(func(_ metricKey, value *swappableMetricHandle) bool {
 		value.swap(value.maker(client))
 		return true
 	})
-
-	return oldClient
 }
 
 // MockClient swaps the global client with the given client and clears the recorder to make sure external calls are not replayed.
@@ -128,6 +154,14 @@ func StopApp() {
 		(*client).Flush()
 		(*client).Close()
 	}
+}
+
+// WaitForStartAppFlush waits until every app-started flush goroutine launched
+// by StartApp returns. An in-flight flush can park its keep-alive connection in
+// the idle pool after a caller has closed idle connections, so callers such as
+// tracer.Stop must wait first to prevent that connection from leaking.
+func WaitForStartAppFlush() {
+	startAppFlushWg.Wait()
 }
 
 var (
