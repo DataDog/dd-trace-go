@@ -17,10 +17,18 @@ func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
 
+func TestAliasedImport(t *testing.T) {
+	harness.Run(t, new(TestCaseAliasedImport))
+}
+
 func TestAppSec(t *testing.T) {
 	harness.Run(t, new(TestCaseAppSec))
 }
 
 func TestDependency(t *testing.T) {
 	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestPackageVar(t *testing.T) {
+	harness.Run(t, new(TestCasePackageVar))
 }
