@@ -17,6 +17,10 @@ func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
 
+func TestAliasedImport(t *testing.T) {
+	harness.Run(t, new(TestCaseAliasedImport))
+}
+
 func TestContribRouter(t *testing.T) {
 	harness.Run(t, new(TestCaseContribRouter))
 }
