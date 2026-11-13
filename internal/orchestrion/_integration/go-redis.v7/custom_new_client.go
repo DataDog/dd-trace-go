@@ -1,0 +1,76 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026-present Datadog, Inc.
+
+//go:build linux || !githubci
+
+package goredis
+
+import (
+	"context"
+	"testing"
+
+	"github.com/go-redis/redis/v7"
+	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
+)
+
+// TestCaseCustomNewClient checks that a Ring whose RingOptions.NewClient calls
+// redis.NewClient reports one redis.command span per command, although the
+// rules wrap both the Ring and the shard client. Before it routes a key, the
+// v7 Ring sends COMMAND through the shard client without the command's
+// context, so that real command gets its own span under the Ring's.
+type TestCaseCustomNewClient struct {
+	addr string
+}
+
+func (tc *TestCaseCustomNewClient) Setup(_ context.Context, t *testing.T) {
+	if !otelc.Enabled() {
+		t.Skip("orchestrion only wraps redis.NewClient and redis.NewFailoverClient")
+	}
+	tc.addr = closedAddr(t)
+}
+
+func (tc *TestCaseCustomNewClient) Run(ctx context.Context, t *testing.T) {
+	span, ctx := tracer.StartSpanFromContext(ctx, "test.root")
+	defer span.Finish()
+
+	ring := redis.NewRing(&redis.RingOptions{
+		Addrs: map[string]string{"shard": tc.addr},
+		NewClient: func(_ string, opt *redis.Options) *redis.Client {
+			return redis.NewClient(opt)
+		},
+	})
+	require.Error(t, ring.DoContext(ctx, "get", "custom-new-client").Err())
+	require.NoError(t, ring.Close())
+}
+
+// ExpectedSpanCount is test.root, the Ring's redis.command span, and the
+// shard's COMMAND span under it.
+func (*TestCaseCustomNewClient) ExpectedSpanCount() int {
+	return 3
+}
+
+func (*TestCaseCustomNewClient) ExpectedTraces() trace.Traces {
+	ringSpan := commandSpan("redis.client", "custom-new-client", false)
+	ringSpan.Children = trace.Traces{
+		{
+			Tags: map[string]any{
+				"name":     "redis.command",
+				"resource": "command:",
+			},
+		},
+	}
+	return trace.Traces{
+		{
+			Tags: map[string]any{
+				"name": "test.root",
+			},
+			Children: trace.Traces{ringSpan},
+		},
+	}
+}

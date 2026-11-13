@@ -14,12 +14,16 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2 v2.13.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/otelc/v2 v2.13.0-dev
+	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/otelc/v2 v2.13.0-dev
+	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/otelc/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/otelc/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 v2.13.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
 )
 
@@ -28,6 +32,9 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.13.0-dev.1 // indirect
@@ -36,6 +43,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.13.0-dev.1 // indirect
 	github.com/aws/aws-sdk-go v1.55.5 // indirect
 	github.com/bytedance/sonic v1.12.6 // indirect
@@ -43,12 +51,16 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudwego/base64x v0.1.4 // indirect
 	github.com/cloudwego/iasm v0.2.0 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
 	github.com/gin-contrib/sse v1.0.0 // indirect
 	github.com/gin-gonic/gin v1.10.1 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.23.0 // indirect
+	github.com/go-redis/redis v6.15.9+incompatible // indirect
+	github.com/go-redis/redis/v7 v7.4.1 // indirect
+	github.com/go-redis/redis/v8 v8.11.5 // indirect
 	github.com/goccy/go-json v0.10.4 // indirect
 	github.com/gofiber/fiber/v2 v2.52.13 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
@@ -63,6 +75,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.21 // indirect
 	github.com/molecule-man/go-brrr v1.1.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
+	github.com/redis/go-redis/v9 v9.7.3 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
@@ -188,6 +201,22 @@ replace github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../../contrib/99designs/gqlgen/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ../../contrib/99designs/gqlgen
+
+replace github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/otelc/v2 => ../../contrib/redis/go-redis.v9/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 => ../../contrib/redis/go-redis.v9
+
+replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis/otelc/v2 => ../../contrib/go-redis/redis/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 => ../../contrib/go-redis/redis
+
+replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/otelc/v2 => ../../contrib/go-redis/redis.v7/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2 => ../../contrib/go-redis/redis.v7
+
+replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/otelc/v2 => ../../contrib/go-redis/redis.v8/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2 => ../../contrib/go-redis/redis.v8
 
 replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/otelc/v2 => ../../contrib/go.mongodb.org/mongo-driver/otelc
 

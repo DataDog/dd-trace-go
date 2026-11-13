@@ -118,11 +118,11 @@ copy of the contrib that has drifted from it (`contrib/gorilla/mux/otelc/`):
   writer and request on with `SetParam` and keeps `afterHandle` with `SetData`, and the after hook
   calls `afterHandle`. The after trampoline is deferred, so it also runs when a handler panics, and
   it does not stop the panic.
-- The contrib's `ServeHTTP` calls the hooked method, so the hook would trace the request again. An
-  `inject_code` rule on the contrib's own `ServeHTTP` marks the request with the object, and the
-  hook lets a marked call through. A rule keeps the cost out of plain builds. Put the mark at the
-  top of the function, before any ignore check, so ignored requests are not traced by the hook
-  either. This also gives one span, not two, for an object the application wrapped with the
+- The contrib's `ServeHTTP` calls the hooked method, so the hook would trace the request again. The
+  contrib's own `ServeHTTP` marks the request with the object when `instrumentation.OtelcEnabled()`
+  is true, and the hook lets a marked call through. The check keeps the cost out of plain builds.
+  Put the mark at the top of the function, before any ignore check, so ignored requests are not
+  traced by the hook either. This also gives one span, not two, for an object the application wrapped with the
   contrib itself.
 - Keep the contrib's per-router config in a side table, as described above.
 

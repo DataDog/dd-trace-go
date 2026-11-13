@@ -14,8 +14,12 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/gin-gonic/gin"
+	redisv6 "github.com/go-redis/redis"
+	redisv7 "github.com/go-redis/redis/v7"
+	redisv8 "github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
 	"github.com/julienschmidt/httprouter"
+	redisv9 "github.com/redis/go-redis/v9"
 	"github.com/valyala/fasthttp"
 	mongooptions "go.mongodb.org/mongo-driver/mongo/options"
 	mongov2options "go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -39,4 +43,8 @@ func useLibraries() {
 	}))
 	_ = mongooptions.Client()
 	_ = mongov2options.Client()
+	_ = redisv6.NewClient(&redisv6.Options{}).Close()
+	_ = redisv7.NewClient(&redisv7.Options{}).Close()
+	_ = redisv8.NewClient(&redisv8.Options{}).Close()
+	_ = redisv9.NewClient(&redisv9.Options{}).Close()
 }
