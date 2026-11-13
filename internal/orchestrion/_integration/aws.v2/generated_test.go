@@ -15,6 +15,14 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/harness"
 )
 
+func TestAliasedImport(t *testing.T) {
+	harness.Run(t, new(TestCaseAliasedImport))
+}
+
+func TestAliasedNewConfig(t *testing.T) {
+	harness.Run(t, new(TestCaseAliasedNewConfig))
+}
+
 func TestDependency(t *testing.T) {
 	harness.Run(t, new(TestCaseDependency))
 }
@@ -37,6 +45,14 @@ func TestLoadDefaultConfigWithTracer(t *testing.T) {
 
 func TestNewConfig(t *testing.T) {
 	harness.Run(t, new(TestCaseNewConfig))
+}
+
+func TestPackageVar(t *testing.T) {
+	harness.Run(t, new(TestCasePackageVar))
+}
+
+func TestPackageVarNewConfig(t *testing.T) {
+	harness.Run(t, new(TestCasePackageVarNewConfig))
 }
 
 func TestStructLiteral(t *testing.T) {
