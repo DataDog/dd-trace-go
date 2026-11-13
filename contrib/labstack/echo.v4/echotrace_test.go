@@ -1067,6 +1067,12 @@ func TestDatadogSemantics(t *testing.T) {
 	}
 }
 
+func TestWithCustomTagServiceName(t *testing.T) {
+	span := traceEchoRequest(t, http.MethodGet, "/users/123", http.StatusOK,
+		WithService("middleware-service"), WithCustomTag(ext.ServiceName, "custom-service"))
+	assert.Equal(t, "custom-service", span.Tag(ext.ServiceName))
+}
+
 func TestOTelSemantics(t *testing.T) {
 	setEchoHTTPConfig(t, "true")
 	t.Setenv("DD_TRACE_CLIENT_IP_ENABLED", "true")

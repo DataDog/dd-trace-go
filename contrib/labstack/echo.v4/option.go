@@ -167,8 +167,9 @@ func WithErrorCheck(errCheck func(error) bool) OptionFn {
 	}
 }
 
-// WithCustomTag will attach the value to the span tagged by the key. Standard
-// span tags cannot be replaced.
+// WithCustomTag adds a tag to each request span. A string value for "service.name"
+// overrides the middleware's service name. The middleware sets tags such as
+// "component", "span.kind", and "resource.name" after applying custom tags.
 func WithCustomTag(key string, value interface{}) OptionFn {
 	return func(cfg *config) {
 		if cfg.tags == nil {
