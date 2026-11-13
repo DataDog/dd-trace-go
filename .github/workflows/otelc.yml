@@ -97,6 +97,11 @@ env:
     echo.v5
     aws.v1
     valyala_fasthttp
+    dd-span
+  # Suites that also run with the buildtag tag, as the orchestrion lane does in
+  # DRIVER mode.
+  OTELC_BUILDTAG_TEST_PACKAGES: >-
+    dd-span
 
 jobs:
   # Classifies the PR diff against .github/ci-components.yml. Fails open: every
@@ -259,12 +264,30 @@ jobs:
           fi
           echo "Running otelc tests for: ${PACKAGE_NAMES}"
 
+          # A buildtag suite only runs when its suite runs.
+          BUILDTAG_PACKAGE_NAMES=""
+          for pkg in ${OTELC_BUILDTAG_TEST_PACKAGES}; do
+            if [[ " ${PACKAGE_NAMES} " == *" ${PREFIX}/${pkg} "* ]]; then
+              BUILDTAG_PACKAGE_NAMES+=" ${PREFIX}/${pkg}"
+            fi
+          done
+
           # One invocation for all the suites builds their shared dependency
           # closure once. An invocation per suite re-ran otelc's build plan
           # and rebuilt that closure every time, which made the lane take hours.
+          rc=0
           # shellcheck disable=SC2086
           gotestsum --junitfile "${XML_PATH}" --raw-command -- \
-            otelc go test -json -shuffle=on ${PACKAGE_NAMES}
+            otelc go test -json -shuffle=on ${PACKAGE_NAMES} || rc=$?
+          if [[ -n "${BUILDTAG_PACKAGE_NAMES}" ]]; then
+            echo "Running otelc tests with the buildtag tag for: ${BUILDTAG_PACKAGE_NAMES}"
+            # The command line -tags replaces the one in GOFLAGS, so githubci
+            # is repeated here.
+            # shellcheck disable=SC2086
+            gotestsum --junitfile "${XML_PATH%.xml}-buildtag.xml" --raw-command -- \
+              otelc go test -json -shuffle=on -tags=githubci,buildtag ${BUILDTAG_PACKAGE_NAMES} || rc=$?
+          fi
+          exit "${rc}"
         working-directory: internal/orchestrion/_integration
         env:
           # otelc-autostart shells out to a nested `otelc go build`, which
