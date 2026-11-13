@@ -77,8 +77,10 @@ func newSpanConfig(cfg *dialConfig, network, host, port string) *tracer.StartSpa
 		tracer.Tag(ext.SpanKind, ext.SpanKindClient),
 		tracer.Tag(ext.DBSystem, ext.DBSystemRedis),
 		tracer.Tag("out.network", network),
-		tracer.Tag(ext.TargetPort, port),
 		tracer.Tag(ext.TargetHost, host),
+	}
+	if port != "" {
+		opts = append(opts, tracer.Tag(ext.TargetPort, port))
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
@@ -138,9 +140,12 @@ func DialContext(ctx context.Context, network, address string, options ...interf
 	if err != nil {
 		return nil, err
 	}
-	host, port, err := net.SplitHostPort(address)
-	if err != nil {
-		return nil, err
+	// A unix socket path is the whole host, even when it contains a colon.
+	host, port := address, ""
+	if network != "unix" && network != "unixpacket" {
+		if h, p, err := net.SplitHostPort(address); err == nil {
+			host, port = h, p
+		}
 	}
 	p := &params{config: cfg, network: network, host: host, port: port}
 	p.spanCfg = newSpanConfig(cfg, network, host, port)
