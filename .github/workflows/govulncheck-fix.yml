@@ -5,6 +5,9 @@ on:
     - cron: '00 06 * * 1'  # Mondays at 6 AM UTC
   workflow_dispatch:
 
+env:
+  GOPROXY: "https://proxy.golang.org|direct" # fall back to `direct` on any proxy error (5xx, timeout, dropped stream) -- not just 404/410, which is all a comma-separated GOPROXY falls through on
+
 permissions:
   contents: write
 

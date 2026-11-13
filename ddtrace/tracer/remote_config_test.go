@@ -8,7 +8,6 @@ package tracer
 import (
 	"context"
 	"fmt"
-	"maps"
 	"reflect"
 	"testing"
 
@@ -960,29 +959,11 @@ func TestOnRemoteConfigUpdate(t *testing.T) {
 }
 
 func TestDynamicInstrumentationRC(t *testing.T) {
-	getDiRCState := func() map[string]dynamicInstrumentationRCProbeConfig {
-		diRCState.mu.Lock()
-		defer diRCState.mu.Unlock()
-		return maps.Clone(diRCState.state)
-	}
-	getDiSymDBEnabled := func() bool {
-		diRCState.mu.Lock()
-		defer diRCState.mu.Unlock()
-		return diRCState.symdbExport
-	}
-	resetDiRCState := func() {
-		diRCState.mu.Lock()
-		defer diRCState.mu.Unlock()
-		diRCState.state = map[string]dynamicInstrumentationRCProbeConfig{}
-		diRCState.symdbExport = false
-	}
-
 	startTracer := func(t *testing.T) *tracer {
 		telemetryClient := new(telemetrytest.RecordClient)
 		t.Cleanup(telemetry.MockClient(telemetryClient))
 		tracer, _, _, stop, err := startTestTracer(t, WithService("my-service"), WithEnv("my-env"))
 		require.Nil(t, err)
-		t.Cleanup(resetDiRCState)
 		t.Cleanup(stop)
 		return tracer
 	}
@@ -1015,51 +996,23 @@ func TestDynamicInstrumentationRC(t *testing.T) {
 		checkRemoteConfigProductState(t, state.ProductLiveDebuggingSymbolDB, false)
 	})
 
-	t.Run("Deleted config removes from map", func(t *testing.T) {
+	t.Run("Probe config apply status", func(t *testing.T) {
 		t.Setenv("DD_DYNAMIC_INSTRUMENTATION_ENABLED", "true")
 		tracer := startTracer(t)
 		startRemoteConfig(t, tracer)
 
-		require.Empty(t, getDiRCState())
 		status := tracer.dynamicInstrumentationRCUpdate(remoteconfig.ProductUpdate{
 			"key": []byte(`"value"`),
 		})
 		require.Equal(t, map[string]state.ApplyStatus{
 			"key": {State: state.ApplyStateUnknown},
 		}, status)
-		require.Equal(t, map[string]dynamicInstrumentationRCProbeConfig{
-			"key": {
-				configPath:    "key",
-				configContent: `"value"`,
-			},
-		}, getDiRCState())
 		status = tracer.dynamicInstrumentationRCUpdate(remoteconfig.ProductUpdate{
 			"key": nil,
 		})
 		require.Equal(t, map[string]state.ApplyStatus{
 			"key": {State: state.ApplyStateAcknowledged},
 		}, status)
-		require.Empty(t, getDiRCState())
-	})
-
-	t.Run("symdb updates", func(t *testing.T) {
-		t.Setenv("DD_DYNAMIC_INSTRUMENTATION_ENABLED", "true")
-		tracer := startTracer(t)
-		startRemoteConfig(t, tracer)
-		status := tracer.dynamicInstrumentationSymDBRCUpdate(remoteconfig.ProductUpdate{
-			"key": []byte(`"value"`),
-		})
-		require.Equal(t, map[string]state.ApplyStatus{
-			"key": {State: state.ApplyStateUnknown},
-		}, status)
-		require.Equal(t, true, getDiSymDBEnabled())
-		status = tracer.dynamicInstrumentationSymDBRCUpdate(remoteconfig.ProductUpdate{
-			"key": nil,
-		})
-		require.Equal(t, map[string]state.ApplyStatus{
-			"key": {State: state.ApplyStateAcknowledged},
-		}, status)
-		require.Equal(t, false, getDiSymDBEnabled())
 	})
 }
 

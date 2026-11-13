@@ -1,0 +1,38 @@
+{
+  "version": "2.2",
+  "metadata": { "rules_version": "1.0" },
+  "rules": [
+    {
+      "id": "gin-blocked-request-body",
+      "name": "Block a gin request body",
+      "tags": { "type": "test_attack", "category": "attack_attempt" },
+      "conditions": [
+        {
+          "operator": "phrase_match",
+          "parameters": {
+            "inputs": [{ "address": "server.request.body" }],
+            "list": ["gin-block-request"]
+          }
+        }
+      ],
+      "transformers": [],
+      "on_match": ["block"]
+    },
+    {
+      "id": "gin-blocked-response-body",
+      "name": "Block a gin response body",
+      "tags": { "type": "test_attack", "category": "attack_attempt" },
+      "conditions": [
+        {
+          "operator": "phrase_match",
+          "parameters": {
+            "inputs": [{ "address": "server.response.body" }],
+            "list": ["gin-block-response"]
+          }
+        }
+      ],
+      "transformers": [],
+      "on_match": ["block"]
+    }
+  ]
+}

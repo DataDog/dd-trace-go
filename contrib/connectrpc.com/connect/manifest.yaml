@@ -1,0 +1,14 @@
+_v: 1
+name: connectrpc.com/connect
+display_name: Connect
+description: Instruments Connect RPC clients and handlers through interceptors, tracing unary and streaming calls and individual
+  stream messages across Connect, gRPC, and gRPC-Web protocols with trace-context propagation.
+packages:
+- name: connectrpc.com/connect
+category:
+- rpc.client
+- rpc.server
+systems:
+- connectrpc
+- grpc
+creation_date: '2026-10-16'

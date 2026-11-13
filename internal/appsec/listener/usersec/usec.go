@@ -19,7 +19,7 @@ import (
 type Feature struct{}
 
 func (*Feature) String() string {
-	return "User Security"
+	return listener.FeatureUser
 }
 
 func (*Feature) Stop() {}

@@ -25,25 +25,29 @@ import (
 )
 
 type TestCase struct {
+	uri    string
 	client *mongo.Client
 }
 
-func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
+// PreBootstrap starts the container before the tracer, so the Docker API
+// calls it makes are not counted.
+func (tc *TestCase) PreBootstrap(_ context.Context, t *testing.T) {
 	containers.SkipIfProviderIsNotHealthy(t)
+	_, tc.uri = containers.StartMongoDBTestContainer(t)
+}
+
+func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
+	opts := options.Client()
+	opts.ApplyURI(tc.uri)
+	client, err := mongo.Connect(ctx, opts)
+	require.NoError(t, err)
+	tc.client = client
 	t.Cleanup(func() {
 		// Using a new 10s-timeout context, as we may be running cleanup after the original context expired.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		assert.NoError(t, tc.client.Disconnect(ctx))
 	})
-
-	_, mongoURI := containers.StartMongoDBTestContainer(t)
-
-	opts := options.Client()
-	opts.ApplyURI(mongoURI)
-	client, err := mongo.Connect(ctx, opts)
-	require.NoError(t, err)
-	tc.client = client
 }
 
 func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
@@ -57,6 +61,11 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	require.NoError(t, err)
 	r := c.FindOne(ctx, bson.M{"test_key": "test_value"})
 	require.NoError(t, r.Err())
+}
+
+// ExpectedSpanCount is test.root, the insert and the find.
+func (*TestCase) ExpectedSpanCount() int {
+	return 3
 }
 
 func (*TestCase) ExpectedTraces() trace.Traces {

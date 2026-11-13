@@ -11,37 +11,150 @@ import (
 	"unicode/utf8"
 )
 
-// sensitiveByFirstLetter groups sensitive keywords by their ASCII first-letter
-// offset ('a'->0, …, 'z'->25). Letters that can't anchor a sensitive keyword
-// (i.e. anything other than a/c/p/s/t) leave their cell nil. Within each bucket
-// the order is significant: longer keywords precede their prefixes (e.g.
-// "api_key_id" before "api_key", "pass_phrase"/"passphrase" before "pass") so
-// the suffix-matching pass picks the longest viable keyword before a shorter
-// prefix accidentally short-circuits the search.
-var sensitiveByFirstLetter = [26][]string{
-	'a' - 'a': {
-		"api_key_id", "api_keyid", "api_key", "apikey_id", "apikeyid", "apikey",
-		"access_key_id", "access_keyid", "access_key", "accesskey_id", "accesskeyid", "accesskey",
-		"authentication", "authorization", "auth",
-	},
-	'c' - 'a': {
-		"consumer_id", "consumer_key", "consumer_secret", "consumerid", "consumerkey", "consumersecret",
-	},
-	'p' - 'a': {
-		"password", "passwd", "pword", "pwd",
-		"pass_phrase", "passphrase", "pass",
-		"private_key_id", "private_keyid", "private_key", "privatekey_id", "privatekeyid", "privatekey",
-		"public_key_id", "public_keyid", "public_key", "publickey_id", "publickeyid", "publickey",
-	},
-	's' - 'a': {
-		"secret",
-		"secret_key_id", "secret_keyid", "secret_key", "secretkey_id", "secretkeyid", "secretkey",
-		"signed", "signature", "sign",
-	},
-	't' - 'a': {
-		"token",
-	},
+// sensitiveKeywords is the expanded list of the sensitive keys of alt 1 of
+// defaultQueryStringRegexp:
+//
+//	(?:old[-_]?|new[-_]?)?p(?:ass)?w(?:or)?d(?:1|2)?
+//	|pass(?:[-_]?phrase)?
+//	|secret
+//	|(?:api[-_]?|private[-_]?|public[-_]?|access[-_]?|secret[-_]?|app(?:lication)?[-_]?)key(?:[-_]?id)?
+//	|token
+//	|consumer[-_]?(?:id|key|secret)
+//	|sign(?:ed|ature)?
+//	|auth(?:entication|orization)?
+//
+// The order of the list has no effect on the result. A keyword only contains
+// letters, digits, '-' and '_'. The key suffix of alt 1 starts with a space,
+// '%', '=' or '"'. Thus, at a given position, when two keywords match, the end
+// of the shorter keyword is followed by a keyword character, and only the
+// longer keyword can be followed by a suffix. At most one keyword can match
+// with a suffix.
+var sensitiveKeywords = func() []string {
+	seps := []string{"", "-", "_"}
+	pwBases := []string{"old", "new"}
+	pws := []string{"password", "passwd", "pword", "pwd"}
+	pwDigits := []string{"", "1", "2"}
+	keyPrefixes := []string{"api", "private", "public", "access", "secret", "app", "application"}
+	keyIDs := []string{"", "id", "-id", "_id"}
+	consumerKeys := []string{"id", "key", "secret"}
+
+	// (?:old[-_]?|new[-_]?)?p(?:ass)?w(?:or)?d(?:1|2)?
+	pwPrefixes := make([]string, 1, 1+len(pwBases)*len(seps))
+	kws := make([]string, 0,
+		cap(pwPrefixes)*len(pws)*len(pwDigits)+ // password variants
+			4+ // pass, passphrase, pass-phrase, pass_phrase
+			1+ // secret
+			len(keyPrefixes)*len(seps)*len(keyIDs)+ // key variants
+			1+ // token
+			len(seps)*len(consumerKeys)+ // consumer variants
+			3+ // sign, signed, signature
+			3, // auth, authentication, authorization
+	)
+	for _, p := range pwBases {
+		for _, sep := range seps {
+			pwPrefixes = append(pwPrefixes, p+sep)
+		}
+	}
+	for _, p := range pwPrefixes {
+		for _, pw := range pws {
+			for _, d := range pwDigits {
+				kws = append(kws, p+pw+d)
+			}
+		}
+	}
+	// pass(?:[-_]?phrase)?
+	kws = append(kws, "pass", "passphrase", "pass-phrase", "pass_phrase")
+	// secret
+	kws = append(kws, "secret")
+	// (?:api|private|public|access|secret|app|application)[-_]?key(?:[-_]?id)?
+	for _, p := range keyPrefixes {
+		for _, sep := range seps {
+			for _, id := range keyIDs {
+				kws = append(kws, p+sep+"key"+id)
+			}
+		}
+	}
+	// token
+	kws = append(kws, "token")
+	// consumer[-_]?(?:id|key|secret)
+	for _, sep := range seps {
+		for _, k := range consumerKeys {
+			kws = append(kws, "consumer"+sep+k)
+		}
+	}
+	// sign(?:ed|ature)?
+	kws = append(kws, "sign", "signed", "signature")
+	// auth(?:entication|orization)?
+	kws = append(kws, "auth", "authentication", "authorization")
+	return kws
+}()
+
+// keywordTrie is a trie of sensitiveKeywords. Node 0 is the root.
+type keywordTrie []keywordTrieNode
+
+type keywordTrieNode struct {
+	// edges are the children of the node. A node has few children, thus a
+	// linear search is fast.
+	edges []keywordTrieEdge
+	// terminal reports whether the path from the root to the node is a keyword.
+	terminal bool
 }
+
+type keywordTrieEdge struct {
+	c    byte // lowercase ASCII keyword character
+	node int32
+}
+
+func newKeywordTrie(keywords []string) keywordTrie {
+	t := keywordTrie{{}}
+	for _, kw := range keywords {
+		n := int32(0)
+		for i := 0; i < len(kw); i++ {
+			next := t.child(n, kw[i])
+			if next < 0 {
+				next = int32(len(t))
+				t = append(t, keywordTrieNode{})
+				t[n].edges = append(t[n].edges, keywordTrieEdge{c: kw[i], node: next})
+			}
+			n = next
+		}
+		t[n].terminal = true
+	}
+	return t
+}
+
+// child returns the child of node n for the lowercase ASCII character c, or -1.
+func (t keywordTrie) child(n int32, c byte) int32 {
+	for _, e := range t[n].edges {
+		if e.c == c {
+			return e.node
+		}
+	}
+	return -1
+}
+
+var sensitiveKeywordTrie = newKeywordTrie(sensitiveKeywords)
+
+// sensitiveKeywordRoot maps each lowercase ASCII letter to its child of the
+// trie root, or -1. It avoids the linear search at the root, which has the
+// most children.
+var sensitiveKeywordRoot = func() [26]int32 {
+	var t [26]int32
+	for i := range t {
+		t[i] = sensitiveKeywordTrie.child(0, byte('a'+i))
+	}
+	return t
+}()
+
+// sensitiveKeywordStart reports, for each lowercase ASCII letter, whether a
+// sensitive keyword starts with it.
+var sensitiveKeywordStart = func() [26]bool {
+	var t [26]bool
+	for _, kw := range sensitiveKeywords {
+		t[kw[0]-'a'] = true
+	}
+	return t
+}()
 
 // Per-byte ASCII class bitmasks for the obfuscator's character classifiers.
 // Each bit covers ALL characters that belong to that class (not just the extras).
@@ -50,52 +163,36 @@ var sensitiveByFirstLetter = [26][]string{
 const (
 	classAlpha    uint8 = 1 << 0 // [a-zA-Z]              — PEM label chars (alt 6); base for derived classes
 	classDigit    uint8 = 1 << 1 // [0-9]                 — base for derived classes
-	classWord     uint8 = 1 << 2 // [a-zA-Z0-9_]          — \w as used in JWT segment/signature (alt 5)
-	classBearer   uint8 = 1 << 3 // [a-zA-Z0-9._-]        — bearer token body (alt 2)
-	classSSHBody  uint8 = 1 << 4 // [a-zA-Z0-9/+.]        — SSH RSA key body (alt 7)
-	classJWTSeg   uint8 = 1 << 5 // [a-zA-Z0-9_=-] ≡ [\w=-]       — JWT header/payload segment char (alt 5)
-	classJWTSig   uint8 = 1 << 6 // [a-zA-Z0-9_.+/=-] ≡ [\w.+\/=-] — JWT signature char (alt 5)
-	classAlphaNum uint8 = 1 << 7 // [a-zA-Z0-9]           — short-token and GitHub token body (alts 3, 4)
+	classWord     uint8 = 1 << 2 // [a-zA-Z0-9_]          — \w; the JWT delimiter (alt 5) is not in [\w%-]
+	classBearer   uint8 = 1 << 3 // [a-zA-Z0-9._-]        — bearer token body (alt 2), SSH key comment (alt 7)
+	classSSHBody  uint8 = 1 << 4 // [a-zA-Z0-9/+.]        — SSH key body (alt 7)
+	classJWTSeg   uint8 = 1 << 5 // [a-zA-Z0-9_-] ≡ [\w-]          — JWT header/payload segment char (alt 5)
+	classJWTSig   uint8 = 1 << 6 // [a-zA-Z0-9_.+/=-] ≡ [\w.+/=-] — JWT signature char (alt 5)
+	classAlphaNum uint8 = 1 << 7 // [a-zA-Z0-9]           — short token, GitHub token, ECDSA curve name (alts 3, 4, 7)
 )
 
-// Regex-quantifier mirror constants. Each matches a fixed-length run in the
-// original defaultQueryStringRegexp; keep these in sync if the regex changes.
+// Regex-quantifier mirror constants. Each matches a fixed-length run in
+// defaultQueryStringRegexp; keep these in sync if the regex changes.
 const (
 	shortTokenBodyLen = 13  // token(?::|%3A)[a-z0-9]{13}
 	gitHubTokenLen    = 36  // gh[opsu]_[0-9a-zA-Z]{36}
-	pemHyphenRun      = 5   // [\-]{5}
-	sshRSAMinBody     = 100 // (?:[a-z0-9\/\.+]|%2F|%5C|%2B){100,}
+	pemHyphenRun      = 5   // -{5}
+	sshKeyMinBody     = 100 // (?:[a-z0-9/.+]|%2F|%5C|%2B){100,}
 )
-
-// sensitiveBySecondByte sub-dispatches the first-byte sensitive bucket on the
-// second byte. Both indices are ASCII lowercase letter offsets ('a'->0). Cells
-// inherit the source list's order so prefix disambiguation ("pass_phrase"
-// before "pass") is preserved. Sensitive keywords whose first byte is not
-// a/c/p/s/t leave their row empty.
-var sensitiveBySecondByte = func() [26][26][]string {
-	var t [26][26][]string
-	for f, kws := range sensitiveByFirstLetter {
-		for _, kw := range kws {
-			s := kw[1] - 'a'
-			t[f][s] = append(t[f][s], kw)
-		}
-	}
-	return t
-}()
 
 // matcherStart is a 128-entry LUT indexed by ASCII byte value. Each bit marks
 // a top-level matcher whose first character matches that byte (case-folded).
 // The outer loop ANDs s[pos] against the LUT to skip matchers that cannot
-// anchor here, instead of unconditionally invoking all seven. Non-ASCII bytes
+// start here, instead of unconditionally invoking all seven. Non-ASCII bytes
 // take the slow path (all matchers attempted via Unicode fold).
 const (
-	matcherSensitive  uint8 = 1 << 0 // sensitive keys: a/c/p/s/t
+	matcherSensitive  uint8 = 1 << 0 // optional quote ('"', '%22') or sensitive key: a/c/n/o/p/s/t
 	matcherBearer     uint8 = 1 << 1 // bearer token: b
 	matcherShortToken uint8 = 1 << 2 // token: t
 	matcherGithub     uint8 = 1 << 3 // gh[opsu]_: g
-	matcherJWT        uint8 = 1 << 4 // ey[I-L]…: e
+	matcherJWT        uint8 = 1 << 4 // JWT delimiter: any ASCII byte not in [\w-] (also '%')
 	matcherPEM        uint8 = 1 << 5 // -----BEGIN…: -
-	matcherSSHRSA     uint8 = 1 << 6 // ssh-rsa…: s
+	matcherSSHKey     uint8 = 1 << 6 // ssh-…/ecdsa-…: s/e
 )
 
 var matcherStart = func() [128]uint8 {
@@ -106,21 +203,31 @@ var matcherStart = func() [128]uint8 {
 			t[c-32] |= mask
 		}
 	}
-	for _, c := range []byte{'a', 'c', 'p', 's', 't'} {
-		setFolded(c, matcherSensitive)
+	for f, ok := range sensitiveKeywordStart {
+		if ok {
+			setFolded(byte('a'+f), matcherSensitive)
+		}
 	}
+	t['"'] |= matcherSensitive
+	t['%'] |= matcherSensitive
 	setFolded('b', matcherBearer)
 	setFolded('t', matcherShortToken)
 	setFolded('g', matcherGithub)
-	setFolded('e', matcherJWT)
+	for c := range t {
+		if c == '-' || isASCIIWord(byte(c)) {
+			continue
+		}
+		t[c] |= matcherJWT
+	}
 	t['-'] |= matcherPEM
-	setFolded('s', matcherSSHRSA)
+	setFolded('s', matcherSSHKey)
+	setFolded('e', matcherSSHKey)
 	return t
 }()
 
 // asciiClass is a 128-entry lookup table indexed by ASCII byte value.
-// It collapses the per-byte range checks in the six character classifiers
-// into a single load + bitmask test.
+// It collapses the per-byte range checks in the character classifiers into a
+// single load + bitmask test.
 var asciiClass = func() [128]uint8 {
 	var t [128]uint8
 	// Alpha: [a-zA-Z] — member of all classes that include alpha.
@@ -140,39 +247,45 @@ var asciiClass = func() [128]uint8 {
 	t['-'] |= classBearer | classJWTSeg | classJWTSig
 	t['/'] |= classSSHBody | classJWTSig
 	t['+'] |= classSSHBody | classJWTSig
-	t['='] |= classJWTSeg | classJWTSig
+	t['='] |= classJWTSig
 	return t
 }()
 
-func emitObfuscated(b *strings.Builder, s string, last, pos, n int) int {
+// emitObfuscated writes s[last:pos+keep] and "<redacted>" to b, and returns
+// the end of the match. The match is s[pos:pos+n]. Its first keep bytes are
+// copied to the output (the JWT delimiter, see matchJWT); the other bytes are
+// replaced.
+func emitObfuscated(b *strings.Builder, s string, last, pos, n, keep int) int {
 	if b.Len() == 0 {
 		b.Grow(len(s))
 	}
-	b.WriteString(s[last:pos])
+	b.WriteString(s[last : pos+keep])
 	b.WriteString("<redacted>")
 	return pos + n
 }
 
 // obfuscateQueryStringDefault obfuscates s using the default query string
-// obfuscation logic, equivalent to
-// defaultQueryStringRegexp.ReplaceAllLiteralString(s, "<redacted>").
+// obfuscation logic. It is equivalent to
+// defaultQueryStringRegexp.ReplaceAllString(s, defaultQueryStringReplacement):
+// each match is replaced by "<redacted>", but the JWT delimiter (capture
+// group 1) is kept.
 //
-// This is a hand-written state machine. Each of the seven matcher branches
-// implements one top-level alternative of defaultQueryStringRegexp, in the same
-// order. The labels "alt 1 … alt 7" are used consistently across this file.
+// This is a hand-written state machine. It runs in linear time in the length
+// of s. Each of the seven matcher branches implements one top-level
+// alternative of defaultQueryStringRegexp, in the same order. The labels
+// "alt 1 … alt 7" are used consistently across this file.
 //
 // Alt 1 — sensitive key + value (matcherSensitive → matchSensitiveKey):
 //
-//	(?i)(?:p(?:ass)?w(?:or)?d|pass(?:_?phrase)?|secret|
-//	    (?:api_?|private_?|public_?|access_?|secret_?)key(?:_?id)?|token|
-//	    consumer_?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?)
+//	(?i)(?:(?:"|%22)?)
+//	(?:<keywords, see sensitiveKeywords>)
 //	(?:(?:\s|%20)*(?:=|%3D)[^&]+                                      ← key=value
 //	  |(?:"|%22)(?:\s|%20)*(?::|%3A)(?:\s|%20)*(?:"|%22)              ← JSON "key":"value"
 //	   (?:%2[^2]|%[^2]|[^"%])+(?:"|%22))
 //
 // Alt 2 — bearer token (matcherBearer → matchBearerToken):
 //
-//	bearer(?:\s|%20)+[a-z0-9\._\-]
+//	bearer(?:\s|%20)+[a-z0-9._\-]+
 //
 // Alt 3 — short token (matcherShortToken → matchShortToken):
 //
@@ -184,31 +297,54 @@ func emitObfuscated(b *strings.Builder, s string, last, pos, n int) int {
 //
 // Alt 5 — JWT (matcherJWT → matchJWT):
 //
-//	ey[I-L](?:[\w=-]|%3D)+\.ey[I-L](?:[\w=-]|%3D)+
-//	(?:\.(?:[\w.+\/=-]|%3D|%2F|%2B)+)?
+//	(^|[^\w%-]|%[0-9a-f]{2})
+//	ey[I-L][\w-]+(?:=|%3D)*\.ey[I-L][\w-]+(?:=|%3D)*
+//	(?:\.(?:[\w.+/=-]|%3D|%2F|%2B)+)?
 //
 // Alt 6 — PEM private key (matcherPEM → matchPEMPrivateKey):
 //
-//	[\-]{5}BEGIN(?:[a-z\s]|%20)+PRIVATE(?:\s|%20)KEY[\-]{5}[^\-]+
-//	[\-]{5}END(?:[a-z\s]|%20)+PRIVATE(?:\s|%20)KEY
+//	-{5}BEGIN(?:[a-z\s]|%20)+PRIVATE(?:\s|%20)KEY-{5}[^\-]+
+//	-{5}END(?:[a-z\s]|%20)+PRIVATE(?:\s|%20)KEY(?:-{5})?(?:\n|%0A)?
 //
-// Alt 7 — SSH RSA key (matcherSSHRSA → matchSSHRSAKey):
+// Alt 7 — SSH public key (matcherSSHKey → matchSSHKey):
 //
-//	ssh-rsa(?:\s|%20)*(?:[a-z0-9\/\.+]|%2F|%5C|%2B){100,}
+//	(?:ssh-(?:rsa|dss)|ecdsa-[a-z0-9]+-[a-z0-9]+)(?:\s|%20|%09)+
+//	(?:[a-z0-9/.+]|%2F|%5C|%2B){100,}(?:=|%3D)*(?:(?:\s|%20|%09)+[a-z0-9._-]+)?
 //
 // Note: "token" appears in both alt 1 (token=value) and alt 3 (token:…), so
 // matcherStart['t'] sets both matcherSensitive and matcherShortToken bits.
+//
+// Like the regexp package, the outer loop only tries to start a match at the
+// start of a UTF-8 sequence (an invalid byte is one sequence of length 1).
 func obfuscateQueryStringDefault(s string) string {
+	return obfuscateQueryStringStateMachine(s, true)
+}
+
+// obfuscateQueryStringDefaultLiteral is the same as
+// obfuscateQueryStringDefault, but it also replaces the JWT delimiter. It is
+// equivalent to defaultQueryStringRegexp.ReplaceAllLiteralString(s, "<redacted>"),
+// which is the result when [EnvQueryStringRegexp] is set to a copy of the
+// default regexp: the matches of a configured regexp are replaced in full.
+func obfuscateQueryStringDefaultLiteral(s string) string {
+	return obfuscateQueryStringStateMachine(s, false)
+}
+
+// obfuscateQueryStringStateMachine implements obfuscateQueryStringDefault
+// (keepDelimiter is true) and obfuscateQueryStringDefaultLiteral (keepDelimiter
+// is false).
+func obfuscateQueryStringStateMachine(s string, keepDelimiter bool) string {
 	var b strings.Builder
-	last := 0
-	// jwtSkipEnd is a watermark: matcherJWT is suppressed for positions in
-	// [jwtSkipEnd_prev, jwtSkipEnd).  When matchJWT consumes a header+segment
-	// but finds no '.' separator, it returns the end of that segment as segEnd.
-	// Any 'e' within the consumed range will fail identically (same segment
-	// chars, same absent '.'), so re-trying is pure quadratic waste.
-	jwtSkipEnd := 0
-	for pos := 0; pos < len(s); {
+	last, pos := 0, 0
+	// The '^' JWT delimiter can only match at the start of s. No other
+	// alternative can start with 'e', thus alt 5 is the first alternative that
+	// can match there.
+	if end, ok := matchJWTBody(s, 0); ok {
+		last = emitObfuscated(&b, s, last, 0, end, 0)
+		pos = last
+	}
+	for pos < len(s) {
 		c := s[pos]
+		width := 1
 		var mask uint8
 		if c < utf8.RuneSelf {
 			mask = matcherStart[c]
@@ -216,68 +352,74 @@ func obfuscateQueryStringDefault(s string) string {
 				pos++
 				continue
 			}
+			// Fast path for the JWT delimiters: a JWT header starts with
+			// 'e', and no non-ASCII rune folds to 'e', thus the byte after a
+			// 1-byte delimiter must be 'e' or 'E'.
+			if mask == matcherJWT && (pos+1 >= len(s) || s[pos+1]|0x20 != 'e') {
+				pos++
+				continue
+			}
 		} else {
 			// Non-ASCII: any matcher may match via Unicode fold; try all.
+			_, width = utf8.DecodeRuneInString(s[pos:])
 			mask = 0xff
 		}
 		if mask&matcherSensitive != 0 {
 			if n, ok := matchSensitiveKey(s, pos); ok {
-				last = emitObfuscated(&b, s, last, pos, n)
+				last = emitObfuscated(&b, s, last, pos, n, 0)
 				pos = last
 				continue
 			}
 		}
 		if mask&matcherBearer != 0 {
 			if n, ok := matchBearerToken(s, pos); ok {
-				last = emitObfuscated(&b, s, last, pos, n)
+				last = emitObfuscated(&b, s, last, pos, n, 0)
 				pos = last
 				continue
 			}
 		}
 		if mask&matcherShortToken != 0 {
 			if n, ok := matchShortToken(s, pos); ok {
-				last = emitObfuscated(&b, s, last, pos, n)
+				last = emitObfuscated(&b, s, last, pos, n, 0)
 				pos = last
 				continue
 			}
 		}
 		if mask&matcherGithub != 0 {
 			if n, ok := matchGitHubToken(s, pos); ok {
-				last = emitObfuscated(&b, s, last, pos, n)
+				last = emitObfuscated(&b, s, last, pos, n, 0)
 				pos = last
 				continue
 			}
 		}
-		if mask&matcherJWT != 0 && pos >= jwtSkipEnd {
-			if n, ok, segEnd := matchJWT(s, pos); ok {
-				last = emitObfuscated(&b, s, last, pos, n)
+		// Fast pre-check for matchJWT: the byte after the delimiter must be
+		// 'e' or 'E' (see above). matchJWT validates the delimiter.
+		if next := pos + width; mask&matcherJWT != 0 &&
+			((c == '%' && pos+3 < len(s) && s[pos+3]|0x20 == 'e') || (next < len(s) && s[next]|0x20 == 'e')) {
+			if n, keep, ok := matchJWT(s, pos); ok {
+				if !keepDelimiter {
+					keep = 0
+				}
+				last = emitObfuscated(&b, s, last, pos, n, keep)
 				pos = last
-				jwtSkipEnd = 0
 				continue
-			} else if segEnd > jwtSkipEnd {
-				jwtSkipEnd = segEnd
 			}
 		}
 		if mask&matcherPEM != 0 {
 			if n, ok := matchPEMPrivateKey(s, pos); ok {
-				last = emitObfuscated(&b, s, last, pos, n)
+				last = emitObfuscated(&b, s, last, pos, n, 0)
 				pos = last
 				continue
 			}
 		}
-		if mask&matcherSSHRSA != 0 {
-			n, ok, skip := matchSSHRSAKey(s, pos)
-			if ok {
-				last = emitObfuscated(&b, s, last, pos, n)
+		if mask&matcherSSHKey != 0 && sshKeyMayStartAt(s, pos) {
+			if n, ok := matchSSHKey(s, pos); ok {
+				last = emitObfuscated(&b, s, last, pos, n, 0)
 				pos = last
 				continue
 			}
-			if skip > 0 {
-				pos += skip
-				continue
-			}
 		}
-		pos++
+		pos += width
 	}
 	if b.Len() == 0 {
 		return s
@@ -286,71 +428,70 @@ func obfuscateQueryStringDefault(s string) string {
 	return b.String()
 }
 
-// matchSensitiveKey implements alt 1 of defaultQueryStringRegexp: a sensitive
-// keyword drawn from sensitiveByFirstLetter followed by either a key=value
+// matchSensitiveKey implements alt 1 of defaultQueryStringRegexp: an optional
+// quote, a sensitive keyword from sensitiveKeywords, and either a key=value
 // suffix (matchSensitiveKeyValue) or a JSON "key":"value" suffix
-// (matchSensitiveKeyJSON). The keyword list is the expanded form of:
+// (matchSensitiveKeyJSON).
 //
-//	(?i)(?:p(?:ass)?w(?:or)?d|pass(?:_?phrase)?|secret|
-//	    (?:api_?|private_?|public_?|access_?|secret_?)key(?:_?id)?|token|
-//	    consumer_?(?:id|key|secret)|sign(?:ed|ature)?|auth(?:entication|orization)?)
+// The optional quote is greedy. When a quote is at pos, the keyword must
+// follow it: no keyword starts with '"' or '%', thus the regex cannot match
+// at pos without the quote.
+//
+// The keyword is found with sensitiveKeywordTrie. At each keyword end, the
+// suffix is tried; see sensitiveKeywords for why the first success is the
+// regex result.
 func matchSensitiveKey(s string, pos int) (int, bool) {
-	if pos >= len(s) {
-		return 0, false
-	}
-	c := s[pos]
-	if c >= utf8.RuneSelf {
-		// Non-ASCII: can fold to any keyword-initial letter; scan all buckets.
-		// Cold path for RFC-3986 query strings.
-		for _, bucket := range sensitiveByFirstLetter {
-			for _, keyword := range bucket {
-				end, ok := matchFoldLiteral(s, pos, keyword)
-				if !ok {
-					continue
-				}
-				if suffixEnd, ok := matchSensitiveKeySuffix(s, end); ok {
-					return suffixEnd - pos, true
-				}
+	start := pos
+	if pos < len(s) {
+		switch s[pos] {
+		case '"':
+			pos++
+		case '%':
+			next, ok := matchFoldLiteral(s, pos, "%22")
+			if !ok {
+				return 0, false
 			}
+			pos = next
 		}
-		return 0, false
 	}
-	lc := toLowerASCII(c)
-	if lc < 'a' || lc > 'z' {
-		return 0, false
-	}
-	// Second-byte sub-dispatch when the second byte is also an ASCII letter:
-	// only iterate keywords whose 2nd char folds to the input's 2nd char.
-	// All sensitive keywords have an ASCII letter at position 1, so a
-	// non-letter ASCII second byte can never match.
-	var keywords []string
-	if pos+1 < len(s) {
-		c2 := s[pos+1]
-		if c2 < utf8.RuneSelf {
-			lc2 := toLowerASCII(c2)
-			if 'a' <= lc2 && lc2 <= 'z' {
-				keywords = sensitiveBySecondByte[lc-'a'][lc2-'a']
-			}
+	node := int32(0)
+	for pos < len(s) {
+		c := s[pos]
+		width := 1
+		if c < utf8.RuneSelf {
+			c = toLowerASCII(c)
 		} else {
-			// Non-ASCII second byte may fold to any letter; fall back
-			// to the full first-letter bucket and let matchFoldLiteral
-			// do the folding.
-			keywords = sensitiveByFirstLetter[lc-'a']
+			// Non-ASCII: the rune matches a keyword letter if it folds to
+			// it. Cold path for RFC-3986 query strings.
+			var r rune
+			r, width = utf8.DecodeRuneInString(s[pos:])
+			c = foldToLowerASCIILetter(r)
+			if c == 0 {
+				return 0, false
+			}
 		}
-	}
-	for _, keyword := range keywords {
-		end, ok := matchFoldLiteral(s, pos, keyword)
-		if !ok {
-			continue
+		if node == 0 {
+			if c < 'a' || c > 'z' {
+				return 0, false
+			}
+			node = sensitiveKeywordRoot[c-'a']
+		} else {
+			node = sensitiveKeywordTrie.child(node, c)
 		}
-		if suffixEnd, ok := matchSensitiveKeySuffix(s, end); ok {
-			return suffixEnd - pos, true
+		if node < 0 {
+			return 0, false
+		}
+		pos += width
+		if sensitiveKeywordTrie[node].terminal {
+			if suffixEnd, ok := matchSensitiveKeySuffix(s, pos); ok {
+				return suffixEnd - start, true
+			}
 		}
 	}
 	return 0, false
 }
 
-// matchBearerToken implements alt 2: bearer(?:\s|%20)+[a-z0-9\._\-]
+// matchBearerToken implements alt 2: bearer(?:\s|%20)+[a-z0-9._\-]+
 func matchBearerToken(s string, pos int) (int, bool) {
 	start := pos
 	var ok bool
@@ -359,13 +500,20 @@ func matchBearerToken(s string, pos int) (int, bool) {
 	}
 	spaceStart := pos
 	pos = skipSpaces(s, pos)
-	tokenEnd, ok := consumeBearerTokenChar(s, pos)
-	if pos == spaceStart || !ok {
+	if pos == spaceStart {
 		return 0, false
 	}
-	// Quirk: the regexp has [a-z0-9._-] without a quantifier, so only one
-	// token character after the spaces is redacted.
-	return tokenEnd - start, true
+	if pos, ok = consumeBearerTokenChar(s, pos); !ok {
+		return 0, false
+	}
+	for {
+		next, ok := consumeBearerTokenChar(s, pos)
+		if !ok {
+			break
+		}
+		pos = next
+	}
+	return pos - start, true
 }
 
 // matchShortToken implements alt 3: token(?::|%3A)[a-z0-9]{13}
@@ -411,57 +559,133 @@ func matchGitHubToken(s string, pos int) (int, bool) {
 }
 
 // matchJWT implements alt 5:
-// ey[I-L](?:[\w=-]|%3D)+\.ey[I-L](?:[\w=-]|%3D)+(?:\.(?:[\w.+\/=-]|%3D|%2F|%2B)+)?
-// Header and payload segments each begin with "ey" followed by one of [I-L]
-// (the base64 encoding of the JSON byte '{'); the optional third segment is the
-// signature.
 //
-// matchJWT returns (matchedLen, ok, segEnd).
-// segEnd is non-zero only on failure: it reports the end of the first
-// header+segment scan whenever that segment was fully consumed, regardless of
-// whether the failure occurred before or after the first dot.  The outer loop
-// uses segEnd to suppress redundant JWT re-anchors — any 'e' inside
-// [pos, segEnd) would produce the same failing scan (same segment chars, same
-// missing or broken second header).
-func matchJWT(s string, pos int) (n int, ok bool, segEnd int) {
+//	(^|[^\w%-]|%[0-9a-f]{2})
+//	ey[I-L][\w-]+(?:=|%3D)*\.ey[I-L][\w-]+(?:=|%3D)*
+//	(?:\.(?:[\w.+/=-]|%3D|%2F|%2B)+)?
+//
+// The match starts on a delimiter: the start of s (see
+// obfuscateQueryStringStateMachine), one character that is not in [\w%-], or
+// a percent-escape. The delimiter is capture group 1 of
+// defaultQueryStringRegexp; it is kept in the output. matchJWT returns the
+// length n of the match and the length keep of the delimiter.
+//
+// Header and payload segments each begin with "ey" followed by one of [I-L]
+// (the base64 encoding of the JSON byte '{'); the optional third segment is
+// the signature.
+//
+// A JWT can only start after a delimiter, and [\w-] has no delimiter. Thus a
+// failed attempt cannot be followed by an attempt that starts inside the same
+// run of segment characters, and the total work stays linear.
+func matchJWT(s string, pos int) (n, keep int, ok bool) {
+	// The '^' delimiter is handled by the caller, before the main loop.
 	start := pos
 	var matched bool
-	if pos, matched = consumeJWTHeader(s, pos); !matched {
-		return 0, false, 0
+	if pos, matched = consumeJWTDelimiter(s, pos); !matched {
+		return 0, 0, false
 	}
-	afterSeg, matched := consumeJWTSegment(s, pos)
+	keep = pos - start
+	end, matched := matchJWTBody(s, pos)
 	if !matched {
-		return 0, false, 0
+		return 0, 0, false
 	}
-	if afterSeg >= len(s) || s[afterSeg] != '.' {
-		// Consumed header+segment but no dot: report segment end so the caller
-		// can skip re-anchoring within this already-scanned range.
-		return 0, false, afterSeg
+	return end - start, keep, true
+}
+
+// matchJWTBody implements alt 5 after the delimiter:
+// ey[I-L][\w-]+(?:=|%3D)*\.ey[I-L][\w-]+(?:=|%3D)*(?:\.(?:[\w.+/=-]|%3D|%2F|%2B)+)?
+//
+// [\w-], '=', "%3D" and '.' match different characters, thus there is no
+// backtracking: each greedy run has only one possible length.
+func matchJWTBody(s string, pos int) (int, bool) {
+	var ok bool
+	if pos, ok = consumeJWTSegment(s, pos); !ok {
+		return 0, false
 	}
-	pos = afterSeg + 1 // skip '.'
-	if pos, matched = consumeJWTHeader(s, pos); !matched {
-		// First segment was fully scanned; suppress re-anchors within it.
-		return 0, false, afterSeg
+	if pos >= len(s) || s[pos] != '.' {
+		return 0, false
 	}
-	if pos, matched = consumeJWTSegment(s, pos); !matched {
-		// First segment was fully scanned; suppress re-anchors within it.
-		return 0, false, afterSeg
+	if pos, ok = consumeJWTSegment(s, pos+1); !ok {
+		return 0, false
 	}
 	if pos < len(s) && s[pos] == '.' {
-		if end, matched := consumeJWTSignature(s, pos+1); matched {
+		if end, ok := consumeJWTSignature(s, pos+1); ok {
 			pos = end
 		}
 	}
-	return pos - start, true, 0
+	return pos, true
+}
+
+// consumeJWTDelimiter implements [^\w%-]|%[0-9a-f]{2} — the JWT delimiter (alt 5).
+// With (?i), [\w] also has the non-ASCII runes that fold to an ASCII letter
+// (U+212A KELVIN SIGN, U+017F LATIN SMALL LETTER LONG S); thus they are not
+// delimiters. An invalid UTF-8 byte decodes to U+FFFD, which is a delimiter.
+func consumeJWTDelimiter(s string, pos int) (int, bool) {
+	if pos >= len(s) {
+		return 0, false
+	}
+	c := s[pos]
+	if c >= utf8.RuneSelf {
+		if _, ok := foldsToLowerASCIILetter(s, pos); ok {
+			return 0, false
+		}
+		_, width := utf8.DecodeRuneInString(s[pos:])
+		return pos + width, true
+	}
+	if c == '%' {
+		if len(s)-pos < 3 || !isHexDigit(s[pos+1]) || !isHexDigit(s[pos+2]) {
+			return 0, false
+		}
+		return pos + 3, true
+	}
+	if c == '-' || isASCIIWord(c) {
+		return 0, false
+	}
+	return pos + 1, true
+}
+
+// consumeJWTSegment implements ey[I-L][\w-]+(?:=|%3D)* — a JWT header or payload segment (alt 5).
+func consumeJWTSegment(s string, pos int) (int, bool) {
+	var ok bool
+	if pos, ok = matchFoldLiteral(s, pos, "ey"); !ok {
+		return 0, false
+	}
+	// [I-L] case-folds to [i-l]; the set {"i","j","k","l"} covers the base64
+	// encodings of the four possible first bytes of a JSON object: 0x7B = '{'.
+	if pos, ok = consumeFoldedASCIISet(s, pos, "ijkl"); !ok {
+		return 0, false
+	}
+	if pos, ok = consumeJWTSegmentChar(s, pos); !ok {
+		return 0, false
+	}
+	for {
+		next, ok := consumeJWTSegmentChar(s, pos)
+		if !ok {
+			break
+		}
+		pos = next
+	}
+	for {
+		if pos < len(s) && s[pos] == '=' {
+			pos++
+			continue
+		}
+		next, ok := matchFoldLiteral(s, pos, "%3D")
+		if !ok {
+			break
+		}
+		pos = next
+	}
+	return pos, true
 }
 
 // matchPEMPrivateKey implements alt 6:
-// [\-]{5}BEGIN(?:[a-z\s]|%20)+PRIVATE(?:\s|%20)KEY[\-]{5}[^\-]+
-// [\-]{5}END(?:[a-z\s]|%20)+PRIVATE(?:\s|%20)KEY
+// -{5}BEGIN(?:[a-z\s]|%20)+PRIVATE(?:\s|%20)KEY-{5}[^\-]+
+// -{5}END(?:[a-z\s]|%20)+PRIVATE(?:\s|%20)KEY(?:-{5})?(?:\n|%0A)?
 // The "PRIVATE KEY" substring may appear anywhere inside the PEM label (e.g.
 // "ENCRYPTED PRIVATE KEY"), so the scanner advances through label chars and
 // records the last position where "PRIVATE KEY" matches — implementing the
-// greedy semantics of the original regexp.
+// greedy semantics of the regexp.
 func matchPEMPrivateKey(s string, pos int) (int, bool) {
 	start := pos
 	var ok bool
@@ -496,7 +720,7 @@ func matchPEMPrivateKey(s string, pos int) (int, bool) {
 	return 0, false
 }
 
-// matchPEMBodyAndEnd implements [\-]{5}[^\-]+[\-]{5}END — PEM body and footer opener (alt 6).
+// matchPEMBodyAndEnd implements -{5}[^\-]+-{5}END… — PEM body and footer (alt 6).
 func matchPEMBodyAndEnd(s string, pos int) (int, bool) {
 	var ok bool
 	if pos, ok = matchHyphens(s, pos, pemHyphenRun); !ok {
@@ -511,10 +735,25 @@ func matchPEMBodyAndEnd(s string, pos int) (int, bool) {
 	if pos, ok = matchFoldLiteral(s, pos, "END"); !ok {
 		return 0, false
 	}
-	return matchPEMFinalPrivateKey(s, pos)
+	if pos, ok = matchPEMFinalPrivateKey(s, pos); !ok {
+		return 0, false
+	}
+	// (?:-{5})?(?:\n|%0A)? — both are optional and greedy.
+	if next, ok := matchHyphens(s, pos, pemHyphenRun); ok {
+		pos = next
+	}
+	if pos < len(s) && s[pos] == '\n' {
+		pos++
+	} else if next, ok := matchFoldLiteral(s, pos, "%0A"); ok {
+		pos = next
+	}
+	return pos, true
 }
 
 // matchPEMFinalPrivateKey implements (?:[a-z\s]|%20)+PRIVATE(?:\s|%20)KEY in the PEM footer (alt 6).
+// The greedy label selects the last "PRIVATE KEY" in the label run. The
+// literal starts with 'P', and 'P' only occurs at its start, thus the last hit
+// also has the largest end.
 func matchPEMFinalPrivateKey(s string, pos int) (int, bool) {
 	labelPos, ok := consumePEMLabelChar(s, pos)
 	if !ok {
@@ -549,49 +788,124 @@ func matchPEMPrivateKeyLiteral(s string, pos int) (int, bool) {
 	return matchFoldLiteral(s, pos, "KEY")
 }
 
-// matchSSHRSAKey implements alt 7: ssh-rsa(?:\s|%20)*(?:[a-z0-9\/\.+]|%2F|%5C|%2B){100,}
+// matchSSHKey implements alt 7:
 //
-// matchSSHRSAKey returns (matchedLen, ok, safeSkip).
-// On failure (ok=false), safeSkip is the number of bytes from pos that the
-// outer loop can safely skip without missing any other match. This avoids
-// re-scanning the entire key body when the key is too short.
+//	(?:ssh-(?:rsa|dss)|ecdsa-[a-z0-9]+-[a-z0-9]+)(?:\s|%20|%09)+
+//	(?:[a-z0-9/.+]|%2F|%5C|%2B){100,}(?:=|%3D)*(?:(?:\s|%20|%09)+[a-z0-9._-]+)?
 //
-// Safe-skip correctness table (matchers vs. SSH-RSA body charset [a-zA-Z0-9/+.]):
-//
-//	sensitive key (p/a/s/c/t)  — letters present, but suffix needs '='/'%3D'/'"'/':', none in body → safe
-//	bearer                     — needs space after "bearer"; space not in body → safe
-//	short-token                — needs ':' after "token"; ':' not in body → safe
-//	github                     — needs '_' after gh[opsu]; '_' not in body → safe
-//	JWT (eyJ…)                 — '.' in body charset; 'e'/'E' can start JWT → NOT safe; stop skip at e/E
-//	PEM (-----)                — '-' not in body → safe
-//	SSH-RSA itself             — '-' not in body → cannot re-anchor → safe
-func matchSSHRSAKey(s string, pos int) (matchedLen int, ok bool, safeSkip int) {
+// Each greedy run matches characters that the next element cannot match, thus
+// there is no backtracking. The key type always has a '-', and the separator
+// and the body have no '-'. Thus a failed attempt cannot be followed by an
+// attempt that starts inside its separator or body, and the total work stays
+// linear.
+func matchSSHKey(s string, pos int) (int, bool) {
 	start := pos
-	var matched bool
-	if pos, matched = matchFoldLiteral(s, pos, "ssh-rsa"); !matched {
-		return 0, false, 0
+	var ok bool
+	if pos, ok = matchSSHKeyType(s, pos); !ok {
+		return 0, false
 	}
-	pos = skipSpaces(s, pos)
-	safeEnd := pos
+	if pos, ok = skipSSHSpaces(s, pos); !ok {
+		return 0, false
+	}
 	count := 0
 	for {
-		next, ok := consumeSSHRSAKeyChar(s, pos)
+		next, ok := consumeSSHKeyChar(s, pos)
 		if !ok {
 			break
-		}
-		// Stop safeEnd at 'e'/'E' (could anchor a JWT match) and at multi-byte
-		// percent runs (kept conservative). s[pos]|32 ASCII-lowercases the
-		// LUT-validated body char.
-		if next == pos+1 && s[pos]|32 != 'e' {
-			safeEnd = next
 		}
 		pos = next
 		count++
 	}
-	if count < sshRSAMinBody {
-		return 0, false, safeEnd - start
+	if count < sshKeyMinBody {
+		return 0, false
 	}
-	return pos - start, true, 0
+	// (?:=|%3D)* — base64 padding.
+	for {
+		if pos < len(s) && s[pos] == '=' {
+			pos++
+			continue
+		}
+		next, ok := matchFoldLiteral(s, pos, "%3D")
+		if !ok {
+			break
+		}
+		pos = next
+	}
+	// (?:(?:\s|%20|%09)+[a-z0-9._-]+)? — optional key comment.
+	if afterSpaces, ok := skipSSHSpaces(s, pos); ok {
+		if end, ok := consumeBearerTokenChar(s, afterSpaces); ok {
+			for {
+				next, ok := consumeBearerTokenChar(s, end)
+				if !ok {
+					break
+				}
+				end = next
+			}
+			pos = end
+		}
+	}
+	return pos - start, true
+}
+
+// sshKeyMayStartAt is a fast pre-check for matchSSHKey. It reports false when
+// no SSH key type can start at pos: "ssh-" has 's' at index 1 and "ecdsa-" has
+// 'c' at index 1. When a byte is not ASCII, a folded rune can match (for
+// example U+017F LATIN SMALL LETTER LONG S), thus the check reports true.
+func sshKeyMayStartAt(s string, pos int) bool {
+	if pos+1 >= len(s) {
+		return false
+	}
+	if s[pos] >= utf8.RuneSelf || s[pos+1] >= utf8.RuneSelf {
+		return true
+	}
+	switch s[pos+1] | 0x20 {
+	case 's', 'c':
+		return true
+	default:
+		return false
+	}
+}
+
+// matchSSHKeyType implements ssh-(?:rsa|dss)|ecdsa-[a-z0-9]+-[a-z0-9]+ (alt 7).
+func matchSSHKeyType(s string, pos int) (int, bool) {
+	if next, ok := matchFoldLiteral(s, pos, "ssh-"); ok {
+		if end, ok := matchFoldLiteral(s, next, "rsa"); ok {
+			return end, true
+		}
+		return matchFoldLiteral(s, next, "dss")
+	}
+	var ok bool
+	if pos, ok = matchFoldLiteral(s, pos, "ecdsa-"); !ok {
+		return 0, false
+	}
+	if pos, ok = consumeAlphaNumRun(s, pos); !ok {
+		return 0, false
+	}
+	if pos >= len(s) || s[pos] != '-' {
+		return 0, false
+	}
+	return consumeAlphaNumRun(s, pos+1)
+}
+
+// skipSSHSpaces implements (?:\s|%20|%09)+ — one or more spaces, encoded spaces or encoded tabs (alt 7).
+func skipSSHSpaces(s string, pos int) (int, bool) {
+	start := pos
+	for pos < len(s) {
+		if isSpace(s[pos]) {
+			pos++
+			continue
+		}
+		if next, ok := matchFoldLiteral(s, pos, "%20"); ok {
+			pos = next
+			continue
+		}
+		if next, ok := matchFoldLiteral(s, pos, "%09"); ok {
+			pos = next
+			continue
+		}
+		break
+	}
+	return pos, pos > start
 }
 
 // matchSensitiveKeySuffix tries both suffixes of alt 1: key=value, then "key":"value".
@@ -614,10 +928,10 @@ func matchSensitiveKeyValue(s string, pos int) (int, bool) {
 	if pos >= len(s) || s[pos] == '&' {
 		return 0, false
 	}
-	for pos < len(s) && s[pos] != '&' {
-		pos++
+	if i := strings.IndexByte(s[pos:], '&'); i >= 0 {
+		return pos + i, true
 	}
-	return pos, true
+	return len(s), true
 }
 
 // matchSensitiveKeyJSON implements the second suffix form of alt 1:
@@ -648,7 +962,7 @@ func matchSensitiveKeyJSON(s string, pos int) (int, bool) {
 	return pos, true
 }
 
-// matchQuote implements (?:"|%22) — a literal or percent-encoded double-quote (alt 1 JSON suffix).
+// matchQuote implements (?:"|%22) — a literal or percent-encoded double-quote (alt 1).
 func matchQuote(s string, pos int) (int, bool) {
 	if pos < len(s) && s[pos] == '"' {
 		return pos + 1, true
@@ -672,7 +986,7 @@ func skipSpaces(s string, pos int) int {
 	return pos
 }
 
-// matchHyphens implements [\-]{n} — exactly n consecutive hyphens (PEM fence, alt 6).
+// matchHyphens implements -{n} — exactly n consecutive hyphens (PEM fence, alt 6).
 func matchHyphens(s string, pos int, n int) (int, bool) {
 	if len(s)-pos < n {
 		return 0, false
@@ -685,6 +999,7 @@ func matchHyphens(s string, pos int, n int) (int, bool) {
 	return pos + n, true
 }
 
+// isSpace reports whether c is in \s as defined by the regexp package: [\t\n\f\r ].
 func isSpace(c byte) bool {
 	switch c {
 	case ' ', '\t', '\n', '\f', '\r':
@@ -724,33 +1039,6 @@ func consumeNonHyphenRun(s string, pos int) (int, bool) {
 	return pos + i, true
 }
 
-// consumeJWTHeader implements ey[I-L] — the fixed 3-byte prefix of each JWT segment (alt 5).
-// [I-L] case-folds to [i-l]; the set {"i","j","k","l"} covers the base64
-// encodings of the four possible first bytes of a JSON object: 0x7B = '{'.
-func consumeJWTHeader(s string, pos int) (int, bool) {
-	var ok bool
-	if pos, ok = matchFoldLiteral(s, pos, "ey"); !ok {
-		return 0, false
-	}
-	return consumeFoldedASCIISet(s, pos, "ijkl")
-}
-
-// consumeJWTSegment implements (?:[\w=-]|%3D)+ — base64url body of a JWT header or payload (alt 5).
-func consumeJWTSegment(s string, pos int) (int, bool) {
-	start := pos
-	for {
-		next, ok := consumeJWTSegmentChar(s, pos)
-		if !ok {
-			break
-		}
-		pos = next
-	}
-	if pos == start {
-		return 0, false
-	}
-	return pos, true
-}
-
 // foldsToLowerASCIILetter is the non-ASCII slow path shared by every per-byte
 // classifier whose ASCII members are exactly [a-zA-Z]: a multi-byte rune
 // matches iff some SimpleFold of it lands on an ASCII lowercase letter.
@@ -766,6 +1054,19 @@ func foldsToLowerASCIILetter(s string, pos int) (int, bool) {
 	return 0, false
 }
 
+// foldToLowerASCIILetter returns the ASCII lowercase letter that the
+// non-ASCII rune r folds to, or 0. A rune folds to at most one ASCII
+// lowercase letter.
+func foldToLowerASCIILetter(r rune) byte {
+	for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
+		if 'a' <= folded && folded <= 'z' {
+			return byte(folded)
+		}
+	}
+	return 0
+}
+
+// consumeJWTSegmentChar implements [\w-] — one character of a JWT segment (alt 5).
 func consumeJWTSegmentChar(s string, pos int) (int, bool) {
 	if pos >= len(s) {
 		return 0, false
@@ -775,14 +1076,12 @@ func consumeJWTSegmentChar(s string, pos int) (int, bool) {
 		if asciiClass[c]&classJWTSeg != 0 {
 			return pos + 1, true
 		}
-		if c == '%' {
-			return matchFoldLiteral(s, pos, "%3D")
-		}
 		return 0, false
 	}
 	return foldsToLowerASCIILetter(s, pos)
 }
 
+// consumeJWTSignature implements (?:[\w.+/=-]|%3D|%2F|%2B)+ — the JWT signature (alt 5).
 func consumeJWTSignature(s string, pos int) (int, bool) {
 	start := pos
 	for {
@@ -821,6 +1120,7 @@ func consumeJWTSignatureChar(s string, pos int) (int, bool) {
 	return foldsToLowerASCIILetter(s, pos)
 }
 
+// consumeBearerTokenChar implements [a-z0-9._\-] — the bearer token (alt 2) and SSH key comment (alt 7) charset.
 func consumeBearerTokenChar(s string, pos int) (int, bool) {
 	if pos >= len(s) {
 		return 0, false
@@ -835,7 +1135,8 @@ func consumeBearerTokenChar(s string, pos int) (int, bool) {
 	return foldsToLowerASCIILetter(s, pos)
 }
 
-func consumeSSHRSAKeyChar(s string, pos int) (int, bool) {
+// consumeSSHKeyChar implements [a-z0-9/.+]|%2F|%5C|%2B — one repetition of the SSH key body (alt 7).
+func consumeSSHKeyChar(s string, pos int) (int, bool) {
 	if pos >= len(s) {
 		return 0, false
 	}
@@ -886,6 +1187,21 @@ func consumeAlphaNumChar(s string, pos int) (int, bool) {
 	return foldsToLowerASCIILetter(s, pos)
 }
 
+// consumeAlphaNumRun implements [a-z0-9]+ (alt 7).
+func consumeAlphaNumRun(s string, pos int) (int, bool) {
+	var ok bool
+	if pos, ok = consumeAlphaNumChar(s, pos); !ok {
+		return 0, false
+	}
+	for {
+		next, ok := consumeAlphaNumChar(s, pos)
+		if !ok {
+			return pos, true
+		}
+		pos = next
+	}
+}
+
 func consumeFoldedASCIISet(s string, pos int, chars string) (int, bool) {
 	if pos >= len(s) {
 		return 0, false
@@ -898,7 +1214,7 @@ func consumeFoldedASCIISet(s string, pos int, chars string) (int, bool) {
 	}
 	r, width := utf8.DecodeRuneInString(s[pos:])
 	for folded := unicode.SimpleFold(r); folded != r; folded = unicode.SimpleFold(folded) {
-		if strings.IndexByte(chars, byte(folded)) >= 0 {
+		if folded < utf8.RuneSelf && strings.IndexByte(chars, byte(folded)) >= 0 {
 			return pos + width, true
 		}
 	}
@@ -1004,6 +1320,17 @@ func equalFoldASCII(r rune, lower byte) bool {
 // string, so the cheaper range check suffices and avoids a rune conversion.
 func isASCIILetter(c byte) bool {
 	return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')
+}
+
+// isASCIIWord reports whether c is in [0-9A-Za-z_] (\w for ASCII).
+func isASCIIWord(c byte) bool {
+	return isASCIILetter(c) || ('0' <= c && c <= '9') || c == '_'
+}
+
+// isHexDigit reports whether c is in [0-9a-fA-F]. With (?i), no non-ASCII
+// rune folds to [a-f].
+func isHexDigit(c byte) bool {
+	return ('0' <= c && c <= '9') || ('a' <= c && c <= 'f') || ('A' <= c && c <= 'F')
 }
 
 // toLowerASCII returns the ASCII lowercase form of c. It exists because

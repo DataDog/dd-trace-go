@@ -9,21 +9,21 @@
 // tracked file resolves to an owner, and that GitHub and CI Visibility resolve
 // that owner identically.
 //
-// GitHub and CI Visibility do not implement the same matching rules: GitHub
-// follows gitignore semantics, while CI Visibility uses the simpler matcher in
-// internal/civisibility/utils. Rather than reconcile the two after the fact,
-// this tool restricts patterns to the subset on which they provably agree:
+// GitHub follows gitignore semantics. This tool resolves GitHub's ownership
+// with its own small matcher and compares it with CI Visibility's GitHub
+// matcher in internal/civisibility/utils/codeownership. The small matcher
+// implements only this subset, so patterns are restricted to it:
 //
 //	/path/to/dir/   anchored, applies to everything beneath it
 //	/path/to/file   anchored, exact match
+//	/path/prefix*   anchored filename prefix, including matching directories
 //	*suffix         suffix match at any depth
 //
-// Patterns outside that subset are rejected, so ownership cannot silently
-// diverge between the two consumers. In particular: gitignore wildcards
-// beyond a single leading suffix "*" ("?", "[", "]", "\") are rejected
-// because GitHub interprets them but CI Visibility treats them as literal
-// characters, and "@" is rejected because CI Visibility's parser treats any
-// pattern token containing it as an owner rather than part of the path.
+// Patterns outside that subset are rejected, so the comparison stays
+// meaningful. The subset dates from CI Visibility's previous matcher, which
+// treated other wildcards as literal characters and any pattern token
+// containing "@" as an owner. The current matcher handles both, so the subset
+// could grow along with this tool's matcher.
 package main
 
 import (
@@ -36,7 +36,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/codeownership"
 )
 
 // codeownersPath is the repository-relative location of the CODEOWNERS file.
@@ -59,6 +59,7 @@ const (
 	kindDir    kind = iota // "/path/" applies to everything beneath the directory
 	kindFile               // "/path/file" applies to exactly one file
 	kindSuffix             // "*suffix" applies to any path with that suffix
+	kindPrefix             // "/path/prefix*" applies to names starting with the prefix
 )
 
 // rule is a single validated CODEOWNERS entry.
@@ -67,8 +68,8 @@ type rule struct {
 	pattern string
 	kind    kind
 	// match is the pattern reduced to the string compared against a path:
-	// the leading "/" is dropped for anchored patterns and the leading "*"
-	// is dropped for suffix patterns.
+	// the leading "/" is dropped for anchored patterns; the leading or
+	// trailing "*" is dropped for suffix or prefix patterns, respectively.
 	match  string
 	owners []string
 }
@@ -76,7 +77,7 @@ type rule struct {
 // matches reports whether the rule applies to the given repository-relative path.
 func (r rule) matches(path string) bool {
 	switch r.kind {
-	case kindDir:
+	case kindDir, kindPrefix:
 		return strings.HasPrefix(path, r.match)
 	case kindFile:
 		return path == r.match
@@ -117,10 +118,9 @@ func run() error {
 		return err
 	}
 
-	// A trailing slash is what makes a directory pattern recursive for CI
-	// Visibility, so an anchored pattern naming a directory must carry one.
-	// GitHub would apply it recursively either way, which is exactly the
-	// divergence this check exists to prevent.
+	// This tool's matcher applies an anchored pattern recursively only with a
+	// trailing slash, so an anchored pattern naming a directory must carry one.
+	// GitHub applies it recursively either way.
 	var problems []string
 	for _, r := range rules {
 		if r.kind != kindFile {
@@ -128,12 +128,12 @@ func run() error {
 		}
 		if isDirPrefix(files, r.match) {
 			problems = append(problems, fmt.Sprintf(
-				"%s:%d: %q names a directory but has no trailing slash; write %q so it applies recursively for CI Visibility too",
+				"%s:%d: %q names a directory but has no trailing slash; write %q, the form this check supports for directories",
 				codeownersPath, r.line, r.pattern, r.pattern+"/"))
 		}
 	}
 
-	civis, err := utils.NewCodeOwners(codeownersPath)
+	civis, err := codeownership.Load(codeownersPath, codeownership.GitHub)
 	if err != nil {
 		return fmt.Errorf("parsing %s with the CI Visibility matcher: %w", codeownersPath, err)
 	}
@@ -150,8 +150,8 @@ func run() error {
 		var civisOwners []string
 		civisPattern := "(none)"
 		if matched {
-			civisOwners = entry.Owners
-			civisPattern = entry.Pattern
+			civisOwners = entry.Owners()
+			civisPattern = "matched"
 		}
 		if normalize(owners) != normalize(civisOwners) {
 			diverged = append(diverged, fmt.Sprintf(
@@ -214,11 +214,10 @@ func parse(path string) ([]rule, error) {
 		for _, o := range owners {
 			switch {
 			case !strings.Contains(o, "@"):
-				// The CI Visibility parser treats any term containing "@" as
-				// an owner and everything else as part of the pattern, so a
-				// stray token would silently corrupt the entry.
+				// GitHub, and CI Visibility, skip an entry with a token that is
+				// not an owner, so a stray token would silently drop the entry.
 				problems = append(problems, fmt.Sprintf(
-					"%s:%d: %q is not an owner; trailing comments are not supported on entry lines", path, line, o))
+					"%s:%d: %q is not an owner; this check does not support trailing comments on entry lines", path, line, o))
 			case !ownerPattern.MatchString(o):
 				problems = append(problems, fmt.Sprintf(
 					`%s:%d: %q is not a valid owner; use "@user", "@org/team", or an email address`, path, line, o))
@@ -236,18 +235,16 @@ func parse(path string) ([]rule, error) {
 }
 
 // unsupportedWildcards are gitignore metacharacters, beyond a single leading
-// suffix "*", that GitHub interprets but the CI Visibility matcher treats as
-// literal characters.
+// suffix or trailing anchored-prefix "*", that this tool's matcher does not
+// implement.
 const unsupportedWildcards = "*?[]\\"
 
 // classify validates a pattern and reduces it to its comparison form.
 func classify(pattern string) (kind, string, error) {
-	// The CI Visibility parser treats any pattern token containing "@" as an
-	// owner, not part of the path (see internal/civisibility/utils), so a
-	// path containing "@" can never be reliably matched there regardless of
-	// formatting.
+	// The subset excludes "@" in a path, which CI Visibility's previous
+	// matcher parsed as an owner.
 	if strings.Contains(pattern, "@") {
-		return 0, "", errors.New(`"@" in a path is parsed as an owner by CI Visibility rather than the pattern; rename the path or use a directory-level rule instead`)
+		return 0, "", errors.New(`"@" in a path is outside the pattern subset this check supports; rename the path or use a directory-level rule instead`)
 	}
 
 	switch {
@@ -259,13 +256,19 @@ func classify(pattern string) (kind, string, error) {
 		case strings.Contains(suffix, "/"):
 			return 0, "", errors.New(`a "*" pattern must be a bare suffix containing no "/", e.g. "*appsec.go"`)
 		case strings.ContainsAny(suffix, unsupportedWildcards):
-			return 0, "", errors.New(`"*", "?", "[", "]", and "\" are gitignore wildcards that CI Visibility treats as literal characters; use a plain suffix`)
+			return 0, "", errors.New(`"*", "?", "[", "]", and "\" are gitignore wildcards outside the pattern subset this check supports; use a plain suffix`)
 		}
 		return kindSuffix, suffix, nil
 
 	case strings.HasPrefix(pattern, "/"):
+		if strings.HasSuffix(pattern, "*") && !strings.HasSuffix(pattern, "/*") {
+			prefix := pattern[1 : len(pattern)-1]
+			if !strings.ContainsAny(prefix, unsupportedWildcards) {
+				return kindPrefix, prefix, nil
+			}
+		}
 		if strings.ContainsAny(pattern, unsupportedWildcards) {
-			return 0, "", errors.New(`wildcards are not supported in anchored paths; use a "/dir/" or "*suffix" pattern instead`)
+			return 0, "", errors.New(`anchored paths support only one trailing "*" after a filename prefix; use "/dir/", "/path/prefix*", or "*suffix"`)
 		}
 		match := pattern[1:]
 		if strings.HasSuffix(pattern, "/") {

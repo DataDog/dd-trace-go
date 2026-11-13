@@ -17,7 +17,7 @@ import (
 type Feature struct{}
 
 func (*Feature) String() string {
-	return "SQLi Protection"
+	return listener.FeatureSQLi
 }
 
 func (*Feature) Stop() {}
@@ -40,8 +40,13 @@ func (*Feature) OnStart(op *sqlsec.SQLOperation, args sqlsec.SQLOperationArgs) {
 
 	subOp := ctxOp.NewSubcontextOp()
 	defer subOp.Close()
-	subOp.Run(op, addresses.NewAddressesBuilder().
+	addrs := addresses.NewAddressesBuilder().
 		WithDBStatement(args.Query).
 		WithDBType(args.Driver).
-		Build())
+		Build()
+	if args.MonitorOnly {
+		subOp.RunMonitorOnly(op, addrs)
+	} else {
+		subOp.Run(op, addrs)
+	}
 }

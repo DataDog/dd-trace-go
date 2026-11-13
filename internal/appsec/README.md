@@ -197,17 +197,171 @@ flowchart TD
     IG{Instrumentation<br> Gateway} -->|Start grpcsec.HandlerOperation| GRPCListener
 ```
 
-All currently available features are the following ones:
+All currently available features are the following ones. Each feature is identified by a name (a slug, defined in
+the `listener` package and returned by the feature's `String()` method):
 
-| Feature Name           | Description                                            |
-|------------------------|--------------------------------------------------------|
-| HTTP WAF Protection    | Protects HTTP requests from attacks                    |
-| GRPC WAF Protection    | Protects GRPC requests from attacks                    |
-| GraphQL WAF Protection | Protects GraphQL requests from attacks                 |
-| SQL RASP               | Runtime Application Self-Protection for SQL injections |
-| OS RASP                | Runtime Application Self-Protection for LFI attacks    |
-| CMDi RASP              | Runtime Application Self-Protection for command injection attacks |
-| HTTP RASP              | Runtime Application Self-Protection for SSRF attacks   |
-| User Security          | User blocking and login failures/success events        |
-| WAF Context            | Setup of the request scoped context system of the WAF  |
-| Tracing                | Bridge between the tracer and AppSec features          |
+| Name      | Feature                | Description                                            |
+|-----------|------------------------|--------------------------------------------------------|
+| `http`    | HTTP WAF Protection    | Protects HTTP requests from attacks                    |
+| `grpc`    | GRPC WAF Protection    | Protects GRPC requests from attacks                    |
+| `graphql` | GraphQL WAF Protection | Protects GraphQL requests from attacks                 |
+| `sqli`    | SQL RASP               | Runtime Application Self-Protection for SQL injections |
+| `lfi`     | OS RASP                | Runtime Application Self-Protection for LFI attacks    |
+| `cmdi`    | CMDi RASP              | Runtime Application Self-Protection for command injection attacks |
+| `ssrf`    | HTTP RASP              | Runtime Application Self-Protection for SSRF attacks and downstream request analysis |
+| `user`    | User Security          | User blocking and login failures/success events        |
+| `waf`     | WAF Context            | Setup of the request scoped context system of the WAF  |
+| `trace`   | Tracing                | Bridge between the tracer and AppSec features          |
+
+`DD_APPSEC_DISABLE_FEATURES` takes a comma-separated list of feature names (case-insensitive) that must not be
+started, e.g. `DD_APPSEC_DISABLE_FEATURES=http,grpc`. The `waf` and `trace` features are required by every other
+feature and cannot be disabled. Unknown names are ignored with a warning log. Because HTTP bodies, HTTP route parameters
+and gRPC messages reach the WAF context without going through the `http` and `grpc` listeners, disabling those features
+also removes their WAF addresses from the supported addresses, so the WAF never evaluates them.
+
+### Error Tracking eligibility
+
+The AppSec package marks each `log.Error` and `log.Warn` site with an
+`//errtrack:ignore` directive when the logged failure is not eligible for Error
+Tracking reporting. The directive carries the reason, so an audit does not have
+to re-derive it from the code.
+
+A site is ineligible only when its failure is outside the SDK's control or is
+reported through another channel:
+
+- The caller used the AppSec API while AppSec is disabled, or without the
+  request instrumentation that the API requires. These failures depend on the
+  application, not on the SDK.
+- The failure comes from a user-provided value, such as a blocked-response
+  template path.
+- The failure comes from the host or the native library, such as a
+  libddwaf compatibility issue on the host.
+- The failure is an expected limit on the request path: the global trace rate
+  limit (`DD_APPSEC_TRACE_RATE_LIMIT`) or the maximum number of WAF events per
+  request.
+- Remote Config reports the failure back to the backend through an apply
+  status. Only a site that always produces an apply status may use this reason.
+
+A site without a directive stays actionable in the audit. Do not add a
+directive to hide an unclassified site; remove or fix the site instead.
+
+Startup timing is not a reason to leave a site unclassified. A report made
+before `telemetry.StartApp` captures its stack trace eagerly at the call site
+and is replayed once telemetry starts, so the stack still points at the real
+call site. The failure mode to watch for is eviction from the 512-entry ring
+buffer shared by every global telemetry call, not a bad stack trace. Prefer a
+site that fires after `StartApp` when you have the choice; see the reporting
+policy in [internal/README.md](../README.md) for the full criteria.
+
+### AppSec state checks
+
+`Enabled` and `RASPEnabled` load the active AppSec instance and its started state
+atomically. Query hooks do not take the lifecycle mutex. Instance replacement
+remains serialized, and remote activation updates the instance's atomic state.
+
+### SQL monitoring in pgx
+
+The native pgx integration only monitors SQL; it cannot block it. See
+[contrib/jackc/pgx.v5/README.md](../../contrib/jackc/pgx.v5/README.md#appsec-sql-injection-monitoring)
+for its behavior and limitations.
+
+### Block outcome telemetry
+
+Tests that inspect WAF telemetry should install `testutils.StartTelemetryRecorder`
+before starting AppSec. This isolates the recorded metrics from submissions
+buffered by earlier tests while preserving exact request-count assertions.
+
+The `waf.requests` metric has one data point for each WAF context. Two of its
+tags show the block outcome of the request:
+
+| `request_blocked` | `block_failure` | Meaning                                              |
+|-------------------|-----------------|------------------------------------------------------|
+| `false`           | `false`         | No WAF-scope `block_request` action was returned.    |
+| `true`            | `false`         | A block was requested and enforced.                  |
+| `false`           | `true`          | A block was requested, but it could not be enforced. |
+
+The `ContextMetrics` type in `emitter/waf/metrics.go` records the outcome:
+
+- `runWAF` calls `SetBlockRequested` when the WAF returns a WAF-scope
+  `block_request` action. RASP-scope actions do not change these tags.
+- `SetBlockFailed` records that the block was not enforced. `runWAF` calls it
+  when the action cannot be built. Integrations call it when they cannot deliver
+  the block response, for example because the response has already started, or
+  because a block callback or the block response panicked.
+- `SetBlockApplied` records that a block response was applied. The HTTP
+  integration calls it when the block response was delivered.
+- The HTTP integration reports a failure or an application only for the block
+  that the WAF-scope `block_request` created. `runWAF` marks that block with
+  `actions.Config.ReportBlockOutcome`, and `BlockHTTP.ReportsBlockOutcome`
+  returns true for it. A redirect or a RASP-scope block uses the same
+  `BlockHTTP` type, but its outcome does not change these tags. Thus, an
+  applied redirect cannot hide a WAF block that failed.
+- If a block panics before `httpsec.BeforeHandle` returns, the caller cannot
+  run `afterHandle`. `BeforeHandle` then finishes the operation and the WAF
+  context before the panic continues, so `waf.requests` is still submitted.
+- `Submit` resolves the two tags at the end of the WAF context. A requested
+  block counts as enforced unless a failure was reported. Thus, an integration
+  that does not report its outcome keeps the previous behavior. An applied block
+  has precedence: a failure that a later action reports does not change it.
+
+RASP rules report their block outcome on `rasp.rule.match` with the
+`block:success`, `block:failure`, or `block:irrelevant` tag.
+
+A monitor-only run (`SubcontextOperation.RunMonitorOnly`, used by the pgx SQL
+monitoring) removes the `block_request` and `redirect_request` actions. It
+reports a removed `block_request` as `block:failure` on `rasp.rule.match`. It
+does not count as a requested block on `waf.requests`, so it cannot hide a
+later block of the same request.
+
+### WAF error telemetry
+
+`ContextMetrics.IncWafError` (`emitter/waf/metrics.go`) reports the errors that
+`Context.Run` returns. A timeout (`waferrors.ErrTimeout`) is not an error: it
+does not get an error code. `RegisterWafRun` counts timeouts. A timeout never
+hides a real error: a real error is reported even when the same run also timed
+out.
+
+The `waf_error` tag of `waf.error` and `rasp.error`, and the span tags
+`_dd.appsec.waf.error` and `_dd.appsec.rasp.error`, hold the `ddwaf_run` return
+code (RFC-1012). `waferrors.ToWafReturnCode` (go-libddwaf v5.1.0 and later)
+gives the code of the error that a run returned: `-3`, `-2` or `-1` for the
+three `ddwaf_run` errors, `-127` for any other error (an error from the
+bindings), and `0` when there is no error to report (a `nil` error, or only
+timeouts):
+
+| Error from `Run` | Code |
+|------------------|------|
+| `ErrInternal` | `-3` |
+| `ErrInvalidObject` | `-2` |
+| `ErrInvalidArgument` | `-1` |
+| Any other error (`ErrOutOfMemory`, `ErrEmptyRuleAddresses`, `ErrContextClosed`, encoder errors, ...) | `-127` (error from the bindings) |
+
+- The boolean `waf_error` tag of `waf.requests` is not a code. It is `true`
+  when `Run` returned a real error (`waferrors.ToWafReturnCode` is not zero),
+  also when the same run timed out.
+- The span tags hold one code per request: the code closest to zero (the least
+  negative). `updateClosestToZero` keeps it, and ignores a code that is not
+  negative. Zero means no error. The RASP tag is the closest code over all rule
+  types.
+- `AddWAFMonitoringTags` sets `_dd.appsec.waf.error` only when `WAFErrorCode`
+  is not zero, and `_dd.appsec.rasp.error` only when one `RASPErrorCodes` entry
+  is not zero.
+
+### Rate limit telemetry and trace keep
+
+The AppSec trace rate limit (`DD_APPSEC_TRACE_RATE_LIMIT`) limits the WAF force-keeps
+(`ManualKeep`). It never removes events. The Node.js and Python tracers use the same model.
+
+- `ContextOperation.AddEvents` stores the events of a WAF or RASP run, and it never calls the
+  limiter. A request accepts no new batch once it has 10 stored events. This cap does not use a token.
+- A WAF or RASP result with `keep=true` calls the limiter through `allowKeep`, also when the cap
+  drops its events. A result without `keep` never calls the limiter. When the limiter allows,
+  the run sets `ManualKeep`.
+- Difference from Node.js and Python: after the first success, the request makes no more limiter
+  calls (`wafKeepAdmitted`). Later `keep` runs set `ManualKeep` again with no token. The flag does
+  not tell the sampling priority.
+- `rate_limited:true` on `waf.requests` means that a `keep` run (WAF or RASP) was denied by the
+  limiter. A request that only reaches the cap of 10 stored events gives `rate_limited:false`.
+- A denied `keep` run keeps its events. They reach the backend when any other source keeps the
+  trace: the sampler, the first-request rules keep, or the API Security schema keep. So the limiter
+  is not a global limit on the traces that have events.

@@ -2,29 +2,26 @@
 
 ## Read CONTRIBUTING.md First
 
-**BEFORE writing or editing ANY code**, you MUST read [CONTRIBUTING.md](./CONTRIBUTING.md) and [README.md](./README.md).
+**BEFORE reviewing, writing, or editing ANY code**, you MUST read [CONTRIBUTING.md](./CONTRIBUTING.md) and [README.md](./README.md).
 
 Furthermore, be sure to follow [Effective Go guidelines](https://go.dev/doc/effective_go) when writing Go code.
 
-Use the following AGENTS.md files when making specific changes:
+Run required verification commands directly. If you pipe their output, enable `pipefail` so an earlier failure cannot be masked.
 
+Before reviewing or changing files in these areas, read the applicable scoped instructions:
+
+* [.github/AGENTS.md](./.github/AGENTS.md) -- for updating CI workflows, actions and scripts, in `.github/` and `.gitlab/`
 * [contrib/AGENTS.md](./contrib/AGENTS.md) -- for updating contribs/integrations
 * [ddtrace/tracer/AGENTS.md](./ddtrace/tracer/AGENTS.md) -- for updating core Datadog tracer implementations and features
 * [internal/AGENTS.md](./internal/AGENTS.md) -- for updating features and implementations that are not customer facing
-* [orchestrion/AGENTS.md](./orchestrion/AGENTS.md) -- for updating or creating new Orchestrion (auto-instrumentation) files
 * [profiler/AGENTS.md](./profiler/AGENTS.md) -- for profiling updates
 
-## Updating Documentation
+## Where documentation goes
 
-This AGENTS.md should be short. Only update this file if a new AGENTS.md file is added, so it must be added to the list with its purpose.
+Put docs and comments about one product or feature in the most specific place that fits:
 
-The developer should update [CONTRIBUTING.md](./CONTRIBUTING.md) with new, significant features. A feature may be considered significant when:
+1. The godoc of the option, config, or function that enables it.
+2. The doc comment or `README.md` of the feature's own package.
+3. The `AGENTS.md` of that package, for rules that only apply there.
 
-1. It introduces a new method of interacting with and/or customizing the tracer (ie new scripts for generating files, options for configuration sources, etc)
-2. A new internal functionality is introduced that can replace a common, built-in Go library
-3. The `make` command supports a new flag that introduces new testing/linting/building functionality AND/OR
-4. A new CI workflow in GitHub or GitLab is created
-
-The developer should also update [README.md](./README.md) with new options to the `make` command and other important commands that are essential for testing or building the tracer.
-
-If these updates are not made, tell the developer to make changes or provide suggestions if requested.
+Don't add product- or feature-specific content to shared files such as the root `README.md`, `CONTRIBUTING.md`, this file, or `ddtrace/tracer/doc.go`. These files grow with every feature, and they must stay short.

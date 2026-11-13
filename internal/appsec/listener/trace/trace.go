@@ -22,7 +22,7 @@ var staticAppsecTags = map[string]any{
 type AppsecSpanTransport struct{}
 
 func (*AppsecSpanTransport) String() string {
-	return "Appsec Span Transport"
+	return listener.FeatureTrace
 }
 
 func (*AppsecSpanTransport) Stop() {}

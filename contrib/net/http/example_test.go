@@ -139,6 +139,7 @@ func traceMiddleware(mux *http.ServeMux, next http.Handler) http.Handler {
 		httptrace.TraceAndServe(next, w, r, &httptrace.ServeConfig{
 			Service:     "http.router",
 			Resource:    resource,
+			Route:       route,
 			QueryParams: true,
 		})
 	})

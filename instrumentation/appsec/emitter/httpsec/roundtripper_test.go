@@ -140,3 +140,26 @@ func seedRoundTripRequestContext(t *testing.T, ctxOp *wafemitter.ContextOperatio
 		TimerKey: addresses.WAFScope,
 	})
 }
+
+func TestWithClientIPUnmapsIPv4In6(t *testing.T) {
+	got := addresses.NewAddressesBuilder().
+		WithClientIP(netip.MustParseAddr("::ffff:1.2.3.4")).
+		Build()
+
+	v, ok := got.Data[addresses.ClientIPAddr]
+	if !ok {
+		t.Fatalf("client IP address %q was not set", addresses.ClientIPAddr)
+	}
+	if v != "1.2.3.4" {
+		t.Fatalf("client IP = %q, want canonical unmapped 1.2.3.4", v)
+	}
+}
+
+func TestWithClientIPKeepsGenuineIPv6(t *testing.T) {
+	got := addresses.NewAddressesBuilder().
+		WithClientIP(netip.MustParseAddr("2001:db8::1")).
+		Build()
+	if v := got.Data[addresses.ClientIPAddr]; v != "2001:db8::1" {
+		t.Fatalf("client IP = %q, want 2001:db8::1", v)
+	}
+}

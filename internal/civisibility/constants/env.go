@@ -29,8 +29,7 @@ const (
 	// CIVisibilityTestSessionNameEnvironmentVariable indicate the test session name to be used on CI Visibility payloads
 	CIVisibilityTestSessionNameEnvironmentVariable = "DD_TEST_SESSION_NAME"
 
-	// CIVisibilityFlakyRetryEnabledEnvironmentVariable kill-switch that allows to explicitly disable retries even if the remote setting is enabled.
-	// This environment variable should be set to "0" or "false" to disable the flaky retry feature.
+	// CIVisibilityFlakyRetryEnabledEnvironmentVariable overrides the remote automatic test retries setting when explicitly set.
 	CIVisibilityFlakyRetryEnabledEnvironmentVariable = "DD_CIVISIBILITY_FLAKY_RETRY_ENABLED"
 
 	// CIVisibilityEarlyFlakeDetectionEnabledEnvironmentVariable overrides the remote EFD setting when explicitly set.
@@ -57,6 +56,14 @@ const (
 
 	// CIVisibilityTotalFlakyRetryCountEnvironmentVariable indicates the maximum number of retry attempts for the entire session.
 	CIVisibilityTotalFlakyRetryCountEnvironmentVariable = "DD_CIVISIBILITY_TOTAL_FLAKY_RETRY_COUNT"
+
+	// CIVisibilityDynamicFlakyRetryEnabledEnvironmentVariable makes automatic test retries pick each test's retry count
+	// from the duration of its first execution instead of DD_CIVISIBILITY_FLAKY_RETRY_COUNT.
+	CIVisibilityDynamicFlakyRetryEnabledEnvironmentVariable = "DD_CIVISIBILITY_DYNAMIC_ATR_ENABLED"
+
+	// CIVisibilityDynamicFlakyRetryBucketsEnvironmentVariable overrides the dynamic retry counts with five comma-separated
+	// integers from 1 to 20, one for each duration bucket: up to 5s, 10s, 30s, 5m, and slower.
+	CIVisibilityDynamicFlakyRetryBucketsEnvironmentVariable = "DD_CIVISIBILITY_DYNAMIC_ATR_BUCKETS"
 
 	// CIVisibilityRetryExecutionModeEnvironmentVariable selects how retry attempts are executed.
 	// Supported values are "in_process" and "process". The default is "in_process".

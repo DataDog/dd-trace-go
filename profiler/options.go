@@ -26,6 +26,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
+	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 	"github.com/DataDog/dd-trace-go/v2/profiler/internal/immutable"
@@ -139,7 +140,7 @@ func logStartup(c *config) {
 	}
 	b, err := json.Marshal(info)
 	if err != nil {
-		log.Error("Marshaling profiler configuration: %s", err.Error())
+		telemetrylog.LogAndReportError("Marshaling profiler configuration", err)
 		return
 	}
 	log.Info("Profiler configuration: %s\n", b)

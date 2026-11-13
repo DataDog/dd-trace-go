@@ -15,6 +15,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestRoute(t *testing.T) {
+	for _, tt := range []struct {
+		pattern string
+		route   string
+	}{
+		{pattern: "/foo/{id}", route: "/foo/{id}"},
+		{pattern: "GET /foo/{id}", route: "/foo/{id}"},
+		{pattern: "example.com/foo/{id}", route: "example.com/foo/{id}"},
+		{pattern: "GET example.com/foo/{id}", route: "example.com/foo/{id}"},
+		{pattern: "", route: ""},
+	} {
+		t.Run(tt.pattern, func(t *testing.T) {
+			assert.Equal(t, tt.route, Route(tt.pattern))
+		})
+	}
+}
+
 func TestPathParameters(t *testing.T) {
 	t.Run("blank", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/foo/123", nil)

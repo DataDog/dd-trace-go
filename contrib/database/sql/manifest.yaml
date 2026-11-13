@@ -1,0 +1,10 @@
+_v: 1
+name: database/sql
+display_name: database/sql
+description: Instruments database/sql connection lifecycles, queries, prepared statements, and transactions, with optional
+  SQL comment propagation, connection pool metrics, and SQL injection protection.
+packages: []
+category:
+- db.client
+systems: []
+creation_date: '2017-05-03'

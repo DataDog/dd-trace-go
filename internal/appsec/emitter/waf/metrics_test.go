@@ -6,11 +6,100 @@
 package waf
 
 import (
+	"errors"
+	"fmt"
+	"slices"
+	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/DataDog/go-libddwaf/v5"
+	"github.com/DataDog/go-libddwaf/v5/timer"
+	"github.com/DataDog/go-libddwaf/v5/waferrors"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/waf/addresses"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
+
+// wafRequestsTags returns the tags of a waf.requests metric that the "test"
+// metrics instance emits with the given milestones.
+func wafRequestsTags(requestBlocked, blockFailure, ruleTriggered bool) []string {
+	return []string{
+		"request_blocked:" + strconv.FormatBool(requestBlocked),
+		"block_failure:" + strconv.FormatBool(blockFailure),
+		"rule_triggered:" + strconv.FormatBool(ruleTriggered),
+		"waf_timeout:false",
+		"rate_limited:false",
+		"waf_error:false",
+		"input_truncated:false",
+		"event_rules_version:test",
+		"waf_version:" + libddwaf.Version(),
+	}
+}
+
+// requireBlockOutcome checks that client recorded exactly one waf.requests
+// count, with the given block outcome.
+func requireBlockOutcome(t *testing.T, client *telemetrytest.RecordClient, ruleTriggered, requestBlocked, blockFailure bool) {
+	t.Helper()
+	for _, outcome := range []struct{ requestBlocked, blockFailure bool }{
+		{false, false},
+		{true, false},
+		{false, true},
+		{true, true},
+	} {
+		var want float64
+		if outcome.requestBlocked == requestBlocked && outcome.blockFailure == blockFailure {
+			want = 1
+		}
+		tags := wafRequestsTags(outcome.requestBlocked, outcome.blockFailure, ruleTriggered)
+		require.Equal(t, want, client.Count(telemetry.NamespaceAppSec, "waf.requests", tags).Get(), tags)
+	}
+}
+
+func TestSubmitBlockOutcome(t *testing.T) {
+	tests := []struct {
+		name           string
+		requested      bool
+		failed         bool
+		applied        bool
+		requestBlocked bool
+		blockFailure   bool
+	}{
+		{name: "not requested"},
+		{name: "not requested but unavailable", failed: true},
+		{name: "not requested but applied", applied: true},
+		{name: "requested with no reported outcome", requested: true, requestBlocked: true},
+		{name: "requested and failed", requested: true, failed: true, blockFailure: true},
+		{name: "requested and applied", requested: true, applied: true, requestBlocked: true},
+		{name: "requested, applied, and failed", requested: true, applied: true, failed: true, requestBlocked: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := new(telemetrytest.RecordClient)
+			defer telemetry.MockClient(client)()
+			handleMetrics := NewMetricsInstance(nil, "test")
+			metrics := handleMetrics.NewContextMetrics()
+			if tc.requested {
+				metrics.SetBlockRequested()
+			}
+			if tc.failed {
+				metrics.SetBlockFailed()
+			}
+			if tc.applied {
+				metrics.SetBlockApplied()
+			}
+
+			metrics.Submit(libddwaf.Truncations{}, nil)
+
+			requireBlockOutcome(t, client, false, tc.requestBlocked, tc.blockFailure)
+		})
+	}
+}
 
 func TestUpdateClosestToZero(t *testing.T) {
 	t.Run("first_error_sets_code", func(t *testing.T) {
@@ -47,4 +136,276 @@ func TestUpdateClosestToZero(t *testing.T) {
 		updateClosestToZero(&target, -127)
 		require.Equal(t, int32(-127), target.Load())
 	})
+
+	t.Run("non_negative_code_ignored", func(t *testing.T) {
+		var target atomic.Int32
+		updateClosestToZero(&target, -2)
+		updateClosestToZero(&target, 0)
+		updateClosestToZero(&target, 4)
+		require.Equal(t, int32(-2), target.Load())
+	})
+
+	t.Run("non_negative_code_on_empty_target_ignored", func(t *testing.T) {
+		var target atomic.Int32
+		updateClosestToZero(&target, 4)
+		require.Zero(t, target.Load())
+	})
+}
+
+// TestUpdateClosestToZeroConcurrent checks that updateClosestToZero loses no update. Each worker
+// sends one different code, all the workers start at the same time, and every round uses a fresh
+// target. A load/check/store that is not atomic stores a code that is not the closest to zero.
+func TestUpdateClosestToZeroConcurrent(t *testing.T) {
+	const rounds = 500
+
+	// One code per worker. -1 is the closest to zero, whatever the worker that sends it.
+	negative := []int32{-127}
+	for code := int32(-2); code >= -40; code-- {
+		negative = append(negative, code)
+	}
+	negative = append(negative, -1)
+
+	for name, codes := range map[string][]int32{
+		"negative_only":      negative,
+		"with_ignored_codes": append(slices.Clone(negative), 0, 4, 100),
+	} {
+		t.Run(name, func(t *testing.T) {
+			for round := range rounds {
+				var target atomic.Int32
+				start := make(chan struct{})
+				var wg sync.WaitGroup
+				for _, code := range codes {
+					wg.Go(func() {
+						<-start
+						updateClosestToZero(&target, code)
+					})
+				}
+				close(start)
+				wg.Wait()
+				require.Equal(t, int32(-1), target.Load(), "round %d", round)
+			}
+		})
+	}
+}
+
+// wafErrorCodeCases has one error per kind, with the waf_error code that dd-trace-go reports.
+// go-libddwaf tests the full mapping of waferrors.ToWafReturnCode.
+var wafErrorCodeCases = []struct {
+	name string
+	err  error
+	want int
+}{
+	{"internal", waferrors.ErrInternal, -3},
+	{"invalid_object", waferrors.ErrInvalidObject, -2},
+	{"bindings", errors.New("bindings"), -127},
+	{"joined_codes", errors.Join(waferrors.ErrInternal, waferrors.ErrInvalidArgument), -1},
+	{"timeout_and_internal", errors.Join(waferrors.ErrTimeout, waferrors.ErrInternal), -3},
+}
+
+// TestIncWafErrorCodes checks that waf.error and rasp.error get the ddwaf_run code in the waf_error tag,
+// and that the error code atomics hold the same code.
+func TestIncWafErrorCodes(t *testing.T) {
+	for _, tc := range wafErrorCodeCases {
+		code := "waf_error:" + strconv.Itoa(tc.want)
+		t.Run("waf/"+tc.name, func(t *testing.T) {
+			client := new(telemetrytest.RecordClient)
+			defer telemetry.MockClient(client)()
+			handleMetrics := NewMetricsInstance(nil, "test")
+			metrics := handleMetrics.NewContextMetrics()
+
+			got := metrics.IncWafError(wafScopeAddresses(), tc.err)
+
+			require.Equal(t, tc.want, got)
+			require.Equal(t, 1.0, sumMetric(client, "waf.error", code))
+			require.Equal(t, 1.0, sumMetric(client, "waf.error"))
+			require.Zero(t, sumMetric(client, "rasp.error"))
+			require.EqualValues(t, tc.want, metrics.WAFErrorCode.Load())
+			requireNoRASPErrorCodes(t, metrics)
+		})
+		t.Run("rasp/"+tc.name, func(t *testing.T) {
+			client := new(telemetrytest.RecordClient)
+			defer telemetry.MockClient(client)()
+			handleMetrics := NewMetricsInstance(nil, "test")
+			metrics := handleMetrics.NewContextMetrics()
+
+			got := metrics.IncWafError(sqliAddresses(), tc.err)
+
+			require.Equal(t, tc.want, got)
+			require.Equal(t, 1.0, sumMetric(client, "rasp.error", code, sqliRuleTypeTag))
+			require.Equal(t, 1.0, sumMetric(client, "rasp.error"))
+			require.Zero(t, sumMetric(client, "waf.error"))
+			require.EqualValues(t, tc.want, metrics.RASPErrorCodes[addresses.RASPRuleTypeSQLI].Load())
+			require.Zero(t, metrics.WAFErrorCode.Load())
+		})
+	}
+}
+
+// TestRegisterWafRunMilestonesRace exercises concurrent WAF-scope RegisterWafRun calls (which the
+// go-libddwaf Context permits for a single request via parallel subcontext/downstream runs) together
+// with Submit, which reads the same Milestones. Run with -race.
+func TestRegisterWafRunMilestonesRace(t *testing.T) {
+	hm := NewMetricsInstance(nil, "test")
+	m := hm.NewContextMetrics()
+
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			m.RegisterWafRun(
+				addresses.RunAddressData{TimerKey: addresses.WAFScope},
+				nil,
+				RequestMilestones{ruleTriggered: true, requestBlocked: true, wafTimeout: true, rateLimited: true, wafError: true},
+			)
+		})
+	}
+	wg.Go(func() {
+		m.Submit(libddwaf.Truncations{}, nil)
+	})
+	wg.Wait()
+}
+
+// pausingHandle is a metric handle that stops Submit until the test releases it.
+type pausingHandle struct {
+	entered chan<- struct{}
+	release <-chan struct{}
+}
+
+func (h pausingHandle) Submit(float64) {
+	h.entered <- struct{}{}
+	<-h.release
+}
+
+func (pausingHandle) Get() float64 { return 0 }
+
+// TestSubmitIncludesBlockOutcomeReportedDuringSubmit checks that a block outcome
+// reported while Submit runs, before the waf.requests snapshot, is in the
+// emitted tags.
+func TestSubmitIncludesBlockOutcomeReportedDuringSubmit(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		failed bool
+	}{
+		{name: "enforced"},
+		{name: "failed", failed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := new(telemetrytest.RecordClient)
+			defer telemetry.MockClient(client)()
+			hm := NewMetricsInstance(nil, "test")
+			// entered is buffered, so the handle never blocks on it.
+			entered := make(chan struct{}, 1)
+			release := make(chan struct{})
+			var releaseOnce sync.Once
+			releaseSubmit := func() { releaseOnce.Do(func() { close(release) }) }
+			// Submit sends waf.duration_ext before the waf.requests snapshot.
+			hm.externalTimerDistributions[addresses.WAFScope] = pausingHandle{entered: entered, release: release}
+			m := hm.NewContextMetrics()
+
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				m.Submit(libddwaf.Truncations{}, map[timer.Key]time.Duration{timer.Key(addresses.WAFScope): time.Microsecond})
+			}()
+			// waitSubmit waits for Submit to return, at most once. The wait has a
+			// limit, so that a stalled Submit fails the test instead of blocking it.
+			var waitOnce sync.Once
+			var returned bool
+			waitSubmit := func() bool {
+				waitOnce.Do(func() {
+					select {
+					case <-done:
+						returned = true
+					case <-time.After(10 * time.Second):
+						t.Error("Submit did not return after it was released")
+					}
+				})
+				return returned
+			}
+			// If the test stops early, release Submit and wait for it before the
+			// mock telemetry client is restored.
+			defer func() {
+				releaseSubmit()
+				waitSubmit()
+			}()
+
+			select {
+			case <-entered:
+			case <-done:
+				t.Fatal("Submit returned without sending waf.duration_ext")
+			case <-time.After(10 * time.Second):
+				t.Fatal("Submit did not send waf.duration_ext")
+			}
+			m.SetBlockRequested()
+			if tc.failed {
+				m.SetBlockFailed()
+			}
+			releaseSubmit()
+			if !waitSubmit() {
+				t.FailNow()
+			}
+
+			requireBlockOutcome(t, client, false, !tc.failed, tc.failed)
+		})
+	}
+}
+
+// asTimeoutError is an error that only has an As method: it gives waferrors.ErrTimeout to errors.As.
+// errors.Is does not find the timeout.
+type asTimeoutError struct{}
+
+func (asTimeoutError) Error() string { return "as timeout" }
+
+func (asTimeoutError) As(target any) bool {
+	if p, ok := target.(*waferrors.RunError); ok {
+		*p = waferrors.ErrTimeout
+		return true
+	}
+	return false
+}
+
+// TestIncWafErrorTimeout checks that IncWafError does not count a timeout as an
+// error, and that it still reports the broken scopes and rule types.
+func TestIncWafErrorTimeout(t *testing.T) {
+	for _, timeout := range []struct {
+		name string
+		err  error
+	}{
+		{name: "wrapped-timeout", err: fmt.Errorf("encode: %w", waferrors.ErrTimeout)},
+		{name: "as-timeout", err: asTimeoutError{}},
+	} {
+		for _, tc := range []struct {
+			name          string
+			addrs         addresses.RunAddressData
+			wantException string
+		}{
+			{name: "waf-scope", addrs: wafScopeAddresses()},
+			{name: "rasp-sqli", addrs: sqliAddresses()},
+			{
+				name:          "rasp-without-rule-address",
+				addrs:         addresses.RunAddressData{TimerKey: addresses.RASPScope},
+				wantException: ExceptionTypeInstrumentation,
+			},
+			{
+				name:          "unknown-scope",
+				addrs:         addresses.RunAddressData{TimerKey: "unknown"},
+				wantException: ExceptionTypeInstrumentation,
+			},
+		} {
+			t.Run(timeout.name+"/"+tc.name, func(t *testing.T) {
+				client := new(telemetrytest.RecordClient)
+				defer telemetry.MockClient(client)()
+				handleMetrics := NewMetricsInstance(nil, "test")
+				metrics := handleMetrics.NewContextMetrics()
+
+				got := metrics.IncWafError(tc.addrs, timeout.err)
+
+				require.Zero(t, got)
+				require.Zero(t, sumMetric(client, "waf.error"))
+				require.Zero(t, sumMetric(client, "rasp.error"))
+				require.Zero(t, metrics.WAFErrorCode.Load())
+				requireNoRASPErrorCodes(t, metrics)
+				require.Equal(t, tc.wantException, metrics.ExceptionType())
+				require.Equal(t, tc.wantException != "", hasExceptionLog(client), "logs: %v", client.Logs)
+			})
+		}
+	}
 }

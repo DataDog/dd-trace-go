@@ -6,6 +6,7 @@
 package telemetry
 
 import (
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -13,10 +14,17 @@ import (
 
 	globalinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/knownmetrics"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
+
+// telemetryQueuedLogStackSkip skips Log's own frame — landing on Log's
+// caller, the actual site that requested a stacktrace before the global
+// client existed. CaptureRaw already accounts for its own frame and
+// runtime.Callers internally.
+const telemetryQueuedLogStackSkip = 1
 
 var (
 	globalClient atomic.Pointer[Client]
@@ -54,18 +62,27 @@ func StartApp(client Client) {
 	}
 
 	client.AppStart()
-	// Increment the WaitGroup before SwapClient makes the client visible so
-	// StopApp cannot observe a zero counter and return before the flush goroutine runs.
+	// Increment the WaitGroups before SwapClient makes the client visible so
+	// neither StopApp nor Close can observe a zero counter and return before the
+	// flush goroutine runs.
 	startAppFlushWg.Add(1)
-	if SwapClient(client) != nil {
-		// A concurrent StartApp call already set the client; undo the Add.
+	flushDone := trackStartAppFlush(client)
+	// Install only if no client is set yet. Using SwapClient here would let a
+	// concurrent StartApp with the same client close it while this call's
+	// registration is still pending, which deadlocks in Close.
+	if !casGlobalClient(client) {
+		// A concurrent StartApp call already set the client; undo the Adds.
+		flushDone()
 		startAppFlushWg.Done()
 		log.Debug("telemetry: StartApp called multiple times, ignoring")
 		return
 	}
 
+	installClient(client)
+
 	go func() {
 		defer startAppFlushWg.Done()
+		defer flushDone()
 		client.Flush()
 	}()
 }
@@ -90,14 +107,31 @@ func SwapClient(client Client) Client {
 		return oldClient
 	}
 
+	installClient(client)
+	return oldClient
+}
+
+// casGlobalClient sets client as the global client only if none is set.
+func casGlobalClient(client Client) bool {
+	for {
+		old := globalClient.Load()
+		if old != nil && *old != nil {
+			return false
+		}
+		if globalClient.CompareAndSwap(old, &client) {
+			return true
+		}
+	}
+}
+
+// installClient replays recorded actions and swaps metric handles to client.
+func installClient(client Client) {
 	globalClientRecorder.Replay(client)
 	// Swap all metrics hot pointers to the new MetricHandle
 	metricsHandleSwappablePointers.Range(func(_ metricKey, value *swappableMetricHandle) bool {
 		value.swap(value.maker(client))
 		return true
 	})
-
-	return oldClient
 }
 
 // MockClient swaps the global client with the given client and clears the recorder to make sure external calls are not replayed.
@@ -120,6 +154,14 @@ func StopApp() {
 		(*client).Flush()
 		(*client).Close()
 	}
+}
+
+// WaitForStartAppFlush waits until every app-started flush goroutine launched
+// by StartApp returns. An in-flight flush can park its keep-alive connection in
+// the idle pool after a caller has closed idle connections, so callers such as
+// tracer.Stop must wait first to prevent that connection from leaking.
+func WaitForStartAppFlush() {
+	startAppFlushWg.Wait()
 }
 
 var (
@@ -167,6 +209,25 @@ func Distribution(namespace Namespace, name string, tags []string) MetricHandle 
 }
 
 func Log(record Record, options ...LogOption) {
+	// If the global client isn't installed yet, this call is about to be
+	// queued and replayed later on a different goroutine (see
+	// globalClientCall). A stacktrace captured at replay time would belong
+	// to that goroutine, not this call site — so capture it now, before
+	// queuing, whenever one was requested. This runs on every pre-StartApp
+	// call requesting a stacktrace, even ones that will end up deduplicated
+	// away; that's an acceptable cost given how rare and low-volume the
+	// pre-StartApp window is.
+	//
+	// Disabled() is checked first: when telemetry is off, StartApp never
+	// installs a client, so GlobalClient() is permanently nil and this
+	// branch would otherwise capture a stack on every single call — on a
+	// hot, repeatedly-invoked path (e.g. AppSec's exception recording) —
+	// only for globalClientCall to discard it a line later via its own
+	// Disabled() check.
+	if !Disabled() && GlobalClient() == nil && wantsStacktrace(options) {
+		raw := stacktrace.CaptureRaw(telemetryQueuedLogStackSkip)
+		options = append(slices.Clone(options), withRawStacktrace(raw))
+	}
 	globalClientCall(func(client Client) {
 		client.Log(record, options...)
 	})

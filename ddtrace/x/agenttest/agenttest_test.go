@@ -278,3 +278,63 @@ func TestAgent_StatsEndpoint_AdvertisedIsReachable(t *testing.T) {
 		t.Errorf("expected 200 for advertised stats endpoint, got %d", resp.StatusCode)
 	}
 }
+
+// TestAgent_Spans_MutationDoesNotAffectCollection verifies that the default
+// agent satisfies SpanLister and that Spans returns deep copies: mutating a
+// returned span, including its reference fields, must not change the spans
+// later FindSpan and Spans calls return.
+func TestAgent_Spans_MutationDoesNotAffectCollection(t *testing.T) {
+	a := New()
+	a.HandleTraces("/v0.4/traces", func(_ io.Reader) []*Span {
+		s := makeSpan("op", "svc", "res", "web", map[string]any{
+			"top.key":  "tag",
+			"json.map": map[string]any{"nested": "value"},
+			"json.arr": []any{"item"},
+		})
+		s.Meta["meta.key"] = "value"
+		s.Metrics["metric.key"] = 1.5
+		return []*Span{s}
+	})
+	if err := a.Start(t); err != nil {
+		t.Fatal(err)
+	}
+	rt := a.Transport()
+	req, _ := newTestRequest("POST", "http://"+a.Addr()+"/v0.4/traces", strings.NewReader(`{}`))
+	resp, err := rt.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("RoundTrip error: %v", err)
+	}
+	resp.Body.Close()
+
+	lister, ok := a.(SpanLister)
+	if !ok {
+		t.Fatal("the agent returned by New must implement SpanLister")
+	}
+	spans := lister.Spans()
+	if len(spans) != 1 {
+		t.Fatalf("expected 1 span, got %d", len(spans))
+	}
+	spans[0].Operation = "mutated-op"
+	spans[0].Meta["meta.key"] = "mutated"
+	spans[0].Metrics["metric.key"] = -1
+	spans[0].Tags["top.key"] = "mutated"
+	spans[0].Tags["json.map"].(map[string]any)["nested"] = "mutated"
+	spans[0].Tags["json.arr"].([]any)[0] = "mutated"
+
+	found := a.FindSpan(With().Operation("op"))
+	if found == nil {
+		t.Fatal("collected span changed after caller mutated a Spans() result")
+	}
+	if found.Operation != "op" || found.Meta["meta.key"] != "value" {
+		t.Errorf("collected span was mutated through the copy: op=%q meta=%q", found.Operation, found.Meta["meta.key"])
+	}
+	if found.Metrics["metric.key"] != 1.5 || found.Tags["top.key"] != "tag" {
+		t.Errorf("collected span maps were mutated through the copy")
+	}
+	if found.Tags["json.map"].(map[string]any)["nested"] != "value" {
+		t.Errorf("collected span Tags map value was mutated through the copy")
+	}
+	if found.Tags["json.arr"].([]any)[0] != "item" {
+		t.Errorf("collected span Tags slice value was mutated through the copy")
+	}
+}

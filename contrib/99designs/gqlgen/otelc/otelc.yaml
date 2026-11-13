@@ -1,0 +1,48 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# otelc port of ../orchestrion.yml.
+#
+# Like orchestrion, the rules rewrite call sites in every package of the build,
+# dependencies included, except gqlgen and the gqlgen contrib. Inside gqlgen,
+# NewDefaultServer calls New, which would add the tracer twice. The contrib's
+# own tests create servers, and wrapping those would import the contrib into
+# itself.
+
+wrap_handler_new:
+  target:
+    - "**"
+    - not: "github.com/99designs/gqlgen/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/**"
+  where:
+    function_call: github.com/99designs/gqlgen/graphql/handler.New
+  do:
+    - wrap_call:
+        replace: |-
+          func(s *handler.Server) *handler.Server {
+            s.Use(gqlgentrace.NewTracer())
+            return s
+          }({{ . }})
+  imports:
+    handler: github.com/99designs/gqlgen/graphql/handler
+    gqlgentrace: github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2
+
+wrap_handler_new_default_server:
+  target:
+    - "**"
+    - not: "github.com/99designs/gqlgen/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/**"
+  where:
+    function_call: github.com/99designs/gqlgen/graphql/handler.NewDefaultServer
+  do:
+    - wrap_call:
+        replace: |-
+          func(s *handler.Server) *handler.Server {
+            s.Use(gqlgentrace.NewTracer())
+            return s
+          }({{ . }})
+  imports:
+    handler: github.com/99designs/gqlgen/graphql/handler
+    gqlgentrace: github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2

@@ -7,6 +7,7 @@ package fasthttp_test
 
 import (
 	"fmt"
+	"time"
 
 	fasthttptrace "github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2"
 
@@ -26,6 +27,18 @@ func Example() {
 
 	// Start fasthttp server
 	fasthttp.ListenAndServe(":8081", fasthttptrace.WrapHandler(fastHTTPHandler))
+}
+
+func ExampleTimeoutHandler() {
+	tracer.Start()
+	defer tracer.Stop()
+
+	handler := fasthttptrace.TimeoutHandler(
+		fasthttptrace.WrapHandler(fastHTTPHandler),
+		2*time.Second,
+		"request timed out",
+	)
+	fasthttp.ListenAndServe(":8081", handler)
 }
 
 func Example_withServiceName() {

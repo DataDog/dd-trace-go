@@ -18,10 +18,12 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/metrics"
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/payload"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/trace"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/wrapper"
 
@@ -77,6 +79,9 @@ type (
 		TraceContextExtractor trace.ContextExtractor
 		// TracerOptions are additional options passed to the tracer.
 		TracerOptions []tracer.StartOption
+		// StripInjectedContext enables stripping of injected _datadog propagation
+		// carriers from the Lambda payload before the user handler is invoked.
+		StripInjectedContext bool
 	}
 )
 
@@ -102,6 +107,12 @@ const (
 	// FIPSModeEnvVar is the environment variable that determines whether to enable FIPS mode.
 	// Defaults to true in GovCloud regions and false otherwise.
 	FIPSModeEnvVar = "DD_LAMBDA_FIPS_MODE"
+	// StripContextEnabledEnvVar enables stripping of injected _datadog propagation
+	// carriers from the Lambda payload before the user handler is invoked.
+	StripContextEnabledEnvVar = "DD_TRACE_AWS_LAMBDA_STRIP_CONTEXT_ENABLED"
+	// StripInjectedContextEnvVar is the legacy name of StripContextEnabledEnvVar.
+	// It is still honored for backward compatibility.
+	StripInjectedContextEnvVar = "DD_LAMBDA_STRIP_INJECTED_CONTEXT"
 
 	// DefaultSite to send API messages to.
 	DefaultSite = "datadoghq.com"
@@ -251,6 +262,21 @@ func (cfg *Config) toTraceConfig() trace.Config {
 	return traceConfig
 }
 
+func (cfg *Config) toPayloadConfig() payload.Config {
+	pc := payload.Config{}
+	if cfg != nil {
+		pc.StripInjectedContext = cfg.StripInjectedContext
+	}
+	if !pc.StripInjectedContext {
+		enabled, err := strconv.ParseBool(env.Get(StripContextEnabledEnvVar))
+		if err != nil {
+			enabled, _ = strconv.ParseBool(env.Get(StripInjectedContextEnvVar))
+		}
+		pc.StripInjectedContext = enabled
+	}
+	return pc
+}
+
 func initializeListeners(cfg *Config) []wrapper.HandlerListener {
 	logLevel := os.Getenv(LogLevelEnvVar)
 	if strings.EqualFold(logLevel, "debug") || (cfg != nil && cfg.DebugLogging) {
@@ -260,12 +286,14 @@ func initializeListeners(cfg *Config) []wrapper.HandlerListener {
 	extensionManager := extension.BuildExtensionManager(traceConfig.UniversalInstrumentation)
 	isExtensionRunning := extensionManager.IsExtensionRunning()
 	metricsConfig := cfg.toMetricsConfig(isExtensionRunning)
+	payloadConfig := cfg.toPayloadConfig()
 
 	// Wrap the handler with listeners that add instrumentation for traces and metrics.
 	tl := trace.MakeListener(traceConfig, extensionManager)
 	ml := metrics.MakeListener(metricsConfig, extensionManager)
+	pl := payload.MakeListener(payloadConfig)
 	return []wrapper.HandlerListener{
-		&tl, &ml,
+		&tl, &ml, &pl, // pl must be last, so trace/metrics see the raw payload before stripping.
 	}
 }
 

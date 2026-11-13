@@ -7,6 +7,7 @@ package httptrace
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"strings"
 	"testing"
@@ -194,4 +195,188 @@ func TestInferredProxySpans(t *testing.T) {
 
 		assert.Equal(t, startTime.UnixMilli(), gwSpan.StartTime().UnixMilli())
 	})
+}
+
+// TestInferredProxySpanQueryString checks that the query string in the
+// X-Dd-Proxy-Path header is obfuscated in http.url, removed when the
+// configured obfuscation regexp is not valid, and never in the route or the
+// resource name.
+func TestInferredProxySpanQueryString(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		env    map[string]string
+		path   string
+		domain string
+		want   string
+	}{
+		{name: "no query", path: "/test", domain: "example.com", want: "example.com/test"},
+		{name: "obfuscated", path: "/test?password=secret&a=1", domain: "example.com", want: "example.com/test?<redacted>&a=1"},
+		// A domain name cannot contain '?': the query string of the domain header is removed.
+		{name: "query in domain", path: "/test?a=1", domain: "example.com?token=secret", want: "example.com/test?a=1"},
+		{name: "invalid regexp fails closed", env: map[string]string{EnvQueryStringRegexp: `(?<=x)a`}, path: "/test?password=secret&a=1", domain: "example.com", want: "example.com/test"},
+		{name: "obfuscation disabled", env: map[string]string{EnvQueryStringRegexp: ""}, path: "/test?a=1", domain: "example.com", want: "example.com/test?a=1"},
+		{name: "query string disabled", env: map[string]string{envQueryStringDisabled: "true"}, path: "/test?a=1", domain: "example.com", want: "example.com/test"},
+		{name: "server allowlist", env: map[string]string{envServerQueryStringAllowlist: "a", envClientQueryStringAllowlist: "b"}, path: "/test?a=1&b=2&token=x", domain: "example.com", want: "example.com/test?a=1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldCfg := cfg
+			t.Cleanup(func() { cfg = oldCfg })
+			t.Setenv("DD_TRACE_INFERRED_PROXY_SERVICES_ENABLED", "true")
+			for _, k := range []string{EnvQueryStringRegexp, envQueryStringDisabled, envQueryStringAllowlist, envClientQueryStringAllowlist, envServerQueryStringAllowlist} {
+				if v, ok := tc.env[k]; ok {
+					t.Setenv(k, v)
+				} else {
+					unsetEnv(t, k)
+				}
+			}
+			ResetCfg()
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			req, err := http.NewRequest("GET", "https://example.com/test", nil)
+			require.NoError(t, err)
+			req.Header.Set("x-dd-proxy", "aws-apigateway")
+			req.Header.Set("x-dd-proxy-request-time-ms", strconv.FormatInt(time.Now().UnixMilli(), 10))
+			req.Header.Set("x-dd-proxy-path", tc.path)
+			req.Header.Set("x-dd-proxy-httpmethod", "GET")
+			req.Header.Set("x-dd-proxy-domain-name", tc.domain)
+
+			_, _, finishSpans := StartRequestSpan(req)
+			finishSpans(200, nil)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 2)
+			gwSpan := spans[1]
+			require.Equal(t, "aws.apigateway", gwSpan.OperationName())
+			assert.Equal(t, tc.want, gwSpan.Tag(ext.HTTPURL))
+			assert.Equal(t, "/test", gwSpan.Tag(ext.HTTPRoute))
+			assert.Equal(t, "GET /test", gwSpan.Tag(ext.ResourceName))
+			assert.Equal(t, "example.com", gwSpan.Tag(ext.ServiceName))
+		})
+	}
+}
+
+func TestInferredProxySpansOTelSemantics(t *testing.T) {
+	oldCfg := cfg
+	t.Cleanup(func() { cfg = oldCfg })
+	cfg.inferredProxyServicesEnabled = true
+	cfg.otelSemanticsEnabled = true
+	cfg.traceClientIP = true
+
+	startTime := time.Now().Add(-5 * time.Second)
+	inferredHeaders := map[string]string{
+		ProxyHeaderSystem:      "aws-apigateway",
+		ProxyHeaderStartTimeMs: strconv.FormatInt(startTime.UnixMilli(), 10),
+		ProxyHeaderPath:        "/test/{id}",
+		ProxyHeaderHTTPMethod:  "CUSTOM",
+		ProxyHeaderDomain:      "example.com",
+		ProxyHeaderStage:       "dev",
+	}
+
+	for _, tt := range []struct {
+		name      string
+		target    string
+		proxyPath string
+		wantPath  string
+	}{
+		{name: "empty path defaults to slash", target: "https://example.com", wantPath: "/"},
+		{name: "request path takes precedence", target: "https://example.com/request/path", proxyPath: "/proxy/path", wantPath: "/request/path"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			req := httptest.NewRequest(http.MethodGet, tt.target, nil)
+			for key, value := range inferredHeaders {
+				req.Header.Set(key, value)
+			}
+			req.Header.Set(ProxyHeaderPath, tt.proxyPath)
+
+			_, _, finishSpans := StartRequestSpan(req)
+			finishSpans(http.StatusOK, nil)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 2)
+			assert.Equal(t, tt.wantPath, spans[1].Tag(ext.URLPath))
+		})
+	}
+
+	t.Run("proxy header queries are excluded", func(t *testing.T) {
+		oldCfg := cfg
+		t.Cleanup(func() { cfg = oldCfg })
+		cfg.queryString = false
+
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		req := httptest.NewRequest(http.MethodGet, "https://example.com?password=secret", nil)
+		for key, value := range inferredHeaders {
+			req.Header.Set(key, value)
+		}
+		req.Header.Set(ProxyHeaderPath, "/test/{id}?password=secret")
+		req.Header.Set(ProxyHeaderDomain, "example.com?password=secret")
+
+		_, _, finishSpans := StartRequestSpan(req)
+		finishSpans(http.StatusOK, nil)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 2)
+		gwSpan := spans[1]
+		assert.Equal(t, "HTTP /test/{id}", gwSpan.Tag(ext.ResourceName))
+		assert.Equal(t, "/test/{id}", gwSpan.Tag(ext.HTTPRoute))
+		assert.Equal(t, "/test/{id}", gwSpan.Tag(ext.URLPath))
+		assert.Equal(t, "example.com", gwSpan.Tag(ext.ServerAddress))
+		assert.Nil(t, gwSpan.Tag(ext.URLQuery))
+	})
+
+	for _, status := range []int{http.StatusOK, http.StatusInternalServerError} {
+		t.Run(strconv.Itoa(status), func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			req := httptest.NewRequest(http.MethodGet, "https://example.com/test/123?page=2", nil)
+			req.Header.Set("User-Agent", "test-agent")
+			req.Header.Set("X-Forwarded-For", "203.0.113.1")
+			for key, value := range inferredHeaders {
+				req.Header.Set(key, value)
+			}
+
+			_, _, finishSpans := StartRequestSpan(req)
+			finishSpans(status, nil)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 2)
+			gwSpan := spans[1]
+			webReqSpan := spans[0]
+
+			assert.Equal(t, "aws.apigateway", gwSpan.OperationName())
+			assert.Equal(t, "HTTP /test/{id}", gwSpan.Tag(ext.ResourceName))
+			assert.Equal(t, ext.SpanKindServer, gwSpan.Tag(ext.SpanKind))
+			assert.Equal(t, "_OTHER", gwSpan.Tag(ext.HTTPRequestMethod))
+			assert.Equal(t, "CUSTOM", gwSpan.Tag(ext.HTTPRequestMethodOriginal))
+			assert.Equal(t, "https", gwSpan.Tag(ext.URLScheme))
+			assert.Equal(t, "/test/123", gwSpan.Tag(ext.URLPath))
+			assert.Equal(t, "page=2", gwSpan.Tag(ext.URLQuery))
+			assert.Equal(t, "/test/{id}", gwSpan.Tag(ext.HTTPRoute))
+			assert.Equal(t, "example.com", gwSpan.Tag(ext.ServerAddress))
+			assert.Equal(t, "test-agent", gwSpan.Tag(ext.UserAgentOriginal))
+			assert.Equal(t, "203.0.113.1", gwSpan.Tag(ext.ClientAddress))
+			assert.Equal(t, "192.0.2.1", gwSpan.Tag(ext.NetworkPeerAddress))
+			assert.Equal(t, strconv.Itoa(status), gwSpan.Tag(ext.HTTPResponseStatusCode))
+			assert.Nil(t, gwSpan.Tag(ext.HTTPMethod))
+			assert.Nil(t, gwSpan.Tag(ext.HTTPURL))
+			assert.Nil(t, gwSpan.Tag(ext.HTTPCode))
+			assert.Equal(t, webReqSpan.Tag(ext.HTTPResponseStatusCode), gwSpan.Tag(ext.HTTPResponseStatusCode))
+			assert.Equal(t, startTime.UnixMilli(), gwSpan.StartTime().UnixMilli())
+
+			if status == http.StatusInternalServerError {
+				assert.Equal(t, "500", gwSpan.Tag(ext.ErrorType))
+				assert.Equal(t, "500: Internal Server Error", gwSpan.Tag(ext.ErrorMsg))
+			} else {
+				assert.Nil(t, gwSpan.Tag(ext.ErrorType))
+				assert.Nil(t, gwSpan.Tag(ext.ErrorMsg))
+			}
+		})
+	}
 }

@@ -106,12 +106,12 @@ func mkRepeatedTrace(numSpans int) spanList {
 }
 
 // TestPayloadV1PreGrowWireIntegrity verifies that sizeHint does not change the
-// encoded wire bytes: a reference (unhinted) payload must match one with
-// sizeHint set, independent of the pre-grow mechanism itself.
+// encoded payload: a reference (unhinted) payload must match one with sizeHint
+// set, independent of the pre-grow mechanism itself.
 //
 // Uses newPayloadV1() directly (not the pool) so both payloads start from
-// identical zero state, and a single-tag trace so span.meta map iteration is
-// deterministic.
+// identical zero state. Payload attributes are a map encoded in iteration
+// order, so the payloads are compared decoded rather than byte-for-byte.
 func TestPayloadV1PreGrowWireIntegrity(t *testing.T) {
 	s := newBasicSpan("http.request")
 	s.start = fixedTime
@@ -136,7 +136,12 @@ func TestPayloadV1PreGrowWireIntegrity(t *testing.T) {
 	hintedBytes, err := io.ReadAll(hinted)
 	require.NoError(t, err)
 
-	assert.Equal(t, referenceBytes, hintedBytes, "sizeHint must not change encoded wire bytes")
+	assert.Len(t, hintedBytes, len(referenceBytes), "sizeHint must not change encoded size")
+	referenceDecoded, err := decodeTestingPayload(referenceBytes)
+	require.NoError(t, err)
+	hintedDecoded, err := decodeTestingPayload(hintedBytes)
+	require.NoError(t, err)
+	assert.Equal(t, referenceDecoded, hintedDecoded, "sizeHint must not change encoded payload")
 	assert.Equal(t, reference.itemCount(), hinted.itemCount())
 }
 

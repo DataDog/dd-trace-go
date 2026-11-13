@@ -89,3 +89,35 @@ type errorReader struct{}
 func (e *errorReader) Read(p []byte) (int, error) {
 	return 0, errors.New("read error")
 }
+
+type errAfterDataReader struct {
+	data []byte
+	pos  int
+	err  error
+}
+
+func (r *errAfterDataReader) Read(p []byte) (int, error) {
+	if r.pos < len(r.data) {
+		n := copy(p, r.data[r.pos:])
+		r.pos += n
+		return n, nil
+	}
+	return 0, r.err
+}
+
+func (r *errAfterDataReader) Close() error { return nil }
+
+func TestNewEncodable_ReaderErrorReplaysConsumedBytes(t *testing.T) {
+	payload := []byte(`{"key":"value"}`)
+	var rc io.ReadCloser = &errAfterDataReader{data: payload, err: io.ErrUnexpectedEOF}
+	reader := &rc
+
+	enc, err := NewEncodable("application/json", reader, len(payload))
+	assert.Nil(t, enc)
+	assert.Error(t, err)
+
+	// The reader must be restored so the caller can still read the bytes AppSec consumed
+	// (e.g. http.MaxBytesReader returns data alongside its limit error).
+	got, _ := io.ReadAll(*reader)
+	assert.Equal(t, payload, got)
+}

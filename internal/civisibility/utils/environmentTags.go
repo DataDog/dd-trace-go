@@ -10,7 +10,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -231,19 +230,8 @@ func createCITagsMap() map[string]string {
 	log.Debug("civisibility: os architecture: %s", runtime.GOARCH)
 	log.Debug("civisibility: runtime version: %s", runtime.Version())
 
-	// Get command line test command
-	var cmd string
-	if len(os.Args) == 1 {
-		cmd = filepath.Base(os.Args[0])
-	} else {
-		cmd = fmt.Sprintf("%s %s ", filepath.Base(os.Args[0]), strings.Join(os.Args[1:], " "))
-	}
-
-	// Filter out some parameters to make the command more stable.
-	cmd = regexp.MustCompile(`(?si)-test.gocoverdir=(.*)\s`).ReplaceAllString(cmd, "")
-	cmd = regexp.MustCompile(`(?si)-test.v=(.*)\s`).ReplaceAllString(cmd, "")
-	cmd = regexp.MustCompile(`(?si)-test.testlogfile=(.*)\s`).ReplaceAllString(cmd, "")
-	cmd = strings.TrimSpace(cmd)
+	// Get command line test command, without the flags that change between runs.
+	cmd := testCommand(os.Args)
 	localTags[constants.TestCommand] = cmd
 	log.Debug("civisibility: test command: %s", cmd)
 
@@ -314,7 +302,7 @@ func createCITagsMap() map[string]string {
 		// If the head commit SHA is available, populate additional Git head metadata
 		if headCommitSha, ok := localTags[constants.GitHeadCommit]; ok {
 			if headCommitData, err := fetchCommitDataFunc(headCommitSha); err != nil {
-				log.Warn("civisibility: failed to fetch head commit data for %s: %s", headCommitSha, err.Error())
+				log.Warn("civisibility: failed to fetch head commit data for %s: %s", headCommitSha, err.Error()) //errtrack:ignore repository command failure
 			} else if headCommitSha == headCommitData.CommitSha {
 				localTags[constants.GitHeadAuthorDate] = headCommitData.AuthorDate.String()
 				localTags[constants.GitHeadAuthorName] = headCommitData.AuthorName
@@ -324,7 +312,7 @@ func createCITagsMap() map[string]string {
 				localTags[constants.GitHeadCommitterEmail] = headCommitData.CommitterEmail
 				localTags[constants.GitHeadMessage] = headCommitData.CommitMessage
 			} else {
-				log.Warn("civisibility: head commit SHA %s does not match the fetched commit SHA %s", headCommitSha, headCommitData.CommitSha)
+				log.Warn("civisibility: head commit SHA %s does not match the fetched commit SHA %s", headCommitSha, headCommitData.CommitSha) //errtrack:ignore repository state mismatch
 			}
 		}
 
@@ -354,4 +342,42 @@ func createCIMetricsMap() map[string]float64 {
 
 	log.Debug("civisibility: common metrics created with %d items", len(localMetrics))
 	return localMetrics
+}
+
+// volatileTestFlags are the go test flags whose values change between runs or
+// machines: the coverage directory, the verbose mode that test2json selects,
+// the test cache's log file, the coverage profile in the work directory, the
+// absolute output directory and the fuzz cache.
+var volatileTestFlags = []string{"test.gocoverdir=", "test.v=", "test.testlogfile=", "test.coverprofile=", "test.outputdir=", "test.fuzzcachedir="}
+
+// testCommand joins the binary name and its arguments without the volatile
+// flags, to make the command more stable. Only the arguments that set those
+// flags are removed; the other arguments keep their order.
+func testCommand(args []string) string {
+	if len(args) == 0 {
+		return ""
+	}
+	kept := []string{filepath.Base(args[0])}
+	for _, arg := range args[1:] {
+		if !isVolatileTestFlag(arg) {
+			kept = append(kept, arg)
+		}
+	}
+	return strings.TrimSpace(strings.Join(kept, " "))
+}
+
+// isVolatileTestFlag reports whether arg sets one of volatileTestFlags, in the
+// flag package's -name=value or --name=value form, without regard to case.
+func isVolatileTestFlag(arg string) bool {
+	name, found := strings.CutPrefix(arg, "-")
+	if !found {
+		return false
+	}
+	name = strings.TrimPrefix(name, "-")
+	for _, prefix := range volatileTestFlags {
+		if len(name) >= len(prefix) && strings.EqualFold(name[:len(prefix)], prefix) {
+			return true
+		}
+	}
+	return false
 }

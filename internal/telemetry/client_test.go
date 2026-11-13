@@ -1000,6 +1000,9 @@ func TestClientFlush(t *testing.T) {
 			name: "simple-gauge",
 			when: func(c *client) {
 				c.Gauge(NamespaceTracers, "init_time", nil).Submit(1)
+				// When less than one whole second elapsed, the client skips the
+				// gauge series.
+				time.Sleep(time.Second)
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -1010,6 +1013,7 @@ func TestClientFlush(t *testing.T) {
 				assert.Equal(t, NamespaceTracers, metrics.Series[0].Namespace)
 				assert.Equal(t, "init_time", metrics.Series[0].Metric)
 				assert.Empty(t, metrics.Series[0].Tags)
+				assert.Equal(t, int64(1), metrics.Series[0].Interval)
 				assert.NotZero(t, metrics.Series[0].Points[0][0])
 				assert.Equal(t, 1.0, metrics.Series[0].Points[0][1])
 			},
@@ -1019,6 +1023,9 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.Gauge(NamespaceTracers, "init_time_1", nil).Submit(1)
 				c.Gauge(NamespaceTracers, "init_time_2", nil).Submit(2)
+				// When less than one whole second elapsed, the client skips the
+				// gauge series.
+				time.Sleep(time.Second)
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]
@@ -1045,6 +1052,9 @@ func TestClientFlush(t *testing.T) {
 			when: func(c *client) {
 				c.Gauge(NamespaceTracers, "init_time", []string{"test:1"}).Submit(1)
 				c.Gauge(NamespaceTracers, "init_time", []string{"test:2"}).Submit(2)
+				// When less than one whole second elapsed, the client skips the
+				// gauge series.
+				time.Sleep(time.Second)
 			},
 			expect: func(t *testing.T, payloads []transport.Payload) {
 				payload := payloads[0]

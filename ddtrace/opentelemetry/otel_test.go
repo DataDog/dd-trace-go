@@ -35,7 +35,12 @@ func TestHttpDistributedTrace(t *testing.T) {
 	w := otelhttp.NewHandler(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		receivedSpan := oteltrace.SpanFromContext(r.Context())
 		assert.Equal(rootSpan.SpanContext().TraceID(), receivedSpan.SpanContext().TraceID())
-	}), "testOperation")
+	}), "testOperation",
+		// otelhttp v0.69.0 stopped naming the handler span after the operation
+		// (it uses the request method instead), which changed the span resource
+		// this test asserts. Pin the formatter so the test holds for both the
+		// v0.68.0 and v0.69.0 versions the workspace can resolve.
+		otelhttp.WithSpanNameFormatter(func(operation string, _ *http.Request) string { return operation }))
 	testServer := httptest.NewServer(w)
 	defer testServer.Close()
 	c := http.Client{Transport: otelhttp.NewTransport(nil)}

@@ -168,8 +168,9 @@ func TestLRUCache_SerialIDZeroIsNotAbsent(t *testing.T) {
 
 func TestExposureWriter_AppendCarriesSerialIDIntoCache(t *testing.T) {
 	writer := &exposureWriter{
-		buffer: make([]exposureEvent, 0, 256),
-		cache:  newExposureLRUCache(defaultExposureCacheCapacity),
+		datadogLoggingEnabled: true,
+		buffer:                make([]exposureEvent, 0, 256),
+		cache:                 newExposureLRUCache(defaultExposureCacheCapacity),
 	}
 
 	event := exposureEvent{
@@ -197,6 +198,28 @@ func TestExposureWriter_AppendCarriesSerialIDIntoCache(t *testing.T) {
 	}
 	if *writer.buffer[1].SerialID != 340132 {
 		t.Errorf("expected serial id 340132, got %d", *writer.buffer[1].SerialID)
+	}
+}
+
+// TestExposureWriter_FlushReportsEventsStrandedByStop pins that flush reports
+// events left in a stopped writer's buffer as undelivered, not as nothing
+// pending, so shutdown does not drop them silently.
+func TestExposureWriter_FlushReportsEventsStrandedByStop(t *testing.T) {
+	writer := &exposureWriter{
+		buffer:                make([]exposureEvent, 0, 256),
+		cache:                 newExposureLRUCache(defaultExposureCacheCapacity),
+		stopChan:              make(chan struct{}),
+		datadogLoggingEnabled: true,
+	}
+	if n, err := writer.flush(); n != 0 || err != nil {
+		t.Fatalf("flush of an empty writer = (%d, %v), want (0, nil)", n, err)
+	}
+
+	writer.append(exposureEvent{Flag: exposureFlag{Key: "test-flag"}, Subject: exposureSubject{ID: "user-123"}})
+	writer.stop()
+
+	if n, err := writer.flush(); n != 1 || err == nil {
+		t.Fatalf("flush of a stopped writer with a buffered event = (%d, %v), want (1, error)", n, err)
 	}
 }
 
@@ -402,8 +425,9 @@ func TestLRUCache_SingleCapacity(t *testing.T) {
 func TestExposureWriter_ConcurrentAppend(t *testing.T) {
 	// Create a writer with a mock/nil HTTP client (we only care about the cache behavior)
 	writer := &exposureWriter{
-		buffer: make([]exposureEvent, 0, 256),
-		cache:  newExposureLRUCache(1000),
+		datadogLoggingEnabled: true,
+		buffer:                make([]exposureEvent, 0, 256),
+		cache:                 newExposureLRUCache(1000),
 	}
 
 	const numGoroutines = 100
@@ -432,23 +456,32 @@ func TestExposureWriter_ConcurrentAppend(t *testing.T) {
 	wg.Wait()
 
 	// Verify no panic occurred and buffer has events
-	// Due to deduplication, we expect fewer events than total operations
 	if len(writer.buffer) == 0 {
 		t.Error("expected some events in buffer after concurrent appends")
 	}
 
-	// With 10 unique (flag, subject) pairs and varying allocations/variants,
-	// we should have significantly fewer events than numGoroutines * opsPerGoroutine
+	// The dedup cache key is (flag, subject) only; allocation is part of the
+	// cached value, so an allocation change on an existing key is a real
+	// change, not a duplicate. With allocation varying by goroutineID%3, a
+	// legal interleaving can make every append to a given (flag, subject) key
+	// observe a different allocation than the previous one — for example,
+	// goroutines completing in round-robin order by ID. Deduplication then
+	// correctly keeps every one of those changes, so the buffer can be as
+	// large as numGoroutines*opsPerGoroutine; it can never exceed that, since
+	// each append contributes at most one buffered event.
+	// TestExposureWriter_ConcurrentAppend_Deduplication below is the test that
+	// pins strict deduplication, using identical events from every goroutine.
 	totalOps := numGoroutines * opsPerGoroutine
-	if len(writer.buffer) >= totalOps {
-		t.Errorf("deduplication not working: got %d events, expected fewer than %d", len(writer.buffer), totalOps)
+	if len(writer.buffer) > totalOps {
+		t.Errorf("got %d events, expected at most %d", len(writer.buffer), totalOps)
 	}
 }
 
 func TestExposureWriter_ConcurrentAppend_Deduplication(t *testing.T) {
 	writer := &exposureWriter{
-		buffer: make([]exposureEvent, 0, 256),
-		cache:  newExposureLRUCache(1000),
+		datadogLoggingEnabled: true,
+		buffer:                make([]exposureEvent, 0, 256),
+		cache:                 newExposureLRUCache(1000),
 	}
 
 	const numGoroutines = 50
@@ -479,7 +512,7 @@ func TestExposureWriter_ConcurrentAppend_Deduplication(t *testing.T) {
 	}
 }
 
-func TestExposureHook_After(t *testing.T) {
+func TestExposureHook_Finally(t *testing.T) {
 	tests := []struct {
 		name              string
 		targetingKey      string
@@ -612,8 +645,9 @@ func TestExposureHook_After(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create a writer to capture events
 			writer := &exposureWriter{
-				buffer: make([]exposureEvent, 0, 256),
-				cache:  newExposureLRUCache(1000),
+				datadogLoggingEnabled: true,
+				buffer:                make([]exposureEvent, 0, 256),
+				cache:                 newExposureLRUCache(1000),
 			}
 			hook := newExposureHook(writer)
 
@@ -626,7 +660,7 @@ func TestExposureHook_After(t *testing.T) {
 				of.Boolean,
 				false,
 				of.ClientMetadata{},
-				of.Metadata{},
+				of.Metadata{Name: datadogProviderName},
 				evalCtx,
 			)
 
@@ -643,11 +677,7 @@ func TestExposureHook_After(t *testing.T) {
 				},
 			}
 
-			// Call After hook
-			err := hook.After(context.Background(), hookCtx, details, of.HookHints{})
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
+			hook.Finally(context.Background(), hookCtx, details, of.HookHints{})
 
 			// Check if event was created
 			if tc.expectEvent {
@@ -682,12 +712,13 @@ func TestExposureHook_After(t *testing.T) {
 	}
 }
 
-func TestExposureHook_After_EmptyTargetingKeyWithAttributes(t *testing.T) {
+func TestExposureHook_Finally_EmptyTargetingKeyWithAttributes(t *testing.T) {
 	// This test specifically verifies that exposures with empty targeting keys
 	// but with attributes are correctly logged (server-side evaluations)
 	writer := &exposureWriter{
-		buffer: make([]exposureEvent, 0, 256),
-		cache:  newExposureLRUCache(1000),
+		datadogLoggingEnabled: true,
+		buffer:                make([]exposureEvent, 0, 256),
+		cache:                 newExposureLRUCache(1000),
 	}
 	hook := newExposureHook(writer)
 
@@ -702,7 +733,7 @@ func TestExposureHook_After_EmptyTargetingKeyWithAttributes(t *testing.T) {
 		of.Boolean,
 		false,
 		of.ClientMetadata{},
-		of.Metadata{},
+		of.Metadata{Name: datadogProviderName},
 		evalCtx,
 	)
 
@@ -721,10 +752,7 @@ func TestExposureHook_After_EmptyTargetingKeyWithAttributes(t *testing.T) {
 		},
 	}
 
-	err := hook.After(context.Background(), hookCtx, details, of.HookHints{})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+	hook.Finally(context.Background(), hookCtx, details, of.HookHints{})
 
 	if len(writer.buffer) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(writer.buffer))
@@ -750,10 +778,11 @@ func TestExposureHook_After_EmptyTargetingKeyWithAttributes(t *testing.T) {
 	}
 }
 
-func TestExposureHook_After_ContextCancelled(t *testing.T) {
+func TestExposureHook_Finally_ResolvedBeforeCancellation(t *testing.T) {
 	writer := &exposureWriter{
-		buffer: make([]exposureEvent, 0, 256),
-		cache:  newExposureLRUCache(1000),
+		datadogLoggingEnabled: true,
+		buffer:                make([]exposureEvent, 0, 256),
+		cache:                 newExposureLRUCache(1000),
 	}
 	hook := newExposureHook(writer)
 
@@ -767,7 +796,7 @@ func TestExposureHook_After_ContextCancelled(t *testing.T) {
 		of.Boolean,
 		false,
 		of.ClientMetadata{},
-		of.Metadata{},
+		of.Metadata{Name: datadogProviderName},
 		evalCtx,
 	)
 
@@ -780,18 +809,16 @@ func TestExposureHook_After_ContextCancelled(t *testing.T) {
 				Variant: "enabled",
 				FlagMetadata: of.FlagMetadata{
 					metadataAllocationKey: "test-allocation",
+					metadataDoLogKey:      true,
 				},
 			},
 		},
 	}
 
-	err := hook.After(ctx, hookCtx, details, of.HookHints{})
-	if err != context.Canceled {
-		t.Errorf("expected context.Canceled error, got %v", err)
-	}
+	hook.Finally(ctx, hookCtx, details, of.HookHints{})
 
-	// No event should be logged
-	if len(writer.buffer) != 0 {
-		t.Errorf("expected no events when context cancelled, got %d", len(writer.buffer))
+	// Successful resolution remains an exposure after cancellation.
+	if len(writer.buffer) != 1 {
+		t.Errorf("expected one event for the resolved result, got %d", len(writer.buffer))
 	}
 }

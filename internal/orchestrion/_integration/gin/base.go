@@ -51,6 +51,11 @@ func (tc *TestCaseBase) Run(_ context.Context, t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
+// ExpectedSpanCount is the net/http client and server spans plus one gin span.
+func (*TestCaseBase) ExpectedSpanCount() int {
+	return 3
+}
+
 func (tc *TestCaseBase) ExpectedTraces() trace.Traces {
 	httpURL := "http://" + tc.Server.Addr + "/ping"
 	return trace.Traces{

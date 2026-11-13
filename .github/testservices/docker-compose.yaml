@@ -14,7 +14,7 @@
 
 services:
   datadog-agent:
-    image: registry.datadoghq.com/agent:latest@sha256:44bfe2c475d9467e78e73e4327148d7e3902da5a48cbb1b0f6b84b01283e89d5
+    image: datadog/agent:latest@sha256:4aa71f1f624e36ed4d04568e4ad3f323af14426db07d2f9ed98869f6d0bdbbd3
     environment:
       DD_HOSTNAME: "github-actions-worker"
       DD_APM_ENABLED: "true"
