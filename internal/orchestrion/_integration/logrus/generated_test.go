@@ -13,6 +13,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/harness"
 )
 
+func TestCorrelationAlias(t *testing.T) {
+	harness.Run(t, new(TestCaseCorrelationAlias))
+}
+
 func TestCorrelationContribHook(t *testing.T) {
 	harness.Run(t, new(TestCaseCorrelationContribHook))
 }
@@ -31,6 +35,10 @@ func TestCorrelationLiteralVal(t *testing.T) {
 
 func TestCorrelationNew(t *testing.T) {
 	harness.Run(t, new(TestCaseCorrelationNew))
+}
+
+func TestCorrelationPackageVar(t *testing.T) {
+	harness.Run(t, new(TestCaseCorrelationPackageVar))
 }
 
 func TestCorrelationStandard(t *testing.T) {

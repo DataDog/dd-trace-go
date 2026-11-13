@@ -196,6 +196,14 @@ func literalWithError() error {
 	return op()
 }
 
+// literalSpanName names its span with span.name, which wins over the first
+// argument.
+func literalSpanName() {
+	//dd:span literal:renamed span.name:literal.op
+	op := func() {}
+	op()
+}
+
 // otelc also expands a directive on a var declaration or on a key:value
 // element. Orchestrion does not.
 

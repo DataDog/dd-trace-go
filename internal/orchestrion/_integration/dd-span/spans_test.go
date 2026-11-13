@@ -272,6 +272,16 @@ func TestFunctionLiteralContext(t *testing.T) {
 	assert.Equal(t, "literal error", spans["error"].Meta["error.message"])
 }
 
+func TestFunctionLiteralSpanName(t *testing.T) {
+	spans := traced(t, func(context.Context) {
+		literalSpanName()
+	})
+
+	requireOperations(t, spans, "test.root", "literal.op")
+	requireParent(t, spans, "literal.op", "test.root")
+	assert.Equal(t, map[string]string{"literal": "renamed"}, userMeta(spans["literal.op"]))
+}
+
 // otelc expands a directive on a var declaration or a key:value element, and
 // Orchestrion does not.
 func TestFunctionLiteralOtelcOnly(t *testing.T) {
