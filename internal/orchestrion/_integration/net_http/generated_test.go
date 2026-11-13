@@ -21,6 +21,10 @@ func TestClientGoroutine(t *testing.T) {
 	harness.Run(t, new(TestCaseClientGoroutine))
 }
 
+func TestClientShorthands(t *testing.T) {
+	harness.Run(t, new(TestCaseClientShorthands))
+}
+
 func TestDependency(t *testing.T) {
 	harness.Run(t, new(TestCaseDependency))
 }

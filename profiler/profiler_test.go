@@ -174,6 +174,17 @@ func TestStart(t *testing.T) {
 		defer Stop()
 		assert.ErrorIs(t, err, errProfilingNotSupportedInAWSLambda)
 	})
+
+	t.Run("restart-disabled-clears-enabled-flag", func(t *testing.T) {
+		require.NoError(t, Start())
+		require.True(t, traceprof.ProfilerEnabled())
+
+		t.Setenv("DD_PROFILING_ENABLED", "false")
+		require.NoError(t, Start())
+		defer Stop()
+
+		assert.False(t, traceprof.ProfilerEnabled())
+	})
 }
 
 // TestStartWithoutStopReconfigures verifies that calling Start while the
