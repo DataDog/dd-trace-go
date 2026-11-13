@@ -320,11 +320,30 @@ func TestAppSecMissingRoute(t *testing.T) {
 	})
 }
 
-// TestAppSecSchemaPerEndpoint checks that each endpoint has its own API Security
-// sampling key: with the route in the key, 2 endpoints get a schema in the same
-// delay. The third request (same endpoint as the first) is the negative control.
-// The schema extraction needs a WAF budget that CI load cannot exhaust, so the
-// test sets its own timeout (the default is 2 ms).
+// schemaRouter returns a router with 2 endpoints that have a path parameter.
+func schemaRouter() http.Handler {
+	router := chi.NewRouter()
+	router.Use(Middleware())
+	router.Get("/schema-a/{id}", okHandler)
+	router.Get("/schema-b/{id}", okHandler)
+	return router
+}
+
+// requestTags serves a request and returns the tags of its span.
+func requestTags(t *testing.T, router http.Handler, target string) map[string]any {
+	t.Helper()
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, target, nil))
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	return spans[0].Tags()
+}
+
+// TestAppSecSchemaPerEndpoint checks that each endpoint gets an API Security
+// schema in the same delay, with the path parameters. The schema extraction needs
+// a WAF budget that CI load cannot exhaust, so the test sets its own timeout (the
+// default is 2 ms). TestAppSecSamplingPerEndpoint checks the sampling decision.
 func TestAppSecSchemaPerEndpoint(t *testing.T) {
 	t.Setenv("DD_API_SECURITY_SAMPLE_DELAY", "30")
 	t.Setenv("DD_API_SECURITY_ENABLED", "true")
@@ -332,34 +351,33 @@ func TestAppSecSchemaPerEndpoint(t *testing.T) {
 	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1s")
 	testutils.StartAppSec(t) // the default rules, which load the schema processors
 
-	router := chi.NewRouter()
-	router.Use(Middleware())
-	router.Get("/schema-a/{id}", okHandler)
-	router.Get("/schema-b/{id}", okHandler)
-
-	tags := func(target string) map[string]any {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, target, nil))
-		spans := mt.FinishedSpans()
-		require.Len(t, spans, 1)
-		return spans[0].Tags()
+	router := schemaRouter()
+	for _, target := range []string{"/schema-a/1", "/schema-b/1"} {
+		got := requestTags(t, router, target)
+		assert.Contains(t, got, "_dd.appsec.s.req.headers", target)
+		assert.Contains(t, got, "_dd.appsec.s.req.params", "%s: the schema has the path parameters", target)
 	}
+}
 
-	first := tags("/schema-a/1")
-	second := tags("/schema-b/1")
-	third := tags("/schema-a/2")
+// TestAppSecSamplingPerEndpoint checks that each endpoint has its own API Security
+// sampling key: with the route in the key, 2 endpoints are kept in the same delay.
+// The third request (same endpoint as the first) is the negative control. With APM
+// tracing disabled, the listener keeps a sampled request before the schema
+// extraction, so the test reads the sampling priority and does not depend on the
+// schema: it passes also when the WAF times out.
+func TestAppSecSamplingPerEndpoint(t *testing.T) {
+	t.Setenv("DD_API_SECURITY_SAMPLE_DELAY", "30")
+	t.Setenv("DD_API_SECURITY_ENABLED", "true")
+	t.Setenv("DD_APPSEC_ENABLED", "true")
+	t.Setenv("DD_APM_TRACING_ENABLED", "false")
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1ns")
+	testutils.StartAppSec(t)
 
-	t.Run("schema", func(t *testing.T) {
-		for _, got := range []map[string]any{first, second} {
-			assert.Contains(t, got, "_dd.appsec.s.req.headers")
-			assert.Contains(t, got, "_dd.appsec.s.req.params", "the schema has the path parameters")
-		}
-	})
-	t.Run("sampling", func(t *testing.T) {
-		assert.Contains(t, second, "_dd.appsec.s.req.headers", "another endpoint has its own sampling key")
-		assert.NotContains(t, third, "_dd.appsec.s.req.headers", "the same endpoint is sampled once in the delay")
-	})
+	router := schemaRouter()
+	const priority = "_sampling_priority_v1"
+	assert.EqualValues(t, 2, requestTags(t, router, "/schema-a/1")[priority], "kept")
+	assert.EqualValues(t, 2, requestTags(t, router, "/schema-b/1")[priority], "another endpoint has its own sampling key")
+	assert.NotEqualValues(t, 2, requestTags(t, router, "/schema-a/2")[priority], "the same endpoint is sampled once in the delay")
 }
 
 // TestAppSecHandlerPanic checks that the late WAF run does not run in a panic,

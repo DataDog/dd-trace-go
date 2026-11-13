@@ -23,8 +23,9 @@ import (
 // The handler expects the chi response writer that [Middleware] creates.
 //
 // With Use before routing, chi has not selected the route when this middleware
-// starts, so the handler asks chi which route matches (lookupRoute) and gives it
-// to the WAF early, then reports the route that chi selected after the handler.
+// starts, so the handler asks chi which route matches (lookupRoute) and gives its
+// path parameters to the WAF early. After the handler, it reports the route that
+// chi selected (API Security sampling uses the route).
 // The response writer is wrapped in a commitTracker (see writer_appsec.go) to know
 // if a late block can still replace the response.
 func withAppsec(next http.Handler, span trace.TagSetter) http.Handler {
