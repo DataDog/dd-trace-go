@@ -42,8 +42,9 @@ func newConfig() *config {
 
 // Run implements zerolog.Hook interface, attaches trace and span details found in entry context
 func (d DDContextLogHook) Run(e *zerolog.Event, _ zerolog.Level, _ string) {
-	span, found := tracer.SpanFromContext(e.GetCtx())
-	if !found {
+	ctx := e.GetCtx()
+	span, found := tracer.SpanFromContext(ctx)
+	if !found || correlatedByOther(ctx) {
 		return
 	}
 	if cfg.log128bits && span.Context().TraceID() != tracer.TraceIDZero {
@@ -52,4 +53,5 @@ func (d DDContextLogHook) Run(e *zerolog.Event, _ zerolog.Level, _ string) {
 		e.Str(ext.LogKeyTraceID, strconv.FormatUint(span.Context().TraceIDLower(), 10))
 	}
 	e.Str(ext.LogKeySpanID, strconv.FormatUint(span.Context().SpanID(), 10))
+	markCorrelated(ctx, e)
 }
