@@ -29,10 +29,14 @@ import (
 var _ oteltrace.Span = (*span)(nil)
 
 type span struct {
-	noop.Span               // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
-	mu         sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
-	DD         *tracer.Span
-	finished   bool
+	noop.Span              // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
+	mu        sync.RWMutex `msg:"-"` // all fields are protected by this RWMutex
+	DD        *tracer.Span
+	finished  bool
+	// endCtx is the Datadog span context saved at End. With the span pool on, the
+	// Datadog span can be reused after End, but its old context object is not, so
+	// SpanContext reads endCtx to keep returning the IDs of this span.
+	endCtx     *tracer.SpanContext
 	attributes map[string]any
 	spanKind   oteltrace.SpanKind
 	finishOpts []tracer.FinishOption
@@ -78,6 +82,7 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 		return
 	}
 	s.finished = true
+	s.endCtx = s.DD.Context()
 	if !s.otelSemanticsEnabled {
 		// Datadog operation-name handling. Under OTel semantics the span name maps to
 		// the resource (the OTLP span-name field) and operation.name is suppressed on
@@ -158,12 +163,22 @@ func EndOptions(sp oteltrace.Span, options ...tracer.FinishOption) {
 
 // SpanContext returns implementation of the oteltrace.SpanContext.
 func (s *span) SpanContext() oteltrace.SpanContext {
-	return ddSpanContext(s.DD)
+	s.mu.RLock()
+	ctx := s.endCtx
+	if ctx == nil {
+		ctx = s.DD.Context()
+	}
+	s.mu.RUnlock()
+	return spanContextFromDD(ctx)
 }
 
 // ddSpanContext converts the context of a Datadog span to an OpenTelemetry span context.
 func ddSpanContext(ddSpan *tracer.Span) oteltrace.SpanContext {
-	ctx := ddSpan.Context()
+	return spanContextFromDD(ddSpan.Context())
+}
+
+// spanContextFromDD converts a Datadog span context to an OpenTelemetry span context.
+func spanContextFromDD(ctx *tracer.SpanContext) oteltrace.SpanContext {
 	var traceID oteltrace.TraceID
 	var spanID oteltrace.SpanID
 	traceID = ctx.TraceIDBytes()
@@ -172,7 +187,7 @@ func ddSpanContext(ddSpan *tracer.Span) oteltrace.SpanContext {
 		TraceID: traceID,
 		SpanID:  spanID,
 	}
-	extractTraceData(ddSpan, &config)
+	extractTraceData(ctx, &config)
 	return oteltrace.NewSpanContext(config)
 }
 
@@ -185,9 +200,9 @@ const (
 	flagBits    = 8
 )
 
-func extractTraceData(ddSpan *tracer.Span, c *oteltrace.SpanContextConfig) {
+func extractTraceData(ctx *tracer.SpanContext, c *oteltrace.SpanContextConfig) {
 	headers := tracer.TextMapCarrier{}
-	if err := tracer.Inject(ddSpan.Context(), headers); err != nil {
+	if err := tracer.Inject(ctx, headers); err != nil {
 		return
 	}
 	state, err := oteltrace.ParseTraceState(headers["tracestate"])

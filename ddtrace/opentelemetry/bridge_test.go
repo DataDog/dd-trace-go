@@ -8,6 +8,8 @@ package opentelemetry
 import (
 	"context"
 	"errors"
+	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -602,4 +604,41 @@ func TestBorrowedSpanEndTimestamp(t *testing.T) {
 	assert.Greater(t, duration, float64(0))
 	// The msgp JSON numbers lose nanosecond precision at these magnitudes.
 	assert.InDelta(t, float64(end.UnixNano()), start+duration, 1000)
+}
+
+func TestSpanContextStableAfterEndWithReuse(t *testing.T) {
+	tp, _, cleanup := mockTracerProvider(t, tracer.WithSpanPool(true))
+	defer cleanup()
+
+	_, sp := tp.Tracer("").Start(context.Background(), "otel.op")
+	want := sp.SpanContext()
+	sp.End()
+	other, _ := tracer.StartSpanFromContext(context.Background(), "dd.other")
+	defer other.Finish()
+	// Simulate the span pool reusing the ended span's Datadog span.
+	sp.(*span).mu.Lock()
+	sp.(*span).DD = other
+	sp.(*span).mu.Unlock()
+
+	got := sp.SpanContext()
+	assert.Equal(t, want.TraceID(), got.TraceID())
+	assert.Equal(t, want.SpanID(), got.SpanID())
+	assert.Equal(t, want.TraceFlags(), got.TraceFlags())
+	assertSameTraceState(t, want.TraceState(), got.TraceState())
+}
+
+// assertSameTraceState compares trace states by member, ignoring the order of the
+// ";"-separated fields in each value, which the Datadog propagator does not fix.
+func assertSameTraceState(t *testing.T, want, got oteltrace.TraceState) {
+	t.Helper()
+	require.Equal(t, want.Len(), got.Len())
+	fields := func(v string) []string {
+		f := strings.Split(v, ";")
+		sort.Strings(f)
+		return f
+	}
+	want.Walk(func(k, v string) bool {
+		assert.Equal(t, fields(v), fields(got.Get(k)), "tracestate key %q", k)
+		return true
+	})
 }
