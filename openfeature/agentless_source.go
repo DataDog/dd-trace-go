@@ -14,6 +14,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -230,6 +231,14 @@ func reportMalformedAgentlessConfiguration(err error) {
 	telemetrylog.ReportError("openfeature: agentless: received malformed configuration", err)
 }
 
+func addEvaluatorCapabilities(req *http.Request, capabilities []string) {
+	if slices.Contains(capabilities, internalffe.DependentFlagVariantKeyV1) {
+		query := req.URL.Query()
+		query.Set(internalffe.DependentFlagsVariantKeyQueryParameter, internalffe.DependentFlagsVariantKeyQueryVersion)
+		req.URL.RawQuery = query.Encode()
+	}
+}
+
 // attempt is only used to number debug log lines.
 func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.requestTimeout)
@@ -256,6 +265,7 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 		}
 		return pollOutcomeStop, 0
 	}
+	addEvaluatorCapabilities(req, internalffe.EvaluatorCapabilities())
 	req.Header.Set("Accept-Encoding", "gzip")
 	req.Header.Set("DD-Client-Library-Language", "go")
 	req.Header.Set("DD-Client-Library-Version", version.Tag)
