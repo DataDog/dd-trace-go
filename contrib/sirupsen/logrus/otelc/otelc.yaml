@@ -1,0 +1,60 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# A hook, not wrap_call: logrus builds its standard logger with New in a
+# package-level var of its own, which no call site outside logrus reaches. The
+# hook only adds an empty DDContextLogHook, so it needs nothing initialized.
+logrus_new:
+  target: github.com/sirupsen/logrus
+  where:
+    func: New
+  do:
+    - inject_hooks:
+        after: AfterNew
+        path: github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/otelc/v2
+
+# Keeps a DDContextLogHook out of hooks that already hold one, so a logger the
+# application also sets up with the contrib gets the hook once. AddHook calls
+# Add with the logger's lock held.
+logrus_level_hooks_add:
+  target: github.com/sirupsen/logrus
+  where:
+    func: Add
+    recv: LevelHooks
+  do:
+    - inject_hooks:
+        before: BeforeLevelHooksAdd
+        path: github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/otelc/v2
+
+# A literal without Hooks gets a new map, since adding a hook to a nil map
+# panics.
+logrus_logger_literal:
+  target:
+    - "**"
+    - not: "github.com/sirupsen/logrus/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/**"
+  where:
+    struct_literal: github.com/sirupsen/logrus.Logger
+  do:
+    - set_fields:
+        field:
+          - name: Hooks
+            wrap: |-
+              (func(hooks logrus.LevelHooks) logrus.LevelHooks {
+                if hooks == nil {
+                  hooks = make(logrus.LevelHooks)
+                }
+                hooks.Add(&logrustrace.DDContextLogHook{})
+                return hooks
+              })({{ . }})
+            value: |-
+              (func() logrus.LevelHooks {
+                hooks := make(logrus.LevelHooks)
+                hooks.Add(&logrustrace.DDContextLogHook{})
+                return hooks
+              })()
+  imports:
+    logrus: github.com/sirupsen/logrus
+    logrustrace: github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2
