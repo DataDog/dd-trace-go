@@ -19,5 +19,7 @@ func main() {
 	span := tracer.StartSpan("otelc.external.check")
 	span.Finish()
 
+	useLibraries()
+
 	fmt.Println("otelc external application check")
 }

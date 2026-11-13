@@ -45,7 +45,7 @@ runs:
         base="https://github.com/DataDog/datadog-ci/releases/latest/download"
         # Only one retry: this action runs in many workflows, often in if: always() steps, and a
         # blackholed connection costs curl's 300s connect timeout per attempt.
-        curl -L --fail --retry 1 --retry-all-errors --retry-delay 2 --retry-connrefused "${base}/datadog-ci_${{ env.DD_CI_CLI_BUILD }}" \
+        curl -L --fail --retry 1 --retry-all-errors --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 60 "${base}/datadog-ci_${{ env.DD_CI_CLI_BUILD }}" \
           --output datadog-ci
         chmod +x datadog-ci
 
