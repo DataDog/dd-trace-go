@@ -35,16 +35,12 @@ func (r record) group(t *testing.T, key string) record {
 }
 
 // parseRecords parses the JSON lines in data and returns them by message.
-// Lines that are not JSON objects are ignored.
 func parseRecords(t *testing.T, data []byte) map[string]record {
 	t.Helper()
 	records := make(map[string]record)
 	s := bufio.NewScanner(bytes.NewReader(data))
 	for s.Scan() {
-		line := bytes.TrimSpace(s.Bytes())
-		if len(line) == 0 || line[0] != '{' {
-			continue
-		}
+		line := s.Bytes()
 		rec, err := parseRecord(line)
 		require.NoErrorf(t, err, "parsing %s", line)
 		require.Lenf(t, rec["msg"], 1, "record %s", line)
