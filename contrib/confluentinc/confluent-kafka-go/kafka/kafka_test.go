@@ -527,5 +527,23 @@ func testProduceEventsDeliveryClose(t *testing.T, explicit, dsm bool) {
 	}
 	time.Sleep(100 * time.Millisecond)
 	p.Close()
-	time.Sleep(100 * time.Millisecond)
+	// Drain the events left in Events() so the goroutine that forwards them
+	// (with data streams) can see the channel close and exit, instead of
+	// leaking into the goroutine leak checks of later tests.
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		for range p.Events() {
+		}
+	}()
+	select {
+	case <-drained:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Events() was not closed after Close")
+	}
+	// No event-forwarding goroutine started by kafkatrace may outlive Close.
+	assert.Eventually(t, func() bool {
+		err := goleak.Find()
+		return err == nil || !strings.Contains(err.Error(), "confluent-kafka-go/kafkatrace.Wrap")
+	}, 10*time.Second, 10*time.Millisecond, "found leaked kafkatrace goroutine(s)")
 }
