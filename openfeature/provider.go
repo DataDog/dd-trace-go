@@ -900,15 +900,15 @@ func (p *DatadogProvider) evaluate(
 	// on paths with no configuration (cancelled context, provider not ready) — an evaluation
 	// with no environment behind it withholds consent.
 	var observeFullEvaluationData bool
-	var evaluationEnvironment environment
+	var environmentIDMetadata, environmentNameMetadata any = "", ""
 	defer func() {
 		if res.Metadata == nil {
 			res.Metadata = make(map[string]any, 4)
 		}
 		res.Metadata[metadataEvalTimeKey] = evalNow.UnixMilli()
 		res.Metadata[metadataObserveFullEvaluationDataKey] = observeFullEvaluationData
-		res.Metadata[metadataEnvironmentIDKey] = evaluationEnvironment.ID
-		res.Metadata[metadataEnvironmentNameKey] = evaluationEnvironment.Name
+		res.Metadata[metadataEnvironmentIDKey] = environmentIDMetadata
+		res.Metadata[metadataEnvironmentNameKey] = environmentNameMetadata
 	}()
 
 	// Check if context was cancelled before starting evaluation
@@ -937,7 +937,7 @@ func (p *DatadogProvider) evaluate(
 	// identity through configuration replacement or an environment rename. No configuration
 	// was evaluated on the early returns above, so those events carry no identity.
 	observeFullEvaluationData = config.ObserveFullEvaluationData
-	evaluationEnvironment = config.Environment
+	environmentIDMetadata, environmentNameMetadata = config.environmentMetadata()
 
 	exclusion, err := p.experimentationOptOutMode.exclusion(flatCtx)
 	if err != nil {

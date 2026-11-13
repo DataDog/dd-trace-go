@@ -8,6 +8,7 @@ package openfeature
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"testing"
 
 	of "github.com/open-feature/go-sdk/openfeature"
@@ -110,7 +111,7 @@ func TestEnvironmentIdentitySurvivesConfigChanges(t *testing.T) {
 				for range 2 {
 					result := provider.StringEvaluation(context.Background(), "f", "fallback", of.FlattenedContext{of.TargetingKey: "user"})
 					// A config change between evaluation and Finally must not relabel this result.
-					provider.configuration.Environment = environment{Name: "later"}
+					provider.configuration = environmentIdentityConfig(t, environment{Name: "later"})
 					newFlagEvalLoggingHook(writer).Finally(context.Background(), makeHookContext("f", "user", nil),
 						makeEvalDetails(result.Variant, result.Reason, "", result.FlagMetadata), of.NewHookHints(nil))
 					provider.configuration = environmentIdentityConfig(t, identity)
@@ -152,4 +153,84 @@ func TestEnvironmentIdentitySurvivesConfigChanges(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEnvironmentIdentityConcurrentRefresh(t *testing.T) {
+	provider := &DatadogProvider{}
+	ctx := context.Background()
+	flatCtx := of.FlattenedContext{of.TargetingKey: "user"}
+	identities := []environment{
+		{ID: testEnvironmentID, Name: "Production"},
+		{ID: testEnvironmentID, Name: "Renamed"},
+		{ID: "22222222-2222-4222-8222-222222222222", Name: "Other"},
+		{Name: "Legacy"},
+		{},
+	}
+	configs := make([]*universalFlagsConfiguration, len(identities))
+	for i, identity := range identities {
+		configs[i] = environmentIdentityConfig(t, identity)
+	}
+
+	// Every replacement is first evaluated concurrently, exercising cache initialization.
+	for i, config := range configs {
+		provider.updateConfiguration(config)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for range 16 {
+			wg.Go(func() {
+				<-start
+				result := provider.StringEvaluation(ctx, "f", "fallback", flatCtx)
+				assert.Equal(t, "value", result.Value)
+				assert.Equal(t, identities[i].ID, result.FlagMetadata[metadataEnvironmentIDKey])
+				assert.Equal(t, identities[i].Name, result.FlagMetadata[metadataEnvironmentNameKey])
+				// Hook edits belong to one evaluation, not the cached metadata values.
+				result.FlagMetadata[metadataEnvironmentNameKey] = "customer edit"
+			})
+		}
+		close(start)
+		wg.Wait()
+	}
+
+	// During concurrent replacement, every evaluation must carry a coherent ID/name pair.
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() {
+			for range 100 {
+				result := provider.StringEvaluation(ctx, "f", "fallback", flatCtx)
+				got := environment{
+					ID:   result.FlagMetadata[metadataEnvironmentIDKey].(string),
+					Name: result.FlagMetadata[metadataEnvironmentNameKey].(string),
+				}
+				assert.Contains(t, identities, got)
+			}
+		})
+	}
+	for range 100 {
+		for _, config := range configs {
+			provider.updateConfiguration(config)
+		}
+	}
+	wg.Wait()
+}
+
+func TestEnvironmentIdentityReusedConfiguration(t *testing.T) {
+	config := environmentIdentityConfig(t, environment{ID: testEnvironmentID, Name: "Production"})
+	provider := &DatadogProvider{configuration: config}
+	ctx := context.Background()
+	flatCtx := of.FlattenedContext{of.TargetingKey: "user"}
+	before := provider.StringEvaluation(ctx, "f", "fallback", flatCtx)
+
+	// Reusing an unpublished object for decoding must reset even a populated cache.
+	provider.configuration = nil
+	next := environmentIdentityConfig(t, environment{Name: "Legacy"})
+	raw, err := json.Marshal(next)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(raw, config))
+	provider.configuration = config
+	after := provider.StringEvaluation(ctx, "f", "fallback", flatCtx)
+	assert.Equal(t, "value", after.Value)
+	assert.Equal(t, "", after.FlagMetadata[metadataEnvironmentIDKey])
+	assert.Equal(t, "Legacy", after.FlagMetadata[metadataEnvironmentNameKey])
+	assert.Equal(t, testEnvironmentID, before.FlagMetadata[metadataEnvironmentIDKey])
+	assert.Equal(t, "Production", before.FlagMetadata[metadataEnvironmentNameKey])
 }

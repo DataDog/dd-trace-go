@@ -698,3 +698,30 @@ func BenchmarkFlattenAndPruneContext(b *testing.B) {
 		}
 	})
 }
+
+// BenchmarkEnvironmentIdentityEvaluation measures metadata costs for legacy and current UFCs.
+func BenchmarkEnvironmentIdentityEvaluation(b *testing.B) {
+	for _, tc := range []struct {
+		name        string
+		environment environment
+	}{
+		{"empty", environment{}},
+		{"name", environment{Name: "test"}},
+		{"uuid_and_name", environment{ID: testEnvironmentID, Name: "test"}},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			provider := newDatadogProvider(ProviderConfig{})
+			b.Cleanup(provider.Shutdown)
+			config := createTestConfig()
+			config.Environment = tc.environment
+			provider.updateConfiguration(config)
+			ctx := context.Background()
+			flatCtx := openfeature.FlattenedContext{"targetingKey": "user-123", "country": "US"}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				_ = provider.BooleanEvaluation(ctx, "bool-flag", false, flatCtx)
+			}
+		})
+	}
+}

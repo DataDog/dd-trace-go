@@ -1011,7 +1011,7 @@ func TestEndToEnd_JSONSerialization(t *testing.T) {
 	originalConfig := createE2EBooleanConfig()
 
 	// Serialize to JSON
-	data, err := json.Marshal(originalConfig)
+	data, err := json.Marshal(&originalConfig)
 	if err != nil {
 		t.Fatalf("failed to marshal config: %v", err)
 	}
