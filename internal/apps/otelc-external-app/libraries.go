@@ -6,6 +6,7 @@
 package main
 
 import (
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/mux"
 	"github.com/julienschmidt/httprouter"
+	"github.com/rs/zerolog"
 	"github.com/valyala/fasthttp"
 	mongooptions "go.mongodb.org/mongo-driver/mongo/options"
 	mongov2options "go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -39,4 +41,5 @@ func useLibraries() {
 	}))
 	_ = mongooptions.Client()
 	_ = mongov2options.Client()
+	_ = zerolog.New(io.Discard)
 }
