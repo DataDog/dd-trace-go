@@ -43,6 +43,10 @@ env:
     contrib/99designs/gqlgen/otelc
     contrib/aws/aws-sdk-go
     contrib/aws/aws-sdk-go/otelc
+    contrib/confluentinc/confluent-kafka-go/kafka
+    contrib/confluentinc/confluent-kafka-go/kafka/otelc
+    contrib/confluentinc/confluent-kafka-go/kafka.v2
+    contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc
     contrib/net/http
     contrib/net/http/otelc
     contrib/database/sql
@@ -93,6 +97,8 @@ env:
     99designs.gqlgen
     mongo
     mongo.v2
+    confluent-kafka-go.v1
+    confluent-kafka-go.v2
     echo.v4
     echo.v5
     aws.v1
