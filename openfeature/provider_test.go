@@ -252,6 +252,7 @@ const defaultHookCount = 4
 
 func TestNewDatadogProvider(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	if provider == nil {
 		t.Fatal("expected provider to be non-nil")
 	}
@@ -271,6 +272,7 @@ func TestNewDatadogProvider(t *testing.T) {
 // time into FlagMetadata on every path so EVP first/last bounds use eval-time.
 func TestEvaluateStampsEvalTimeMetadata(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	provider.updateConfiguration(createTestConfig())
 	ctx := context.Background()
 
@@ -306,6 +308,7 @@ func TestEvaluateStampsEvalTimeMetadata(t *testing.T) {
 
 func TestBooleanEvaluation(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -378,6 +381,7 @@ func TestBooleanEvaluation(t *testing.T) {
 
 func TestStringEvaluation(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -419,6 +423,7 @@ func TestStringEvaluation(t *testing.T) {
 
 func TestIntEvaluation(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -456,6 +461,7 @@ func TestIntEvaluation(t *testing.T) {
 
 func TestFloatEvaluation(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -494,6 +500,7 @@ func TestFloatEvaluation(t *testing.T) {
 
 func TestObjectEvaluation(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -544,6 +551,7 @@ func TestObjectEvaluation(t *testing.T) {
 
 func TestProviderWithoutConfiguration(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	ctx := context.Background()
 
 	flatCtx := openfeature.FlattenedContext{
@@ -567,6 +575,7 @@ func TestProviderWithoutConfiguration(t *testing.T) {
 
 func TestProviderConfigurationUpdate(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 
 	// Initially no config
 	if provider.getConfiguration() != nil {
@@ -589,6 +598,7 @@ func TestProviderConfigurationUpdate(t *testing.T) {
 
 func TestConcurrentEvaluations(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -623,6 +633,7 @@ func TestSetProviderWithContextAndWaitTimeout(t *testing.T) {
 	// Create a provider that doesn't have configuration loaded
 	// This will cause InitWithContext to wait for configuration
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 
 	// Use a very short timeout context (50ms)
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -639,6 +650,7 @@ func TestSetProviderWithContextAndWaitTimeout(t *testing.T) {
 
 func TestInitWithContext_DeliveryErrFailsImmediately(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	provider.mu.Lock()
 	provider.deliveryErr = errors.New("no delivery source could be started")
 	provider.mu.Unlock()
@@ -664,6 +676,7 @@ func TestInitWithContext_DeliveryErrFailsImmediately(t *testing.T) {
 
 func TestInitWithContext_ShutdownDuringWaitReturnsPromptly(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 
 	go func() {
 		time.Sleep(20 * time.Millisecond)
@@ -690,6 +703,7 @@ func TestInitWithContext_ShutdownDuringWaitReturnsPromptly(t *testing.T) {
 
 func TestInitWithContext_LateConfigurationStillBecomesReady(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 
 	// Init gives up on its deadline while delivery is still running. It reports
 	// not ready, but the provider must still pick up a later configuration.
@@ -784,6 +798,7 @@ func assertInitCanceledError(t *testing.T, err error) {
 // held.
 func TestInitWithContext_AlreadyCancelled(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancelled before InitWithContext ever sees it
@@ -801,6 +816,7 @@ func TestInitWithContext_AlreadyCancelled(t *testing.T) {
 // before the call.
 func TestInitWithContext_CancelledDuringWait(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -828,6 +844,7 @@ func TestInitWithContext_CancelledDuringWait(t *testing.T) {
 // leaving the SDK stuck in a not-ready state.
 func TestInitWithContext_LateConfigurationAfterCancelStillBecomesReady(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -862,6 +879,7 @@ func TestInitWithContext_LateConfigurationAfterCancelStillBecomesReady(t *testin
 // instead (for example, by waiting on a channel nothing ever closes).
 func TestInitWithContext_ConfigurationArrivesDuringWait(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -887,6 +905,7 @@ func TestInitWithContext_ConfigurationArrivesDuringWait(t *testing.T) {
 func TestSetProviderWithContextAndWaitSuccess(t *testing.T) {
 	// Create a provider and set up its configuration immediately
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -922,6 +941,7 @@ func TestSetProviderWithContextAndWaitSuccess(t *testing.T) {
 func TestShutdownWithContextTimeout(t *testing.T) {
 	// Create and configure a provider
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -955,6 +975,7 @@ func TestShutdownWithContextTimeout(t *testing.T) {
 func TestShutdownWithContextSuccess(t *testing.T) {
 	// Create and configure a provider
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 

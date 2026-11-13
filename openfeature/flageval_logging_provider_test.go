@@ -47,6 +47,7 @@ func TestFlagEvaluationKillswitch(t *testing.T) {
 			t.Setenv(flagEvalCountsEnabledEnvVar, tc.envValue)
 
 			p := newDatadogProvider(ProviderConfig{})
+			cleanupProvider(t, p)
 
 			if tc.wantEVPEnabled {
 				if p.flagEvalLoggingWriter == nil {

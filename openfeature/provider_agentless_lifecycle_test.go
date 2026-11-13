@@ -34,6 +34,7 @@ func TestTryRegisterAgentless_AfterShutdownRegistersNothing(t *testing.T) {
 		internalffe.SourceAgentless,
 		newAgentlessEVPClient(settings),
 	)
+	cleanupProvider(t, p)
 	p.mu.Lock()
 	p.shutdownCalled = true
 	p.mu.Unlock()
@@ -63,6 +64,7 @@ func TestStartWithAgentless_ShutdownMidPoll(t *testing.T) {
 
 	p, err := startWithAgentless(ProviderConfig{}, settings)
 	require.NoError(t, err)
+	cleanupProvider(t, p)
 
 	// start launches the poll in the background and returns immediately, so
 	// wait for the backend to actually receive the request before shutting
@@ -102,6 +104,7 @@ func TestStartWithAgentless_ConfiguresAgentlessEVP(t *testing.T) {
 	}
 	p, err := startWithAgentless(ProviderConfig{}, settings)
 	require.NoError(t, err)
+	cleanupProvider(t, p)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -126,6 +129,7 @@ func TestInitWithContext_DeliveryErrFailsFast(t *testing.T) {
 		internalffe.SourceAgentless,
 		newAgentlessEVPClient(settings),
 	)
+	cleanupProvider(t, p)
 	p.mu.Lock()
 	p.deliveryErr = errors.New("no API key for managed agentless endpoint")
 	p.mu.Unlock()
@@ -153,6 +157,7 @@ func TestNewDatadogProvider_DisabledSourceIsNoop(t *testing.T) {
 	p, err := NewDatadogProvider(ProviderConfig{})
 
 	require.NoError(t, err)
+	cleanupProvider(t, p)
 	assert.IsType(t, &openfeature.NoopProvider{}, p,
 		"a disabled source must start no delivery source at all")
 }
@@ -168,6 +173,7 @@ func TestDatadogProvider_ConcurrentLifecycleRace(t *testing.T) {
 	}
 	p, err := startWithAgentless(ProviderConfig{}, settings)
 	require.NoError(t, err)
+	cleanupProvider(t, p)
 
 	var wg sync.WaitGroup
 	for range 8 {
@@ -200,6 +206,7 @@ func TestInitWithContext_UndeadlinedContextHonorsInitTimeout(t *testing.T) {
 	t.Setenv("DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS", "200")
 
 	p := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, p)
 
 	start := time.Now()
 	err := runWithDeadline(t, 10*time.Second, func() error {
@@ -240,6 +247,7 @@ func TestSetProviderAndWait_TimeoutThenLateConfigurationTransitionsToReady(t *te
 	openfeature.AddHandler(openfeature.ProviderReady, &readyCallback)
 
 	p := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, p)
 
 	err := runWithDeadline(t, 10*time.Second, func() error {
 		return openfeature.SetProviderAndWait(p)

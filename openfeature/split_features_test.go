@@ -439,6 +439,7 @@ func BenchmarkClientSplitFeatures(b *testing.B) {
 	} {
 		b.Run(tc.name, func(b *testing.B) {
 			p := newDatadogProvider(ProviderConfig{})
+			cleanupProvider(b, p)
 			p.configuration = createTestConfig()
 			if tc.features {
 				p.configuration.Flags["bool-flag"].Allocations[0].Splits[0].Features = splitFeatures{

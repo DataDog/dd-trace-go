@@ -79,7 +79,10 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 
 	var config universalFlagsConfiguration
 	if err := json.Unmarshal(data, &config); err != nil {
-		log.Error("openfeature: remote config: failed to unmarshal configuration %q, keeping the last known configuration: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
+		// Remote Config callbacks run on the Remote Config client goroutine.
+		containLoggerPanic(func() {
+			log.Error("openfeature: remote config: failed to unmarshal configuration %q, keeping the last known configuration: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
+		})
 		return rc.ApplyStatus{
 			State: rc.ApplyStateError,
 			Error: fmt.Sprintf("failed to unmarshal configuration: %v", err),
@@ -89,7 +92,10 @@ func processConfigUpdate(provider *DatadogProvider, path string, data []byte) rc
 	// Validate the configuration
 	err := validateConfiguration(&config)
 	if err != nil {
-		log.Error("openfeature: remote config: invalid configuration %q, keeping the last known configuration: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
+		// Remote Config callbacks run on the Remote Config client goroutine.
+		containLoggerPanic(func() {
+			log.Error("openfeature: remote config: invalid configuration %q, keeping the last known configuration: %v", path, err.Error()) //errtrack:ignore failure is returned through Remote Config apply status
+		})
 		return rc.ApplyStatus{
 			State: rc.ApplyStateError,
 			Error: fmt.Sprintf("invalid configuration: %v", err),
@@ -272,7 +278,8 @@ func validateFlag(flagKey string, flag *flag) error {
 // capability which stops updates. In the fast path (tracer subscribed),
 // the subscription is owned by the tracer.
 func stopRemoteConfig() error {
-	log.Debug("openfeature: unregistered from Remote Config")
+	// Called from the shutdown teardown goroutine.
+	containLoggerPanic(func() { log.Debug("openfeature: unregistered from Remote Config") })
 	_ = remoteconfig.UnregisterCapability(remoteconfig.FFEFlagEvaluation)
 	return nil
 }

@@ -177,6 +177,11 @@ type exposureWriter struct {
 	context       exposureContext
 	ticker        *time.Ticker
 	stopChan      chan struct{}
+	// workerDone is closed when the goroutine started by start exits; nil
+	// until start runs. stop does not wait on it, so a periodic send may
+	// still be in flight when stop returns. stop cannot join it: the
+	// worker's panic path calls stop itself, so joining would deadlock.
+	workerDone    chan struct{}
 	stopped       bool
 	featureValues featureValuesCache
 	// Keep the cache active when only the customer records exposures.
@@ -212,10 +217,13 @@ func (w *exposureWriter) start() {
 		return
 	}
 	w.ticker = time.NewTicker(w.flushInterval)
+	workerDone := make(chan struct{})
+	w.workerDone = workerDone
 	go func() {
+		defer close(workerDone)
 		defer func() {
 			if r := recover(); r != nil {
-				telemetrylog.LogAndReportPanic("openfeature: exposure writer recovered panic", r)
+				containLoggerPanic(func() { telemetrylog.LogAndReportPanic("openfeature: exposure writer recovered panic", r) })
 			}
 			w.stop()
 		}()
@@ -326,7 +334,8 @@ func (w *exposureWriter) sendToAgent(payload exposurePayload) error {
 	return w.evp.post(exposureEndpoint, "exposure", payload)
 }
 
-// stop stops the exposure writer and flushes any remaining events
+// stop stops the exposure writer. The shutdown teardown flushes pending events
+// separately, before calling stop.
 func (w *exposureWriter) stop() {
 	w.mu.Lock()
 	if w.stopped {
@@ -344,5 +353,5 @@ func (w *exposureWriter) stop() {
 		w.ticker.Stop()
 	}
 
-	log.Debug("openfeature: exposure writer stopped")
+	containLoggerPanic(func() { log.Debug("openfeature: exposure writer stopped") })
 }

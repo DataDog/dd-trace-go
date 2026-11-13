@@ -393,7 +393,7 @@ func (w *flagEvalLoggingWriter) start() {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				telemetrylog.LogAndReportPanic("openfeature: flag evaluation writer recovered panic", r)
+				containLoggerPanic(func() { telemetrylog.LogAndReportPanic("openfeature: flag evaluation writer recovered panic", r) })
 			}
 			// Always signal completion so stop() unblocks, even on panic.
 			close(w.workerDone)
@@ -435,12 +435,14 @@ func (w *flagEvalLoggingWriter) stop() {
 		w.ticker.Stop()
 	}
 
-	log.Debug("openfeature: flag evaluation writer stopped")
+	containLoggerPanic(func() { log.Debug("openfeature: flag evaluation writer stopped") })
 }
 
 // flush drains the aggregator, assembles per-tier events, and sends them to the agent.
 func reportFlagEvalPayloadEncodingError(err error) {
-	telemetrylog.LogAndReportError("openfeature: failed to encode flag evaluation payload", err)
+	containLoggerPanic(func() {
+		telemetrylog.LogAndReportError("openfeature: failed to encode flag evaluation payload", err)
+	})
 }
 
 func (w *flagEvalLoggingWriter) flush() {
@@ -450,20 +452,28 @@ func (w *flagEvalLoggingWriter) flush() {
 	// tag matching Java's countMetric(reason) convention.
 	if d := w.preQueueOverflow.Swap(0); d > 0 {
 		countMetric(metricFlagEvalDropped, d, dropReasonQueueOverflow)
-		log.Debug("openfeature: flag evaluation queue full at hook time — dropped %d evaluation(s) before copy (best-effort telemetry)", d)
+		containLoggerPanic(func() {
+			log.Debug("openfeature: flag evaluation queue full at hook time — dropped %d evaluation(s) before copy (best-effort telemetry)", d)
+		})
 	}
 	if d := w.enqueueDropped.Swap(0); d > 0 {
 		countMetric(metricFlagEvalDropped, d, dropReasonQueueOverflow)
-		log.Debug("openfeature: flag evaluation queue full at send — dropped %d evaluation(s) after copy (best-effort telemetry)", d)
+		containLoggerPanic(func() {
+			log.Debug("openfeature: flag evaluation queue full at send — dropped %d evaluation(s) after copy (best-effort telemetry)", d)
+		})
 	}
 	if d := w.closedDrop.Swap(0); d > 0 {
 		countMetric(metricFlagEvalDropped, d, dropReasonClosed)
-		log.Debug("openfeature: flag evaluation writer closed — dropped %d evaluation(s) after stop (best-effort telemetry)", d)
+		containLoggerPanic(func() {
+			log.Debug("openfeature: flag evaluation writer closed — dropped %d evaluation(s) after stop (best-effort telemetry)", d)
+		})
 	}
 	w.contextTruncatedByReason.Range(func(k, v any) bool {
 		if c := v.(*atomic.Int64).Swap(0); c > 0 {
 			countMetric(metricFlagEvalContextTruncated, c, k.(string))
-			log.Debug("openfeature: flag evaluation context truncated by %s on %d evaluation(s) (best-effort telemetry)", k, c)
+			containLoggerPanic(func() {
+				log.Debug("openfeature: flag evaluation context truncated by %s on %d evaluation(s) (best-effort telemetry)", k, c)
+			})
 		}
 		return true
 	})
@@ -487,11 +497,15 @@ func (w *flagEvalLoggingWriter) flush() {
 	}
 	if degradedPayloadLimit > 0 {
 		countMetric(metricFlagEvalDegraded, degradedPayloadLimit, degradedReasonPayloadLimit)
-		log.Warn("openfeature: flag evaluation payload too large — degraded %d evaluation(s) to fit (best-effort telemetry)", degradedPayloadLimit) //errtrack:ignore expected payload capacity fallback
+		containLoggerPanic(func() {
+			log.Warn("openfeature: flag evaluation payload too large — degraded %d evaluation(s) to fit (best-effort telemetry)", degradedPayloadLimit) //errtrack:ignore expected payload capacity fallback
+		})
 	}
 	if droppedPayloadLimit > 0 {
 		countMetric(metricFlagEvalDropped, droppedPayloadLimit, dropReasonPayloadLimit)
-		log.Warn("openfeature: flag evaluation payload too large — dropped %d evaluation(s) (best-effort telemetry)", droppedPayloadLimit) //errtrack:ignore expected payload capacity limit
+		containLoggerPanic(func() {
+			log.Warn("openfeature: flag evaluation payload too large — dropped %d evaluation(s) (best-effort telemetry)", droppedPayloadLimit) //errtrack:ignore expected payload capacity limit
+		})
 	}
 	if len(payloads) > 1 {
 		countMetric(metricFlagEvalSplits, int64(len(payloads)-1), "")
@@ -500,12 +514,16 @@ func (w *flagEvalLoggingWriter) flush() {
 	sent := 0
 	for _, body := range payloads {
 		if err := w.evp.postRaw(flagEvalLoggingEndpoint, "flag evaluation", body); err != nil {
-			log.Error("openfeature: failed to send flag evaluation events: %v", err.Error()) //errtrack:ignore remote request failure
+			containLoggerPanic(func() {
+				log.Error("openfeature: failed to send flag evaluation events: %v", err.Error()) //errtrack:ignore remote request failure
+			})
 			return
 		}
 		sent++
 	}
-	log.Debug("openfeature: successfully sent %d flag evaluation event(s) in %d payload(s)", len(events), sent)
+	containLoggerPanic(func() {
+		log.Debug("openfeature: successfully sent %d flag evaluation event(s) in %d payload(s)", len(events), sent)
+	})
 }
 
 // buildFlushEvents drains both tiers and renders them as wire events stamped with flushTimeMs.
@@ -526,7 +544,9 @@ func (w *flagEvalLoggingWriter) buildFlushEvents(flushTimeMs int64) []flagEvalLo
 		w.aggregator.droppedDegradedOverflow = 0
 		w.aggregator.mu.Unlock()
 		if degradedOverflow > 0 {
-			log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow) //errtrack:ignore expected aggregation capacity limit
+			containLoggerPanic(func() {
+				log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow) //errtrack:ignore expected aggregation capacity limit
+			})
 		}
 		return nil
 	}
@@ -542,7 +562,9 @@ func (w *flagEvalLoggingWriter) buildFlushEvents(flushTimeMs int64) []flagEvalLo
 	w.aggregator.mu.Unlock()
 
 	if degradedOverflow > 0 {
-		log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow) //errtrack:ignore expected aggregation capacity limit
+		containLoggerPanic(func() {
+			log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow) //errtrack:ignore expected aggregation capacity limit
+		})
 	}
 
 	var events []flagEvalLoggingEvent
