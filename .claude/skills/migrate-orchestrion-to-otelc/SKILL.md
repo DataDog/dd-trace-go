@@ -43,8 +43,7 @@ Check that each test fails when you break what it guards.
 Run from `internal/orchestrion/_integration`:
 
 1. `otelc go test ./<name>`, and the same suite with `orchestrion go test`. Name the bare package,
-   as CI does, not `./<name>/...`: once `<name>/mainapp/` exists, both it and the test main compile
-   as `-p main` and the build fails with `cannot replace .../mainapp/<file>.go`. Test one package
+   as CI does, not `./<name>/...`. Test one package
    per invocation: naming two packages where one imports the other fails the link with
    `duplicated definition of symbol ... OtelGetStackImpl`, an open otelc bug
    (https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1361).
@@ -77,17 +76,11 @@ until the suite is green.
 The harness suites never build a `package main`, and only exercise call sites inside the
 `_integration` module. Add a test for each case your rules reach:
 
-- **Package main**, when a `target:` includes `main` or `**`. Under `go test` the package under
-  test compiles as `-p <import path>`, so these rules never fire there. Add
-  `_integration/<name>/mainapp/`, a `package main` that calls the library and returns normally so
-  the injected `defer tracer.Stop()` flushes. Add a `main_test.go` that runs it with
-  `maintest.Run(t, "./<name>/mainapp")` and asserts spans with `agent.RequireSpan`
-  (`chi/main_test.go`). To assert an exact span count, read the spans through
-  `agent.Agent.(agenttest.SpanLister)`. For a call-site rule, also call the library under an import
-  alias (`chi/mainapp/alias.go`).
-- **Package main, for code injected into the library that calls the contrib through
-  `//go:linkname`.** The suites import the contrib themselves, so they still link it when the
-  rules module fails to. Only an app that does not import the contrib catches that.
+- **Call-site rules.** Add a harness test case for each constructor or call form the rules wrap,
+  and one that calls the library under an import alias, in its own file where the library is only
+  imported under the alias (`chi/alias.go`).
+- **A `target: main` rule.** It never fires under `go test`, which builds no `package main`. Check
+  it in `otelc-autostart`, the one test that builds an app with otelc.
 - **Dependency modules**, when a call-site rule targets `**`. Such a rule exists to also rewrite
   call sites inside third-party dependencies, as orchestrion does. Every call site in the suites
   belongs to `_integration`, the module being built, so a rule that never reaches a dependency
@@ -95,12 +88,24 @@ The harness suites never build a `package main`, and only exercise call sites in
   `example.com/<lib>dep`) that calls the library, `require` and `replace` it in
   `_integration/go.mod`, and add a `TestCaseDependency` that calls it (`chi/dependency.go`). It has
   to be a separate module, not a package of `_integration`, to count as a dependency.
+- **The rules module bringing its contrib into an application**, when a rule adds an import of the
+  contrib (`imports:`) or the hook package uses it. The suites can't check this, because
+  `_integration/go.mod` requires every contrib. Call the library from
+  `internal/apps/otelc-external-app/libraries.go`, a separate module that never imports the
+  contribs, and make the library a direct require there (`GOWORK=off go mod tidy` in that
+  directory). The External Application Build job then fails if the rules module stops pulling in
+  its contrib. Use one call a rule matches that needs no network: a constructor for a call rule
+  (`gin.New()`, `options.Client()`), or one in-process use of the hooked type for a hook rule (an
+  `httptest` request, `fasthttp.ServeConn` on a closed `net.Pipe`). Never import the contrib in the
+  app, or the build passes either way. Skip it when:
+  - the rules reach no contrib package;
+  - building the library needs cgo or a system library, or it can't be linked into the same binary
+    as a library the app already uses;
+  - even constructing the library needs a server or the network.
 
-`maintest` builds the app with otelc and runs it against `maintest.Agent`, the harness test agent
-served on a local port so that another process can report to it. It runs the first `otelc` on
-`PATH`, even under `orchestrion go test`, and skips when there is none. Put the CLI at
-`OTELC_VERSION` first on `PATH`, or the app is built with whatever older binary is there. To compare against a plain `go build`, or to count the requests that reach the agent, use
-`maintest.Build`, `NewAgent` and `Exec` directly (`otelc-autostart/autostart_test.go`).
+`otelc-autostart` builds its app with `maintest`, which runs the first `otelc` on `PATH`, even
+under `orchestrion go test`, and skips when there is none. Put the CLI at `OTELC_VERSION` first
+on `PATH`, or the app is built with whatever older binary is there.
 
 ## Build enough context first
 
