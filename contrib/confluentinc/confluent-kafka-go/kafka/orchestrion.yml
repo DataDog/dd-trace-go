@@ -26,6 +26,7 @@ aspects:
           imports:
             kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
             instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
+            sync: sync
           lang: go1.18
           template: |-
             const __dd_ckgoVersion = kafkatrace.CKGoVersion1
@@ -204,11 +205,16 @@ aspects:
               c.__dd_events = kafkatrace.WrapConsumeEventsChannel(c.__dd_tracer, c.events, c, __dd_wrapEvent)
             }
 
+            // __dd_initProducer is called from every instrumented Producer method, possibly
+            // concurrently, so it runs once to make all of them share one tracer and one
+            // delivery guard (#5806).
             func __dd_initProducer(p *Producer) {
-              if p.__dd_tracer != nil {
-                return
-              }
+              p.__dd_initOnce.Do(func() { __dd_doInitProducer(p) })
+            }
+
+            func __dd_doInitProducer(p *Producer) {
               p.__dd_tracer = __dd_newKafkaTracer()
+              p.__dd_deliveryGuard = kafkatrace.NewDeliveryGuard()
               // TODO: accessing p.events and p.produceChannel here might break if the library renames this variable...
               p.__dd_events = p.events
               p.__dd_produceChannel = kafkatrace.WrapProduceChannel(p.__dd_tracer, p.produceChannel, __dd_wrapMessage)
@@ -220,6 +226,8 @@ aspects:
             type __dd_eventChan = chan Event
             type __dd_messageChan = chan *Message
             type __dd_kafkaTracer = kafkatrace.Tracer
+            type __dd_deliveryGuard = kafkatrace.DeliveryGuard
+            type __dd_once = sync.Once
 
   ## Trace Consumer ##
 
@@ -392,6 +400,12 @@ aspects:
       - add-struct-field:
           name: __dd_produceChannel
           type: "__dd_messageChan"
+      - add-struct-field:
+          name: __dd_deliveryGuard
+          type: "*__dd_deliveryGuard"
+      - add-struct-field:
+          name: __dd_initOnce
+          type: "__dd_once"
 
   - id: Producer.Events
     join-point:
@@ -437,6 +451,8 @@ aspects:
             {{- $p := .Function.Receiver -}}
             __dd_initProducer({{ $p }})
             close({{ $p }}.__dd_produceChannel)
+            // Stop delivery forwarders sending to the events channel before it is closed (#5806).
+            {{ $p }}.__dd_deliveryGuard.Close()
 
   - id: Producer.Produce
     join-point:
@@ -459,7 +475,12 @@ aspects:
             span := p.__dd_tracer.StartProduceSpan(tMsg)
 
             var errChan chan error
-            {{ $deliveryChan }}, errChan = kafkatrace.WrapDeliveryChannel({{ $p }}.__dd_tracer, {{ $deliveryChan }}, span, __dd_wrapEvent)
+            // The events channels are closed by Close, so forwarding to them is guarded (#5806).
+            var guard *kafkatrace.DeliveryGuard
+            if {{ $deliveryChan }} != nil && ({{ $deliveryChan }} == {{ $p }}.__dd_events || {{ $deliveryChan }} == {{ $p }}.events) {
+              guard = {{ $p }}.__dd_deliveryGuard
+            }
+            {{ $deliveryChan }}, errChan = kafkatrace.WrapDeliveryChannelGuarded({{ $p }}.__dd_tracer, {{ $deliveryChan }}, guard, span, __dd_wrapEvent)
 
             {{ $p }}.__dd_tracer.SetProduceCheckpoint(tMsg)
             defer func() {
