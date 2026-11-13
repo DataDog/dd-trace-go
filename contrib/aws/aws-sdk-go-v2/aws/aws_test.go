@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	eventBridgeTypes "github.com/aws/aws-sdk-go-v2/service/eventbridge/types"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
@@ -100,6 +101,7 @@ func TestAppendMiddleware(t *testing.T) {
 			assert.Equal(t, "SQS", s.Tag("aws.service"))
 			assert.Equal(t, "SQS", s.Tag("aws_service"))
 			assert.Equal(t, "MyQueueName", s.Tag("queuename"))
+			assert.Equal(t, "https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName", s.Tag(ext.SQSQueueURL))
 			assert.Equal(t, "arn:aws:sqs:eu-west-1:123456789012:MyQueueName", s.Tag("cloud.resource_id"))
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
@@ -179,6 +181,7 @@ func TestAppendMiddlewareSqsDeleteMessage(t *testing.T) {
 			assert.Equal(t, "SQS", s.Tag("aws.service"))
 			assert.Equal(t, "SQS", s.Tag("aws_service"))
 			assert.Equal(t, "MyQueueName", s.Tag("queuename"))
+			assert.Equal(t, "https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName", s.Tag(ext.SQSQueueURL))
 			assert.Equal(t, "arn:aws:sqs:eu-west-1:123456789012:MyQueueName", s.Tag("cloud.resource_id"))
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
@@ -257,6 +260,7 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 			assert.Equal(t, "SQS", s.Tag("aws.service"))
 			assert.Equal(t, "SQS", s.Tag("aws_service"))
 			assert.Equal(t, "MyQueueName", s.Tag("queuename"))
+			assert.Equal(t, "https://sqs.us-west-2.amazonaws.com/123456789012/MyQueueName", s.Tag(ext.SQSQueueURL))
 			assert.Equal(t, "arn:aws:sqs:eu-west-1:123456789012:MyQueueName", s.Tag("cloud.resource_id"))
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
@@ -331,6 +335,7 @@ func TestAppendMiddlewareSqsSendMessage(t *testing.T) {
 	assert.Equal(t, "SQS", s.Tag("aws.service"))
 	assert.Equal(t, "MyQueueName", s.Tag("queuename"))
 	assert.Equal(t, "arn:aws:sqs:eu-west-1:123456789012:MyQueueName", s.Tag("cloud.resource_id"))
+	assert.Equal(t, "https://sqs.eu-west-1.amazonaws.com/123456789012/MyQueueName", s.Tag(ext.SQSQueueURL))
 	assert.Equal(t, "SQS.SendMessage", s.Tag(ext.ResourceName))
 	assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
 
@@ -437,6 +442,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 		publishInput       *sns.PublishInput
 		tagKey             string
 		expectedTagValue   string
+		expectedTopicARN   any
 		responseStatus     int
 		responseBody       []byte
 		expectedStatusCode int
@@ -449,6 +455,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			},
 			tagKey:             "topicname",
 			expectedTagValue:   "MyTopicName",
+			expectedTopicARN:   "arn:aws:sns:us-east-1:111111111111:MyTopicName",
 			responseStatus:     400,
 			expectedStatusCode: 400,
 		},
@@ -460,6 +467,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			},
 			tagKey:             "topicname",
 			expectedTagValue:   "MyTopicName",
+			expectedTopicARN:   "arn:aws:sns:us-east-1:111111111111:MyTopicName",
 			responseStatus:     200,
 			expectedStatusCode: 200,
 		},
@@ -525,6 +533,7 @@ func TestAppendMiddlewareSnsPublish(t *testing.T) {
 			assert.Equal(t, "SNS", s.Tag("aws.service"))
 			assert.Equal(t, "SNS", s.Tag("aws_service"))
 			assert.Equal(t, tt.expectedTagValue, s.Tag(tt.tagKey))
+			assert.Equal(t, tt.expectedTopicARN, s.Tag(ext.SNSTopicARN))
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
@@ -625,6 +634,7 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 			assert.Equal(t, "DynamoDB", s.Tag("aws.service"))
 			assert.Equal(t, "DynamoDB", s.Tag("aws_service"))
 			assert.Equal(t, "MyTableName", s.Tag("tablename"))
+			assert.Nil(t, s.Tag(ext.DynamoDBTableARN))
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
@@ -644,6 +654,7 @@ func TestAppendMiddlewareDynamodbGetItem(t *testing.T) {
 func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 	tests := []struct {
 		name               string
+		streamARN          *string
 		responseStatus     int
 		responseBody       []byte
 		expectedStatusCode int
@@ -655,6 +666,12 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 		},
 		{
 			name:               "test mocked kinesis success request",
+			responseStatus:     200,
+			expectedStatusCode: 200,
+		},
+		{
+			name:               "test mocked kinesis success request with stream ARN",
+			streamARN:          aws.String("arn:aws:kinesis:eu-west-1:123456789012:stream/my-kinesis-stream"),
 			responseStatus:     200,
 			expectedStatusCode: 200,
 		},
@@ -687,6 +704,7 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			kinesisClient := kinesis.NewFromConfig(awsCfg)
 			putRecordInput := &kinesis.PutRecordInput{
 				StreamName:   aws.String("my-kinesis-stream"),
+				StreamARN:    tt.streamARN,
 				Data:         []byte(`{"message":"Hello, Kinesis!"}`),
 				PartitionKey: aws.String("my-partition-key"),
 			}
@@ -714,6 +732,11 @@ func TestAppendMiddlewareKinesisPutRecord(t *testing.T) {
 			assert.Equal(t, "Kinesis", s.Tag("aws.service"))
 			assert.Equal(t, "Kinesis", s.Tag("aws_service"))
 			assert.Equal(t, "my-kinesis-stream", s.Tag("streamname"))
+			if tt.streamARN != nil {
+				assert.Equal(t, *tt.streamARN, s.Tag(ext.KinesisStreamARN))
+			} else {
+				assert.Nil(t, s.Tag(ext.KinesisStreamARN))
+			}
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
@@ -1101,6 +1124,7 @@ func TestAppendMiddlewareSfnDescribeStateMachine(t *testing.T) {
 			assert.Equal(t, "SFN", s.Tag("aws.service"))
 			assert.Equal(t, "SFN", s.Tag("aws_service"))
 			assert.Equal(t, "HelloWorld-StateMachine", s.Tag("statemachinename"))
+			assert.Equal(t, "arn:aws:states:us-west-2:123456789012:stateMachine:HelloWorld-StateMachine", s.Tag(ext.SFNStateMachineARN))
 
 			assert.Equal(t, "eu-west-1", s.Tag("aws.region"))
 			assert.Equal(t, "eu-west-1", s.Tag("region"))
@@ -1521,6 +1545,408 @@ func TestStreamName(t *testing.T) {
 			}
 			val := streamName(req)
 			assert.Equal(t, tt.expected, val)
+		})
+	}
+}
+
+func TestResourceTagsFromParams(t *testing.T) {
+	const (
+		queueURL        = "https://sqs.eu-west-1.amazonaws.com/123456789012/MyQueueName"
+		topicARN        = "arn:aws:sns:eu-west-1:123456789012:MyTopicName"
+		streamARN       = "arn:aws:kinesis:eu-west-1:123456789012:stream/my-stream"
+		stateMachineARN = "arn:aws:states:eu-west-1:123456789012:stateMachine:MyStateMachine"
+		executionARN    = "arn:aws:states:eu-west-1:123456789012:execution:MyStateMachine:my-execution"
+		tableARN        = "arn:aws:dynamodb:eu-west-1:123456789012:table/MyTableName"
+		functionARN     = "arn:aws:lambda:eu-west-1:123456789012:function:my-function"
+	)
+	tests := []struct {
+		name     string
+		service  string
+		input    any
+		expected map[string]string
+	}{
+		{
+			name:    "SQS SendMessage",
+			service: "SQS",
+			input:   &sqs.SendMessageInput{QueueUrl: aws.String(queueURL)},
+			expected: map[string]string{
+				ext.SQSQueueName:    "MyQueueName",
+				ext.CloudResourceID: "arn:aws:sqs:eu-west-1:123456789012:MyQueueName",
+				ext.SQSQueueURL:     queueURL,
+			},
+		},
+		{
+			name:    "SQS ChangeMessageVisibility",
+			service: "SQS",
+			input:   &sqs.ChangeMessageVisibilityInput{QueueUrl: aws.String(queueURL)},
+			expected: map[string]string{
+				ext.SQSQueueName:    "MyQueueName",
+				ext.CloudResourceID: "arn:aws:sqs:eu-west-1:123456789012:MyQueueName",
+				ext.SQSQueueURL:     queueURL,
+			},
+		},
+		{
+			name:    "SQS ChangeMessageVisibilityBatch",
+			service: "SQS",
+			input:   &sqs.ChangeMessageVisibilityBatchInput{QueueUrl: aws.String(queueURL)},
+			expected: map[string]string{
+				ext.SQSQueueName:    "MyQueueName",
+				ext.CloudResourceID: "arn:aws:sqs:eu-west-1:123456789012:MyQueueName",
+				ext.SQSQueueURL:     queueURL,
+			},
+		},
+		{
+			name:    "SQS GetQueueAttributes",
+			service: "SQS",
+			input:   &sqs.GetQueueAttributesInput{QueueUrl: aws.String(queueURL)},
+			expected: map[string]string{
+				ext.SQSQueueName:    "MyQueueName",
+				ext.CloudResourceID: "arn:aws:sqs:eu-west-1:123456789012:MyQueueName",
+				ext.SQSQueueURL:     queueURL,
+			},
+		},
+		{
+			name:    "SQS PurgeQueue",
+			service: "SQS",
+			input:   &sqs.PurgeQueueInput{QueueUrl: aws.String(queueURL)},
+			expected: map[string]string{
+				ext.SQSQueueName:    "MyQueueName",
+				ext.CloudResourceID: "arn:aws:sqs:eu-west-1:123456789012:MyQueueName",
+				ext.SQSQueueURL:     queueURL,
+			},
+		},
+		{
+			name:    "SQS SetQueueAttributes",
+			service: "SQS",
+			input:   &sqs.SetQueueAttributesInput{QueueUrl: aws.String(queueURL)},
+			expected: map[string]string{
+				ext.SQSQueueName:    "MyQueueName",
+				ext.CloudResourceID: "arn:aws:sqs:eu-west-1:123456789012:MyQueueName",
+				ext.SQSQueueURL:     queueURL,
+			},
+		},
+		{
+			name:     "SQS SendMessage without queue URL",
+			service:  "SQS",
+			input:    &sqs.SendMessageInput{},
+			expected: map[string]string{},
+		},
+		{
+			name:    "SNS Publish with TopicArn",
+			service: "SNS",
+			input:   &sns.PublishInput{TopicArn: aws.String(topicARN)},
+			expected: map[string]string{
+				ext.SNSTopicName: "MyTopicName",
+				ext.SNSTopicARN:  topicARN,
+			},
+		},
+		{
+			name:    "SNS Publish with TargetArn",
+			service: "SNS",
+			input:   &sns.PublishInput{TargetArn: aws.String("arn:aws:sns:eu-west-1:123456789012:MyTargetName")},
+			expected: map[string]string{
+				ext.SNSTargetName: "MyTargetName",
+			},
+		},
+		{
+			name:    "SNS PublishBatch",
+			service: "SNS",
+			input:   &sns.PublishBatchInput{TopicArn: aws.String(topicARN)},
+			expected: map[string]string{
+				ext.SNSTopicName: "MyTopicName",
+				ext.SNSTopicARN:  topicARN,
+			},
+		},
+		{
+			name:    "SNS Subscribe",
+			service: "SNS",
+			input:   &sns.SubscribeInput{TopicArn: aws.String(topicARN)},
+			expected: map[string]string{
+				ext.SNSTopicName: "MyTopicName",
+				ext.SNSTopicARN:  topicARN,
+			},
+		},
+		{
+			name:     "SNS GetTopicAttributes without TopicArn",
+			service:  "SNS",
+			input:    &sns.GetTopicAttributesInput{},
+			expected: map[string]string{},
+		},
+		{
+			name:    "SNS CreateTopic",
+			service: "SNS",
+			input:   &sns.CreateTopicInput{Name: aws.String("MyTopicName")},
+			expected: map[string]string{
+				ext.SNSTopicName: "MyTopicName",
+			},
+		},
+		{
+			name:     "SNS CreateTopic without name",
+			service:  "SNS",
+			input:    &sns.CreateTopicInput{},
+			expected: map[string]string{},
+		},
+		{
+			name:    "Kinesis PutRecord with ARN",
+			service: "Kinesis",
+			input:   &kinesis.PutRecordInput{StreamARN: aws.String(streamARN)},
+			expected: map[string]string{
+				ext.KinesisStreamName: "my-stream",
+				ext.KinesisStreamARN:  streamARN,
+			},
+		},
+		{
+			name:    "Kinesis GetRecords with ARN",
+			service: "Kinesis",
+			input:   &kinesis.GetRecordsInput{StreamARN: aws.String(streamARN)},
+			expected: map[string]string{
+				ext.KinesisStreamName: "my-stream",
+				ext.KinesisStreamARN:  streamARN,
+			},
+		},
+		{
+			name:    "Kinesis GetShardIterator with ARN",
+			service: "Kinesis",
+			input:   &kinesis.GetShardIteratorInput{StreamARN: aws.String(streamARN)},
+			expected: map[string]string{
+				ext.KinesisStreamName: "my-stream",
+				ext.KinesisStreamARN:  streamARN,
+			},
+		},
+		{
+			name:    "Kinesis PutRecord with name",
+			service: "Kinesis",
+			input:   &kinesis.PutRecordInput{StreamName: aws.String("my-stream")},
+			expected: map[string]string{
+				ext.KinesisStreamName: "my-stream",
+			},
+		},
+		{
+			name:    "DynamoDB GetItem with name",
+			service: "DynamoDB",
+			input:   &dynamodb.GetItemInput{TableName: aws.String("MyTableName")},
+			expected: map[string]string{
+				ext.DynamoDBTableName: "MyTableName",
+			},
+		},
+		{
+			name:    "DynamoDB GetItem with ARN",
+			service: "DynamoDB",
+			input:   &dynamodb.GetItemInput{TableName: aws.String(tableARN)},
+			expected: map[string]string{
+				ext.DynamoDBTableName: tableARN,
+				ext.DynamoDBTableARN:  tableARN,
+			},
+		},
+		{
+			name:    "DynamoDB Query with ARN",
+			service: "DynamoDB",
+			input:   &dynamodb.QueryInput{TableName: aws.String(tableARN)},
+			expected: map[string]string{
+				ext.DynamoDBTableName: tableARN,
+				ext.DynamoDBTableARN:  tableARN,
+			},
+		},
+		{
+			name:     "DynamoDB GetItem without table",
+			service:  "DynamoDB",
+			input:    &dynamodb.GetItemInput{},
+			expected: map[string]string{},
+		},
+		{
+			name:    "Lambda Invoke with ARN",
+			service: "Lambda",
+			input:   &lambda.InvokeInput{FunctionName: aws.String(functionARN)},
+			expected: map[string]string{
+				ext.LambdaFunctionARN: functionARN,
+			},
+		},
+		{
+			name:    "Lambda InvokeWithResponseStream with qualified ARN",
+			service: "Lambda",
+			input:   &lambda.InvokeWithResponseStreamInput{FunctionName: aws.String(functionARN + ":prod")},
+			expected: map[string]string{
+				ext.LambdaFunctionARN: functionARN + ":prod",
+			},
+		},
+		{
+			name:     "Lambda Invoke with name",
+			service:  "Lambda",
+			input:    &lambda.InvokeInput{FunctionName: aws.String("my-function")},
+			expected: map[string]string{},
+		},
+		{
+			name:     "Lambda Invoke with partial ARN",
+			service:  "Lambda",
+			input:    &lambda.InvokeInput{FunctionName: aws.String("123456789012:function:my-function")},
+			expected: map[string]string{},
+		},
+		{
+			name:     "Lambda Invoke without function",
+			service:  "Lambda",
+			input:    &lambda.InvokeInput{},
+			expected: map[string]string{},
+		},
+		{
+			name:    "SFN StartExecution",
+			service: "SFN",
+			input:   &sfn.StartExecutionInput{StateMachineArn: aws.String(stateMachineARN)},
+			expected: map[string]string{
+				ext.SFNStateMachineName: "MyStateMachine",
+				ext.SFNStateMachineARN:  stateMachineARN,
+			},
+		},
+		{
+			name:    "SFN StartSyncExecution",
+			service: "SFN",
+			input:   &sfn.StartSyncExecutionInput{StateMachineArn: aws.String(stateMachineARN)},
+			expected: map[string]string{
+				ext.SFNStateMachineName: "MyStateMachine",
+				ext.SFNStateMachineARN:  stateMachineARN,
+			},
+		},
+		{
+			name:     "SFN StartExecution without ARN",
+			service:  "SFN",
+			input:    &sfn.StartExecutionInput{},
+			expected: map[string]string{},
+		},
+		{
+			name:    "SFN DescribeExecution does not derive the state machine ARN",
+			service: "SFN",
+			input:   &sfn.DescribeExecutionInput{ExecutionArn: aws.String(executionARN)},
+			expected: map[string]string{
+				ext.SFNStateMachineName: "MyStateMachine",
+			},
+		},
+		{
+			name:    "SFN CreateStateMachine",
+			service: "SFN",
+			input:   &sfn.CreateStateMachineInput{Name: aws.String("MyStateMachine")},
+			expected: map[string]string{
+				ext.SFNStateMachineName: "MyStateMachine",
+			},
+		},
+		{
+			name:     "SFN CreateStateMachine without name",
+			service:  "SFN",
+			input:    &sfn.CreateStateMachineInput{},
+			expected: map[string]string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tags, ok := resourceTagsFromParams(middleware.InitializeInput{Parameters: tt.input}, tt.service, "eu-west-1", "aws")
+			require.True(t, ok)
+			// The middleware does not set tags with empty values.
+			got := make(map[string]string, len(tags))
+			for k, v := range tags {
+				if v != "" {
+					got[k] = v
+				}
+			}
+			assert.Equal(t, tt.expected, got)
+		})
+	}
+}
+
+// TestAppendMiddlewareByARN checks the ARN tags on DynamoDB and Lambda
+// requests that name the table or function by its ARN.
+func TestAppendMiddlewareByARN(t *testing.T) {
+	const (
+		tableARN    = "arn:aws:dynamodb:eu-west-1:123456789012:table/MyTableName"
+		functionARN = "arn:aws:lambda:eu-west-1:123456789012:function:my-function"
+	)
+	for _, tc := range []struct {
+		name    string
+		call    func(context.Context, aws.Config) error
+		tagKey  string
+		tagWant string
+	}{
+		{
+			name: "DynamoDB Query",
+			call: func(ctx context.Context, cfg aws.Config) error {
+				_, err := dynamodb.NewFromConfig(cfg).Query(ctx, &dynamodb.QueryInput{TableName: aws.String(tableARN)})
+				return err
+			},
+			tagKey:  ext.DynamoDBTableARN,
+			tagWant: tableARN,
+		},
+		{
+			name: "Lambda Invoke",
+			call: func(ctx context.Context, cfg aws.Config) error {
+				_, err := lambda.NewFromConfig(cfg).Invoke(ctx, &lambda.InvokeInput{FunctionName: aws.String(functionARN)})
+				return err
+			},
+			tagKey:  ext.LambdaFunctionARN,
+			tagWant: functionARN,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			server := mockAWS(200)
+			defer server.Close()
+			resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
+				return aws.Endpoint{PartitionID: "aws", URL: server.URL, SigningRegion: "eu-west-1"}, nil
+			})
+			awsCfg := aws.Config{
+				Region:           "eu-west-1",
+				Credentials:      aws.AnonymousCredentials{},
+				EndpointResolver: resolver,
+			}
+			AppendMiddleware(&awsCfg)
+
+			_ = tc.call(context.Background(), awsCfg)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			assert.Equal(t, tc.tagWant, spans[0].Tag(tc.tagKey))
+		})
+	}
+}
+
+func TestDynamoDBTableARN(t *testing.T) {
+	for _, tc := range []struct {
+		tableName string
+		want      string
+	}{
+		{tableName: "arn:aws:dynamodb:eu-west-1:123456789012:table/MyTableName", want: "arn:aws:dynamodb:eu-west-1:123456789012:table/MyTableName"},
+		{tableName: "arn:aws-cn:dynamodb:cn-north-1:123456789012:table/MyTableName", want: "arn:aws-cn:dynamodb:cn-north-1:123456789012:table/MyTableName"},
+		{tableName: "MyTableName"},
+		{tableName: ""},
+		{tableName: "arn:aws:dynamodb:eu-west-1:123456789012:table/MyTableName/index/MyIndex"},
+		{tableName: "arn:aws:dynamodb:eu-west-1:123456789012:table/"},
+		{tableName: "arn:aws:dynamodb:eu-west-1::table/MyTableName"},
+		{tableName: "arn:aws:dynamodb::123456789012:table/MyTableName"},
+		{tableName: "arn:aws:lambda:eu-west-1:123456789012:table/MyTableName"},
+		{tableName: "arn:aws:dynamodb:eu-west-1:123456789012:MyTableName"},
+	} {
+		t.Run(tc.tableName, func(t *testing.T) {
+			assert.Equal(t, tc.want, dynamoDBTableARN(tc.tableName))
+		})
+	}
+}
+
+func TestLambdaFunctionARN(t *testing.T) {
+	for _, tc := range []struct {
+		functionName string
+		want         string
+	}{
+		{functionName: "arn:aws:lambda:eu-west-1:123456789012:function:my-function", want: "arn:aws:lambda:eu-west-1:123456789012:function:my-function"},
+		// The qualifier is kept, as dd-trace-java does.
+		{functionName: "arn:aws:lambda:eu-west-1:123456789012:function:my-function:prod", want: "arn:aws:lambda:eu-west-1:123456789012:function:my-function:prod"},
+		{functionName: "arn:aws:lambda:eu-west-1:123456789012:function:my-function:7", want: "arn:aws:lambda:eu-west-1:123456789012:function:my-function:7"},
+		{functionName: "arn:aws-us-gov:lambda:us-gov-west-1:123456789012:function:my-function", want: "arn:aws-us-gov:lambda:us-gov-west-1:123456789012:function:my-function"},
+		// A partial ARN has no partition and region.
+		{functionName: "123456789012:function:my-function"},
+		{functionName: "my-function"},
+		{functionName: "my-function:prod"},
+		{functionName: ""},
+	} {
+		t.Run(tc.functionName, func(t *testing.T) {
+			assert.Equal(t, tc.want, lambdaFunctionARN(tc.functionName))
 		})
 	}
 }

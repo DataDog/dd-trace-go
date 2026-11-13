@@ -130,6 +130,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 				"span.kind":           "producer",
 				"component":           "cloud.google.com/go/pubsub.v2",
 				ext.PubsubOrderingKey: "ordering-key",
+				ext.PubsubTopicName:   "projects/pstest-orchestrion/topics/pstest-orchestrion-topic",
 			},
 			Children: trace.Traces{
 				{
@@ -140,12 +141,13 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 						"service":  "gcp_pubsub.v2.test",
 					},
 					Meta: map[string]string{
-						"span.kind":           "consumer",
-						"component":           "cloud.google.com/go/pubsub.v2",
-						"messaging.system":    "googlepubsub",
-						ext.PubsubOrderingKey: "ordering-key",
-						ext.PubsubPublishTime: tc.publishTime.String(),
-						ext.PubsubMessageID:   tc.messageID,
+						"span.kind":                "consumer",
+						"component":                "cloud.google.com/go/pubsub.v2",
+						"messaging.system":         "googlepubsub",
+						ext.PubsubOrderingKey:      "ordering-key",
+						ext.PubsubPublishTime:      tc.publishTime.String(),
+						ext.PubsubMessageID:        tc.messageID,
+						ext.PubsubSubscriptionName: "projects/pstest-orchestrion/subscriptions/pstest-orchestrion-subscription",
 					},
 				},
 			},

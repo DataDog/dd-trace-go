@@ -19,6 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
@@ -209,20 +210,29 @@ func resourceTagsFromParams(requestInput middleware.InitializeInput, awsService 
 			queueName, arn := extractSQSMetadata(url, region, partition)
 			tags[ext.SQSQueueName] = queueName
 			tags[ext.CloudResourceID] = arn
+			tags[ext.SQSQueueURL] = url
 		}
 	case "S3":
 		tags[ext.S3BucketName] = bucketName(requestInput)
 	case "SNS":
 		k, v := destinationTagValue(requestInput)
 		tags[k] = v
+		tags[ext.SNSTopicARN] = topicARN(requestInput)
 	case "DynamoDB":
-		tags[ext.DynamoDBTableName] = tableName(requestInput)
+		name := tableName(requestInput)
+		tags[ext.DynamoDBTableName] = name
+		tags[ext.DynamoDBTableARN] = dynamoDBTableARN(name)
+	case "Lambda":
+		tags[ext.LambdaFunctionARN] = lambdaFunctionARN(functionName(requestInput))
 	case "Kinesis":
-		tags[ext.KinesisStreamName] = streamName(requestInput)
+		name, arn := streamIdentifiers(requestInput)
+		tags[ext.KinesisStreamName] = coalesceNameOrArnResource(name, arn)
+		tags[ext.KinesisStreamARN] = aws.ToString(arn)
 	case "EventBridge":
 		tags[ext.EventBridgeRuleName] = ruleName(requestInput)
 	case "SFN":
 		tags[ext.SFNStateMachineName] = stateMachineName(requestInput)
+		tags[ext.SFNStateMachineARN] = stateMachineARN(requestInput)
 	default:
 		tagMapPool.Put(tags)
 		return nil, false
@@ -234,15 +244,25 @@ func resourceTagsFromParams(requestInput middleware.InitializeInput, awsService 
 func queueURL(requestInput middleware.InitializeInput) string {
 	switch params := requestInput.Parameters.(type) {
 	case *sqs.SendMessageInput:
-		return *params.QueueUrl
+		return aws.ToString(params.QueueUrl)
 	case *sqs.DeleteMessageInput:
-		return *params.QueueUrl
+		return aws.ToString(params.QueueUrl)
 	case *sqs.DeleteMessageBatchInput:
-		return *params.QueueUrl
+		return aws.ToString(params.QueueUrl)
 	case *sqs.ReceiveMessageInput:
-		return *params.QueueUrl
+		return aws.ToString(params.QueueUrl)
 	case *sqs.SendMessageBatchInput:
-		return *params.QueueUrl
+		return aws.ToString(params.QueueUrl)
+	case *sqs.ChangeMessageVisibilityInput:
+		return aws.ToString(params.QueueUrl)
+	case *sqs.ChangeMessageVisibilityBatchInput:
+		return aws.ToString(params.QueueUrl)
+	case *sqs.GetQueueAttributesInput:
+		return aws.ToString(params.QueueUrl)
+	case *sqs.PurgeQueueInput:
+		return aws.ToString(params.QueueUrl)
+	case *sqs.SetQueueAttributesInput:
+		return aws.ToString(params.QueueUrl)
 	}
 	return ""
 }
@@ -298,71 +318,144 @@ func destinationTagValue(requestInput middleware.InitializeInput) (tag string, v
 		default:
 			return "destination", "empty"
 		}
-	case *sns.PublishBatchInput:
-		s = *params.TopicArn
-	case *sns.GetTopicAttributesInput:
-		s = *params.TopicArn
-	case *sns.ListSubscriptionsByTopicInput:
-		s = *params.TopicArn
-	case *sns.RemovePermissionInput:
-		s = *params.TopicArn
-	case *sns.SetTopicAttributesInput:
-		s = *params.TopicArn
-	case *sns.SubscribeInput:
-		s = *params.TopicArn
 	case *sns.CreateTopicInput:
-		return tag, *params.Name
+		return tag, aws.ToString(params.Name)
+	default:
+		s = topicARN(requestInput)
 	}
 	parts := strings.Split(s, ":")
 	return tag, parts[len(parts)-1]
 }
 
+// topicARN returns the TopicArn of an SNS request, or the empty string if the
+// request does not carry one. TargetArn is not a topic ARN and is not returned.
+func topicARN(requestInput middleware.InitializeInput) string {
+	switch params := requestInput.Parameters.(type) {
+	case *sns.PublishInput:
+		return aws.ToString(params.TopicArn)
+	case *sns.PublishBatchInput:
+		return aws.ToString(params.TopicArn)
+	case *sns.GetTopicAttributesInput:
+		return aws.ToString(params.TopicArn)
+	case *sns.ListSubscriptionsByTopicInput:
+		return aws.ToString(params.TopicArn)
+	case *sns.RemovePermissionInput:
+		return aws.ToString(params.TopicArn)
+	case *sns.SetTopicAttributesInput:
+		return aws.ToString(params.TopicArn)
+	case *sns.SubscribeInput:
+		return aws.ToString(params.TopicArn)
+	}
+	return ""
+}
+
 func tableName(requestInput middleware.InitializeInput) string {
 	switch params := requestInput.Parameters.(type) {
 	case *dynamodb.GetItemInput:
-		return *params.TableName
+		return aws.ToString(params.TableName)
 	case *dynamodb.PutItemInput:
-		return *params.TableName
+		return aws.ToString(params.TableName)
 	case *dynamodb.QueryInput:
-		return *params.TableName
+		return aws.ToString(params.TableName)
 	case *dynamodb.ScanInput:
-		return *params.TableName
+		return aws.ToString(params.TableName)
 	case *dynamodb.UpdateItemInput:
-		return *params.TableName
+		return aws.ToString(params.TableName)
 	case *dynamodb.DeleteItemInput:
-		return *params.TableName
+		return aws.ToString(params.TableName)
+	}
+	return ""
+}
+
+// dynamoDBTableARN returns tableName if it is a DynamoDB table ARN,
+// arn:<partition>:dynamodb:<region>:<account>:table/<name>, and "" otherwise.
+func dynamoDBTableARN(tableName string) string {
+	parts := strings.SplitN(tableName, ":", 6)
+	if len(parts) != 6 || parts[0] != "arn" || parts[1] == "" || parts[2] != "dynamodb" ||
+		parts[3] == "" || parts[4] == "" {
+		return ""
+	}
+	name, ok := strings.CutPrefix(parts[5], "table/")
+	if !ok || name == "" || strings.Contains(name, "/") {
+		return ""
+	}
+	return tableName
+}
+
+// lambdaFunctionARN returns functionName if it is a full function ARN, and ""
+// otherwise. Like dd-trace-java, it is tagged as sent, including a version or
+// alias qualifier, and a partial ARN (account:function:name) or a name is
+// not, because its partition and region are unknown.
+func lambdaFunctionARN(functionName string) string {
+	if strings.HasPrefix(functionName, "arn:") {
+		return functionName
+	}
+	return ""
+}
+
+// functionName returns the FunctionName of a Lambda request, which can be a
+// name, a partial ARN or a full ARN, or "" if the request has none.
+func functionName(requestInput middleware.InitializeInput) string {
+	switch params := requestInput.Parameters.(type) {
+	case *lambda.InvokeInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.InvokeAsyncInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.InvokeWithResponseStreamInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.GetFunctionInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.GetFunctionConfigurationInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.DeleteFunctionInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.UpdateFunctionCodeInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.UpdateFunctionConfigurationInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.PublishVersionInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.AddPermissionInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.RemovePermissionInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.GetPolicyInput:
+		return aws.ToString(params.FunctionName)
 	}
 	return ""
 }
 
 func streamName(requestInput middleware.InitializeInput) string {
+	return coalesceNameOrArnResource(streamIdentifiers(requestInput))
+}
+
+// streamIdentifiers returns the StreamName and StreamARN of a Kinesis request.
+// Either may be nil: a request can identify a stream by name, by ARN or both.
+func streamIdentifiers(requestInput middleware.InitializeInput) (name *string, arn *string) {
 	switch params := requestInput.Parameters.(type) {
 	case *kinesis.PutRecordInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return params.StreamName, params.StreamARN
 	case *kinesis.PutRecordsInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return params.StreamName, params.StreamARN
 	case *kinesis.AddTagsToStreamInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return params.StreamName, params.StreamARN
 	case *kinesis.RemoveTagsFromStreamInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return params.StreamName, params.StreamARN
 	case *kinesis.CreateStreamInput:
-		if params.StreamName != nil {
-			return *params.StreamName
-		}
+		// CreateStreamInput has no StreamARN: the stream does not exist yet.
+		return params.StreamName, nil
 	case *kinesis.DeleteStreamInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return params.StreamName, params.StreamARN
 	case *kinesis.DescribeStreamInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return params.StreamName, params.StreamARN
 	case *kinesis.DescribeStreamSummaryInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return params.StreamName, params.StreamARN
+	case *kinesis.GetShardIteratorInput:
+		return params.StreamName, params.StreamARN
 	case *kinesis.GetRecordsInput:
-		if params.StreamARN != nil {
-			streamArnValue := *params.StreamARN
-			parts := strings.Split(streamArnValue, "/")
-			return parts[len(parts)-1]
-		}
+		return nil, params.StreamARN
 	}
-	return ""
+	return nil, nil
 }
 
 func ruleName(requestInput middleware.InitializeInput) string {
@@ -390,11 +483,7 @@ func stateMachineName(requestInput middleware.InitializeInput) string {
 
 	switch params := requestInput.Parameters.(type) {
 	case *sfn.CreateStateMachineInput:
-		return *params.Name
-	case *sfn.DescribeStateMachineInput:
-		stateMachineArn = *params.StateMachineArn
-	case *sfn.StartExecutionInput:
-		stateMachineArn = *params.StateMachineArn
+		return aws.ToString(params.Name)
 	case *sfn.StopExecutionInput:
 		if params.ExecutionArn != nil {
 			executionArnValue := *params.ExecutionArn
@@ -407,15 +496,31 @@ func stateMachineName(requestInput middleware.InitializeInput) string {
 			parts := strings.Split(executionArnValue, ":")
 			return parts[len(parts)-2]
 		}
-	case *sfn.ListExecutionsInput:
-		stateMachineArn = *params.StateMachineArn
-	case *sfn.UpdateStateMachineInput:
-		stateMachineArn = *params.StateMachineArn
-	case *sfn.DeleteStateMachineInput:
-		stateMachineArn = *params.StateMachineArn
+	default:
+		stateMachineArn = stateMachineARN(requestInput)
 	}
 	parts := strings.Split(stateMachineArn, ":")
 	return parts[len(parts)-1]
+}
+
+// stateMachineARN returns the StateMachineArn of a Step Functions request, or
+// the empty string if the request does not carry one.
+func stateMachineARN(requestInput middleware.InitializeInput) string {
+	switch params := requestInput.Parameters.(type) {
+	case *sfn.DescribeStateMachineInput:
+		return aws.ToString(params.StateMachineArn)
+	case *sfn.StartExecutionInput:
+		return aws.ToString(params.StateMachineArn)
+	case *sfn.StartSyncExecutionInput:
+		return aws.ToString(params.StateMachineArn)
+	case *sfn.ListExecutionsInput:
+		return aws.ToString(params.StateMachineArn)
+	case *sfn.UpdateStateMachineInput:
+		return aws.ToString(params.StateMachineArn)
+	case *sfn.DeleteStateMachineInput:
+		return aws.ToString(params.StateMachineArn)
+	}
+	return ""
 }
 
 func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) error {
