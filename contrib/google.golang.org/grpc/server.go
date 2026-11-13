@@ -97,7 +97,7 @@ const (
 // grpc.UnknownServiceHandler. grpc invokes that handler with a nil server and
 // a bidi stream, but a registered method with a nil implementation looks the
 // same, so the registered services are checked when they are known.
-func isUnknownServiceCall(cfg *config, srv interface{}, info *grpc.StreamServerInfo) bool {
+func isUnknownServiceCall(cfg *config, srv any, info *grpc.StreamServerInfo) bool {
 	if srv != nil || !info.IsClientStream || !info.IsServerStream {
 		return false
 	}
