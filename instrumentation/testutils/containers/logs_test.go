@@ -8,6 +8,8 @@
 package containers
 
 import (
+	"io"
+	"os"
 	"testing"
 	"time"
 
@@ -56,6 +58,49 @@ func TestTestLogConsumerLateLog(t *testing.T) {
 	// panics, and a panic here fails the test.
 	c.TB = finishedTB{}
 	c.Accept(testcontainers.Log{Content: []byte("late log line")})
+}
+
+// TestTestLogConsumerLateLogEndsWithNewline verifies that a late log line
+// written to stderr ends with exactly one newline. Without it, the testing
+// package prints the next "--- PASS: TestX" right after it on the same line,
+// test2json no longer sees the test result, and gotestsum reports the passing
+// test as failed in its JUnit report.
+func TestTestLogConsumerLateLogEndsWithNewline(t *testing.T) {
+	for name, content := range map[string]string{
+		"without newline": "late log line",
+		"with newline":    "late log line\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := &testLogConsumer{TB: finishedTB{}, done: true}
+			got := captureStderr(t, func() {
+				c.Accept(testcontainers.Log{Content: []byte(content)})
+			})
+			want := "container log after test completion: late log line\n"
+			if got != want {
+				t.Fatalf("stderr = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func captureStderr(t *testing.T, f func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stderr := os.Stderr
+	os.Stderr = w
+	defer func() { os.Stderr = stderr }()
+	f()
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(out)
 }
 
 // TestTestLogConsumerConcurrentTeardown verifies that the cleanup does not
