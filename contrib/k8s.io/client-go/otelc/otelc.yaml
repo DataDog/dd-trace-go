@@ -1,0 +1,30 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# A literal rule, not a hook on rest.Config.TransportConfig: the rewritten
+# package imports the contrib, so it is initialized before a config built in a
+# package-level var or init. client-go itself is not excluded, because clientcmd
+# builds the configs it returns as rest.Config literals. Literals inside
+# k8s.io/client-go/rest are unqualified and never match, so rest.CopyConfig does
+# not wrap a config again, and a config from rest.InClusterConfig is not traced.
+#
+# The contrib wrapper goes innermost. httptrace.WrapRoundTripper replaces a
+# round tripper it already traced, so a WrapTransport that also uses the contrib
+# keeps one span, with its own options.
+rest_config:
+  target:
+    - "**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/**"
+  where:
+    struct_literal: k8s.io/client-go/rest.Config
+  do:
+    - set_fields:
+        field:
+          - name: WrapTransport
+            wrap: kubernetestransport.Wrappers(kubernetestrace.WrapRoundTripper, {{ . }})
+            value: kubernetestrace.WrapRoundTripper
+  imports:
+    kubernetestrace: github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2/kubernetes
+    kubernetestransport: k8s.io/client-go/transport
