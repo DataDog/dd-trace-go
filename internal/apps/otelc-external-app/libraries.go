@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
+	elasticsearch8 "github.com/elastic/go-elasticsearch/v8"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/mux"
 	"github.com/julienschmidt/httprouter"
@@ -39,4 +40,5 @@ func useLibraries() {
 	}))
 	_ = mongooptions.Client()
 	_ = mongov2options.Client()
+	_, _ = elasticsearch8.NewClient(elasticsearch8.Config{})
 }

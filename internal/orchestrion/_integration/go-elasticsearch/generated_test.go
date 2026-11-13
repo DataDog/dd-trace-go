@@ -15,6 +15,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/harness"
 )
 
+func TestAliasedImport(t *testing.T) {
+	harness.Run(t, new(TestCaseAliasedImport))
+}
+
 func TestCACert(t *testing.T) {
 	harness.Run(t, new(TestCaseCACert))
 }
@@ -41,6 +45,10 @@ func TestDependency(t *testing.T) {
 
 func TestFingerprint(t *testing.T) {
 	harness.Run(t, new(TestCaseFingerprint))
+}
+
+func TestPackageVar(t *testing.T) {
+	harness.Run(t, new(TestCasePackageVar))
 }
 
 func TestV6(t *testing.T) {
