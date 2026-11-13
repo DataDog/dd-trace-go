@@ -11,6 +11,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"go/ast"
 	"go/build"
@@ -71,9 +72,18 @@ type modUpdate struct {
 }
 
 func main() {
-	integrations, err := fetchIntegrations()
+	check := flag.Bool("check", false, "verify published minimum versions match contrib go.mod; do not write the doc")
+	flag.Parse()
+
+	integrations, err := fetchIntegrations(*check)
 	if err != nil {
 		log.Fatalf("failed to fetch integrations: %s\n", err.Error())
+	}
+	if *check {
+		if err := checkMinVersions(integrations, outputPath); err != nil {
+			log.Fatalf("%s\n", err.Error())
+		}
+		return
 	}
 	if err := writeMarkdownFile(integrations, outputPath); err != nil {
 		log.Fatalf("failed to write markdown file: %s\n", err.Error())
@@ -81,7 +91,7 @@ func main() {
 	log.Printf("integration docs has been written to: %s\n", outputPath)
 }
 
-func fetchIntegrations() ([]integration, error) {
+func fetchIntegrations(check bool) ([]integration, error) {
 	pkgs := instrumentation.GetPackages()
 
 	var (
@@ -98,7 +108,7 @@ func fetchIntegrations() ([]integration, error) {
 		go func() {
 			defer wg.Done()
 
-			ig, err := fetchIntegrationInfo(string(integrationName), modName)
+			ig, err := fetchIntegrationInfo(string(integrationName), modName, check)
 			if err != nil {
 				log.Printf("WARN: failed to read integration info: %s\n", err.Error())
 				return
@@ -113,7 +123,7 @@ func fetchIntegrations() ([]integration, error) {
 	return integrations, nil
 }
 
-func fetchIntegrationInfo(name, tracedPackage string) (integration, error) {
+func fetchIntegrationInfo(name, tracedPackage string, check bool) (integration, error) {
 	// Path to contrib/{packageName}
 	contribPath := filepath.Join("contrib", name)
 	goModPath := filepath.Join(contribPath, "go.mod")
@@ -143,7 +153,7 @@ func fetchIntegrationInfo(name, tracedPackage string) (integration, error) {
 		repository = tracedPackage
 	)
 	if _, ok := stdlibPackages[name]; !ok {
-		minVersion, maxVersion, repository, err = fetchVersionInfo(goModPath, tracedPackage)
+		minVersion, maxVersion, repository, err = fetchVersionInfo(goModPath, tracedPackage, check)
 		if err != nil {
 			return integration{}, fmt.Errorf("failed to fetch version info: %s", err)
 		}
@@ -158,7 +168,54 @@ func fetchIntegrationInfo(name, tracedPackage string) (integration, error) {
 	}, nil
 }
 
-func fetchVersionInfo(goModPath, tracedPackage string) (minVersion, maxVersion, repository string, resultErr error) {
+func checkMinVersions(integrations []integration, docPath string) error {
+	published, err := publishedMinVersions(docPath)
+	if err != nil {
+		return fmt.Errorf("failed to read %s: %w", docPath, err)
+	}
+	mismatches := 0
+	for _, ig := range integrations {
+		want, ok := published[ig.name]
+		if !ok {
+			log.Printf("ERROR: %s has no row in %s", ig.name, docPath)
+			mismatches++
+			continue
+		}
+		if want != ig.minVersion {
+			log.Printf("ERROR: %s minimum version mismatch: go.mod has %s, %s has %s",
+				ig.name, ig.minVersion, docPath, want)
+			mismatches++
+		}
+	}
+	if mismatches > 0 {
+		return fmt.Errorf("%d integration(s) have a published minimum that does not match their go.mod; "+
+			"run `go run ./scripts/gen_integrations_doc.go` or fix the contrib go.mod", mismatches)
+	}
+	return nil
+}
+
+func publishedMinVersions(docPath string) (map[string]string, error) {
+	data, err := os.ReadFile(docPath)
+	if err != nil {
+		return nil, err
+	}
+	nameRegex := regexp.MustCompile(`\[contrib/(.+?)\]`)
+	out := make(map[string]string)
+	for _, line := range strings.Split(string(data), "\n") {
+		parts := strings.Split(line, "|")
+		if len(parts) < 5 {
+			continue // header, separator, prose, or blank line
+		}
+		m := nameRegex.FindStringSubmatch(strings.TrimSpace(parts[2]))
+		if m == nil {
+			continue
+		}
+		out[m[1]] = strings.Trim(strings.TrimSpace(parts[3]), "`")
+	}
+	return out, nil
+}
+
+func fetchVersionInfo(goModPath, tracedPackage string, check bool) (minVersion, maxVersion, repository string, resultErr error) {
 	// Read the go.mod
 	data, err := os.ReadFile(goModPath)
 	if err != nil {
@@ -183,14 +240,19 @@ func fetchVersionInfo(goModPath, tracedPackage string) (minVersion, maxVersion, 
 
 	// Iterate through require dependencies
 	for _, req := range f.Require {
-		if repoRegex.MatchString(req.Mod.Path) {
-			latestVersion, err := fetchLatestVersion(req.Mod.Path)
-			if err != nil {
-				log.Printf("error fetching latest version for %s: %v\n", req.Mod.Path, err)
-			}
-			return req.Mod.Version, latestVersion, req.Mod.Path, nil
-
+		if !repoRegex.MatchString(req.Mod.Path) {
+			continue
 		}
+		minVersion, repository = req.Mod.Version, req.Mod.Path
+		if check {
+			return minVersion, maxVersion, repository, nil
+		}
+		latestVersion, err := fetchLatestVersion(req.Mod.Path)
+		if err != nil {
+			log.Printf("error fetching latest version for %s: %v\n", req.Mod.Path, err)
+		}
+		return req.Mod.Version, latestVersion, req.Mod.Path, nil
+
 	}
 	resultErr = fmt.Errorf("repository %s not found in go.mod", tracedPackage)
 	return

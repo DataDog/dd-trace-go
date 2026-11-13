@@ -408,16 +408,18 @@ Run these in order and commit every change they produce. CI fails on a non-clean
    directives, tidies modules, updates `go.work.sum`.
 2. `make generate`. Regenerates the auto-instrumentation artifacts and generated tests. Run it after
    `fix-modules`. If it changes a `go.mod`, run `make fix-modules` again.
-3. `make lint` and `make format`.
-4. Run your integration's unit tests, for example `go test ./contrib/net/http/...`.
-5. Run the auto-instrumentation integration tests for your integration. For example, for net/http:
+3. If you changed a traced library's version requirement in a `go.mod`, regenerate the supported
+   versions doc with `go run ./scripts/gen_integrations_doc.go`.
+4. `make lint` and `make format`.
+5. Run your integration's unit tests, for example `go test ./contrib/net/http/...`.
+6. Run the auto-instrumentation integration tests for your integration. For example, for net/http:
 
    ```
    cd internal/orchestrion/_integration
    go run github.com/DataDog/orchestrion go test ./net_http/...
    ```
 
-6. Register the integration with the otelc lane, when your integration ships
+7. Register the integration with the otelc lane, when your integration ships
    one. Name the module in `OTELC_MODULES` and `OTELC_TEST_PACKAGES` in
    `.github/workflows/otelc.yml`, add the parent subtree to the
    `otelc-integrations` component in `.github/ci-components.yml`, and add the
