@@ -19,6 +19,10 @@ func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
 
+func TestAliasedImport(t *testing.T) {
+	harness.Run(t, new(TestCaseAliasedImport))
+}
+
 func TestChannels(t *testing.T) {
 	harness.Run(t, new(TestCaseChannels))
 }
@@ -29,6 +33,10 @@ func TestContribClients(t *testing.T) {
 
 func TestDependency(t *testing.T) {
 	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestPackageVar(t *testing.T) {
+	harness.Run(t, new(TestCasePackageVar))
 }
 
 func TestProduceAndPoll(t *testing.T) {
