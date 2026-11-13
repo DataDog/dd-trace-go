@@ -76,7 +76,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace/stats v0.82.3 // indirect
 	github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.82.3 // indirect
 	github.com/DataDog/datadog-go/v5 v5.9.1 // indirect
-	github.com/DataDog/go-libddwaf/v5 v5.0.1 // indirect
+	github.com/DataDog/go-libddwaf/v5 v5.1.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
 	github.com/DataDog/go-sqllexer v0.2.4 // indirect
 	github.com/DataDog/go-tuf v1.1.1-0.5.2 // indirect
@@ -195,10 +195,10 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
-	github.com/klauspost/compress v1.20.1 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
-	github.com/labstack/echo/v4 v4.15.3 // indirect
-	github.com/labstack/echo/v5 v5.2.0 // indirect
+	github.com/labstack/echo/v4 v4.16.1 // indirect
+	github.com/labstack/echo/v5 v5.4.1 // indirect
 	github.com/labstack/gommon v0.5.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/linkdata/deadlock v0.5.5 // indirect
@@ -288,7 +288,7 @@ require (
 	go.uber.org/zap v1.28.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/arch v0.8.0 // indirect
-	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/crypto v0.58.1-0.20261009181718-2f1f834330b2 // indirect
 	golang.org/x/exp v0.0.0-20260813180055-c1d0aacb2297 // indirect
 	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
