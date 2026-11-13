@@ -7,6 +7,9 @@ package aws
 
 import (
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
@@ -21,6 +24,7 @@ import (
 	snstypes "github.com/aws/aws-sdk-go-v2/service/sns/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	sqstypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -107,8 +111,12 @@ func injectCases() []injectCase {
 						QueueUrl:    aws.String("https://sqs.eu-west-1.amazonaws.com/123456789012/my-queue"),
 						MessageBody: aws.String(`{"message":"hello"}`),
 					}
-					_, _ = sqs.NewFromConfig(cfg).SendMessage(ctx, in)
-					_, ok := in.MessageAttributes["_datadog"]
+					var sent sqs.SendMessageInput
+					cfg.HTTPClient = captureSQSRequest(&sent)
+					if _, err := sqs.NewFromConfig(cfg).SendMessage(ctx, in); err != nil {
+						return nil
+					}
+					_, ok := sent.MessageAttributes["_datadog"]
 					return []bool{ok}
 				}},
 				{operation: "SendMessageBatch", entries: 2, run: func(ctx context.Context, cfg aws.Config) []bool {
@@ -119,9 +127,13 @@ func injectCases() []injectCase {
 							{Id: aws.String("2"), MessageBody: aws.String(`{"message":"a longer message"}`)},
 						},
 					}
-					_, _ = sqs.NewFromConfig(cfg).SendMessageBatch(ctx, in)
-					injected := make([]bool, len(in.Entries))
-					for i, e := range in.Entries {
+					var sent sqs.SendMessageBatchInput
+					cfg.HTTPClient = captureSQSRequest(&sent)
+					if _, err := sqs.NewFromConfig(cfg).SendMessageBatch(ctx, in); err != nil {
+						return nil
+					}
+					injected := make([]bool, len(sent.Entries))
+					for i, e := range sent.Entries {
 						_, injected[i] = e.MessageAttributes["_datadog"]
 					}
 					return injected
@@ -225,6 +237,65 @@ func newInjectTestConfig(t *testing.T) aws.Config {
 	}
 	AppendMiddleware(&awsCfg)
 	return awsCfg
+}
+
+func captureSQSRequest[T any](sent *T) aws.HTTPClient {
+	return smithyhttp.ClientDoFunc(func(req *http.Request) (*http.Response, error) {
+		defer req.Body.Close()
+		var body T
+		if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+			return nil, err
+		}
+		*sent = body
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{}`))}, nil
+	})
+}
+
+func TestSQSSendMessageBatchSharedAttributes(t *testing.T) {
+	setInjectEnv(t, "DD_TRACE_SQS_INJECT_DATADOG_ATTRIBUTE_ENABLED", "true")
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	var sent sqs.SendMessageBatchInput
+	cfg := newInjectTestConfig(t)
+	cfg.HTTPClient = captureSQSRequest(&sent)
+	client := sqs.NewFromConfig(cfg)
+
+	first := sqstypes.SendMessageBatchRequestEntry{Id: aws.String("first"), MessageBody: aws.String("a")}
+	input := &sqs.SendMessageBatchInput{
+		QueueUrl: aws.String("https://sqs.eu-west-1.amazonaws.com/123456789012/my-queue"),
+		Entries:  []sqstypes.SendMessageBatchRequestEntry{first},
+	}
+	_, err := client.SendMessageBatch(context.Background(), input)
+	require.NoError(t, err)
+	require.Len(t, sent.Entries, 1)
+	trace := sent.Entries[0].MessageAttributes["_datadog"]
+	require.NotEmpty(t, aws.ToString(trace.StringValue))
+	traceBytes := len("_datadog") + len(aws.ToString(trace.DataType)) + len(*trace.StringValue)
+	budgetForOneTrace := traceBytes + traceBytes/2
+	const batchLimit = 1 << 20
+	originalBytes := len(*first.MessageBody) + 2*(len("format")+len("String")+len("json"))
+	shared := make(map[string]sqstypes.MessageAttributeValue)
+	first.MessageAttributes = shared
+	second := sqstypes.SendMessageBatchRequestEntry{
+		Id:                aws.String("second"),
+		MessageBody:       aws.String(strings.Repeat("b", batchLimit-originalBytes-budgetForOneTrace)),
+		MessageAttributes: shared,
+	}
+	input.Entries = []sqstypes.SendMessageBatchRequestEntry{first, second}
+	for _, value := range []string{"json", "text"} {
+		format := sqstypes.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String(value)}
+		shared["format"] = format
+		_, err := client.SendMessageBatch(context.Background(), input)
+		require.NoError(t, err)
+		require.Len(t, sent.Entries, 2)
+		require.NotEmpty(t, aws.ToString(sent.Entries[0].MessageAttributes["_datadog"].StringValue))
+		require.NotContains(t, sent.Entries[1].MessageAttributes, "_datadog")
+		delete(sent.Entries[0].MessageAttributes, "_datadog")
+		require.Equal(t, map[string]sqstypes.MessageAttributeValue{"format": format}, shared)
+		wantEntries := []sqstypes.SendMessageBatchRequestEntry{first, second}
+		assert.Equal(t, wantEntries, sent.Entries)
+		assert.Equal(t, wantEntries, input.Entries)
+	}
 }
 
 func TestInjectionEnabledByDefault(t *testing.T) {
