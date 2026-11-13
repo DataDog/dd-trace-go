@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
+	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/profiler"
 
 	"github.com/stretchr/testify/assert"
@@ -231,4 +232,105 @@ func TestRepeatStartRecordsEnvDiffOnActiveClient(t *testing.T) {
 	handle, ok := telemetryClient.Metrics[key]
 	require.True(t, ok, "expected config.repeat_start_env_diff to be recorded on the active telemetry client")
 	assert.Equal(t, float64(1), handle.Get())
+}
+
+// replaceTracerTelemetry swaps the active tracer's telemetry client and the
+// global client for a RecordClient so Flush/Close are directly observable.
+func replaceTracerTelemetry(t *testing.T) *telemetrytest.RecordClient {
+	t.Helper()
+	tr, ok := getGlobalTracer().(*tracer)
+	require.True(t, ok, "expected concrete *tracer after Start")
+	rec := new(telemetrytest.RecordClient)
+	telemetry.SwapClient(rec)
+	tr.telemetry = rec
+	return rec
+}
+
+func TestTracerStopFlushesTelemetry(t *testing.T) {
+	Start()
+	defer globalconfig.SetServiceName("")
+	require.NotNil(t, telemetry.GlobalClient())
+
+	rec := replaceTracerTelemetry(t)
+	Stop()
+
+	assert.Nil(t, telemetry.GlobalClient())
+	assert.True(t, rec.Stopped)
+	assert.GreaterOrEqual(t, rec.Flushes, 1)
+	assert.True(t, rec.Closed)
+}
+
+func TestTracerStopDoesNotStopForeignTelemetry(t *testing.T) {
+	telemetryClient := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(telemetryClient)()
+
+	Start()
+	defer globalconfig.SetServiceName("")
+
+	// StartApp was a no-op because the foreign client already owns the global
+	// slot, so the tracer holds a leftover client that Stop must Close.
+	leftover := new(telemetrytest.RecordClient)
+	tr, ok := getGlobalTracer().(*tracer)
+	require.True(t, ok, "expected concrete *tracer after Start")
+	if discarded := tr.telemetry; discarded != nil {
+		// Close the real unused client now so its ticker does not leak; Stop
+		// will Close the RecordClient stand-in so we can assert that path.
+		_ = discarded.Close()
+	}
+	tr.telemetry = leftover
+
+	Stop()
+
+	// Profiler or another product already owns the global client. Stop must
+	// not call StopApp on it.
+	assert.False(t, telemetryClient.Stopped)
+	assert.Equal(t, telemetry.Client(telemetryClient), telemetry.GlobalClient())
+	// ProductStopped(tracers) must still propagate to the foreign client
+	// (ProductStarted set it true during Start; Stop sets it back to false).
+	assert.False(t, telemetryClient.Products[telemetry.NamespaceTracers])
+	assert.True(t, leftover.Closed)
+	assert.Equal(t, 0, leftover.Flushes)
+	assert.False(t, leftover.Stopped)
+}
+
+func TestTracerStopKeepsTelemetryWhenProfilerStillRunning(t *testing.T) {
+	Start()
+	defer globalconfig.SetServiceName("")
+	require.NotNil(t, telemetry.GlobalClient())
+
+	rec := replaceTracerTelemetry(t)
+	wasEnabled := traceprof.SetProfilerEnabled(true)
+	defer func() {
+		traceprof.SetProfilerEnabled(wasEnabled)
+		telemetry.StopApp()
+	}()
+
+	Stop()
+
+	// Profiler started after the tracer and still shares the client, so Stop
+	// must flush without emitting app-stopped / clearing the global client.
+	assert.NotNil(t, telemetry.GlobalClient())
+	assert.GreaterOrEqual(t, rec.Flushes, 1)
+	assert.False(t, rec.Closed)
+	assert.False(t, rec.Stopped)
+}
+
+func TestTracerStopStopsTelemetryAfterProfilerStopped(t *testing.T) {
+	Start()
+	defer globalconfig.SetServiceName("")
+	require.NotNil(t, telemetry.GlobalClient())
+
+	rec := replaceTracerTelemetry(t)
+	wasEnabled := traceprof.SetProfilerEnabled(true)
+	defer traceprof.SetProfilerEnabled(wasEnabled)
+	// The profiler started after the tracer, then stopped before tracer.Stop().
+	traceprof.SetProfilerEnabled(false)
+
+	Stop()
+
+	// Nobody else needs the client anymore, so Stop must fully stop the app.
+	assert.Nil(t, telemetry.GlobalClient())
+	assert.True(t, rec.Stopped)
+	assert.GreaterOrEqual(t, rec.Flushes, 1)
+	assert.True(t, rec.Closed)
 }

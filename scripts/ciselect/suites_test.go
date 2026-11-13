@@ -185,7 +185,7 @@ func TestSuiteSelection(t *testing.T) {
 		},
 		{
 			name:        "a change inside a suite names that suite",
-			files:       []string{"internal/orchestrion/_integration/gin/main_test.go"},
+			files:       []string{"internal/orchestrion/_integration/gin/base.go"},
 			otelc:       SuiteVerdict{Suites: []string{"gin"}},
 			orchestrion: SuiteVerdict{Suites: []string{"gin"}},
 			wantOtelc:   true,
@@ -193,7 +193,7 @@ func TestSuiteSelection(t *testing.T) {
 		},
 		{
 			name:        "a change inside a suite names that suite, aws edition",
-			files:       []string{"internal/orchestrion/_integration/aws.v1/main_test.go"},
+			files:       []string{"internal/orchestrion/_integration/aws.v1/aws.go"},
 			otelc:       SuiteVerdict{Suites: []string{"aws.v1"}},
 			orchestrion: SuiteVerdict{Suites: []string{"aws.v1"}},
 			wantOtelc:   true,
