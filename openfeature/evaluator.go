@@ -388,7 +388,7 @@ func configuredMaxDependencyDepth(config *universalFlagsConfiguration) int {
 }
 
 func logInvalidMaxDependencyDepth() {
-	log.Warn("openfeature: maxDependencyDepth must be an integer from 0 through 255; using default %d", defaultMaxDependencyDepth) //errtrack:ignore malformed customer configuration
+	log.Debug("openfeature: maxDependencyDepth must be an integer from 0 through 255; using default %d", defaultMaxDependencyDepth)
 }
 
 // evaluateAllocation evaluates an allocation and returns the matching split if any.

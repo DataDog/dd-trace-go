@@ -455,7 +455,7 @@ func TestDependentFlags_InvalidConfiguredDepthLogsAndUsesDefault(t *testing.T) {
 		"1e1000000", "1e-1000000",
 	} {
 		t.Run(configured, func(t *testing.T) {
-			logger := withLogLevel(t, log.LevelWarn)
+			logger := withLogLevel(t, log.LevelDebug)
 			config := dependencyTestConfig(
 				dependencyTestFlag("dependency", "on", nil),
 				dependencyTestFlag("root", "on", dependencyCondition("dependency", operatorOneOf, "on")),
@@ -475,13 +475,13 @@ func TestDependentFlags_InvalidConfiguredDepthLogsAndUsesDefault(t *testing.T) {
 			require.Equal(t, true, record.Result.Value)
 			require.NoError(t, record.Result.Error)
 			require.Equal(t, []string{"dependency"}, dependencyExposureKeys(result))
-			require.Equal(t, 2, logger.countContaining("maxDependencyDepth must be an integer from 0 through 255; using default 10"), "each root evaluation emits its own diagnostic")
+			require.Equal(t, 2, logger.countContaining("DEBUG: openfeature: maxDependencyDepth must be an integer from 0 through 255; using default 10"), "each root evaluation emits its own diagnostic")
 		})
 	}
 }
 
 func TestDependentFlags_InvalidDepthDiagnosticIsNotCached(t *testing.T) {
-	logger := withLogLevel(t, log.LevelWarn)
+	logger := withLogLevel(t, log.LevelDebug)
 	config := dependencyTestConfig(
 		dependencyTestFlag("dependency", "on", nil),
 		dependencyTestFlag("root", "on", dependencyCondition("dependency", operatorOneOf, "on")),
@@ -495,7 +495,17 @@ func TestDependentFlags_InvalidDepthDiagnosticIsNotCached(t *testing.T) {
 		require.True(t, result.Value.(bool))
 	}
 	log.Flush()
-	require.Equal(t, 4, logger.countContaining("maxDependencyDepth must be an integer from 0 through 255; using default 10"))
+	require.Equal(t, 4, logger.countContaining("DEBUG: openfeature: maxDependencyDepth must be an integer from 0 through 255; using default 10"))
+}
+
+func TestDependentFlags_InvalidDepthDiagnosticIsDebugOnly(t *testing.T) {
+	logger := withLogLevel(t, log.LevelWarn)
+	config := dependencyTestConfig(dependencyTestFlag("root", "on", nil))
+	config.EvaluatorParams = json.RawMessage(`{"maxDependencyDepth":null}`)
+
+	result := evaluateConfiguredFlag(config, "root", false, nil, time.Now(), experimentationExclusion{})
+	require.NoError(t, result.Error)
+	require.Zero(t, logger.countContaining("maxDependencyDepth must be an integer from 0 through 255; using default 10"))
 }
 
 func TestDependentFlags_ExactIntegerDepthForms(t *testing.T) {
@@ -581,7 +591,7 @@ func TestDependentFlags_InvalidConfiguredDepthPublishesSuccessfulDependencyBatch
 }
 
 func TestDependentFlags_InvalidConfiguredDepthIsReadOnceForIndependentRoot(t *testing.T) {
-	logger := withLogLevel(t, log.LevelWarn)
+	logger := withLogLevel(t, log.LevelDebug)
 	config := dependencyTestConfig(dependencyTestFlag("root", "on", nil))
 	require.NoError(t, json.Unmarshal([]byte(`{"maxDependencyDepth":null}`), &config.EvaluatorParams))
 
@@ -590,13 +600,13 @@ func TestDependentFlags_InvalidConfiguredDepthIsReadOnceForIndependentRoot(t *te
 	require.Equal(t, of.StaticReason, result.Reason)
 	require.True(t, result.Value.(bool))
 	log.Flush()
-	require.Equal(t, 1, logger.countContaining("maxDependencyDepth"), "each root evaluation resolves the option once")
+	require.Equal(t, 1, logger.countContaining("DEBUG: openfeature: maxDependencyDepth must be an integer from 0 through 255; using default 10"), "each root evaluation resolves the option once")
 }
 
 func TestDependentFlags_MalformedOptionsObjectsLogAndFallBack(t *testing.T) {
 	for _, raw := range []string{`null`, `42`, `"future"`, `true`, `[]`} {
 		t.Run(raw, func(t *testing.T) {
-			logger := withLogLevel(t, log.LevelWarn)
+			logger := withLogLevel(t, log.LevelDebug)
 			config := dependencyTestConfig(
 				dependencyTestFlag("dependency", "on", nil),
 				dependencyTestFlag("root", "on", dependencyCondition("dependency", operatorOneOf, "on")),
@@ -606,7 +616,7 @@ func TestDependentFlags_MalformedOptionsObjectsLogAndFallBack(t *testing.T) {
 			log.Flush()
 			require.NoError(t, result.Error)
 			require.True(t, result.Value.(bool))
-			require.Equal(t, 1, logger.countContaining("maxDependencyDepth must be an integer from 0 through 255; using default 10"))
+			require.Equal(t, 1, logger.countContaining("DEBUG: openfeature: maxDependencyDepth must be an integer from 0 through 255; using default 10"))
 		})
 	}
 }
