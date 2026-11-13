@@ -122,9 +122,7 @@ type ServiceOverride = internal.ServiceOverride
 // name and its source. The source tracks the origin of the service name
 // override for _dd.svc_src.
 func ServiceNameWithSource(name string, source string) tracer.StartSpanOption {
-	return func(cfg *tracer.StartSpanConfig) {
-		tracer.Tag(ext.KeyServiceSource, internal.ServiceOverride{Name: name, Source: source})(cfg)
-	}
+	return tracer.Tag(ext.KeyServiceSource, internal.ServiceOverride{Name: name, Source: source})
 }
 
 // OperationName returns the operation name to be set for the given instrumentation component. It
