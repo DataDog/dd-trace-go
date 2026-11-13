@@ -543,6 +543,36 @@ func (c *SpanContext) setOTBaggageItem(key, val string) {
 	c.setBaggageItem(strings.ToLower(key), val)
 }
 
+// removeBaggageItemLocked deletes a baggage item.
+// c.mu must be held for writing.
+// +checklocks:c.mu
+func (c *SpanContext) removeBaggageItemLocked(key string) {
+	assert.RWMutexLocked(&c.mu)
+	delete(c.baggage, key)
+}
+
+// removeBaggageItem deletes a baggage item. Removing a key that was never set
+// is a no-op.
+//
+// Callers that write a trace-scoped set of keys need this: baggage lives on the
+// SpanContext and is inherited by every span in the trace, so a key that is
+// simply left alone keeps whatever a predecessor wrote. Such a writer must set
+// or remove each of its keys on every pass, never skip one.
+//
+// hasBaggage is deliberately not cleared when the last item goes. It is a
+// monotonic "this context has touched baggage" hint that lets readers skip the
+// lock entirely, and every other site only ever sets it. Leaving it set costs
+// one read lock over an empty map; clearing it would make the flag
+// non-monotonic for a saving that does not justify the extra reasoning.
+func (c *SpanContext) removeBaggageItem(key string) {
+	if atomic.LoadUint32(&c.hasBaggage) == 0 {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.removeBaggageItemLocked(key)
+}
+
 // baggageItemLocked retrieves a baggage item.
 // c.mu must be held for reading.
 // +checklocksread:c.mu

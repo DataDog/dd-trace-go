@@ -1383,6 +1383,55 @@ func TestSpanContextBaggage(t *testing.T) {
 	assert.Equal("value", ctx.baggage["key"])
 }
 
+func TestSpanContextRemoveBaggageItem(t *testing.T) {
+	t.Run("removes a set key", func(t *testing.T) {
+		assert := assert.New(t)
+
+		var ctx SpanContext
+		ctx.setBaggageItem("keep", "a")
+		ctx.setBaggageItem("drop", "b")
+
+		ctx.removeBaggageItem("drop")
+
+		assert.Equal("a", ctx.baggageItem("keep"))
+		assert.Equal("", ctx.baggageItem("drop"))
+		_, ok := ctx.baggage["drop"]
+		assert.False(ok, "key should be deleted, not blanked")
+	})
+
+	t.Run("unknown key is a no-op", func(t *testing.T) {
+		assert := assert.New(t)
+
+		var ctx SpanContext
+		ctx.setBaggageItem("keep", "a")
+
+		ctx.removeBaggageItem("never-set")
+
+		assert.Equal("a", ctx.baggageItem("keep"))
+		assert.Len(ctx.baggage, 1)
+	})
+
+	t.Run("no baggage at all is a no-op", func(t *testing.T) {
+		var ctx SpanContext
+		// baggage map is nil here; delete on a nil map must not panic.
+		ctx.removeBaggageItem("never-set")
+	})
+
+	t.Run("removed key stops propagating", func(t *testing.T) {
+		assert := assert.New(t)
+
+		ctx := SpanContext{baggage: map[string]string{"a": "1", "b": "2"}, hasBaggage: 1}
+		ctx.removeBaggageItem("a")
+
+		got := make(map[string]string)
+		ctx.ForeachBaggageItem(func(k, v string) bool {
+			got[k] = v
+			return true
+		})
+		assert.Equal(map[string]string{"b": "2"}, got)
+	})
+}
+
 func TestSpanContextIterator(t *testing.T) {
 	assert := assert.New(t)
 

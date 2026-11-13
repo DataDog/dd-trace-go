@@ -8,6 +8,21 @@
 //
 // EXPERIMENTAL: This package is experimental and may change or be removed at any time
 // without notice. It is not subject to the Go module's compatibility promise.
+//
+// # Distributed context
+//
+// The LLMObs trace identity is propagated in two carriers at once: the Datadog
+// propagating tags, which ride inside x-datadog-tags, and the W3C baggage header
+// under a reserved llmobs.* key namespace. Both are written on every injection.
+// On extraction baggage is preferred, with the propagating tag as a fallback so
+// peers on older tracer versions are still understood.
+//
+// Baggage is the carrier that survives an intermediary dropping the APM trace
+// headers, since it is extracted even when no trace identity is present. That
+// holds only while baggage is an enabled propagation style. It is included in
+// DD_TRACE_PROPAGATION_STYLE by default; removing it leaves the propagating tags
+// as the only carrier, and LLMObs trace continuity again depends on the APM trace
+// headers reaching the downstream service intact.
 package llmobs
 
 import (
