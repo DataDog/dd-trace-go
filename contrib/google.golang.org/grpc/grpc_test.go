@@ -1677,3 +1677,80 @@ func TestUnknownServiceHandlerResourceName(t *testing.T) {
 		assert.NotContains(t, resources, m, "client-chosen method must not become the resource name")
 	}
 }
+
+// TestUnknownServiceDetectionWithServiceInfo checks that, with WithServiceInfo,
+// a registered bidi method with a nil implementation keeps its own resource
+// on call and message spans, while unregistered methods still use "_OTHER".
+func TestUnknownServiceDetectionWithServiceInfo(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	const registered = "/test.Echo/Chat"
+	var server *grpc.Server
+	server = grpc.NewServer(
+		grpc.StreamInterceptor(StreamServerInterceptor(
+			WithStreamMessages(true),
+			WithServiceInfo(func() map[string]grpc.ServiceInfo { return server.GetServiceInfo() }),
+		)),
+		grpc.UnknownServiceHandler(func(_ any, stream grpc.ServerStream) error {
+			return status.Error(codes.Unimplemented, "catch-all")
+		}),
+	)
+	server.RegisterService(&grpc.ServiceDesc{
+		ServiceName: "test.Echo",
+		HandlerType: (*any)(nil),
+		Streams: []grpc.StreamDesc{{
+			StreamName:    "Chat",
+			ServerStreams: true,
+			ClientStreams: true,
+			Handler: func(_ any, stream grpc.ServerStream) error {
+				var req fixturepb.FixtureRequest
+				if err := stream.RecvMsg(&req); err != nil {
+					return err
+				}
+				return stream.SendMsg(&fixturepb.FixtureReply{})
+			},
+		}},
+	}, nil)
+	li, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go server.Serve(li)
+	defer server.Stop()
+
+	conn, err := grpc.NewClient(li.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	defer conn.Close()
+
+	desc := &grpc.StreamDesc{ServerStreams: true, ClientStreams: true}
+	cs, err := conn.NewStream(context.Background(), desc, registered)
+	require.NoError(t, err)
+	require.NoError(t, cs.SendMsg(&fixturepb.FixtureRequest{}))
+	require.NoError(t, cs.RecvMsg(&fixturepb.FixtureReply{}))
+	_ = conn.Invoke(context.Background(), "/junk.A/One", &fixturepb.FixtureRequest{}, &fixturepb.FixtureReply{})
+
+	require.Eventually(t, func() bool {
+		n := 0
+		for _, s := range mt.FinishedSpans() {
+			if s.OperationName() == "grpc.server" {
+				n++
+			}
+		}
+		return n == 2
+	}, 5*time.Second, 10*time.Millisecond)
+
+	var known, unknown, knownMsgs int
+	for _, s := range mt.FinishedSpans() {
+		switch {
+		case s.OperationName() == "grpc.server" && s.Tag(ext.ResourceName) == registered:
+			known++
+		case s.OperationName() == "grpc.server" && s.Tag(ext.ResourceName) == resourceUnknownMethod:
+			assert.Equal(t, "/junk.A/One", s.Tag(tagMethodOriginal))
+			unknown++
+		case s.OperationName() == "grpc.message" && s.Tag(ext.ResourceName) == registered:
+			knownMsgs++
+		}
+	}
+	assert.Equal(t, 1, known)
+	assert.Equal(t, 1, unknown)
+	assert.Positive(t, knownMsgs)
+}

@@ -93,6 +93,42 @@ const (
 	tagMethodOriginal     = "rpc.method_original"
 )
 
+// isUnknownServiceCall reports whether the call is served by
+// grpc.UnknownServiceHandler. grpc invokes that handler with a nil server and
+// a bidi stream, but a registered method with a nil implementation looks the
+// same, so the registered services are checked when they are known.
+func isUnknownServiceCall(cfg *config, srv interface{}, info *grpc.StreamServerInfo) bool {
+	if srv != nil || !info.IsClientStream || !info.IsServerStream {
+		return false
+	}
+	if cfg.serviceInfo == nil {
+		return true
+	}
+	svc, name, ok := splitFullMethod(info.FullMethod)
+	if !ok {
+		return true
+	}
+	si, ok := cfg.serviceInfo()[svc]
+	if !ok {
+		return true
+	}
+	for _, m := range si.Methods {
+		if m.Name == name {
+			return false
+		}
+	}
+	return true
+}
+
+// splitFullMethod splits "/pkg.Service/Method" into service and method.
+func splitFullMethod(fm string) (service, method string, ok bool) {
+	fm, ok = strings.CutPrefix(fm, "/")
+	if !ok {
+		return "", "", false
+	}
+	return strings.Cut(fm, "/")
+}
+
 // StreamServerInterceptor will trace streaming requests to the given gRPC server.
 func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 	cfg := new(config)
@@ -107,7 +143,7 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 		// bidi stream. The method there is chosen by the client, so it must
 		// not become the resource name (#5813).
 		resource := info.FullMethod
-		unknown := srv == nil && info.IsClientStream && info.IsServerStream
+		unknown := isUnknownServiceCall(cfg, srv, info)
 		if unknown {
 			resource = resourceUnknownMethod
 		}
