@@ -21,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/llmobstest"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
 	"github.com/DataDog/dd-trace-go/v2/llmobs"
 )
 
@@ -363,4 +364,49 @@ func TestToolSpanDownstreamCalls(t *testing.T) {
 			assert.LessOrEqual(t, len(target), 256)
 		}
 	})
+}
+
+// BenchmarkToolSpanDownstreamCalls measures N HTTP client spans under one parent. Under a workflow
+// span the client spans have no owner; under a tool span each one is added to the summary, so the
+// difference between the two is the cost of the summary.
+func BenchmarkToolSpanDownstreamCalls(b *testing.B) {
+	parents := map[string]func(context.Context) (func(), context.Context){
+		"workflow": func(ctx context.Context) (func(), context.Context) {
+			span, ctx := llmobs.StartWorkflowSpan(ctx, "parent")
+			return func() { span.Finish() }, ctx
+		},
+		"tool": func(ctx context.Context) (func(), context.Context) {
+			span, ctx := llmobs.StartToolSpan(ctx, "parent")
+			return func() { span.Finish() }, ctx
+		},
+	}
+	for _, calls := range []int{1, 10, 100} {
+		for _, parent := range []string{"workflow", "tool"} {
+			b.Run(fmt.Sprintf("calls=%d/parent=%s", calls, parent), func(b *testing.B) {
+				coll := llmobstest.New(b)
+				_, _, err := tracertest.Bootstrap(b,
+					tracer.WithLLMObsEnabled(true),
+					tracer.WithLLMObsMLApp("bench"),
+					tracer.WithLogStartup(false),
+					coll.TracerOption(),
+				)
+				require.NoError(b, err)
+				start := parents[parent]
+				b.ReportAllocs()
+				for b.Loop() {
+					finish, ctx := start(context.Background())
+					for i := range calls {
+						span, _ := tracer.StartSpanFromContext(ctx, "http.request",
+							tracer.Tag(ext.SpanKind, ext.SpanKindClient),
+							tracer.Tag(ext.HTTPMethod, "GET"),
+							tracer.Tag(ext.HTTPURL, fmt.Sprintf("https://api.example.com/v1/orders/%d", i)),
+							tracer.Tag(ext.HTTPCode, "200"),
+						)
+						span.Finish()
+					}
+					finish()
+				}
+			})
+		}
+	}
 }
