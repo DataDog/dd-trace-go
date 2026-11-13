@@ -140,6 +140,7 @@ func generatedThirdPartyLibraries() []string {
 		"cloud.google.com/go/websecurityscanner",
 		"cloud.google.com/go/workflows",
 		"connectrpc.com/connect",
+		"connectrpc.com/connect/v2",
 		"dario.cat/mergo",
 		"github.com/99designs/gqlgen",
 		"github.com/AdaLogics/go-fuzz-headers",

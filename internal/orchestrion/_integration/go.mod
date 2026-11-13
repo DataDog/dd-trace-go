@@ -6,6 +6,9 @@ require (
 	cloud.google.com/go/pubsub v1.50.1
 	cloud.google.com/go/pubsub/v2 v2.0.0
 	connectrpc.com/connect v1.21.1
+	connectrpc.com/connect/v2 v2.0.0
+	connectrpc.com/grpchealth/v2 v2.0.0
+	connectrpc.com/grpcreflect/v2 v2.0.0
 	github.com/99designs/gqlgen v0.17.97
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.13.0-dev.1
@@ -13,7 +16,7 @@ require (
 	github.com/DataDog/dd-trace-go/otelc/all/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
 	github.com/DataDog/go-libddwaf/v5 v5.1.0
-	github.com/DataDog/orchestrion v1.14.0
+	github.com/DataDog/orchestrion v1.15.0
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
 	github.com/aerospike/aerospike-client-go/v7 v7.10.2
@@ -449,6 +452,8 @@ replace github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/k
 
 replace github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 => ../../../contrib/confluentinc/confluent-kafka-go/kafka
 
+replace github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect.v2/v2 => ../../../contrib/connectrpc.com/connect.v2
+
 replace github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2 => ../../../contrib/connectrpc.com/connect
 
 replace github.com/DataDog/dd-trace-go/contrib/database/sql/v2 => ../../../contrib/database/sql
@@ -575,7 +580,10 @@ require example.com/httprouterdep v0.0.0-00010101000000-000000000000
 
 replace example.com/httprouterdep => ./internal/httprouterdep
 
-require github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev.1 // indirect
+require (
+	github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect.v2/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev.1 // indirect
+)
 
 replace github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 => ../../../contrib/gorilla/mux/otelc
 
