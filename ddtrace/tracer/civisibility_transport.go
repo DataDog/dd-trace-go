@@ -119,6 +119,20 @@ func newCiVisibilityTransport(config *config) *ciVisibilityTransport {
 	}
 }
 
+// ciVisibilityPayloadError marks a failure to build the CI Visibility request
+// payload itself — envelope serialization or the msgpack-to-JSON conversion —
+// rather than a filesystem or network failure that happens while sending it.
+// The trace writer reports this type at its final drop point so an SDK
+// serialization defect reaches Error Tracking, while sending failures stay
+// local-only.
+type ciVisibilityPayloadError struct {
+	op  string
+	err error
+}
+
+func (e *ciVisibilityPayloadError) Error() string { return e.op + ": " + e.err.Error() }
+func (e *ciVisibilityPayloadError) Unwrap() error { return e.err }
+
 // send sends the CI Visibility payload to the Datadog endpoint.
 // It prepares the payload, creates the HTTP request, and handles the response.
 //
@@ -134,16 +148,17 @@ func (t *ciVisibilityTransport) send(p payload) (body io.ReadCloser, err error) 
 	ciVisibilityPayload := &ciVisibilityPayload{payload: p, serializationTime: 0}
 	buffer, bufferErr := ciVisibilityPayload.getBuffer(t.config)
 	if bufferErr != nil {
-		return nil, fmt.Errorf("cannot create buffer payload: %v", bufferErr)
+		return nil, &ciVisibilityPayloadError{op: "cannot create buffer payload", err: bufferErr}
 	}
 
 	if bazel.IsPayloadFilesModeEnabled() {
 		log.Debug("civisibility: test event payload transport mode is file; converting msgpack payload to JSON before writing to disk")
 		jsonPayload, err := bazel.MsgpackToJSON(buffer.Bytes())
 		if err != nil {
-			return nil, fmt.Errorf("cannot convert payload to json: %w", err)
+			return nil, &ciVisibilityPayloadError{op: "cannot convert payload to json", err: err}
 		}
 		if err := bazel.WritePayloadFile(bazel.PayloadKindTests, jsonPayload); err != nil {
+			// filesystem failure, not a serialization defect — keep it local-only
 			return nil, fmt.Errorf("cannot write test payload file: %w", err)
 		}
 		return http.NoBody, nil

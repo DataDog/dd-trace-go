@@ -16,6 +16,17 @@
 // produced by `go run ./scripts/ciselect -contrib-modules`, and the single
 // token ALL (or no flag at all) means "test everything", which is what the
 // nightly smoke tests rely on.
+//
+// By default the output is an array of strings, one space-separated module list
+// per runner, which the smoke tests consume. With -shards the output is an array
+// of objects, one per non-empty shard:
+//
+//	{"shard":"k/6","modules":"./contrib/a/ ./contrib/b/ ","count":2}
+//
+// A module belongs to the same shard whether or not -select narrows the list,
+// so the shard name is a cache identity that pull requests share with the
+// nightly runs. The job count is the number of non-empty shards, not the
+// pre-change minimum of maxRunners and the selected module count.
 package main
 
 import (
@@ -39,6 +50,7 @@ const (
 
 func main() {
 	selectFile := flag.String("select", "", "file listing module directories to test, or the token ALL")
+	shards := flag.Bool("shards", false, "emit one {shard, modules, count} object per shard instead of strings")
 	flag.Parse()
 
 	selected, err := readSelection(*selectFile)
@@ -59,7 +71,7 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	var modules []string
+	var allModules []string
 	dec := json.NewDecoder(&stdout)
 	for dec.More() {
 		var pkg struct {
@@ -79,14 +91,85 @@ func main() {
 		if !strings.HasPrefix(rel, "contrib/") && !strings.HasPrefix(rel, "instrumentation/") {
 			continue
 		}
-		// An unselected module is dropped rather than reported: the selection is
-		// computed from the filesystem and can name modules that are absent from
-		// go.work, which `go list -m` never enumerates. Narrowing only ever
-		// removes work, so a mismatch here cannot add an untested module.
-		if selected != nil && !selected[rel] {
+		allModules = append(allModules, rel)
+	}
+
+	var output any
+	if *shards {
+		output = shardEntries(allModules, selected)
+	} else {
+		output = legacyChunks(allModules, selected)
+	}
+
+	jsonText, err := json.Marshal(output)
+	if err != nil {
+		log.Fatalln(err)
+	}
+
+	if _, err := fmt.Fprintln(os.Stdout, string(jsonText)); err != nil {
+		log.Fatalln(err)
+	}
+}
+
+// shardEntry is one runner of the -shards output.
+type shardEntry struct {
+	Shard   string `json:"shard"`
+	Modules string `json:"modules"`
+	Count   int    `json:"count"`
+}
+
+// shardAssignment splits the complete, ordered module list into maxRunners
+// shards, round-robin. The shard index is the cache identity of a runner, so
+// this is the one place that decides which shard owns a module.
+//
+// To stop an insertion in go.work from moving every later module to another
+// shard, replace the body with the salted hash H(salt‖dir) mod maxRunners,
+// where the salt is pinned once so that the shards hold 15 or 16 modules.
+// Callers need no other change. Until the nightly run re-seeds, an
+// insertion leaves pull requests restoring a shard seeded with different
+// modules.
+func shardAssignment(modules []string) [][]string {
+	shards := make([][]string, maxRunners)
+	for i, rel := range modules {
+		shards[i%maxRunners] = append(shards[i%maxRunners], rel)
+	}
+	return shards
+}
+
+// shardEntries assigns every module to a shard first and filters by the
+// selection second. A nil selection keeps every module. Shards left empty by
+// the selection are omitted, because each one would boot a runner to test
+// nothing.
+func shardEntries(allModules []string, selected map[string]bool) []shardEntry {
+	entries := []shardEntry{}
+	for k, shard := range shardAssignment(allModules) {
+		var kept []string
+		for _, rel := range shard {
+			if isSelected(rel, selected) {
+				kept = append(kept, rel)
+			}
+		}
+		if len(kept) == 0 {
 			continue
 		}
-		modules = append(modules, rel)
+		entries = append(entries, shardEntry{
+			Shard:   fmt.Sprintf("%d/%d", k, maxRunners),
+			Modules: moduleList(kept),
+			Count:   len(kept),
+		})
+	}
+	return entries
+}
+
+// legacyChunks is the default output: the selected modules, dealt round-robin
+// over at most maxRunners strings. The smoke tests consume this form, so its
+// bytes must not change.
+func legacyChunks(allModules []string, selected map[string]bool) []string {
+	var modules []string
+	for _, rel := range allModules {
+		if isSelected(rel, selected) {
+			modules = append(modules, rel)
+		}
 	}
 
 	runners := maxRunners
@@ -100,15 +183,24 @@ func main() {
 	for i, rel := range modules {
 		contribs[i%runners] += "./" + rel + "/ "
 	}
+	return contribs
+}
 
-	jsonText, err := json.Marshal(contribs)
-	if err != nil {
-		log.Fatalln(err)
-	}
+// isSelected reports whether rel is kept. An unselected module is dropped
+// rather than reported: the selection is computed from the filesystem and can
+// name modules that are absent from go.work, which `go list -m` never
+// enumerates. Narrowing only ever removes work, so a mismatch here cannot add
+// an untested module.
+func isSelected(rel string, selected map[string]bool) bool {
+	return selected == nil || selected[rel]
+}
 
-	if _, err := fmt.Fprintln(os.Stdout, string(jsonText)); err != nil {
-		log.Fatalln(err)
+func moduleList(modules []string) string {
+	var b strings.Builder
+	for _, rel := range modules {
+		b.WriteString("./" + rel + "/ ")
 	}
+	return b.String()
 }
 
 // readSelection returns nil when every module should be tested.
