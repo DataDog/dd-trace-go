@@ -60,6 +60,11 @@ func (tc *TestCaseSubrouter) Run(_ context.Context, t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
+// ExpectedSpanCount is the net/http client and server spans plus one gorilla/mux span.
+func (*TestCaseSubrouter) ExpectedSpanCount() int {
+	return 3
+}
+
 func (tc *TestCaseSubrouter) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		{
@@ -261,6 +266,11 @@ func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// ExpectedSpanCount is the net/http client and server spans plus one gorilla/mux span.
+func (*TestCase) ExpectedSpanCount() int {
+	return 3
 }
 
 func (tc *TestCase) ExpectedTraces() trace.Traces {
