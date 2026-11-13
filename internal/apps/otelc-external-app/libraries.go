@@ -6,6 +6,8 @@
 package main
 
 import (
+	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -39,4 +41,5 @@ func useLibraries() {
 	}))
 	_ = mongooptions.Client()
 	_ = mongov2options.Client()
+	_ = slog.New(slog.NewJSONHandler(io.Discard, nil))
 }

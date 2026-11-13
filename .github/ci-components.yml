@@ -76,13 +76,15 @@ groups:
 integration-suites:
   # Modules so cross-cutting that a change affects suites which never import
   # them: the weavers inject `net/http` spans into more than 20 suites, and
-  # the `slog` aspect links `WrapHandler` into every `slog.New` caller (the
-  # `echo.v5` suite calls it) with no contrib import. A change in one of
-  # these runs every gated lane in full instead of a narrowed set.
+  # the `slog` aspect and otelc rules link `WrapHandler` into every
+  # `slog.New` caller (the `echo.v5` suite calls it) with no contrib import. A
+  # change in one of these runs every gated lane in full instead of a narrowed
+  # set.
   shared-modules:
     - contrib/net/http
     - contrib/net/http/otelc
     - contrib/log/slog
+    - contrib/log/slog/otelc
   # Every directory under contrib/ or instrumentation/ with a go.mod must
   # have an entry, even an empty list. Keys are module directories; values
   # are the suite names that exercise the module. An empty list means no
@@ -160,6 +162,7 @@ integration-suites:
     contrib/labstack/echo.v5: [ echo.v5 ]
     contrib/labstack/echo.v5/otelc: [ echo.v5 ]
     contrib/log/slog: [ slog ]
+    contrib/log/slog/otelc: [ slog ]
     contrib/mark3labs/mcp-go: []
     contrib/miekg/dns: []
     contrib/modelcontextprotocol/go-sdk: []
@@ -494,6 +497,7 @@ components:
       - contrib/julienschmidt/httprouter/**
       - contrib/labstack/echo.v4/**
       - contrib/labstack/echo.v5/**
+      - contrib/log/slog/**
       - contrib/net/http/**
       - contrib/valyala/fasthttp/**
     module-scoped: true
