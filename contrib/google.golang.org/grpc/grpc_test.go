@@ -1643,7 +1643,6 @@ func TestOTBaggageEnforcesLimitsOverGRPC(t *testing.T) {
 // grpc.UnknownServiceHandler do not use the client-chosen method as the
 // span resource name, which would make resource cardinality unbounded.
 func TestUnknownServiceHandlerResourceName(t *testing.T) {
-	t.Skip("reproduces #5813; remove when fixed")
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
@@ -1676,5 +1675,143 @@ func TestUnknownServiceHandlerResourceName(t *testing.T) {
 	require.NotEmpty(t, resources)
 	for _, m := range methods {
 		assert.NotContains(t, resources, m, "client-chosen method must not become the resource name")
+	}
+}
+
+// TestUnknownServiceDetectionWithServiceInfo checks that, with WithServiceInfo,
+// a registered bidi method with a nil implementation keeps its own resource
+// on call and message spans, while unregistered methods still use "_OTHER".
+func TestUnknownServiceDetectionWithServiceInfo(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	const registered = "/test.Echo/Chat"
+	var server *grpc.Server
+	server = grpc.NewServer(
+		grpc.StreamInterceptor(StreamServerInterceptor(
+			WithStreamMessages(true),
+			WithServiceInfo(func() map[string]grpc.ServiceInfo { return server.GetServiceInfo() }),
+		)),
+		grpc.UnknownServiceHandler(func(_ any, stream grpc.ServerStream) error {
+			return status.Error(codes.Unimplemented, "catch-all")
+		}),
+	)
+	server.RegisterService(&grpc.ServiceDesc{
+		ServiceName: "test.Echo",
+		HandlerType: (*any)(nil),
+		Streams: []grpc.StreamDesc{{
+			StreamName:    "Chat",
+			ServerStreams: true,
+			ClientStreams: true,
+			Handler: func(_ any, stream grpc.ServerStream) error {
+				var req fixturepb.FixtureRequest
+				if err := stream.RecvMsg(&req); err != nil {
+					return err
+				}
+				return stream.SendMsg(&fixturepb.FixtureReply{})
+			},
+		}},
+	}, nil)
+	li, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go server.Serve(li)
+	defer server.Stop()
+
+	conn, err := grpc.NewClient(li.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	defer conn.Close()
+
+	desc := &grpc.StreamDesc{ServerStreams: true, ClientStreams: true}
+	cs, err := conn.NewStream(context.Background(), desc, registered)
+	require.NoError(t, err)
+	require.NoError(t, cs.SendMsg(&fixturepb.FixtureRequest{}))
+	require.NoError(t, cs.RecvMsg(&fixturepb.FixtureReply{}))
+	_ = conn.Invoke(context.Background(), "/junk.A/One", &fixturepb.FixtureRequest{}, &fixturepb.FixtureReply{})
+
+	require.Eventually(t, func() bool {
+		n := 0
+		for _, s := range mt.FinishedSpans() {
+			if s.OperationName() == "grpc.server" {
+				n++
+			}
+		}
+		return n == 2
+	}, 5*time.Second, 10*time.Millisecond)
+
+	var known, unknown, knownMsgs int
+	for _, s := range mt.FinishedSpans() {
+		switch {
+		case s.OperationName() == "grpc.server" && s.Tag(ext.ResourceName) == registered:
+			known++
+		case s.OperationName() == "grpc.server" && s.Tag(ext.ResourceName) == resourceUnknownMethod:
+			assert.Equal(t, "/junk.A/One", s.Tag(tagMethodOriginal))
+			unknown++
+		case s.OperationName() == "grpc.message" && s.Tag(ext.ResourceName) == registered:
+			knownMsgs++
+		}
+	}
+	assert.Equal(t, 1, known)
+	assert.Equal(t, 1, unknown)
+	assert.Positive(t, knownMsgs)
+}
+
+// TestUnknownServiceHandlerMessageSpans checks that call and message spans of
+// unknown-service calls use "_OTHER" and keep the requested method in
+// rpc.method_original, also when only messages are traced.
+func TestUnknownServiceHandlerMessageSpans(t *testing.T) {
+	const method = "/junk.A/Echo"
+	for _, tc := range []struct {
+		name  string
+		calls bool
+	}{{"calls+messages", true}, {"messages-only", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			server := grpc.NewServer(
+				grpc.StreamInterceptor(StreamServerInterceptor(WithStreamCalls(tc.calls), WithStreamMessages(true))),
+				grpc.UnknownServiceHandler(func(_ any, stream grpc.ServerStream) error {
+					var req fixturepb.FixtureRequest
+					if err := stream.RecvMsg(&req); err != nil {
+						return err
+					}
+					return stream.SendMsg(&fixturepb.FixtureReply{})
+				}),
+			)
+			li, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			go server.Serve(li)
+			defer server.Stop()
+
+			conn, err := grpc.NewClient(li.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+			require.NoError(t, err)
+			defer conn.Close()
+			require.NoError(t, conn.Invoke(context.Background(), method, &fixturepb.FixtureRequest{}, &fixturepb.FixtureReply{}))
+
+			want := 2
+			if tc.calls {
+				want = 3
+			}
+			require.Eventually(t, func() bool { return len(mt.FinishedSpans()) >= want }, 5*time.Second, 10*time.Millisecond)
+			var calls, msgs int
+			for _, s := range mt.FinishedSpans() {
+				switch s.OperationName() {
+				case "grpc.server":
+					calls++
+				case "grpc.message":
+					msgs++
+				default:
+					continue
+				}
+				assert.Equal(t, resourceUnknownMethod, s.Tag(ext.ResourceName))
+				assert.Equal(t, method, s.Tag(tagMethodOriginal))
+			}
+			assert.Equal(t, 2, msgs)
+			if tc.calls {
+				assert.Equal(t, 1, calls)
+			} else {
+				assert.Zero(t, calls)
+			}
+		})
 	}
 }

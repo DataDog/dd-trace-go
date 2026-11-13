@@ -12,6 +12,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 )
 
@@ -69,6 +70,7 @@ type config struct {
 	traceStreamMessages bool
 	noDebugStack        bool
 	untracedMethods     map[string]struct{}
+	serviceInfo         func() map[string]grpc.ServiceInfo
 	withMetadataTags    bool
 	ignoredMetadata     map[string]struct{}
 	withRequestTags     bool
@@ -199,6 +201,17 @@ func WithUntracedMethods(ms ...string) OptionFn {
 	}
 	return func(cfg *config) {
 		cfg.untracedMethods = ums
+	}
+}
+
+// WithServiceInfo gives the server interceptors the registered services,
+// usually (*grpc.Server).GetServiceInfo. With it, a call is served by
+// grpc.UnknownServiceHandler (and gets the "_OTHER" resource) only when its
+// method is not registered. Without it, a bidi stream call with a nil
+// service implementation is taken to be an unknown-service call.
+func WithServiceInfo(fn func() map[string]grpc.ServiceInfo) OptionFn {
+	return func(cfg *config) {
+		cfg.serviceInfo = fn
 	}
 }
 
