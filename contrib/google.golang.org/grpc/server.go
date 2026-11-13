@@ -54,6 +54,7 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 		span.SetTag(ext.Component, componentName)
 		if ss.resource != ss.method {
 			span.SetTag(ext.ResourceName, ss.resource)
+			span.SetTag(tagMethodOriginal, ss.method)
 		}
 		defer func() {
 			withMetadataTags(ss.ctx, ss.cfg, span)
@@ -79,6 +80,7 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 		span.SetTag(ext.Component, componentName)
 		if ss.resource != ss.method {
 			span.SetTag(ext.ResourceName, ss.resource)
+			span.SetTag(tagMethodOriginal, ss.method)
 		}
 		defer func() { finishWithError(span, err, ss.method, ss.cfg) }()
 	}

@@ -1754,3 +1754,64 @@ func TestUnknownServiceDetectionWithServiceInfo(t *testing.T) {
 	assert.Equal(t, 1, unknown)
 	assert.Positive(t, knownMsgs)
 }
+
+// TestUnknownServiceHandlerMessageSpans checks that call and message spans of
+// unknown-service calls use "_OTHER" and keep the requested method in
+// rpc.method_original, also when only messages are traced.
+func TestUnknownServiceHandlerMessageSpans(t *testing.T) {
+	const method = "/junk.A/Echo"
+	for _, tc := range []struct {
+		name  string
+		calls bool
+	}{{"calls+messages", true}, {"messages-only", false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			server := grpc.NewServer(
+				grpc.StreamInterceptor(StreamServerInterceptor(WithStreamCalls(tc.calls), WithStreamMessages(true))),
+				grpc.UnknownServiceHandler(func(_ any, stream grpc.ServerStream) error {
+					var req fixturepb.FixtureRequest
+					if err := stream.RecvMsg(&req); err != nil {
+						return err
+					}
+					return stream.SendMsg(&fixturepb.FixtureReply{})
+				}),
+			)
+			li, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			go server.Serve(li)
+			defer server.Stop()
+
+			conn, err := grpc.NewClient(li.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+			require.NoError(t, err)
+			defer conn.Close()
+			require.NoError(t, conn.Invoke(context.Background(), method, &fixturepb.FixtureRequest{}, &fixturepb.FixtureReply{}))
+
+			want := 2
+			if tc.calls {
+				want = 3
+			}
+			require.Eventually(t, func() bool { return len(mt.FinishedSpans()) >= want }, 5*time.Second, 10*time.Millisecond)
+			var calls, msgs int
+			for _, s := range mt.FinishedSpans() {
+				switch s.OperationName() {
+				case "grpc.server":
+					calls++
+				case "grpc.message":
+					msgs++
+				default:
+					continue
+				}
+				assert.Equal(t, resourceUnknownMethod, s.Tag(ext.ResourceName))
+				assert.Equal(t, method, s.Tag(tagMethodOriginal))
+			}
+			assert.Equal(t, 2, msgs)
+			if tc.calls {
+				assert.Equal(t, 1, calls)
+			} else {
+				assert.Zero(t, calls)
+			}
+		})
+	}
+}
