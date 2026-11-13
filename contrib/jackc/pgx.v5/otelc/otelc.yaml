@@ -10,11 +10,8 @@
 # the contrib because it calls the pgx constructors after installing its
 # tracer, so each connection and pool is traced once.
 #
-# TODO: wrap_call requires the original call in the template, so it stays in a
-# branch that never runs. The parameters and the contrib's alias keep a prefix,
-# so they cannot hide, or be hidden by, a variable at the call site. Remove the
-# branch once wrap_call can replace a call outright:
-# https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1551
+# The parameters and the contrib's alias keep a prefix, so they cannot hide, or
+# be hidden by, a variable at the call site.
 pgx_connect:
   target:
     - "**"
