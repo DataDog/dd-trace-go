@@ -8,3 +8,4 @@
 package gqlgen
 
 //go:generate go run github.com/99designs/gqlgen generate
+//go:generate go run ../../../../../scripts/add_license_headers.go graph
