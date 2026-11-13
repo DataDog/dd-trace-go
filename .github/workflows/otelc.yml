@@ -47,6 +47,8 @@ env:
     contrib/net/http/otelc
     contrib/database/sql
     contrib/database/sql/otelc
+    contrib/elastic/go-elasticsearch.v6
+    contrib/elastic/go-elasticsearch.v6/otelc
     contrib/gin-gonic/gin
     contrib/gin-gonic/gin/otelc
     contrib/go-chi/chi
@@ -97,6 +99,7 @@ env:
     echo.v5
     aws.v1
     valyala_fasthttp
+    go-elasticsearch
 
 jobs:
   # Classifies the PR diff against .github/ci-components.yml. Fails open: every

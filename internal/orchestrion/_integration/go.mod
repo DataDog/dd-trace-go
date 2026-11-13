@@ -109,6 +109,7 @@ require (
 	example.com/awsv1dep v0.0.0-00010101000000-000000000000
 	example.com/chidep v0.0.0-00010101000000-000000000000
 	example.com/echodep v0.0.0-00010101000000-000000000000
+	example.com/elasticsearchdep v0.0.0-00010101000000-000000000000
 	example.com/fasthttpdep v0.0.0-00010101000000-000000000000
 	example.com/fiberdep v0.0.0-00010101000000-000000000000
 	example.com/gindep v0.0.0-00010101000000-000000000000
@@ -142,7 +143,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/database/sql/v2 v2.13.0-dev.1 // indirect
-	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 v2.13.0-dev.1 // indirect
@@ -596,6 +597,12 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../../../contrib/labstack/echo.v5/otelc
 
 replace example.com/echodep => ./internal/echodep
+
+require github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/otelc/v2 v2.13.0-dev // indirect
+
+replace github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/otelc/v2 => ../../../contrib/elastic/go-elasticsearch.v6/otelc
+
+replace example.com/elasticsearchdep => ./internal/elasticsearchdep
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../../contrib/aws/aws-sdk-go/otelc
 
