@@ -9,6 +9,7 @@ package containers
 
 import (
 	"os"
+	"strings"
 	"sync"
 	"testing"
 
@@ -51,8 +52,10 @@ func (c *testLogConsumer) Accept(log testcontainers.Log) {
 	if c.done {
 		// The container log producer goroutine can deliver a line after the
 		// test has completed, and t.Log panics then. Drop it to stderr
-		// instead, so late lines are not lost.
-		os.Stderr.WriteString("container log after test completion: " + string(log.Content))
+		// instead, so late lines are not lost. End it with a newline: otherwise the
+		// next "--- PASS" line is glued to it, test2json misses the result, and
+		// gotestsum reports the test as failed.
+		os.Stderr.WriteString("container log after test completion: " + strings.TrimSuffix(string(log.Content), "\n") + "\n")
 		return
 	}
 	c.TB.Log(string(log.Content))
