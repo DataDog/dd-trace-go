@@ -31,13 +31,21 @@ concurrency:
 
 jobs:
   unit-integration-tests:
+    strategy:
+      matrix:
+        # Both supported versions on schedule and default-branch
+        # dispatch, where the run seeds the cache. Pushes (merge
+        # queue, releases) cannot seed, so they keep the single
+        # highest version instead of doubling the expansion.
+        go-version: ${{ fromJSON(github.event_name == 'push' && '["1.27"]' || '["1.26", "1.27"]') }}
+      fail-fast: false
     uses: ./.github/workflows/unit-integration-tests.yml
     permissions:
       contents: read
       id-token: write
       pull-requests: write
     with:
-      go-version: "1.27" # Should be the highest supported version of Go
+      go-version: ${{ matrix.go-version }}
     secrets: inherit
 
   warm-repo-cache:

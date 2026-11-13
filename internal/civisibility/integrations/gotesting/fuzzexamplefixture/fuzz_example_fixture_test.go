@@ -36,6 +36,11 @@ const (
 	// harness deadline must stay behind the scenario's own timeout, or the
 	// cancellation hides the scenario's result.
 	fixtureRunGrace = time.Minute
+	// The orchestrion build resolves the orchestrion toolchain from the
+	// module proxy when the module cache does not hold it. The warm-up gets
+	// its own budget so that a slow proxy cannot spend the whole
+	// fixtureBuildTimeout on downloads before compilation starts.
+	fixtureModuleDownloadTimeout = 10 * time.Minute
 )
 
 // fixtureScenarioBudget returns the native -test.timeout for a scenario. The
@@ -90,6 +95,11 @@ func TestFuzzAndExampleFixture(t *testing.T) {
 		}
 		binaryPath := filepath.Join(t.TempDir(), binaryName)
 		buildDir, buildExec, buildArgs := fixtureBuildCommand(goCommand, orchestrionPath, mode, binaryPath)
+		if mode == "orchestrion" && orchestrionPath == "" {
+			// go mod download is a no-op when the module cache is warm, so it
+			// only costs time when the module cache is cold.
+			runFixtureCommand(t, fixtureModuleDownloadTimeout, buildDir, fixtureEnv(t, mode, "build", goCache, goModCache), goCommand, "mod", "download")
+		}
 		runFixtureCommand(t, fixtureBuildTimeout, buildDir, fixtureEnv(t, mode, "build", goCache, goModCache), buildExec, buildArgs...)
 
 		for _, scenario := range fixtureScenarios {

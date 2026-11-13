@@ -152,9 +152,9 @@ func TestClientRetries(t *testing.T) {
 		{
 			name:      "persistent server error gives up",
 			respond:   func(w http.ResponseWriter, _ int) { http.Error(w, "boom", http.StatusInternalServerError) },
-			wantErr:   "giving up after 4 attempts",
-			wantCalls: 4,
-			wantWaits: []time.Duration{time.Second, 2 * time.Second, 4 * time.Second},
+			wantErr:   "giving up after 6 attempts",
+			wantCalls: 6,
+			wantWaits: []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second},
 		},
 	}
 	for _, tc := range tests {
@@ -651,10 +651,10 @@ func TestGraphQLRetriesTransientErrors(t *testing.T) {
 		},
 		{
 			name:      "persistent transient error gives up",
-			errors:    []string{"please try again", "please try again", "please try again", "please try again"},
-			wantErr:   "giving up after 4 attempts",
-			wantCalls: 4,
-			wantWaits: []time.Duration{time.Second, 2 * time.Second, 4 * time.Second},
+			errors:    []string{"please try again", "please try again", "please try again", "please try again", "please try again", "please try again"},
+			wantErr:   "giving up after 6 attempts",
+			wantCalls: 6,
+			wantWaits: []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second},
 		},
 		{
 			name:      "other error fails at once",

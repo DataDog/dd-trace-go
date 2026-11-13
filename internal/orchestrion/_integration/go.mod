@@ -13,7 +13,7 @@ require (
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/otelc/all/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
-	github.com/DataDog/go-libddwaf/v5 v5.0.1
+	github.com/DataDog/go-libddwaf/v5 v5.1.0
 	github.com/DataDog/orchestrion v1.14.0
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
@@ -47,8 +47,8 @@ require (
 	github.com/hashicorp/vault/api v1.23.0
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/julienschmidt/httprouter v1.3.0
-	github.com/labstack/echo/v4 v4.15.3
-	github.com/labstack/echo/v5 v5.2.0
+	github.com/labstack/echo/v4 v4.16.1
+	github.com/labstack/echo/v5 v5.4.1
 	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/opensearch-project/opensearch-go/v4 v4.7.3
 	github.com/redis/go-redis/v9 v9.7.3
@@ -57,14 +57,14 @@ require (
 	github.com/segmentio/kafka-go v0.4.42
 	github.com/sirupsen/logrus v1.9.4
 	github.com/stretchr/testify v1.12.1
-	github.com/testcontainers/testcontainers-go v0.42.0
-	github.com/testcontainers/testcontainers-go/modules/cassandra v0.42.0
-	github.com/testcontainers/testcontainers-go/modules/elasticsearch v0.42.0
-	github.com/testcontainers/testcontainers-go/modules/gcloud v0.42.0
-	github.com/testcontainers/testcontainers-go/modules/kafka v0.42.0
-	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
-	github.com/testcontainers/testcontainers-go/modules/redis v0.42.0
-	github.com/testcontainers/testcontainers-go/modules/vault v0.42.0
+	github.com/testcontainers/testcontainers-go v0.44.0
+	github.com/testcontainers/testcontainers-go/modules/cassandra v0.44.0
+	github.com/testcontainers/testcontainers-go/modules/elasticsearch v0.44.0
+	github.com/testcontainers/testcontainers-go/modules/gcloud v0.44.0
+	github.com/testcontainers/testcontainers-go/modules/kafka v0.44.0
+	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
+	github.com/testcontainers/testcontainers-go/modules/redis v0.44.0
+	github.com/testcontainers/testcontainers-go/modules/vault v0.44.0
 	github.com/tinylib/msgp v1.6.4
 	github.com/twitchtv/twirp v8.1.3+incompatible
 	github.com/twmb/franz-go v1.22.0
@@ -246,7 +246,7 @@ require (
 	github.com/ebitengine/purego v0.11.0 // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.4.0 // indirect
 	github.com/emicklei/go-restful/v3 v3.12.2 // indirect
-	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
@@ -299,7 +299,7 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.20.1 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/labstack/gommon v0.5.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
@@ -358,9 +358,9 @@ require (
 	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	github.com/testcontainers/testcontainers-go/modules/mongodb v0.42.0 // indirect
-	github.com/testcontainers/testcontainers-go/modules/opensearch v0.42.0 // indirect
-	github.com/testcontainers/testcontainers-go/modules/valkey v0.42.0 // indirect
+	github.com/testcontainers/testcontainers-go/modules/mongodb v0.44.0 // indirect
+	github.com/testcontainers/testcontainers-go/modules/opensearch v0.44.0 // indirect
+	github.com/testcontainers/testcontainers-go/modules/valkey v0.44.0 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
 	github.com/trailofbits/go-mutexasserts v0.0.0-20250514102930-c1f3d2e37561 // indirect
@@ -389,11 +389,11 @@ require (
 	go.opentelemetry.io/collector/pdata v1.65.0 // indirect
 	go.opentelemetry.io/collector/pdata/pprofile v0.159.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.62.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.68.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0 // indirect
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/metric v1.46.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0
-	go.opentelemetry.io/otelc/pkg v0.0.0-20261105130149-a21770c1888e // indirect
+	go.opentelemetry.io/otelc/pkg v0.1.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
@@ -401,7 +401,7 @@ require (
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/arch v0.8.0 // indirect
-	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/crypto v0.58.1-0.20261009181718-2f1f834330b2 // indirect
 	golang.org/x/exp v0.0.0-20260813180055-c1d0aacb2297 // indirect
 	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
@@ -427,7 +427,7 @@ require (
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.1 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
-	software.sslmate.com/src/go-pkcs12 v0.6.0 // indirect
+	software.sslmate.com/src/go-pkcs12 v0.7.3 // indirect
 )
 
 replace github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2 => ../../../contrib/aerospike/aerospike-client-go.v7
