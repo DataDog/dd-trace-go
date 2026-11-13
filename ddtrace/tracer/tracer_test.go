@@ -115,7 +115,14 @@ func TestMain(m *testing.M) {
 // prevent DNS resolution and TCP connects from violating the bubble boundary.
 type noopRoundTripper struct{}
 
-func (noopRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+func (noopRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	// A real transport always drains and closes the request body. The telemetry
+	// writer streams the body into a pipe while it holds bodyMu, so a body that
+	// no transport reads blocks that goroutine forever.
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+		_ = req.Body.Close()
+	}
 	return &http.Response{
 		StatusCode: http.StatusNotFound,
 		Body:       io.NopCloser(strings.NewReader("")),
