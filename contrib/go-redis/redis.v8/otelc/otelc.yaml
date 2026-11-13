@@ -18,13 +18,13 @@ new_client:
   do:
     - wrap_call:
         replace: |-
-          (func(client *redis.Client) *redis.Client {
-            redistrace.WrapClient(client)
+          (func(client *redisv8.Client) *redisv8.Client {
+            redisv8trace.WrapClient(client)
             return client
           })({{ . }})
   imports:
-    redis: github.com/go-redis/redis/v8
-    redistrace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2
+    redisv8: github.com/go-redis/redis/v8
+    redisv8trace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2
 
 new_failover_client:
   target:
@@ -36,13 +36,13 @@ new_failover_client:
   do:
     - wrap_call:
         replace: |-
-          (func(client *redis.Client) *redis.Client {
-            redistrace.WrapClient(client)
+          (func(client *redisv8.Client) *redisv8.Client {
+            redisv8trace.WrapClient(client)
             return client
           })({{ . }})
   imports:
-    redis: github.com/go-redis/redis/v8
-    redistrace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2
+    redisv8: github.com/go-redis/redis/v8
+    redisv8trace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2
 
 new_cluster_client:
   target:
@@ -54,13 +54,13 @@ new_cluster_client:
   do:
     - wrap_call:
         replace: |-
-          (func(client *redis.ClusterClient) *redis.ClusterClient {
-            redistrace.WrapClient(client)
+          (func(client *redisv8.ClusterClient) *redisv8.ClusterClient {
+            redisv8trace.WrapClient(client)
             return client
           })({{ . }})
   imports:
-    redis: github.com/go-redis/redis/v8
-    redistrace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2
+    redisv8: github.com/go-redis/redis/v8
+    redisv8trace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2
 
 new_failover_cluster_client:
   target:
@@ -72,13 +72,13 @@ new_failover_cluster_client:
   do:
     - wrap_call:
         replace: |-
-          (func(client *redis.ClusterClient) *redis.ClusterClient {
-            redistrace.WrapClient(client)
+          (func(client *redisv8.ClusterClient) *redisv8.ClusterClient {
+            redisv8trace.WrapClient(client)
             return client
           })({{ . }})
   imports:
-    redis: github.com/go-redis/redis/v8
-    redistrace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2
+    redisv8: github.com/go-redis/redis/v8
+    redisv8trace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2
 
 new_ring:
   target:
@@ -90,13 +90,13 @@ new_ring:
   do:
     - wrap_call:
         replace: |-
-          (func(client *redis.Ring) *redis.Ring {
-            redistrace.WrapClient(client)
+          (func(client *redisv8.Ring) *redisv8.Ring {
+            redisv8trace.WrapClient(client)
             return client
           })({{ . }})
   imports:
-    redis: github.com/go-redis/redis/v8
-    redistrace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2
+    redisv8: github.com/go-redis/redis/v8
+    redisv8trace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2
 
 new_universal_client:
   target:
@@ -108,10 +108,10 @@ new_universal_client:
   do:
     - wrap_call:
         replace: |-
-          (func(client redis.UniversalClient) redis.UniversalClient {
-            redistrace.WrapClient(client)
+          (func(client redisv8.UniversalClient) redisv8.UniversalClient {
+            redisv8trace.WrapClient(client)
             return client
           })({{ . }})
   imports:
-    redis: github.com/go-redis/redis/v8
-    redistrace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2
+    redisv8: github.com/go-redis/redis/v8
+    redisv8trace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2
