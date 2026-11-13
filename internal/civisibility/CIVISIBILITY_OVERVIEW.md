@@ -110,3 +110,13 @@
 - For process-isolated retry changes, run `Bypass=true go test ./internal/civisibility/integrations/gotesting -run 'TestProcessRetryChildCleanupSupported|TestProcessRetryTestingMReflectionDrift|TestProcessRetryEligible|TestProcessRetryChildResult(Fail|Skip)|TestRunTestWithRetryFallsBackBeforeConsumingProcessAttempt|TestRunTestWithRetryUnreapedChildStopsFurtherProcessRetries|TestRunProcessRetryAttemptHonorsParentDeadlineWhileWaitingForLimiter' -count=1`, `go test ./internal/civisibility/integrations/gotesting/retryprocess -count=1 -v`, `go test -cover ./internal/civisibility/integrations/gotesting/retryprocess -run '^TestProcessRetryCoverageUsesFirstParentAttempt$' -count=1`, and `(cd internal/orchestrion/_integration && GOWORK=off go run -mod=readonly github.com/DataDog/orchestrion go test -mod=readonly ./retryprocess -count=1)`.
 - Any change to retry ownership or metadata propagation should be mirrored in the harness scenarios and in `docs/SUBTEST_FEATURE_IMPLEMENTATION.md` to keep documentation synchronized.
 - Utility changes often require updating fixtures or provider expectations; leverage the existing test suites instead of ad-hoc scripts.
+
+Git metadata uses explicit `DD_GIT_*` overrides first, then the readable local Git checkout, and CI-provider Git data only when the checkout cannot be read. This includes SHA, repository URL, branch/tag, author, committer, and message. CI job and pull-request relationship metadata remain provider-derived. Events, API requests, and upload metadata share the selected commit identity.
+
+A detached checkout's single local tag is not inferred for a CI branch or pull-request trigger. The trigger disambiguates tag inference without supplying missing checkout Git fields; explicit `DD_GIT_TAG` overrides still take priority.
+
+Short branch names read from Git remain literal, including prefixes such as `tags/` or `origin/`. Provider refs and explicit branch overrides retain their existing normalization.
+
+Local tag names retain their literal prefixes too. Detached tag inference considers explicit branch overrides and environmental-file job refs before checkout metadata replaces fallback fields; explicit tag overrides still win.
+
+Environmental files also store short branch and tag names verbatim. Preserve these literal names when Git is unavailable or payload-file mode is active; provider refs and explicit overrides retain their existing normalization.

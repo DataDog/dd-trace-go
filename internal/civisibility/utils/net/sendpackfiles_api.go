@@ -42,8 +42,8 @@ func (c *client) SendPackFiles(commitSha string, packFiles []string) (bytes int6
 		return 0, nil
 	}
 
-	if commitSha == "" {
-		commitSha = c.commitSha
+	if c.commitSha != "" && commitSha != c.commitSha {
+		return 0, errors.New("civisibility.SendPackFiles: packfile commit does not match the selected commit")
 	}
 
 	if c.repositoryURL == "" || commitSha == "" {

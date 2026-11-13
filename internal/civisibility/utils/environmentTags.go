@@ -252,17 +252,45 @@ func createCITagsMap() map[string]string {
 		localTags[constants.UserProvidedTestServiceTag] = "false"
 	}
 
+	commitShaOverride := env.Get("DD_GIT_COMMIT_SHA")
+	providerBranch, providerTag := localTags[constants.GitBranch], localTags[constants.GitTag]
+	var checkoutBranch string
+	var readableCheckout bool
 	if bazel.IsPayloadFilesModeEnabled() {
 		// Payload-file mode relies on the environmental data file instead of invoking the Git CLI.
 		applyEnvironmentalDataIfRequiredFunc(localTags)
 		log.Debug("civisibility: skipping local git enrichment in payload-file mode")
 	} else {
-		// Populate missing git data
 		gitData, _ := getLocalGitDataFunc()
-
-		// Populate Git metadata from the local Git repository if not already present in localTags
-		if _, ok := localTags[constants.CIWorkspacePath]; !ok {
+		if _, ok := localTags[constants.CIWorkspacePath]; !ok && gitData.SourceRoot != "" {
 			localTags[constants.CIWorkspacePath] = gitData.SourceRoot
+		}
+		// File metadata is a fallback too; a readable checkout replaces its Git fields.
+		applyEnvironmentalDataIfRequiredFunc(localTags)
+		// Resolve job refs before replacing provider/file Git fields with checkout data.
+		branchOverride := env.Get("DD_GIT_BRANCH")
+		branch := branchOverride
+		if branch == "" {
+			branch = localTags[constants.GitBranch]
+		}
+		tagTrigger := branchOverride == "" && localTags[constants.GitTag] != ""
+		prNumber := strings.TrimSpace(localTags[constants.PrNumber])
+		pullRequest := prNumber != "" && prNumber != "0" && !strings.EqualFold(prNumber, "false")
+		if gitData.Branch == "" && (pullRequest || branch != "" && !isTagRef(branch) && !tagTrigger) {
+			gitData.Tag = ""
+		}
+
+		if gitData.CommitSha != "" {
+			readableCheckout = true
+			checkoutBranch = gitData.Branch
+			for key := range localTags {
+				if strings.HasPrefix(key, "git.") && !strings.HasPrefix(key, "git.commit.head.") && !strings.HasPrefix(key, "git.pull_request.") {
+					delete(localTags, key)
+				}
+			}
+			if gitData.Tag != "" {
+				localTags[constants.GitTag] = "refs/tags/" + gitData.Tag
+			}
 		}
 		if _, ok := localTags[constants.GitRepositoryURL]; !ok {
 			localTags[constants.GitRepositoryURL] = gitData.RepositoryURL
@@ -275,7 +303,8 @@ func createCITagsMap() map[string]string {
 		}
 
 		// If the commit SHA matches, populate additional Git metadata
-		if localTags[constants.GitCommitSHA] == gitData.CommitSha {
+		if gitData.CommitSha != "" && strings.EqualFold(localTags[constants.GitCommitSHA], gitData.CommitSha) &&
+			(commitShaOverride == "" || strings.EqualFold(commitShaOverride, gitData.CommitSha)) {
 			if _, ok := localTags[constants.GitCommitAuthorDate]; !ok {
 				localTags[constants.GitCommitAuthorDate] = gitData.AuthorDate.String()
 			}
@@ -315,9 +344,55 @@ func createCITagsMap() map[string]string {
 				log.Warn("civisibility: head commit SHA %s does not match the fetched commit SHA %s", headCommitSha, headCommitData.CommitSha) //errtrack:ignore repository state mismatch
 			}
 		}
+	}
 
-		// Apply environmental data if is available
-		applyEnvironmentalDataIfRequiredFunc(localTags)
+	if commitShaOverride != "" && !strings.EqualFold(commitShaOverride, localTags[constants.GitCommitSHA]) {
+		if isTagRef(localTags[constants.GitBranch]) {
+			delete(localTags, constants.GitBranch)
+		}
+		for key := range localTags {
+			if key == constants.GitTag || (strings.HasPrefix(key, "git.commit.") && key != constants.GitCommitSHA && !strings.HasPrefix(key, "git.commit.head.")) {
+				delete(localTags, key)
+			}
+		}
+	}
+
+	// Checkout and environmental-file refs are already short names, not provider refs.
+	literalBranch := checkoutBranch
+	var literalTag string
+	if !readableCheckout {
+		if providerBranch == "" {
+			literalBranch = localTags[constants.GitBranch]
+		}
+		if providerTag == "" {
+			literalTag = localTags[constants.GitTag]
+		}
+	}
+	replaceWithUserSpecificTags(localTags)
+	tagRefOverride := isTagRef(env.Get("DD_GIT_BRANCH"))
+	if tagRefOverride {
+		literalBranch = localTags[constants.GitBranch]
+	}
+	preserveBranch := literalBranch != "" && (env.Get("DD_GIT_BRANCH") == "" || tagRefOverride)
+	preserveTag := literalTag != "" && env.Get("DD_GIT_TAG") == "" && !isTagRef(env.Get("DD_GIT_BRANCH")) &&
+		(preserveBranch || !isTagRef(localTags[constants.GitBranch]))
+	if preserveBranch {
+		delete(localTags, constants.GitBranch)
+	}
+	if preserveTag {
+		delete(localTags, constants.GitTag)
+	}
+	normalizeTags(localTags)
+	if preserveBranch {
+		localTags[constants.GitBranch] = literalBranch
+	}
+	if preserveTag {
+		localTags[constants.GitTag] = literalTag
+	}
+	for key, value := range localTags {
+		if value == "" {
+			delete(localTags, key)
+		}
 	}
 
 	// Apply the Bazel provider fallback only after all other CI provider sources had a chance to populate the tag.
