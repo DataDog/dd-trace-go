@@ -287,7 +287,7 @@ func TestSetProviderAndWait_TimeoutThenLateConfigurationTransitionsToReady(t *te
 // TestNewDatadogProvider_SendsTracerServiceStartedLater creates the provider
 // before tracer.Start, as an application can do. The next poll sends the
 // service that the tracer sets, as APM shows it. This includes the inferred
-// default service. When the CDN does not accept the APM name, the poll has no
+// default service. When the APM name is not plain ASCII, the poll has no
 // DD-Service header. The tracer's service stays as configured.
 func TestNewDatadogProvider_SendsTracerServiceStartedLater(t *testing.T) {
 	for _, tc := range []struct {
@@ -299,7 +299,7 @@ func TestNewDatadogProvider_SendsTracerServiceStartedLater(t *testing.T) {
 		{name: "configured", opts: []tracer.StartOption{tracer.WithService("checkout")}, service: "checkout", header: "checkout"},
 		{name: "inferred", service: filepath.Base(os.Args[0]), header: filepath.Base(os.Args[0])},
 		{name: "normalized", opts: []tracer.StartOption{tracer.WithService("My Service")}, service: "My Service", header: "my_service"},
-		{name: "leading underscore", opts: []tracer.StartOption{tracer.WithService("_svc")}, service: "_svc"},
+		{name: "leading underscore", opts: []tracer.StartOption{tracer.WithService("_svc")}, service: "_svc", header: "_svc"},
 		{name: "non-ASCII letter", opts: []tracer.StartOption{tracer.WithService("café-api")}, service: "café-api"},
 		{name: "non-Latin script", opts: []tracer.StartOption{tracer.WithService("支付")}, service: "支付"},
 	} {

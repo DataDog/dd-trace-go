@@ -14,7 +14,6 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,12 +50,6 @@ const maxResponseBodyBytes = 10 << 20 // 10MiB
 // oversized body would surface as malformed configuration and freeze the flags
 // at last-known-good with a warning naming the wrong cause.
 var errResponseTooLarge = errors.New("response exceeds maximum size")
-
-// usageServicePattern is the DD-Service format that the CDN accepts. The CDN
-// ignores any other value and does not attribute the usage to a service. The
-// check also keeps characters such as a newline out of the header. Go's HTTP
-// client refuses them and fails the poll.
-var usageServicePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,99}$`)
 
 // agentlessSource polls the Agentless configuration endpoint on an interval
 // and applies newly received configuration. All fields other than mu, etag,
@@ -422,23 +415,37 @@ func (s *agentlessSource) usageService() string {
 // example, "My Service" becomes my_service. As in APM, a name longer than 100
 // bytes is cut to 100 bytes. It returns "" in two cases:
 //   - The Agent replaces service with its fallback name.
-//   - The CDN does not accept the APM name, for example _svc or café-api.
+//   - The APM name is not plain ASCII, for example café-api.
 //
-// It does not change the APM name to fit the CDN. Thus usage goes only to a
-// service that APM shows, or to no service. The tracer's service stays as
-// configured.
+// It does not change the APM name. Thus usage goes only to a service that APM
+// shows, or to no service. The CDN alone decides which values it accepts, so
+// the SDK does not copy that rule. APM keeps non-ASCII letters, and the HTTP
+// clients of some SDKs refuse them in a header. Go's client sends them, but all
+// SDKs apply the same ASCII check, so a service gets the same header in every
+// language. The tracer's service stays as configured.
 func normalizeUsageService(service string) string {
 	apmService, err := normalize.NormalizeService(service, "")
 	if errors.Is(err, normalize.ErrEmpty) || errors.Is(err, normalize.ErrInvalid) {
 		apmService = "" // the Agent's fallback name is not the name of this service
 	}
-	if usageServicePattern.MatchString(apmService) {
+	if apmService != "" && isPrintableASCII(apmService) {
 		return apmService
 	}
 	if service != "" {
-		logOnboarding("service %q has no APM service name in the format that the CDN accepts; DD-Service header not sent", service)
+		logOnboarding("service %q has no ASCII APM name; DD-Service header not sent", service)
 	}
 	return ""
+}
+
+// isPrintableASCII reports whether every byte of s is printable ASCII
+// (0x21-0x7E).
+func isPrintableASCII(s string) bool {
+	for i := range len(s) {
+		if s[i] < 0x21 || s[i] > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *agentlessSource) currentETag() string {

@@ -649,18 +649,17 @@ func TestAgentlessSource_ServiceHeader(t *testing.T) {
 
 // TestAgentlessSource_ServiceHeaderNormalization checks the DD-Service value
 // of each poll. The value is the name that APM shows for the tracer's service.
-// When the CDN does not accept that name, the poll has no DD-Service header.
+// When that name is not plain ASCII, the poll has no DD-Service header.
 func TestAgentlessSource_ServiceHeaderNormalization(t *testing.T) {
 	internalconfig.SetUseFreshConfig(true)
 	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false); internalconfig.CreateNew() })
 	logger := withLogLevel(t, log.LevelDebug)
 	notSentMessage := func(service string) string {
-		return "openfeature: service " + strconv.Quote(service) + " has no APM service name in the format that the CDN accepts; DD-Service header not sent"
+		return "openfeature: service " + strconv.Quote(service) + " has no ASCII APM name; DD-Service header not sent"
 	}
 
 	// The Agent's NormalizeService (datadog-agent v0.82.3) gave each apm value.
-	// The CDN pattern ^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,99}$ on apm gave each
-	// header value.
+	// The header is apm when apm is printable ASCII.
 	for _, tc := range []struct {
 		name    string
 		service string
@@ -690,13 +689,13 @@ func TestAgentlessSource_ServiceHeaderNormalization(t *testing.T) {
 		{name: "cut before a space", service: strings.Repeat("a", 100) + " b", apm: strings.Repeat("a", 100), header: strings.Repeat("a", 100)},
 		{name: "cut inside a multi-byte character", service: strings.Repeat("a", 99) + "é", apm: strings.Repeat("a", 99), header: strings.Repeat("a", 99)},
 		{name: "emoji", service: "a🐶b", apm: "a_b", header: "a_b"},
-		// The CDN does not accept the name that APM shows. The poll sends no header.
-		{name: "leading space", service: " svc", apm: "_svc"},
-		{name: "leading underscore", service: "_svc", apm: "_svc"},
-		{name: "leading hyphen", service: "-svc", apm: "-svc"},
-		{name: "leading dot", service: ".svc", apm: ".svc"},
-		{name: "leading colon", service: ":svc", apm: ":svc"},
-		{name: "only a hyphen", service: "-", apm: "-"},
+		{name: "leading space", service: " svc", apm: "_svc", header: "_svc"},
+		{name: "leading underscore", service: "_svc", apm: "_svc", header: "_svc"},
+		{name: "leading hyphen", service: "-svc", apm: "-svc", header: "-svc"},
+		{name: "leading dot", service: ".svc", apm: ".svc", header: ".svc"},
+		{name: "leading colon", service: ":svc", apm: ":svc", header: ":svc"},
+		{name: "only a hyphen", service: "-", apm: "-", header: "-"},
+		// The name that APM shows is not plain ASCII. The poll sends no header.
 		{name: "non-ASCII letter", service: "café-api", apm: "café-api"},
 		{name: "uppercase non-ASCII letter", service: "Café", apm: "café"},
 		{name: "non-Latin script", service: "支付", apm: "支付"},
