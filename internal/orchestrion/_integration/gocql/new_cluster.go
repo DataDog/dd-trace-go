@@ -14,6 +14,8 @@ import (
 	"github.com/gocql/gocql"
 	"github.com/stretchr/testify/require"
 
+	gocqltrace "github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
@@ -26,6 +28,9 @@ func (tc *TestCaseNewCluster) Setup(ctx context.Context, t *testing.T) {
 
 	var err error
 	cluster := gocql.NewCluster(tc.hostPort)
+	// Checked here because the CreateSession hook would trace the session even
+	// if the NewCluster call were not rewritten.
+	require.IsType(t, &gocqltrace.Observer{}, cluster.QueryObserver)
 	tc.session, err = cluster.CreateSession()
 	require.NoError(t, err)
 	t.Cleanup(func() { tc.session.Close() })

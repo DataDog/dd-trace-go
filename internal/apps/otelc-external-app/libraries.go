@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/gin-gonic/gin"
+	"github.com/gocql/gocql"
 	"github.com/gorilla/mux"
 	"github.com/julienschmidt/httprouter"
 	"github.com/valyala/fasthttp"
@@ -39,4 +40,5 @@ func useLibraries() {
 	}))
 	_ = mongooptions.Client()
 	_ = mongov2options.Client()
+	_ = gocql.NewCluster("127.0.0.1")
 }

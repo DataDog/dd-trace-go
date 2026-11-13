@@ -64,21 +64,3 @@ func (tc *TestCaseDependency) ExpectedTraces() trace.Traces {
 		},
 	}
 }
-
-func (tc *TestCaseDependency) querySpan(resource string) *trace.Trace {
-	return &trace.Trace{
-		Tags: map[string]any{
-			"name":     "cassandra.query",
-			"service":  "gocql.query",
-			"resource": resource,
-			"type":     "cassandra",
-		},
-		Meta: map[string]string{
-			"component":                   "gocql/gocql",
-			"span.kind":                   "client",
-			"db.system":                   "cassandra",
-			"out.port":                    tc.port,
-			"db.cassandra.contact.points": tc.hostPort,
-		},
-	}
-}

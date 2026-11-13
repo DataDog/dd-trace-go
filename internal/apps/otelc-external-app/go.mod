@@ -7,6 +7,7 @@ go 1.26.0
 require (
 	github.com/DataDog/dd-trace-go/otelc/all/v2 v2.0.0
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
+	github.com/gocql/gocql v1.7.0
 )
 
 require (
@@ -224,7 +225,6 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 v2.13.0-dev.1 // indirect
-	github.com/gocql/gocql v1.7.0 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
