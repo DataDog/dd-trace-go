@@ -745,6 +745,7 @@ func TestWafRCUpdate(t *testing.T) {
 	t.Run("toggle-blocking", func(t *testing.T) {
 		cfg, err := config.NewStartConfig().NewConfig()
 		require.NoError(t, err)
+		defer cfg.WAFManager.Close()
 		appsec := appsec{cfg: cfg}
 		appsec.started.Store(true)
 
@@ -758,7 +759,7 @@ func TestWafRCUpdate(t *testing.T) {
 			addresses.ServerRequestPathParamsAddr: "/rfiinc.txt",
 		}
 
-		// Make sure the rule matches as expected
+		// Make sure that the rule matches as expected
 		result, err := wafCtx.Run(context.Background(), addresses.RunAddressData{Data: values, TimerKey: addresses.WAFScope})
 		require.NoError(t, err)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")
@@ -773,7 +774,7 @@ func TestWafRCUpdate(t *testing.T) {
 		newWafCtx, err := wafHandle.NewContext(context.Background(), timer.WithBudget(time.Hour), timer.WithComponents(addresses.Scopes[:]...))
 		require.NoError(t, err)
 		defer newWafCtx.Close()
-		// Make sure the rule returns a blocking action when matching
+		// Make sure that the rule returns a blocking action when it matches
 		result, err = newWafCtx.Run(context.Background(), addresses.RunAddressData{Data: values, TimerKey: addresses.WAFScope})
 		require.NoError(t, err)
 		require.Contains(t, jsonString(t, result.Events), "crs-913-120")

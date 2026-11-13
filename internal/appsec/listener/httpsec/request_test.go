@@ -320,6 +320,7 @@ func TestTraceTagging(t *testing.T) {
 
 	wafManager, err := config.NewWAFManagerWithStaticRules(config.ObfuscatorConfig{}, wafRulesJSON)
 	require.NoError(t, err)
+	defer wafManager.Close()
 	cfg := config.Config{
 		WAFManager:          wafManager,
 		WAFTimeout:          time.Hour,
