@@ -323,10 +323,13 @@ func TestAppSecMissingRoute(t *testing.T) {
 // TestAppSecSchemaPerEndpoint checks that each endpoint has its own API Security
 // sampling key: with the route in the key, 2 endpoints get a schema in the same
 // delay. The third request (same endpoint as the first) is the negative control.
+// The schema extraction needs a WAF budget that CI load cannot exhaust, so the
+// test sets its own timeout (the default is 2 ms).
 func TestAppSecSchemaPerEndpoint(t *testing.T) {
 	t.Setenv("DD_API_SECURITY_SAMPLE_DELAY", "30")
 	t.Setenv("DD_API_SECURITY_ENABLED", "true")
 	t.Setenv("DD_APPSEC_ENABLED", "true")
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1s")
 	testutils.StartAppSec(t) // the default rules, which load the schema processors
 
 	router := chi.NewRouter()
@@ -344,13 +347,19 @@ func TestAppSecSchemaPerEndpoint(t *testing.T) {
 	}
 
 	first := tags("/schema-a/1")
-	assert.Contains(t, first, "_dd.appsec.s.req.headers")
-	assert.Contains(t, first, "_dd.appsec.s.req.params", "the schema has the path parameters")
 	second := tags("/schema-b/1")
-	assert.Contains(t, second, "_dd.appsec.s.req.headers", "another endpoint has its own sampling key")
-	assert.Contains(t, second, "_dd.appsec.s.req.params")
 	third := tags("/schema-a/2")
-	assert.NotContains(t, third, "_dd.appsec.s.req.headers", "the same endpoint is sampled once in the delay")
+
+	t.Run("schema", func(t *testing.T) {
+		for _, got := range []map[string]any{first, second} {
+			assert.Contains(t, got, "_dd.appsec.s.req.headers")
+			assert.Contains(t, got, "_dd.appsec.s.req.params", "the schema has the path parameters")
+		}
+	})
+	t.Run("sampling", func(t *testing.T) {
+		assert.Contains(t, second, "_dd.appsec.s.req.headers", "another endpoint has its own sampling key")
+		assert.NotContains(t, third, "_dd.appsec.s.req.headers", "the same endpoint is sampled once in the delay")
+	})
 }
 
 // TestAppSecHandlerPanic checks that the late WAF run does not run in a panic,

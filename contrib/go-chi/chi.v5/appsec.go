@@ -23,16 +23,11 @@ import (
 // withAppsec returns the handler that runs the AppSec operation of a request.
 // The handler expects the chi response writer that [Middleware] creates.
 //
-// With Use before routing, chi selects the route after this middleware starts.
-// So the handler does these steps:
-//  1. It wraps the response writer in a commitTracker (see writer_appsec.go).
-//  2. Before the handler runs, it asks chi which route matches (lookupRoute) and
-//     gives the path parameters of that route to the WAF. A tracker that is not
-//     complete gives no newly discovered parameters.
-//  3. After the handler returns, it gives the route and the path parameters that
-//     chi selected to the WAF (httpsec.RouteMatched), when they are not the ones
-//     of step 2. This run never stops the handler. A block or a redirect from it
-//     replaces the response only when the response is not sent yet.
+// With Use before routing, chi has not selected the route when this middleware
+// starts, so the handler asks chi which route matches (lookupRoute) and gives it
+// to the WAF early, then reports the route that chi selected after the handler.
+// The response writer is wrapped in a commitTracker (see writer_appsec.go) to know
+// if a late block can still replace the response.
 func withAppsec(next http.Handler, span trace.TagSetter, cfg *config, cache *sync.Map) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// A copy for each request: httpsec.BeforeHandle writes in the config.
