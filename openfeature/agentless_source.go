@@ -19,7 +19,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/datadog-agent/pkg/trace/traceutil/normalize"
+
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
@@ -50,7 +53,7 @@ var errResponseTooLarge = errors.New("response exceeds maximum size")
 
 // agentlessSource polls the Agentless configuration endpoint on an interval
 // and applies newly received configuration. All fields other than mu, etag,
-// and warned are immutable after construction.
+// warned, rawService, and serviceHeader are immutable after construction.
 type agentlessSource struct {
 	// endpoint is the full request URL. SENSITIVE: may embed credentials; never log.
 	endpoint string
@@ -72,6 +75,10 @@ type agentlessSource struct {
 	mu     sync.Mutex
 	etag   string          // +checklocks:mu
 	warned map[string]bool // +checklocks:mu
+	// rawService is the tracer service that serviceHeader comes from. With
+	// it, the source normalizes and logs a service once, not on every poll.
+	rawService    string // +checklocks:mu
+	serviceHeader string // +checklocks:mu
 
 	stopCh   chan struct{}
 	doneCh   chan struct{}
@@ -116,6 +123,7 @@ func newAgentlessSource(settings internalffe.Settings, apply func(*universalFlag
 	s.retryDelay = func(attempt int) time.Duration {
 		return retryDelay(s.pollInterval, attempt, rand.Float64())
 	}
+	s.usageService() // normalizes the service now, not on the first poll
 	return s, nil
 }
 
@@ -265,6 +273,10 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 	if s.apiKey != "" {
 		req.Header.Set("DD-API-KEY", s.apiKey)
 	}
+	// The CDN uses DD-Service to attribute the usage of this request.
+	if service := s.usageService(); service != "" {
+		req.Header.Set("DD-Service", service)
+	}
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
@@ -377,6 +389,63 @@ func (s *agentlessSource) requestedEnv() string {
 	default:
 		return s.env
 	}
+}
+
+// usageService returns the DD-Service value for the tracer's service. It
+// normalizes the service when the source is built. It normalizes it again only
+// when the service changes. This occurs when the provider starts before
+// tracer.Start sets the service.
+func (s *agentlessSource) usageService() string {
+	service := internalconfig.Get().ServiceName()
+	s.mu.Lock()
+	header, cached := s.serviceHeader, s.rawService == service
+	s.mu.Unlock()
+	if cached {
+		return header
+	}
+	header = normalizeUsageService(service)
+	s.mu.Lock()
+	s.rawService, s.serviceHeader = service, header
+	s.mu.Unlock()
+	return header
+}
+
+// normalizeUsageService returns the DD-Service value for service. The value is
+// the service name that APM shows, from the Agent's own NormalizeService. For
+// example, "My Service" becomes my_service. As in APM, a name longer than 100
+// bytes is cut to 100 bytes. It returns "" in two cases:
+//   - The Agent replaces service with its fallback name.
+//   - The APM name is not plain ASCII, for example café-api.
+//
+// It does not change the APM name. Thus usage goes only to a service that APM
+// shows, or to no service. The CDN alone decides which values it accepts, so
+// the SDK does not copy that rule. APM keeps non-ASCII letters, and the HTTP
+// clients of some SDKs refuse them in a header. Go's client sends them, but all
+// SDKs apply the same ASCII check, so a service gets the same header in every
+// language. The tracer's service stays as configured.
+func normalizeUsageService(service string) string {
+	apmService, err := normalize.NormalizeService(service, "")
+	if errors.Is(err, normalize.ErrEmpty) || errors.Is(err, normalize.ErrInvalid) {
+		apmService = "" // the Agent's fallback name is not the name of this service
+	}
+	if apmService != "" && isPrintableASCII(apmService) {
+		return apmService
+	}
+	if service != "" {
+		logOnboarding("service %q has no ASCII APM name; DD-Service header not sent", service)
+	}
+	return ""
+}
+
+// isPrintableASCII reports whether every byte of s is printable ASCII
+// (0x21-0x7E).
+func isPrintableASCII(s string) bool {
+	for i := range len(s) {
+		if s[i] < 0x21 || s[i] > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *agentlessSource) currentETag() string {
