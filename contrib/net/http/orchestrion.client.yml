@@ -34,6 +34,7 @@ aspects:
             - import-path: github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem
             - import-path: github.com/DataDog/dd-trace-go/v2/profiler
             - import-path: github.com/DataDog/dd-trace-go/v2/internal/llmobs/config
+            - import-path: github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/httptransport
         - struct-literal:
             type: net/http.Transport
     advice:

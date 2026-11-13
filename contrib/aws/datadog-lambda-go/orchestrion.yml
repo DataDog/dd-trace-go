@@ -1,0 +1,70 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2
+  description: |-
+    Instruments handlers passed to github.com/aws/aws-lambda-go/lambda by
+    wrapping the unexported start function after Lambda has applied handler
+    options. Start, StartWithOptions, StartWithContext, StartHandler,
+    StartHandlerWithContext, and StartHandlerFunc all reach start, so each
+    invocation gets an aws.lambda span, enhanced metrics, and a tracer flush.
+    Configuration is read from DD_* environment variables. Options passed to
+    lambda.StartWithOptions are kept.
+
+    The integration is part of orchestrion/all. A project set up for
+    Orchestrion gets it with no extra import.
+
+    Continuing traces from upstream services into the function, for event
+    sources other than API Gateway, requires the Datadog Lambda Extension.
+
+aspects:
+  - id: lambda.start
+    join-point:
+      all-of:
+        - import-path: github.com/aws/aws-lambda-go/lambda
+        - function-body:
+            function:
+              - name: start
+    advice:
+      - inject-declarations:
+          # ddlambda imports aws-lambda-go, so the injected code cannot import
+          # it back. go:linkname reaches the helper without an import.
+          links:
+            - github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2
+          imports:
+            context: context
+            io: io
+          template: |-
+            //go:linkname __dd_lambda_wrap github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2.wrapOrchestrion
+            func __dd_lambda_wrap(func(context.Context, []byte) (io.Reader, error)) func(context.Context, []byte) (io.Reader, error)
+      - prepend-statements:
+          template: |-
+            {{ $h := .Function.Argument 0 }}
+            {{ $h }}.handlerFunc = __dd_lambda_wrap({{ $h }}.handlerFunc)
+
+  # aws-lambda-go's Runtime API and Extensions API clients use
+  # http.DefaultTransport, so Orchestrion's net/http instrumentation would
+  # report every event fetch and response as a span outside any trace. Give
+  # them ddlambda's transport, which net/http leaves untraced.
+  - id: lambda.http.Client
+    join-point:
+      all-of:
+        - import-path: github.com/aws/aws-lambda-go/lambda
+        - struct-literal:
+            type: net/http.Client
+    advice:
+      - wrap-expression:
+          # httptransport only imports the standard library, so this import
+          # does not create a cycle.
+          imports:
+            __dd_httptransport: github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/httptransport
+          template: |-
+            {{- .AST.Type -}}{
+              Transport: __dd_httptransport.New(),
+              {{ range .AST.Elts }}{{ . }},
+              {{ end }}
+            }

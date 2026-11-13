@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/httptransport"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
 )
 
@@ -49,7 +50,8 @@ type (
 // MakeAPIClient creates a new API client with the given api and app keys
 func MakeAPIClient(ctx context.Context, options APIClientOptions) *APIClient {
 	httpClient := &http.Client{
-		Timeout: options.httpClientTimeout,
+		Timeout:   options.httpClientTimeout,
+		Transport: httptransport.New(),
 	}
 	client := &APIClient{
 		apiKey:     options.apiKey,
