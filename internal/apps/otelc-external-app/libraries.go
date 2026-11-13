@@ -6,6 +6,7 @@
 package main
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/mux"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/julienschmidt/httprouter"
 	"github.com/valyala/fasthttp"
 	mongooptions "go.mongodb.org/mongo-driver/mongo/options"
@@ -39,4 +41,8 @@ func useLibraries() {
 	}))
 	_ = mongooptions.Client()
 	_ = mongov2options.Client()
+	// The pool opens no connection until first used.
+	if pool, err := pgxpool.New(context.Background(), "postgres://localhost/db"); err == nil {
+		pool.Close()
+	}
 }
