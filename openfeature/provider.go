@@ -79,6 +79,17 @@ type ProviderConfig struct {
 	// FlagEvaluationFlushInterval is the interval for flushing EVP flag evaluation events.
 	// Default: 10 seconds. Leave zero to use the default.
 	FlagEvaluationFlushInterval time.Duration
+
+	// FlagSelection limits the flags the provider loads; see FlagSelection.
+	// Nil loads every flag. Each provider sends its own selection, which it
+	// copies at construction. There is no environment variable for it.
+	// The selection applies to the agentless configuration source, the
+	// default. With Remote Config, the provider logs a warning and loads
+	// every flag.
+	// When this provider is the default OpenFeature provider, LLM
+	// Observability prompt flags are evaluated through it and share its
+	// selection.
+	FlagSelection *FlagSelection
 }
 
 // DatadogProvider is an OpenFeature provider that evaluates feature flags
@@ -181,6 +192,7 @@ func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, err
 	switch settings.Source {
 	case internalffe.SourceRemoteConfig:
 		logOnboarding("configuration source is %s", settings.Source.String())
+		warnFlagSelectionWithRemoteConfig(config.FlagSelection)
 		return startWithRemoteConfig(config)
 	case internalffe.SourceAgentless:
 		logOnboarding("configuration source is %s", settings.Source.String())
@@ -367,7 +379,7 @@ func startWithAgentless(config ProviderConfig, settings internalffe.Settings) (*
 		newAgentlessEVPClient(settings),
 	)
 
-	src, err := newAgentlessSource(settings, p.updateConfiguration)
+	src, err := newAgentlessSource(settings, config.FlagSelection, p.updateConfiguration)
 	if err != nil {
 		// err never contains the configured endpoint or credentials.
 		log.Error("openfeature: failed to start agentless configuration source: %v", err.Error()) //errtrack:ignore invalid user configuration
