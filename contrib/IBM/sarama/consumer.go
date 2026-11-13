@@ -43,35 +43,42 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 	for _, opt := range opts {
 		opt.apply(cfg)
 	}
-	instr.Logger().Debug("contrib/IBM/sarama: Wrapping Partition Consumer: %#v", cfg)
-
-	d := wrapDispatcher(pc, cfg)
-	go d.Run()
-
-	wrapped := &partitionConsumer{
-		PartitionConsumer: pc,
-		dispatcher:        d,
-	}
+	wrapped := wrapPartitionConsumer(pc, cfg)
 	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
 		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
 	}
 	return wrapped
 }
 
+// wrapPartitionConsumer wraps pc with the given config. It does not start a
+// cluster ID fetch: the owner of cfg is responsible for it.
+func wrapPartitionConsumer(pc sarama.PartitionConsumer, cfg *config) *partitionConsumer {
+	instr.Logger().Debug("contrib/IBM/sarama: Wrapping Partition Consumer: %#v", cfg)
+
+	d := wrapDispatcher(pc, cfg)
+	go d.Run()
+
+	return &partitionConsumer{
+		PartitionConsumer: pc,
+		dispatcher:        d,
+	}
+}
+
 type consumer struct {
 	sarama.Consumer
-	opts       []Option
+	cfg        *config
 	closeAsync []func()
 }
 
 // ConsumePartition invokes Consumer.ConsumePartition and wraps the resulting
-// PartitionConsumer.
+// PartitionConsumer. The PartitionConsumer shares the consumer's config, so it
+// reports the cluster ID fetched by the consumer without fetching it again.
 func (c *consumer) ConsumePartition(topic string, partition int32, offset int64) (sarama.PartitionConsumer, error) {
 	pc, err := c.Consumer.ConsumePartition(topic, partition, offset)
 	if err != nil {
 		return pc, err
 	}
-	return WrapPartitionConsumer(pc, c.opts...), nil
+	return wrapPartitionConsumer(pc, c.cfg), nil
 }
 
 // Close shuts down the consumer and cancels any in-flight async jobs.
@@ -92,7 +99,7 @@ func WrapConsumer(c sarama.Consumer, opts ...Option) sarama.Consumer {
 	}
 	wrapped := &consumer{
 		Consumer: c,
-		opts:     opts,
+		cfg:      cfg,
 	}
 	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
 		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))

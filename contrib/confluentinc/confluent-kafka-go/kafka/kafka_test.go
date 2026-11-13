@@ -8,6 +8,7 @@ package kafka
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -207,6 +208,180 @@ func TestConsumerFunctionalWithClusterID(t *testing.T) {
 	assert.Equal(t, expected.GetHash(), p.GetHash())
 }
 
+// TestConsumerFunctionalWithClusterIDWithoutDataStreams checks that, when
+// data streams monitoring is disabled, the cluster ID is fetched on the first
+// produce and consume, and tagged on the following spans.
+func TestConsumerFunctionalWithClusterIDWithoutDataStreams(t *testing.T) {
+	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
+		t.Skip("to enable integration test, set the INTEGRATION environment variable")
+	}
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	p, err := NewProducer(&kafka.ConfigMap{
+		"bootstrap.servers":   "127.0.0.1:9092",
+		"go.delivery.reports": true,
+	})
+	require.NoError(t, err)
+	require.False(t, p.tracer.DSMEnabled())
+	require.False(t, p.clusterID.Started(), "the cluster ID must not be fetched before the first produce")
+
+	produced := make([]*kafka.Message, 0, 2)
+	for i := range 2 {
+		delivery := make(chan kafka.Event, 1)
+		err = p.Produce(&kafka.Message{
+			TopicPartition: kafka.TopicPartition{Topic: &testTopic, Partition: 0},
+			Value:          []byte(fmt.Sprintf("value%d", i)),
+		}, delivery)
+		require.NoError(t, err)
+		msg, _ := (<-delivery).(*kafka.Message)
+		require.NoError(t, msg.TopicPartition.Error)
+		produced = append(produced, msg)
+		// The first produce starts the fetch.
+		require.Eventually(t, func() bool { return p.tracer.ClusterID() != "" }, 5*time.Second, 10*time.Millisecond)
+	}
+	p.Close()
+
+	c, err := NewConsumer(&kafka.ConfigMap{
+		"group.id":                 testGroupID,
+		"bootstrap.servers":        "127.0.0.1:9092",
+		"fetch.wait.max.ms":        500,
+		"socket.timeout.ms":        1500,
+		"session.timeout.ms":       1500,
+		"enable.auto.offset.store": false,
+	})
+	require.NoError(t, err)
+	require.False(t, c.clusterID.Started(), "the cluster ID must not be fetched before the first consume")
+	err = c.Assign([]kafka.TopicPartition{
+		{Topic: &testTopic, Partition: 0, Offset: produced[0].TopicPartition.Offset},
+	})
+	require.NoError(t, err)
+	for range 2 {
+		_, err := c.ReadMessage(3000 * time.Millisecond)
+		require.NoError(t, err)
+		// The first consume starts the fetch.
+		require.Eventually(t, func() bool { return c.tracer.ClusterID() != "" }, 5*time.Second, 10*time.Millisecond)
+	}
+	require.NoError(t, c.Close())
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 4)
+	clusterID := p.tracer.ClusterID()
+	assert.Equal(t, clusterID, c.tracer.ClusterID())
+	for _, s := range spans {
+		if s.Tag(ext.MessagingKafkaClusterID) != nil {
+			assert.Equal(t, clusterID, s.Tag(ext.MessagingKafkaClusterID))
+		}
+	}
+	// The second produce and the second consume happen after the fetch.
+	var tagged int
+	for _, s := range spans {
+		if s.Tag(ext.MessagingKafkaClusterID) == clusterID {
+			tagged++
+		}
+	}
+	assert.GreaterOrEqual(t, tagged, 2)
+}
+
+// TestClusterIDFetchStartsOnFirstUse checks that, when data streams
+// monitoring is disabled, the cluster ID fetch starts on the first produce or
+// consume, and that a client closed without being used does
+// not start it nor block in Close. It needs no broker.
+func TestClusterIDFetchStartsOnFirstUse(t *testing.T) {
+	newProducer := func(t *testing.T, opts ...Option) *Producer {
+		p, err := NewProducer(&kafka.ConfigMap{
+			"bootstrap.servers": "127.0.0.1:9092",
+		}, opts...)
+		require.NoError(t, err)
+		return p
+	}
+	newConsumer := func(t *testing.T, eventsChannel bool, opts ...Option) *Consumer {
+		c, err := NewConsumer(&kafka.ConfigMap{
+			"go.events.channel.enable": eventsChannel, // lets the test inject messages
+			"group.id":                 testGroupID,
+			"bootstrap.servers":        "127.0.0.1:9092",
+		}, opts...)
+		require.NoError(t, err)
+		return c
+	}
+	// drain reads the events left in ch until it is closed, so the wrapping
+	// goroutines do not block on a send after the test.
+	drain := func(ch chan kafka.Event) {
+		go func() {
+			for range ch {
+			}
+		}()
+	}
+
+	t.Run("producer closed without use", func(t *testing.T) {
+		p := newProducer(t)
+		require.False(t, p.tracer.DSMEnabled())
+		assert.False(t, p.clusterID.Started())
+		// The events channel is only wrapped for data streams monitoring.
+		assert.Equal(t, p.Producer.Events(), p.Events())
+
+		start := time.Now()
+		p.Close()
+		assert.Less(t, time.Since(start), time.Second, "Close must not wait for a cluster ID fetch")
+		assert.False(t, p.clusterID.Started())
+	})
+	t.Run("consumer closed without use", func(t *testing.T) {
+		c := newConsumer(t, false)
+		require.False(t, c.tracer.DSMEnabled())
+		assert.False(t, c.clusterID.Started())
+
+		start := time.Now()
+		require.NoError(t, c.Close())
+		assert.Less(t, time.Since(start), time.Second, "Close must not wait for a cluster ID fetch")
+		assert.False(t, c.clusterID.Started())
+	})
+	t.Run("producer starts on first produce", func(t *testing.T) {
+		p := newProducer(t)
+		defer p.Close()
+
+		// An empty topic makes Produce fail right away, so no delivery report
+		// is left pending. The fetch starts anyway.
+		topic := ""
+		msg := &kafka.Message{TopicPartition: kafka.TopicPartition{Topic: &topic}}
+		require.Error(t, p.Produce(msg, nil))
+		assert.True(t, p.clusterID.Started())
+		// Starting at most once is covered by the kafkatrace tests.
+		require.Error(t, p.Produce(msg, nil))
+	})
+	t.Run("producer starts on first message on the produce channel", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		p := newProducer(t)
+		defer p.Close()
+
+		p.ProduceChannel() <- &kafka.Message{TopicPartition: kafka.TopicPartition{Topic: &testTopic, Partition: 0}}
+		assert.Eventually(t, p.clusterID.Started, time.Second, 10*time.Millisecond)
+		// The goroutine that forwards the message to the producer finishes the
+		// produce span after the send. Wait for it, so Close does not close
+		// the producer's channel while the goroutine still sends on it.
+		require.Eventually(t, func() bool { return len(mt.FinishedSpans()) == 1 }, time.Second, 10*time.Millisecond)
+	})
+	t.Run("consumer starts on first message", func(t *testing.T) {
+		c := newConsumer(t, true)
+		defer c.Close()
+
+		c.Consumer.Events() <- &kafka.Message{TopicPartition: kafka.TopicPartition{Topic: &testTopic, Partition: 0}}
+		<-c.Events()
+		drain(c.Events())
+		assert.True(t, c.clusterID.Started())
+	})
+	t.Run("data streams starts on wrap", func(t *testing.T) {
+		p := newProducer(t, WithDataStreams())
+		defer p.Close()
+		drain(p.Events())
+		c := newConsumer(t, false, WithDataStreams())
+		defer c.Close()
+
+		assert.True(t, p.clusterID.Started())
+		assert.True(t, c.clusterID.Started())
+	})
+}
+
 // This tests the deprecated behavior of using cfg.context as the context passed via kafka messages
 // instead of the one passed in the message.
 func TestDeprecatedContext(t *testing.T) {
@@ -382,7 +557,9 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 		"go.delivery.reports": true,
 	}, producerOpts...)
 	require.NoError(t, err)
-	require.Eventually(t, func() bool { return p.tracer.ClusterID() != "" }, 5*time.Second, 10*time.Millisecond)
+	if p.tracer.DSMEnabled() {
+		require.Eventually(t, func() bool { return p.tracer.ClusterID() != "" }, 5*time.Second, 10*time.Millisecond)
+	}
 
 	delivery := make(chan kafka.Event, 1)
 	err = p.Produce(&kafka.Message{
@@ -408,7 +585,9 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 		"enable.auto.offset.store": false,
 	}, consumerOpts...)
 	require.NoError(t, err)
-	require.Eventually(t, func() bool { return c.tracer.ClusterID() != "" }, 5*time.Second, 10*time.Millisecond)
+	if c.tracer.DSMEnabled() {
+		require.Eventually(t, func() bool { return c.tracer.ClusterID() != "" }, 5*time.Second, 10*time.Millisecond)
+	}
 
 	err = c.Assign([]kafka.TopicPartition{
 		{Topic: &testTopic, Partition: 0, Offset: msg1.TopicPartition.Offset},

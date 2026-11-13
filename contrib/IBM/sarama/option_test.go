@@ -10,7 +10,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/IBM/sarama"
+	"github.com/IBM/sarama/mocks"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDataStreamsActivation(t *testing.T) {
@@ -70,4 +73,34 @@ func TestClusterIDConcurrency(t *testing.T) {
 	wg.Wait()
 
 	assert.NotEmpty(t, cfg.ClusterID())
+}
+
+func TestWithSaramaConfig(t *testing.T) {
+	sc := sarama.NewConfig()
+	sc.ClientID = "test-client"
+
+	t.Run("consumer", func(t *testing.T) {
+		mc := mocks.NewConsumer(t, nil)
+		mc.ExpectConsumePartition("test-topic", 0, sarama.OffsetOldest)
+		c := WrapConsumer(mc, WithSaramaConfig(sc))
+		wc := c.(*consumer)
+		assert.Same(t, sc, wc.cfg.saramaConfig)
+
+		pc, err := c.ConsumePartition("test-topic", 0, sarama.OffsetOldest)
+		require.NoError(t, err)
+		assert.Same(t, sc, pc.(*partitionConsumer).dispatcher.(*wrappedDispatcher).cfg.saramaConfig)
+		require.NoError(t, pc.Close())
+		require.NoError(t, c.Close())
+	})
+	t.Run("consumer group handler", func(t *testing.T) {
+		h := WrapConsumerGroupHandler(nil, WithSaramaConfig(sc))
+		assert.Same(t, sc, h.(*consumerGroupHandler).cfg.saramaConfig)
+	})
+	t.Run("producer uses its own configuration", func(t *testing.T) {
+		pc := sarama.NewConfig()
+		mp := mocks.NewSyncProducer(t, nil)
+		p := WrapSyncProducer(pc, mp, WithSaramaConfig(sc))
+		assert.Same(t, pc, p.(*syncProducer).cfg.saramaConfig)
+		require.NoError(t, p.Close())
+	})
 }
