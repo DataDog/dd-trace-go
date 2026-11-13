@@ -22,7 +22,10 @@ type serverStream struct {
 	grpc.ServerStream
 	cfg    *config
 	method string
-	ctx    context.Context
+	// resource is the span resource name; it differs from method for
+	// unknown-service calls.
+	resource string
+	ctx      context.Context
 }
 
 // Context returns the ServerStream Context.
@@ -49,6 +52,9 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 			ss.cfg.startSpanOptions(tracer.Measured())...,
 		)
 		span.SetTag(ext.Component, componentName)
+		if ss.resource != ss.method {
+			span.SetTag(ext.ResourceName, ss.resource)
+		}
 		defer func() {
 			withMetadataTags(ss.ctx, ss.cfg, span)
 			withRequestTags(ss.cfg, m, span)
@@ -71,11 +77,21 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 			ss.cfg.startSpanOptions(tracer.Measured())...,
 		)
 		span.SetTag(ext.Component, componentName)
+		if ss.resource != ss.method {
+			span.SetTag(ext.ResourceName, ss.resource)
+		}
 		defer func() { finishWithError(span, err, ss.method, ss.cfg) }()
 	}
 	err = ss.ServerStream.SendMsg(m)
 	return err
 }
+
+const (
+	// resourceUnknownMethod is the resource name for calls served by
+	// grpc.UnknownServiceHandler, following OTel RPC conventions.
+	resourceUnknownMethod = "_OTHER"
+	tagMethodOriginal     = "rpc.method_original"
+)
 
 // StreamServerInterceptor will trace streaming requests to the given gRPC server.
 func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
@@ -87,6 +103,14 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 	instr.Logger().Debug("contrib/google.golang.org/grpc: Configuring StreamServerInterceptor: %#v", cfg)
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (err error) {
 		ctx := ss.Context()
+		// grpc invokes the UnknownServiceHandler with a nil server and a
+		// bidi stream. The method there is chosen by the client, so it must
+		// not become the resource name (#5813).
+		resource := info.FullMethod
+		unknown := srv == nil && info.IsClientStream && info.IsServerStream
+		if unknown {
+			resource = resourceUnknownMethod
+		}
 		// if we've enabled call tracing, create a span
 		_, um := cfg.untracedMethods[info.FullMethod]
 		if cfg.traceStreamCalls && !um {
@@ -101,6 +125,10 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 					tracer.Tag(ext.Component, componentName),
 					tracer.Tag(ext.SpanKind, ext.SpanKindServer))...,
 			)
+			if unknown {
+				span.SetTag(ext.ResourceName, resource)
+				span.SetTag(tagMethodOriginal, info.FullMethod)
+			}
 			switch {
 			case info.IsServerStream && info.IsClientStream:
 				span.SetTag(tagMethodKind, methodKindBidiStream)
@@ -121,6 +149,7 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 			ServerStream: ss,
 			cfg:          cfg,
 			method:       info.FullMethod,
+			resource:     resource,
 			ctx:          ctx,
 		})
 	}

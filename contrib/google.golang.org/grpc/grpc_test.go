@@ -1643,7 +1643,6 @@ func TestOTBaggageEnforcesLimitsOverGRPC(t *testing.T) {
 // grpc.UnknownServiceHandler do not use the client-chosen method as the
 // span resource name, which would make resource cardinality unbounded.
 func TestUnknownServiceHandlerResourceName(t *testing.T) {
-	t.Skip("reproduces #5813; remove when fixed")
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
