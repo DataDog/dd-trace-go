@@ -258,9 +258,12 @@ func (p *Producer) Produce(msg *kafka.Message, deliveryChan chan kafka.Event) er
 
 	var errChan chan error
 
-	var guard *kafkatrace.DeliveryGuard
 	if deliveryChan == nil {
 		deliveryChan = p.events
+	}
+	// The events channels are closed by Close, so forwarding to them is guarded.
+	var guard *kafkatrace.DeliveryGuard
+	if deliveryChan == p.events || deliveryChan == p.Producer.Events() {
 		guard = p.deliveryGuard
 	}
 
