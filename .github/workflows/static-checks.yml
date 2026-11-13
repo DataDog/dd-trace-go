@@ -254,6 +254,8 @@ jobs:
         run: git diff --exit-code
 
   check-supported-integrations:
+    needs: [changes]
+    if: github.event_name != 'pull_request' || needs.changes.outputs.modules == 'true' || needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
