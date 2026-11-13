@@ -16,6 +16,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
 
 func TestIntegrationEnabled(t *testing.T) {
@@ -321,5 +323,187 @@ func TestNoTracerServiceName(t *testing.T) {
 			"which provides service name source information for better precedence handling.\n"+
 			"Offending locations:\n  %s",
 			len(offending), strings.Join(offending, "\n  "))
+	}
+}
+
+// TestManifestNameMatchesTracedPackage fails when the top-level name of a contrib manifest.yaml
+// is not the TracedPackage of the Package registered for that contrib path in packages.go, or
+// when two manifests share a name. The manifest name identifies the integration (the instrumented
+// library), whereas packages[].name lists the published packages and may legitimately differ.
+//
+// Origin: reviewers repeatedly had to ask for a new manifest's name to be changed to the
+// integration's TracedPackage, "like every other manifest", which is mechanical to check.
+func TestManifestNameMatchesTracedPackage(t *testing.T) {
+	root, err := filepath.Abs("../contrib")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	packagesMu.RLock()
+	tracedByPath := make(map[string]string, len(packages))
+	for pkg, info := range packages {
+		tracedByPath[string(pkg)] = info.TracedPackage
+	}
+	packagesMu.RUnlock()
+
+	var manifests []contribManifest
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			base := filepath.Base(path)
+			if strings.HasPrefix(base, ".") || base == "vendor" || base == "testdata" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() != "manifest.yaml" {
+			return nil
+		}
+		relPath, _ := filepath.Rel(root, path)
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var m struct {
+			Name string `yaml:"name"`
+		}
+		if err := yaml.Unmarshal(raw, &m); err != nil {
+			return fmt.Errorf("%s: %w", relPath, err)
+		}
+		manifests = append(manifests, contribManifest{relPath: relPath, name: m.Name})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(manifests) == 0 {
+		t.Fatal("no contrib manifest.yaml files found; the walk root is probably wrong")
+	}
+
+	offending := checkManifestNames(tracedByPath, manifests)
+	if len(offending) > 0 {
+		t.Errorf("Found %d contrib manifest problem(s). Set name to this integration's TracedPackage "+
+			"in instrumentation/packages.go (the Package key is the contrib path); names must be unique. "+
+			"The published packages belong under packages[].name.\nOffending manifests:\n  %s",
+			len(offending), strings.Join(offending, "\n  "))
+	}
+}
+
+type contribManifest struct {
+	relPath string
+	name    string
+}
+
+// checkManifestNames reports manifests whose top-level name is not the TracedPackage of the
+// Package registered for that contrib path, or whose name is reused by another manifest.
+func checkManifestNames(tracedByPath map[string]string, manifests []contribManifest) []string {
+	var offending []string
+	byName := make(map[string][]string)
+	for _, m := range manifests {
+		relPath := filepath.ToSlash(m.relPath)
+		contribPath := filepath.ToSlash(filepath.Dir(filepath.FromSlash(relPath)))
+		byName[m.name] = append(byName[m.name], relPath)
+		traced, ok := tracedByPath[contribPath]
+		if !ok {
+			offending = append(offending, fmt.Sprintf("%s: no Package in instrumentation/packages.go for contrib path %q", relPath, contribPath))
+			continue
+		}
+		if m.name != traced {
+			offending = append(offending, fmt.Sprintf("%s: name %q, want TracedPackage %q", relPath, m.name, traced))
+		}
+	}
+	for name, paths := range byName {
+		if len(paths) < 2 {
+			continue
+		}
+		slices.Sort(paths)
+		offending = append(offending, fmt.Sprintf("duplicate name %q used by %s", name, strings.Join(paths, ", ")))
+	}
+	slices.Sort(offending)
+	return offending
+}
+
+func TestCheckManifestNames(t *testing.T) {
+	traced := map[string]string{
+		"gorilla/mux": "github.com/gorilla/mux",
+		"foo/bar":     "github.com/foo/bar",
+	}
+	tests := []struct {
+		name      string
+		traced    map[string]string
+		manifests []contribManifest
+		want      []string
+	}{
+		{
+			name:   "matching unique names",
+			traced: traced,
+			manifests: []contribManifest{
+				{relPath: "gorilla/mux/manifest.yaml", name: "github.com/gorilla/mux"},
+				{relPath: "foo/bar/manifest.yaml", name: "github.com/foo/bar"},
+			},
+		},
+		{
+			name:   "copied name from another integration",
+			traced: traced,
+			manifests: []contribManifest{
+				{relPath: "gorilla/mux/manifest.yaml", name: "github.com/gorilla/mux"},
+				{relPath: "foo/bar/manifest.yaml", name: "github.com/gorilla/mux"},
+			},
+			want: []string{
+				`duplicate name "github.com/gorilla/mux" used by foo/bar/manifest.yaml, gorilla/mux/manifest.yaml`,
+				`foo/bar/manifest.yaml: name "github.com/gorilla/mux", want TracedPackage "github.com/foo/bar"`,
+			},
+		},
+		{
+			name:   "copied TracedPackage as well as name",
+			traced: map[string]string{"gorilla/mux": "github.com/gorilla/mux", "foo/bar": "github.com/gorilla/mux"},
+			manifests: []contribManifest{
+				{relPath: "gorilla/mux/manifest.yaml", name: "github.com/gorilla/mux"},
+				{relPath: "foo/bar/manifest.yaml", name: "github.com/gorilla/mux"},
+			},
+			want: []string{
+				`duplicate name "github.com/gorilla/mux" used by foo/bar/manifest.yaml, gorilla/mux/manifest.yaml`,
+			},
+		},
+		{
+			name:   "missing packages.go entry",
+			traced: traced,
+			manifests: []contribManifest{
+				{relPath: "new/lib/manifest.yaml", name: "github.com/new/lib"},
+			},
+			want: []string{
+				`new/lib/manifest.yaml: no Package in instrumentation/packages.go for contrib path "new/lib"`,
+			},
+		},
+		{
+			name:   "lone wrong name",
+			traced: traced,
+			manifests: []contribManifest{
+				{relPath: filepath.FromSlash("foo/bar/manifest.yaml"), name: "github.com/old/typo"},
+			},
+			want: []string{
+				`foo/bar/manifest.yaml: name "github.com/old/typo", want TracedPackage "github.com/foo/bar"`,
+			},
+		},
+		{
+			name:   "empty name",
+			traced: traced,
+			manifests: []contribManifest{
+				{relPath: "foo/bar/manifest.yaml", name: ""},
+			},
+			want: []string{
+				`foo/bar/manifest.yaml: name "", want TracedPackage "github.com/foo/bar"`,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := checkManifestNames(tt.traced, tt.manifests)
+			if !slices.Equal(got, tt.want) {
+				t.Fatalf("problems mismatch\ngot:\n  %s\nwant:\n  %s", strings.Join(got, "\n  "), strings.Join(tt.want, "\n  "))
+			}
+		})
 	}
 }
