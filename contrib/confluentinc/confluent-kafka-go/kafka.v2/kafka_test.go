@@ -505,7 +505,6 @@ to run the integration test locally:
 // delivery reports for messages produced with a nil delivery channel are in
 // flight does not panic with "send on closed channel".
 func TestProduceNilDeliveryChannelClose(t *testing.T) {
-	t.Skip("reproduces #5806; remove when fixed")
 	mt := mocktracer.Start()
 	defer mt.Stop()
 

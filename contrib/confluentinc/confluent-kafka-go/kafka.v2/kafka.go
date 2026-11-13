@@ -204,14 +204,16 @@ type Producer struct {
 	produceChannel chan *kafka.Message
 	events         chan kafka.Event
 	closeAsync     []func() // async jobs to cancel and wait for on Close
+	deliveryGuard  *kafkatrace.DeliveryGuard
 }
 
 // WrapProducer wraps a kafka.Producer so requests are traced.
 func WrapProducer(p *kafka.Producer, opts ...Option) *Producer {
 	wrapped := &Producer{
-		Producer: p,
-		tracer:   newKafkaTracer(opts...),
-		events:   p.Events(),
+		Producer:      p,
+		tracer:        newKafkaTracer(opts...),
+		events:        p.Events(),
+		deliveryGuard: kafkatrace.NewDeliveryGuard(),
 	}
 	instr.Logger().Debug("%s: Wrapping Producer: %#v", pkgPath, wrapped.tracer)
 	wrapped.produceChannel = kafkatrace.WrapProduceChannel(wrapped.tracer, p.ProduceChannel(), wrapMessage)
@@ -244,6 +246,8 @@ func (p *Producer) Close() {
 		stop()
 	}
 	close(p.produceChannel)
+	// Stop forwarders sending to the events channel before it is closed.
+	p.deliveryGuard.Close()
 	p.Producer.Close()
 }
 
@@ -254,11 +258,13 @@ func (p *Producer) Produce(msg *kafka.Message, deliveryChan chan kafka.Event) er
 
 	var errChan chan error
 
+	var guard *kafkatrace.DeliveryGuard
 	if deliveryChan == nil {
 		deliveryChan = p.events
+		guard = p.deliveryGuard
 	}
 
-	deliveryChan, errChan = kafkatrace.WrapDeliveryChannel(p.tracer, deliveryChan, span, wrapEvent)
+	deliveryChan, errChan = kafkatrace.WrapDeliveryChannelGuarded(p.tracer, deliveryChan, guard, span, wrapEvent)
 
 	p.tracer.SetProduceCheckpoint(tMsg)
 
