@@ -10,10 +10,13 @@ package containers
 import (
 	"context"
 	"fmt"
+	"io"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
+	tcexec "github.com/testcontainers/testcontainers-go/exec"
 	"github.com/testcontainers/testcontainers-go/modules/kafka"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
@@ -58,6 +61,21 @@ func StartKafkaTestContainer(t testing.TB, topics []string) (*kafka.KafkaContain
 
 	addr := fmt.Sprintf("%s:%s", host, mappedPort.Port())
 	return container, addr
+}
+
+// KafkaClusterID returns the cluster ID reported by the running Kafka broker.
+func KafkaClusterID(t testing.TB, container *kafka.KafkaContainer) string {
+	t.Helper()
+	exitCode, output, err := container.Exec(context.Background(), []string{
+		"kafka-cluster", "cluster-id", "--bootstrap-server", "localhost:9092",
+	}, tcexec.Multiplexed())
+	require.NoError(t, err)
+	require.Zero(t, exitCode)
+	data, err := io.ReadAll(output)
+	require.NoError(t, err)
+	clusterID := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(string(data)), "Cluster ID:"))
+	require.NotEmpty(t, clusterID)
+	return clusterID
 }
 
 func createTopicCmd(topic string) []string {
