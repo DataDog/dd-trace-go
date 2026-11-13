@@ -570,7 +570,7 @@ func TestProcessConfigUpdate(t *testing.T) {
 			},
 		}
 
-		data, err := json.Marshal(config)
+		data, err := json.Marshal(&config)
 		if err != nil {
 			t.Fatalf("failed to marshal config: %v", err)
 		}
@@ -696,7 +696,7 @@ func TestProcessConfigUpdate(t *testing.T) {
 			Flags:  map[string]*flag{},
 		}
 
-		data, _ := json.Marshal(config)
+		data, _ := json.Marshal(&config)
 		status := processConfigUpdate(provider, "test-path", data)
 
 		if status.State != rc.ApplyStateError {
@@ -741,7 +741,7 @@ func TestCreateRemoteConfigCallback(t *testing.T) {
 		},
 	}
 
-	data, _ := json.Marshal(config)
+	data, _ := json.Marshal(&config)
 
 	// Simulate Remote Config update with multiple paths
 	update := remoteconfig.ProductUpdate{
@@ -801,8 +801,8 @@ func TestRemoteConfigIntegration(t *testing.T) {
 			},
 		}
 
-		data1, _ := json.Marshal(config1)
-		data2, _ := json.Marshal(config2)
+		data1, _ := json.Marshal(&config1)
+		data2, _ := json.Marshal(&config2)
 
 		// First update
 		update1 := remoteconfig.ProductUpdate{
@@ -851,7 +851,7 @@ func TestRemoteConfigIntegration(t *testing.T) {
 			},
 		}
 
-		validData, _ := json.Marshal(validConfig)
+		validData, _ := json.Marshal(&validConfig)
 		invalidData := []byte("{invalid")
 
 		update := remoteconfig.ProductUpdate{
@@ -908,8 +908,8 @@ func TestConfigurationPersistence(t *testing.T) {
 	}
 
 	// Apply configurations sequentially
-	for i, config := range configs {
-		data, _ := json.Marshal(config)
+	for i := range configs {
+		data, _ := json.Marshal(&configs[i])
 		update := remoteconfig.ProductUpdate{
 			"config": data,
 		}
