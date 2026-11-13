@@ -241,6 +241,9 @@ type Span struct {
 
 	spanLinks []SpanLink
 
+	// downstream summarizes outbound client calls made while a tool span is open.
+	downstream downstreamCalls
+
 	// parentAgentName and parentAgentSpanID identify the nearest agent ancestor.
 	// Both are set exactly once in StartSpan and never mutated, so concurrent
 	// reads (e.g. from Annotate) are safe without holding the mutex.
