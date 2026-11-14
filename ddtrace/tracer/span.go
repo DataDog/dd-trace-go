@@ -453,15 +453,15 @@ func (s *Span) SetTag(key string, value any) {
 
 // SetMetaStruct adds a tag with the given key and value to the `meta_struct`
 // field of the span if the agent supports it and returns true. If the
-// `meta_struct` feature is not supported by the agent or the receiver is nil,
-// nothing is stored in the span and false is returned.
+// `meta_struct` feature is not supported by the agent, the tracer exports over
+// OTLP, or the receiver is nil, the method stores nothing and returns false.
 func (s *Span) SetMetaStruct(key string, value msgp.Marshaler) bool {
 	if s == nil {
 		return false
 	}
 
 	tracer, hasTracer := concreteTracerForSpan(getGlobalTracer(), s).(*tracer)
-	if !hasTracer || !tracer.config.agent.load().metaStructAvailable {
+	if !hasTracer || !tracer.metaStructAvailable() {
 		return false
 	}
 
