@@ -31,7 +31,7 @@ import (
 // This represents the base64-encoded URL of api.github.com to download the configuration file.
 // This can be easily decoded manually, but it is encoded to prevent the URL from being scanned by bots.
 const (
-	commonMetricsURL = "aHR0cHM6Ly9hcGkuZ2l0aHViLmNvbS9yZXBvcy9kZG9naHEvZGQtZ28vY29udGVudHMvdHJhY2UvYXBwcy90cmFjZXItdGVsZW1ldHJ5LWludGFrZS90ZWxlbWV0cnktbWV0cmljcy9zdGF0aWMvY29tbW9uX21ldHJpY3MuanNvbg=="
+	commonMetricsURL = "aHR0cHM6Ly9hcGkuZ2l0aHViLmNvbS9yZXBvcy9kZG9naHEvZGQtZ28vY29udGVudHMvdHJhY2UvYXBwcy90cmFjZS1ldmVudHMtd3JpdGVyL3Byb2Nlc3NvcnMvbWV0cmljcy9zdGF0aWMvY29tbW9uX21ldHJpY3MuanNvbg=="
 	goMetricsURL     = "aHR0cHM6Ly9hcGkuZ2l0aHViLmNvbS9yZXBvcy9kZG9naHEvZGQtZ28vY29udGVudHMvdHJhY2UvYXBwcy90cmFjZXItdGVsZW1ldHJ5LWludGFrZS90ZWxlbWV0cnktbWV0cmljcy9zdGF0aWMvZ29sYW5nX21ldHJpY3MuanNvbg=="
 )
 

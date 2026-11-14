@@ -111,7 +111,12 @@ func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
 			}
 			cacheable := true
 
+			pageCount := 0
+			var totalRequestTime time.Duration
+			fetchStart := time.Now()
+
 			for {
+				pageCount++
 				request := c.getPostRequestConfig(knownTestsURLPath, body)
 				request.ExpectJSONResponse = true
 				if request.Compressed {
@@ -122,7 +127,9 @@ func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
 
 				startTime := time.Now()
 				response, err := c.handler.SendRequest(*request)
-				telemetry.KnownTestsRequestMs(float64(time.Since(startTime).Milliseconds()))
+				requestTime := time.Since(startTime)
+				totalRequestTime += requestTime
+				telemetry.KnownTestsRequestMs(float64(requestTime.Milliseconds()))
 
 				if err != nil {
 					telemetry.KnownTestsRequestErrors(telemetry.NetworkErrorType)
@@ -162,6 +169,13 @@ func (c *client) GetKnownTests() (*KnownTestsResponseData, error) {
 					break
 				}
 				body.Data.Attributes.PageInfo.PageState = responseObject.Data.Attributes.PageInfo.Cursor
+			}
+
+			if cacheable {
+				// Request time includes transport retries and backoff, but excludes parsing and merging pages.
+				telemetry.KnownTestsPagesFetched(float64(pageCount))
+				telemetry.KnownTestsTotalFetchMs(time.Since(fetchStart).Seconds() * 1000)
+				telemetry.KnownTestsTotalRequestMs(totalRequestTime.Seconds() * 1000)
 			}
 
 			telemetry.KnownTestsResponseTests(float64(knownTestsResponseTestCount(&accumulated)))
