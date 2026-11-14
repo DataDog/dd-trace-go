@@ -66,6 +66,7 @@ func TestAppSecEventsOverOTLP(t *testing.T) {
 	t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
 	t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", intake.URL+"/v1/traces")
 	t.Setenv("DD_APPSEC_ENABLED", "true")
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1h") // Functionally unlimited: this test checks event emission, not WAF latency
 
 	if wafOK, err := libddwaf.Usable(); !wafOK {
 		t.Skipf("App and API Protection is not available in this build: %v", err)
@@ -124,6 +125,7 @@ func TestAppSecEventsOverOTLP(t *testing.T) {
 		attrs[kv.GetKey()] = kv.GetValue()
 	}
 
+	require.NotContains(t, attrs, "_dd.appsec.waf.timeouts", "WAF run timed out; no security event can be produced")
 	require.Contains(t, attrs, "_dd.appsec.json")
 	var events struct {
 		Triggers []struct {
