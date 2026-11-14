@@ -8,12 +8,14 @@ package opentelemetry
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -29,6 +31,8 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
@@ -183,6 +187,87 @@ func TestSpanResourceNameDefault(t *testing.T) {
 	p := traces[0]
 	assert.Equal("internal", p[0]["name"])
 	assert.Equal("OperationName", p[0]["resource"])
+}
+
+func TestSpanContextRemote(t *testing.T) {
+	tp, _, cleanup := mockTracerProvider(t)
+	defer cleanup()
+	tr := tp.Tracer("")
+	sampler := sdktrace.ParentBased(sdktrace.NeverSample(),
+		sdktrace.WithLocalParentSampled(sdktrace.AlwaysSample()),
+		sdktrace.WithLocalParentNotSampled(sdktrace.AlwaysSample()),
+		sdktrace.WithRemoteParentSampled(sdktrace.NeverSample()),
+		sdktrace.WithRemoteParentNotSampled(sdktrace.NeverSample()),
+	)
+
+	t.Run("local", func(t *testing.T) {
+		ctx, parent := tr.Start(t.Context(), "parent")
+		defer parent.End()
+		assert.False(t, parent.SpanContext().IsRemote())
+		assertSpanContextPropagation(t, parent)
+
+		parentContext := oteltrace.SpanContextFromContext(ctx)
+		assert.Equal(t, parent.SpanContext().TraceID(), parentContext.TraceID())
+		assert.Equal(t, parent.SpanContext().SpanID(), parentContext.SpanID())
+		assert.False(t, parentContext.IsRemote())
+		assert.Equal(t, sdktrace.RecordAndSample, sampler.ShouldSample(sdktrace.SamplingParameters{ParentContext: ctx}).Decision)
+
+		_, child := tr.Start(ctx, "child")
+		defer child.End()
+		assert.False(t, child.SpanContext().IsRemote())
+		assert.Equal(t, parentContext.TraceID(), child.SpanContext().TraceID())
+		assert.NotEqual(t, parentContext.SpanID(), child.SpanContext().SpanID())
+		parentSpanID := parentContext.SpanID()
+		assert.Equal(t, binary.BigEndian.Uint64(parentSpanID[:]), child.(*span).DD.AsMap()[ext.MapSpanParentID])
+		assertSpanContextPropagation(t, child)
+	})
+
+	for _, flags := range []string{"00", "01"} {
+		t.Run("remote/"+flags, func(t *testing.T) {
+			carrier := propagation.MapCarrier{
+				"traceparent": "00-5b8aa5a2d2c872e8321cf37308d69df1-051581bf3cb55c11-" + flags,
+			}
+			ctx := propagation.TraceContext{}.Extract(t.Context(), carrier)
+			parentContext := oteltrace.SpanContextFromContext(ctx)
+			require.True(t, parentContext.IsValid())
+			assert.True(t, parentContext.IsRemote())
+			assert.Equal(t, flags == "01", parentContext.IsSampled())
+			assert.Equal(t, sdktrace.Drop, sampler.ShouldSample(sdktrace.SamplingParameters{ParentContext: ctx}).Decision)
+
+			childCtx, child := tr.Start(ctx, "child")
+			defer child.End()
+			assert.False(t, child.SpanContext().IsRemote())
+			assert.Equal(t, parentContext.TraceID(), child.SpanContext().TraceID())
+			assert.NotEqual(t, parentContext.SpanID(), child.SpanContext().SpanID())
+			parentSpanID := parentContext.SpanID()
+			assert.Equal(t, binary.BigEndian.Uint64(parentSpanID[:]), child.(*span).DD.AsMap()[ext.MapSpanParentID])
+			assert.Equal(t, parentContext.IsSampled(), child.SpanContext().IsSampled())
+			assert.Equal(t, sdktrace.RecordAndSample, sampler.ShouldSample(sdktrace.SamplingParameters{ParentContext: childCtx}).Decision)
+			assertSpanContextPropagation(t, child)
+		})
+	}
+}
+
+func assertSpanContextPropagation(t *testing.T, sp oteltrace.Span) {
+	t.Helper()
+	ddContext := sp.(*span).DD.Context()
+	carrier := tracer.TextMapCarrier{}
+	require.NoError(t, tracer.Inject(ddContext, carrier))
+	propagated := oteltrace.SpanContextFromContext(propagation.TraceContext{}.Extract(t.Context(), propagation.MapCarrier(carrier)))
+	require.True(t, propagated.IsValid())
+	got := sp.SpanContext()
+	assert.Equal(t, oteltrace.TraceID(ddContext.TraceIDBytes()), got.TraceID())
+	spanID := got.SpanID()
+	assert.Equal(t, ddContext.SpanID(), binary.BigEndian.Uint64(spanID[:]))
+	assert.Equal(t, propagated.TraceID(), got.TraceID())
+	assert.Equal(t, propagated.SpanID(), got.SpanID())
+	assert.Equal(t, propagated.TraceFlags(), got.TraceFlags())
+	// Datadog tracestate fields have no defined order.
+	wantFields := strings.Split(propagated.TraceState().Get("dd"), ";")
+	gotFields := strings.Split(got.TraceState().Get("dd"), ";")
+	slices.Sort(wantFields)
+	slices.Sort(gotFields)
+	assert.Equal(t, wantFields, gotFields)
 }
 
 func TestSpanSetName(t *testing.T) {
