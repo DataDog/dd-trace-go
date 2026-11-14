@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
@@ -25,6 +26,17 @@ func TestInstrumentationReportsOTelSemanticsEnabled(t *testing.T) {
 	internalconfig.CreateNew()
 
 	require.True(t, new(Instrumentation).OTelSemanticsEnabled())
+}
+
+func TestServiceNameWithSourceDoesNotAllocateWhenApplied(t *testing.T) {
+	option := ServiceNameWithSource("service", "source")
+	cfg := tracer.StartSpanConfig{Tags: make(map[string]any, 1)}
+
+	allocs := testing.AllocsPerRun(100, func() {
+		option(&cfg)
+	})
+	require.Zero(t, allocs)
+	require.Equal(t, ServiceOverride{Name: "service", Source: "source"}, cfg.Tags[ext.KeyServiceSource])
 }
 
 func TestInstrumentationStackTrace(t *testing.T) {
