@@ -80,6 +80,5 @@ func restoreCIVisibilityMockModeForTesting() {
 
 // disableAdditionalFeaturesForBootstrapTest prevents bootstrap tests from starting asynchronous backend setup.
 func disableAdditionalFeaturesForBootstrapTest() {
-	additionalFeaturesInitializationOnce = sync.Once{}
-	additionalFeaturesInitializationOnce.Do(func() {})
+	markAdditionalFeaturesInitializedForTesting()
 }
