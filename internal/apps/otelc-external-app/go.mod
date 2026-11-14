@@ -7,6 +7,8 @@ go 1.26.0
 require (
 	github.com/DataDog/dd-trace-go/otelc/all/v2 v2.0.0
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
+	github.com/aws/aws-sdk-go-v2 v1.43.2
+	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.44.0
 )
 
 require (
@@ -221,7 +223,25 @@ replace github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 => ../../../contrib/gofiber/fiber.v2
 
 require (
+	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 v2.13.0-dev.1 // indirect
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.15 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.33 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.33 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.4.34 // indirect
+	github.com/aws/aws-sdk-go-v2/service/eventbridge v1.40.0 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.14 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.9.26 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.10.17 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.13.33 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.19.34 // indirect
+	github.com/aws/aws-sdk-go-v2/service/kinesis v1.43.5 // indirect
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.106.2 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sfn v1.35.7 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sns v1.34.7 // indirect
+	github.com/aws/aws-sdk-go-v2/service/sqs v1.38.8 // indirect
+	github.com/aws/smithy-go v1.27.5 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.1.2 // indirect
@@ -244,3 +264,7 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 => ../../../c
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../../contrib/aws/aws-sdk-go/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 => ../../../contrib/aws/aws-sdk-go
+
+replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/otelc/v2 => ../../../contrib/aws/aws-sdk-go-v2/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 => ../../../contrib/aws/aws-sdk-go-v2
