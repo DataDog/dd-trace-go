@@ -9,6 +9,8 @@ replace github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2 => ../../contrib/go
 replace github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 => ../../contrib/go-chi/chi.v5
 
 require (
+	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/otelc/v2 v2.13.0-dev
+	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2 v2.13.0-dev.1
@@ -26,6 +28,8 @@ require (
 require (
 	github.com/99designs/gqlgen v0.17.97 // indirect
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 v2.13.0-dev.1 // indirect
@@ -37,12 +41,18 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.13.0-dev.1 // indirect
+	github.com/IBM/sarama v1.44.0 // indirect
+	github.com/Shopify/sarama v1.38.1 // indirect
 	github.com/aws/aws-sdk-go v1.55.5 // indirect
 	github.com/bytedance/sonic v1.12.6 // indirect
 	github.com/bytedance/sonic/loader v0.2.1 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudwego/base64x v0.1.4 // indirect
 	github.com/cloudwego/iasm v0.2.0 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/eapache/go-resiliency v1.7.0 // indirect
+	github.com/eapache/go-xerial-snappy v0.0.0-20230731223053-c322873962e3 // indirect
+	github.com/eapache/queue v1.1.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
 	github.com/gin-contrib/sse v1.0.0 // indirect
 	github.com/gin-gonic/gin v1.10.1 // indirect
@@ -51,7 +61,16 @@ require (
 	github.com/go-playground/validator/v10 v10.23.0 // indirect
 	github.com/goccy/go-json v0.10.4 // indirect
 	github.com/gofiber/fiber/v2 v2.52.13 // indirect
+	github.com/golang/snappy v1.0.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
+	github.com/hashicorp/go-uuid v1.0.3 // indirect
+	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
+	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect
+	github.com/jcmturner/gofork v1.7.6 // indirect
+	github.com/jcmturner/gokrb5/v8 v8.4.4 // indirect
+	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
 	github.com/labstack/echo/v4 v4.16.1 // indirect
@@ -63,6 +82,8 @@ require (
 	github.com/mattn/go-runewidth v0.0.21 // indirect
 	github.com/molecule-man/go-brrr v1.1.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
+	github.com/pierrec/lz4/v4 v4.1.22 // indirect
+	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
@@ -188,6 +209,14 @@ replace github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../../contrib/99designs/gqlgen/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ../../contrib/99designs/gqlgen
+
+replace github.com/DataDog/dd-trace-go/contrib/IBM/sarama/otelc/v2 => ../../contrib/IBM/sarama/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 => ../../contrib/IBM/sarama
+
+replace github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/otelc/v2 => ../../contrib/Shopify/sarama/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 => ../../contrib/Shopify/sarama
 
 replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/otelc/v2 => ../../contrib/go.mongodb.org/mongo-driver/otelc
 

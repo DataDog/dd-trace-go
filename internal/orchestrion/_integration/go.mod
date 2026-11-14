@@ -6,6 +6,7 @@ require (
 	cloud.google.com/go/pubsub v1.50.1
 	cloud.google.com/go/pubsub/v2 v2.0.0
 	connectrpc.com/connect v1.21.1
+	example.com/saramadep v0.0.0-00010101000000-000000000000
 	github.com/99designs/gqlgen v0.17.97
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.13.0-dev.1
@@ -89,6 +90,8 @@ require github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 v
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/otelc/v2 v2.13.0-dev.1 // indirect
@@ -129,8 +132,8 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.82.3 // indirect
 	github.com/DataDog/datadog-go/v5 v5.9.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.13.0-dev.1 // indirect
-	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.13.0-dev.1 // indirect
-	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.13.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.13.0-dev.1
@@ -560,6 +563,12 @@ replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 =
 replace example.com/gqlgendep => ./internal/gqlgendep
 
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../../../contrib/99designs/gqlgen/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/IBM/sarama/otelc/v2 => ../../../contrib/IBM/sarama/otelc
+
+replace example.com/saramadep => ./internal/saramadep
+
+replace github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/otelc/v2 => ../../../contrib/Shopify/sarama/otelc
 
 replace example.com/mongodep => ./internal/mongodep
 

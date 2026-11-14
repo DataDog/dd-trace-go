@@ -18,3 +18,47 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestAliasedImport(t *testing.T) {
+	harness.Run(t, new(TestCaseAliasedImport))
+}
+
+func TestAsyncProducer(t *testing.T) {
+	harness.Run(t, new(TestCaseAsyncProducer))
+}
+
+func TestAsyncProducerFromClient(t *testing.T) {
+	harness.Run(t, new(TestCaseAsyncProducerFromClient))
+}
+
+func TestBothForks(t *testing.T) {
+	harness.Run(t, new(TestCaseBothForks))
+}
+
+func TestConsumer(t *testing.T) {
+	harness.Run(t, new(TestCaseConsumer))
+}
+
+func TestConsumerFromClient(t *testing.T) {
+	harness.Run(t, new(TestCaseConsumerFromClient))
+}
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestPackageVar(t *testing.T) {
+	harness.Run(t, new(TestCasePackageVar))
+}
+
+func TestSyncProducer(t *testing.T) {
+	harness.Run(t, new(TestCaseSyncProducer))
+}
+
+func TestSyncProducerFromClient(t *testing.T) {
+	harness.Run(t, new(TestCaseSyncProducerFromClient))
+}
+
+func TestWrappedTwice(t *testing.T) {
+	harness.Run(t, new(TestCaseWrappedTwice))
+}
