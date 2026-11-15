@@ -118,7 +118,7 @@ func (s *Span) spanEventsAsJSONString() string {
 	}
 	events, err := json.Marshal(s.spanEvents)
 	if err != nil {
-		log.Error("failed to marshal span events: %s", err.Error())
+		log.Error("failed to marshal span events: %s", err.Error()) //errtrack:ignore unsupported user-provided span event value
 		return ""
 	}
 	return string(events)
@@ -480,7 +480,14 @@ func (s *Span) setTags(tags map[string]any) {
 	}
 	s.mu.Lock()
 	for k, v := range tags {
+		if k == ext.ServiceName {
+			continue
+		}
 		s.setTagLocked(k, v)
+	}
+	// An explicit service name takes precedence over an integration's service override.
+	if service, ok := tags[ext.ServiceName]; ok {
+		s.setTagLocked(ext.ServiceName, service)
 	}
 	s.mu.Unlock()
 }
@@ -1236,7 +1243,7 @@ func obfuscatedResource(o *obfuscate.Obfuscator, typ, resource string) string {
 	case "sql", "cassandra":
 		oq, err := o.ObfuscateSQLString(resource)
 		if err != nil {
-			log.Error("Error obfuscating stats group resource %q: %v", resource, err.Error())
+			log.Error("Error obfuscating stats group resource %q: %v", resource, err.Error()) //errtrack:ignore unparseable user-provided resource
 			return textNonParsable
 		}
 		return oq.Query

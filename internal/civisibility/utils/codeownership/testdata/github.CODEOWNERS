@@ -1,0 +1,7 @@
+# Default ownership and Go package overrides.
+* @platform
+/go.mod @go-team
+/pkg/api/ @api-team
+/pkg/api/internal/ @security-team @api-team
+/docs/ @docs-team docs@example.com
+/generated/

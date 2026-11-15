@@ -6,9 +6,12 @@
 package redigo
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"net"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -19,6 +22,7 @@ import (
 
 	"github.com/gomodule/redigo/redis"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMain(m *testing.M) {
@@ -255,6 +259,60 @@ func TestTracingDialContext(t *testing.T) {
 
 	spans := mt.FinishedSpans()
 	assert.True(len(spans) > 0)
+}
+
+func TestDialUnixSocket(t *testing.T) {
+	for _, name := range []string{"redis.sock", "redis:6379.sock"} {
+		t.Run(name, func(t *testing.T) {
+			testDialUnixSocket(t, name)
+		})
+	}
+}
+
+func testDialUnixSocket(t *testing.T, name string) {
+	// Unix socket paths are limited to about 100 bytes, which t.TempDir can
+	// exceed on some systems, so use a short directory name.
+	dir, err := os.MkdirTemp("", "redigo")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+	sock := filepath.Join(dir, name)
+
+	ln, err := net.Listen("unix", sock)
+	require.NoError(t, err)
+	defer ln.Close()
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		// Answer a single command, enough for the PING below.
+		r := bufio.NewReader(conn)
+		for range 3 { // *1, $4, PING
+			if _, err := r.ReadString('\n'); err != nil {
+				return
+			}
+		}
+		conn.Write([]byte("+PONG\r\n"))
+	}()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	c, err := Dial("unix", sock)
+	require.NoError(t, err)
+	defer c.Close()
+
+	res, err := c.Do("PING")
+	require.NoError(t, err)
+	assert.Equal(t, "PONG", res)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	span := spans[0]
+	assert.Equal(t, "unix", span.Tag("out.network"))
+	assert.Equal(t, sock, span.Tag(ext.TargetHost))
+	assert.Nil(t, span.Tag(ext.TargetPort))
 }
 
 func TestAnalyticsSettings(t *testing.T) {

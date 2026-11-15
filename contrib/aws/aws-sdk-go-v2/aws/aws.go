@@ -92,7 +92,7 @@ type enricher interface {
 
 type traceMiddleware struct {
 	cfg         *config
-	sqs         enricher
+	sqs         *sqsTracer.Enricher
 	sns         enricher
 	kinesis     enricher
 	eventBridge enricher
@@ -162,7 +162,7 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		// Inject trace context
 		switch serviceID {
 		case "SQS":
-			mw.sqs.EnrichOperation(spanctx, span, in, operation)
+			in = mw.sqs.EnrichOperation(spanctx, span, in, operation)
 		case "SNS":
 			mw.sns.EnrichOperation(spanctx, span, in, operation)
 		case "Kinesis":

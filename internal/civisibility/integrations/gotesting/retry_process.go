@@ -1912,8 +1912,6 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	}
 	cmd.Args = append([]string{executable}, filteredArgs...)
 
-	stdoutCapture.StartCopy()
-	stderrCapture.StartCopy()
 	waitCh, startErr := startProcessRetryChild(ctx, attemptTimer.C(), hooks, cmd)
 	if control != nil {
 		attempt.Err = errors.Join(attempt.Err, control.CloseChildEndpoints())
@@ -1924,6 +1922,8 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		return finishSetupFailure(errors.Join(startErr, releaseTree()), timedOut)
 	}
 	attempt.StartTime = hooks.now()
+	stdoutCapture.StartCopy()
+	stderrCapture.StartCopy()
 	_ = stdoutCapture.CloseParentWriter()
 	_ = stderrCapture.CloseParentWriter()
 	teardownPhase := &processRetryReapPhase{}
@@ -2499,8 +2499,8 @@ func finishProcessRetryTestEvent(
 		}
 		if codeOwners := utils.GetCodeOwners(); codeOwners != nil {
 			if match, found := codeOwners.Match("/" + relativePath); found {
-				test.SetTag(constants.TestCodeOwners, match.GetOwnersString())
-				suite.SetTag(constants.TestCodeOwners, match.GetOwnersString())
+				test.SetTag(constants.TestCodeOwners, match.Tag())
+				suite.SetTag(constants.TestCodeOwners, match.Tag())
 			}
 		}
 		if source.Unskippable {

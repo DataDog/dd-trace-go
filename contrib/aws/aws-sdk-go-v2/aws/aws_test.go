@@ -282,22 +282,11 @@ func TestAppendMiddlewareSqsSendMessage(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
-	expectedStatusCode := 200
-	server := mockAWS(expectedStatusCode)
-	defer server.Close()
-
-	resolver := aws.EndpointResolverFunc(func(_, _ string) (aws.Endpoint, error) {
-		return aws.Endpoint{
-			PartitionID:   "aws",
-			URL:           server.URL,
-			SigningRegion: "eu-west-1",
-		}, nil
-	})
-
+	var sent sqs.SendMessageInput
 	awsCfg := aws.Config{
-		Region:           "eu-west-1",
-		Credentials:      aws.AnonymousCredentials{},
-		EndpointResolver: resolver,
+		Region:      "eu-west-1",
+		Credentials: aws.AnonymousCredentials{},
+		HTTPClient:  captureSQSRequest(&sent),
 	}
 
 	AppendMiddleware(&awsCfg)
@@ -335,11 +324,11 @@ func TestAppendMiddlewareSqsSendMessage(t *testing.T) {
 	assert.Equal(t, "aws.SQS", s.Tag(ext.ServiceName))
 
 	// Check for trace context injection
-	assert.NotNil(t, sendMessageInput.MessageAttributes)
-	assert.Contains(t, sendMessageInput.MessageAttributes, "_datadog")
-	ddAttr := sendMessageInput.MessageAttributes["_datadog"]
-	assert.Equal(t, "String", *ddAttr.DataType)
-	assert.NotEmpty(t, *ddAttr.StringValue)
+	require.Nil(t, sendMessageInput.MessageAttributes)
+	require.Contains(t, sent.MessageAttributes, "_datadog")
+	ddAttr := sent.MessageAttributes["_datadog"]
+	assert.Equal(t, "String", aws.ToString(ddAttr.DataType))
+	require.NotEmpty(t, aws.ToString(ddAttr.StringValue))
 
 	// Decode and verify the injected trace context
 	var traceContext map[string]string

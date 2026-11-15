@@ -271,7 +271,7 @@ type Config struct {
 	// OTEL_EXPORTER_OTLP_TRACES_HEADERS, or OTEL_EXPORTER_OTLP_HEADERS when the former is empty,
 	// plus Content-Type: application/x-protobuf.
 	otlpTraceHeaders map[string]string
-	// otlpSpanMetricsEnabled controls OTLP span metrics export; nil auto-enables when otlpExportMode && runtimeMetricsOtel.
+	// otlpSpanMetricsEnabled controls OTLP span metrics export; nil disables it.
 	otlpSpanMetricsEnabled *bool
 	// otlpMetricsURL is the resolved OTLP metrics endpoint (e.g. http://host:4318/v1/metrics).
 	otlpMetricsURL string
@@ -2150,14 +2150,14 @@ func (c *Config) OTLPTraceHeaders() map[string]string {
 	return maps.Clone(c.otlpTraceHeaders)
 }
 
-// OTLPSpanMetricsEnabled reports whether span metrics export is active; auto-enables when OTEL_TRACES_EXPORTER=otlp and DD_METRICS_OTEL_ENABLED=true.
+// OTLPSpanMetricsEnabled reports whether OTLP span metrics export is explicitly enabled.
 func (c *Config) OTLPSpanMetricsEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.otlpSpanMetricsEnabled != nil {
 		return *c.otlpSpanMetricsEnabled
 	}
-	return c.otlpExportMode && c.runtimeMetricsOtel
+	return false
 }
 
 func (c *Config) SetOTLPSpanMetricsEnabled(enabled bool, origin telemetry.Origin, product ...Product) {

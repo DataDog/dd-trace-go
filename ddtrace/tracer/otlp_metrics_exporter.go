@@ -8,7 +8,6 @@ package tracer
 import (
 	"encoding/json"
 
-	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	otlpmetrics "go.opentelemetry.io/proto/otlp/metrics/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -38,9 +37,8 @@ func newOTLPMetricsExporter(cfg *internalconfig.Config) *otlpMetricsExporter {
 	}
 }
 
-// export converts payload to an OTLP ExportMetricsServiceRequest and sends it.
-func (e *otlpMetricsExporter) export(payload *pb.ClientStatsPayload) error {
-	rms := buildOTLPMetricsRequest(payload, e.cfg)
+// export sends the OTLP ResourceMetrics built for one stats flush.
+func (e *otlpMetricsExporter) export(rms []*otlpmetrics.ResourceMetrics) error {
 	if len(rms) == 0 {
 		return nil
 	}
