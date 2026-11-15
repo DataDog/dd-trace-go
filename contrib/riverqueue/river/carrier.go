@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"slices"
 
 	"github.com/riverqueue/river/rivertype"
 
@@ -97,16 +98,12 @@ func withTraceContext(metadata, traceContext []byte) ([]byte, error) {
 // spliceTraceContext returns the JSON object {"_datadog":traceContext,rest},
 // where rest holds the members of another object, without its braces.
 func spliceTraceContext(rest, traceContext []byte) []byte {
-	out := make([]byte, 0, len(metadataKey)+len(traceContext)+len(rest)+6)
-	out = append(out, '{')
-	out = append(out, quotedMetadataKey...)
-	out = append(out, ':')
-	out = append(out, traceContext...)
-	if len(rest) > 0 {
-		out = append(out, ',')
-		out = append(out, rest...)
+	// slices.Concat allocates once and panics instead of overflowing if the
+	// total length doesn't fit in an int.
+	if len(rest) == 0 {
+		return slices.Concat([]byte{'{'}, quotedMetadataKey, []byte{':'}, traceContext, []byte{'}'})
 	}
-	return append(out, '}')
+	return slices.Concat([]byte{'{'}, quotedMetadataKey, []byte{':'}, traceContext, []byte{','}, rest, []byte{'}'})
 }
 
 // extractFromMetadata returns the trace context stored in a job's metadata, or

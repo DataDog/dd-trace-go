@@ -30,7 +30,7 @@
 // span and re-raised with their original value, so River still records them.
 //
 // Under Orchestrion, the middleware is added to every river.Client automatically.
-package river // import "github.com/DataDog/dd-trace-go/contrib/riverqueue/river/v2"
+package river
 
 import (
 	"context"
