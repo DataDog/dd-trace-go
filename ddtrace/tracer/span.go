@@ -440,6 +440,32 @@ func safeStringerValue(v fmt.Stringer, original any) (result string) {
 	return v.String()
 }
 
+// safeErrorMessage returns err.Error(). If Error panics, for example on a
+// typed-nil pointer or a struct with a nil field, it returns a placeholder
+// naming the error type, so the span lock is not left held and the trace is
+// not lost. Unlike safeStringerValue, every panic is recovered on purpose: a
+// re-raised panic would skip finishing the span, and the trace would be lost.
+func safeErrorMessage(err error) (msg string) {
+	defer func() {
+		if recover() != nil {
+			msg = fmt.Sprintf("<error message unavailable: %T.Error panicked>", err)
+		}
+	}()
+	return err.Error()
+}
+
+// safeErrorDetails returns fmt.Sprintf("%+v", err). fmt recovers panics in
+// Format, but re-panics when rendering the panic value itself panics. In that
+// case it returns a placeholder naming the error type.
+func safeErrorDetails(err error) (details string) {
+	defer func() {
+		if recover() != nil {
+			details = fmt.Sprintf("<error details unavailable: %T formatting panicked>", err)
+		}
+	}()
+	return fmt.Sprintf("%+v", err)
+}
+
 // SetTag adds a set of key/value metadata to the span.
 func (s *Span) SetTag(key string, value any) {
 	if s == nil {
@@ -779,14 +805,14 @@ func (s *Span) setTagErrorLocked(value any, cfg errorConfig) {
 		// if anyone sets an error value as the tag, be nice here
 		// and provide all the benefits.
 		s.setErrorFlagLocked(true)
-		s.setMetaLocked(ext.ErrorMsg, v.Error())
+		s.setMetaLocked(ext.ErrorMsg, safeErrorMessage(v))
 		s.setMetaLocked(ext.ErrorType, reflect.TypeOf(v).String())
 		if cfg.noDebugStack {
 			return
 		}
 		switch v.(type) {
 		case xerrors.Formatter, fmt.Formatter, *errortrace.TracerError:
-			s.setMetaLocked(ext.ErrorStack, fmt.Sprintf("%+v", v))
+			s.setMetaLocked(ext.ErrorStack, safeErrorDetails(v))
 		}
 		handlingStack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
 		s.setMetaLocked(ext.ErrorHandlingStack, handlingStack)
