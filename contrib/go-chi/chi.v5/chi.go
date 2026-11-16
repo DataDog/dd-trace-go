@@ -39,9 +39,11 @@ func init() {
 // WAF gets the route and the path parameters that chi knows when the middleware
 // starts, as before the route was reported (for example the parameters of an
 // endpoint middleware or of a parent mount; they can block). It adds no newly
-// discovered path parameters: with Use before routing, chi knows none, so a rule on
-// path parameters does not match. Use r.With(Middleware()) on the endpoint for these
-// rules: chi knows the route and its path parameters before the middleware starts.
+// discovered path parameters: with Use at the root before routing, chi knows no path
+// parameters yet, so a rule on path parameters does not match (Use in a sub-router
+// knows the parameters of the parent mount). Use r.With(Middleware()) on the
+// endpoint for these rules: chi knows the route and its path parameters before the
+// middleware starts.
 //
 // After the handler returns, the middleware reports the route that chi selected to
 // AppSec (API Security uses it as the sampling key of the endpoint). This report
