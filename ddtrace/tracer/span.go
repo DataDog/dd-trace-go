@@ -480,7 +480,14 @@ func (s *Span) setTags(tags map[string]any) {
 	}
 	s.mu.Lock()
 	for k, v := range tags {
+		if k == ext.ServiceName {
+			continue
+		}
 		s.setTagLocked(k, v)
+	}
+	// An explicit service name takes precedence over an integration's service override.
+	if service, ok := tags[ext.ServiceName]; ok {
+		s.setTagLocked(ext.ServiceName, service)
 	}
 	s.mu.Unlock()
 }

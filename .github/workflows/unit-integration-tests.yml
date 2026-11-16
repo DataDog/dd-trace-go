@@ -288,8 +288,7 @@ jobs:
     needs:
       - set-up
       - test-contrib-matrix
-    runs-on:
-      group: "APM Larger Runners"
+    runs-on: ubuntu-latest
     if: '!cancelled()'
     continue-on-error: true
     steps:
