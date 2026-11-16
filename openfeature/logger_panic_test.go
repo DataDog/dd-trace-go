@@ -287,9 +287,10 @@ func providerGoroutines() []string {
 // logger and before starting the test's own provider: a stray goroutine
 // would log into the swapped logger, which can panic, stall or fail
 // assertions on what was logged. Use cleanupProvider in the leaking test.
-// This targeted stack scan is used instead of goleak: goleak runs at test end
-// and flags every goroutine, while this runs mid-suite, names the provider's
-// goroutines, and reports the leaking stack.
+// This targeted stack scan is used instead of goleak: it looks only for the
+// provider's named goroutines and reports the leaking stack directly, so the
+// check stays scoped to provider-owned leaks without maintaining an ignore
+// list for every goroutine the test binary's dependencies run.
 func requireNoStrayProviderGoroutines(tb testing.TB) {
 	tb.Helper()
 	// cleanupProvider joins every goroutine through the channel it closes on
