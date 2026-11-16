@@ -222,12 +222,23 @@ func TestExactSpans(t *testing.T) {
 			},
 		},
 		{
+			// The query observer stays unset when the contrib is told not to
+			// trace queries.
+			name:         "ContribCreateTracedSessionQueryDisabled",
+			otelcQueries: 0, orchestrionQueries: 0,
+			session: func(t *testing.T) *gocql.Session {
+				session, err := gocqltrace.CreateTracedSession(assignedCluster(host), gocqltrace.WithTraceQuery(false))
+				require.NoError(t, err)
+				return session
+			},
+		},
+		{
 			// The observers are set on the cluster dependency.NewCluster returns.
 			name:         "DependencyNewCluster",
 			otelcQueries: 1, orchestrionQueries: 1,
 			session: func(t *testing.T) *gocql.Session {
 				cluster := gocqldep.NewCluster(host)
-				assert.IsType(t, &gocqltrace.Observer{}, cluster.QueryObserver)
+				assert.NotNil(t, cluster.QueryObserver)
 				return createSession(t, cluster)
 			},
 		},

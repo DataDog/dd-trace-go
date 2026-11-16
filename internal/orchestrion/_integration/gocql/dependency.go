@@ -15,8 +15,6 @@ import (
 	"github.com/gocql/gocql"
 	"github.com/stretchr/testify/require"
 
-	gocqltrace "github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2"
-
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
@@ -32,7 +30,7 @@ func (tc *TestCaseDependency) Setup(ctx context.Context, t *testing.T) {
 	tc.setup(ctx, t)
 
 	cluster := gocqldep.NewCluster(tc.hostPort)
-	require.IsType(t, &gocqltrace.Observer{}, cluster.QueryObserver)
+	require.NotNil(t, cluster.QueryObserver)
 	var err error
 	tc.session, err = cluster.CreateSession()
 	require.NoError(t, err)

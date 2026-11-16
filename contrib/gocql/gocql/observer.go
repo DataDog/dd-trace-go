@@ -29,7 +29,9 @@ func CreateTracedSession(cluster *gocql.ClusterConfig, opts ...WrapOption) (*goc
 	if cfg.traceConnect {
 		cluster.ConnectObserver = obs
 	}
-	return cluster.CreateSession()
+	// gocql.NewSession, not cluster.CreateSession: in an otelc build, a hook on
+	// CreateSession sets the observers this function left nil.
+	return gocql.NewSession(*cluster)
 }
 
 // NewObserver creates a new Observer to trace gocql.

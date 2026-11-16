@@ -15,24 +15,46 @@ import (
 	gocqltrace "github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2"
 )
 
-// ObserveCluster sets each nil observer of cluster to one contrib Observer
-// built from cluster, and reports whether it set any. Observers already set,
-// by the application or by the contrib's CreateTracedSession, are kept.
+// autoObserver is an observer that ObserveCluster set, so that a later call
+// can build it again from the cluster's current hosts.
+type autoObserver struct{ *gocqltrace.Observer }
+
+// ObserveCluster sets each observer of cluster that is nil, or that an earlier
+// call set, to one contrib Observer built from cluster, and reports whether it
+// set any. The observer reads the contact points from cluster.Hosts, so hosts
+// set after gocql.NewCluster are used once the session is created. Observers
+// set by the application or by the contrib's CreateTracedSession are kept.
 func ObserveCluster(cluster *gocql.ClusterConfig) bool {
-	if cluster == nil || (cluster.QueryObserver != nil && cluster.BatchObserver != nil && cluster.ConnectObserver != nil) {
+	if cluster == nil {
 		return false
 	}
-	obs := gocqltrace.NewObserver(cluster)
-	if cluster.QueryObserver == nil {
-		cluster.QueryObserver = obs
+	var obs autoObserver
+	observer := func() autoObserver {
+		if obs.Observer == nil {
+			obs = autoObserver{gocqltrace.NewObserver(cluster)}
+		}
+		return obs
 	}
-	if cluster.BatchObserver == nil {
-		cluster.BatchObserver = obs
+	if replaceable(cluster.QueryObserver) {
+		cluster.QueryObserver = observer()
 	}
-	if cluster.ConnectObserver == nil {
-		cluster.ConnectObserver = obs
+	if replaceable(cluster.BatchObserver) {
+		cluster.BatchObserver = observer()
 	}
-	return true
+	if replaceable(cluster.ConnectObserver) {
+		cluster.ConnectObserver = observer()
+	}
+	return obs.Observer != nil
+}
+
+// replaceable reports whether ObserveCluster may set an observer: it is nil,
+// or ObserveCluster set it.
+func replaceable(o any) bool {
+	if o == nil {
+		return true
+	}
+	_, ok := o.(autoObserver)
+	return ok
 }
 
 // BeforeCreateSession passes a copy of cluster with the observers set on to
