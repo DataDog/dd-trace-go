@@ -59,6 +59,7 @@ MODE=$(jq -r '.mode' "$METRICS_FILE")
 SIZE=$(jq -r '.metrics.binary_size_bytes' "$METRICS_FILE")
 GO_VERSION=$(jq -r '.go_version' "$METRICS_FILE")
 ORCHESTRION_VERSION=$(jq -r '.orchestrion_version // empty' "$METRICS_FILE")
+OTELC_VERSION=$(jq -r '.otelc_version // empty' "$METRICS_FILE")
 
 # Read all duration samples into a bash array
 mapfile -t DURATIONS < <(jq -r '.metrics.build_duration_samples[]' "$METRICS_FILE")
@@ -79,6 +80,9 @@ message "  Dependencies attributed: ${#DEP_KEYS[@]}"
 message "  Go version: $GO_VERSION"
 if [[ -n "$ORCHESTRION_VERSION" ]]; then
   message "  Orchestrion version: $ORCHESTRION_VERSION"
+fi
+if [[ -n "$OTELC_VERSION" ]]; then
+  message "  Otelc version: $OTELC_VERSION"
 fi
 
 # Publish measures to CI Visibility — one indexed measure per duration
@@ -138,6 +142,10 @@ TAGS=(
 
 if [[ -n "$ORCHESTRION_VERSION" ]]; then
   TAGS+=("orchestrion.version:${ORCHESTRION_VERSION}")
+fi
+
+if [[ -n "$OTELC_VERSION" ]]; then
+  TAGS+=("otelc.version:${OTELC_VERSION}")
 fi
 
 for i in "${!DEP_NAMES[@]}"; do

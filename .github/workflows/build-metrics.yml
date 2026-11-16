@@ -3,9 +3,10 @@ name: Build Metrics
 # Build Metrics Workflow
 #
 # Measures build time and binary size for representative Orchestrion integration samples
-# built two ways from identical source:
+# built three ways from identical source:
 #   - Standard Go toolchain (go test -c)
 #   - Orchestrion (go test -c -toolexec='orchestrion toolexec')
+#   - otelc (go test -c -toolexec='otelc toolexec')
 #
 # Key features:
 # - Cold cache measurement: cleans build cache before each measurement to capture full compilation cost
@@ -18,7 +19,7 @@ name: Build Metrics
 #   is published as ci.cache.*.hit measures for hit-rate tracking
 # - Datadog CI Visibility: publishes metrics and tags to job spans for dashboard trending and regression monitoring
 # - Runs on: Pull requests (when this file, scripts/*, an aspect orchestrion.yml, or any go.mod changes) and pushes to main
-# - Tags metrics by: build.toolchain, build.sample, build.cache, go.version, orchestrion.version
+# - Tags metrics by: build.toolchain, build.sample, build.cache, go.version, orchestrion.version, otelc.version
 #
 # Dashboard: View trends in Datadog CI Visibility (filter @git.branch:main, split by build.toolchain)
 # Monitor: Alerts on binary size or build time regressions >5% (size) or >25% (duration) vs main baseline
@@ -35,6 +36,7 @@ on:
       # patterns win, so exclude it. Aspect files still match.
       - '!.github/workflows/orchestrion.yml'
       - '**/go.mod'
+      - '**/*otelc.yaml'
   push:
     branches:
       - main
@@ -48,6 +50,7 @@ on:
       # patterns win, so exclude it. Aspect files still match.
       - '!.github/workflows/orchestrion.yml'
       - '**/go.mod'
+      - '**/*otelc.yaml'
   workflow_dispatch:
 
 concurrency:
@@ -123,7 +126,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [standard, orchestrion]
+        mode: [standard, orchestrion, otelc]
         sample:
           - 99designs.gqlgen
           - aerospike.v7
