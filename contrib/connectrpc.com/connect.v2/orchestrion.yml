@@ -1,0 +1,79 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026 Datadog, Inc.
+---
+# yaml-language-server: $schema=https://datadoghq.dev/orchestrion/schema.json
+meta:
+  name: github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect.v2/v2
+  description: |-
+    Connect is an RPC framework built on Protocol Buffers and net/http.
+
+    ### Details & Caveats
+    - Every client is built by `connect.NewClient`, and every server by `connect.NewServer`, so
+      generated clients, the `grpchealth` and `grpcreflect` clients, every registered service
+      (including `grpchealth` and `grpcreflect`) and the unknown handler are all instrumented. The
+      in-process transport (`connectinprocess`) is supported.
+    - Calls routed to the unknown handler (`connect.Server.SetUnknownHandler`) are traced as
+      `bidi_streaming` RPCs of an unrecognized method: the client chose their procedure, so their
+      server spans have the resource and `rpc.method` `_OTHER`, and the requested method as
+      `rpc.method_original`.
+    - The interceptor is appended last, so it is the innermost one: RPCs rejected by earlier
+      interceptors produce no span from it, and RPCs that the server transport rejects before the
+      interceptor chain runs (for example a `connecthttp` request with an unsupported HTTP method,
+      content type or compression, or an invalid timeout) produce no server span.
+    - Calls through function values, such as `f := connect.NewClient`, are not matched.
+    - Calls that pass a multi-value expression as their arguments, such as
+      `connect.NewServer(f())`, fail to compile once woven: opt them out with
+      `//orchestrion:ignore` and add the interceptor manually.
+    - Opt a call out with an `//orchestrion:ignore` comment.
+
+aspects:
+  - id: Client
+    join-point:
+      all-of:
+        - function-call: connectrpc.com/connect/v2.NewClient
+        - not:
+            import-path: connectrpc.com/connect/v2
+        - not:
+            import-path: github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect.v2/v2
+    advice:
+      # The interceptor is appended last, so it is the innermost one, as in the v1 integration, and a
+      # manually added connecttrace interceptor (outer) takes precedence. A spread `interceptors...`
+      # slice is copied by slices.Concat into a new slice, so neither it nor any slice sharing its
+      # backing array is written, with every Orchestrion version (append-args writes into it in
+      # v1.14.0 and earlier, which lack DataDog/orchestrion#929). The template references only
+      # qualified identifiers. NewClient takes one argument before the interceptors.
+      - wrap-expression:
+          imports:
+            connect: connectrpc.com/connect/v2
+            connecttrace: github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect.v2/v2
+            slices: slices
+          template: |-
+            {{- if .AST.Ellipsis -}}
+            {{ .AST.Fun }}({{ index .AST.Args 0 }}, slices.Concat[[]connect.ClientInterceptor]({{ index .AST.Args 1 }}, []connect.ClientInterceptor{connecttrace.NewClientInterceptor()})...)
+            {{- else -}}
+            {{ .AST.Fun }}({{ range .AST.Args }}{{ . }}, {{ end }}connecttrace.NewClientInterceptor())
+            {{- end -}}
+
+  - id: Server
+    join-point:
+      all-of:
+        - function-call: connectrpc.com/connect/v2.NewServer
+        - not:
+            import-path: connectrpc.com/connect/v2
+        - not:
+            import-path: github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect.v2/v2
+    advice:
+      # See the Client aspect. NewServer takes no argument before the interceptors.
+      - wrap-expression:
+          imports:
+            connect: connectrpc.com/connect/v2
+            connecttrace: github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect.v2/v2
+            slices: slices
+          template: |-
+            {{- if .AST.Ellipsis -}}
+            {{ .AST.Fun }}(slices.Concat[[]connect.ServerInterceptor]({{ index .AST.Args 0 }}, []connect.ServerInterceptor{connecttrace.NewServerInterceptor()})...)
+            {{- else -}}
+            {{ .AST.Fun }}({{ range .AST.Args }}{{ . }}, {{ end }}connecttrace.NewServerInterceptor())
+            {{- end -}}

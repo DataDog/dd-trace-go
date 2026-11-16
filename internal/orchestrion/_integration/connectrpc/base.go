@@ -99,8 +99,8 @@ func connectSpan(name string, r rpc, children ...*trace.Trace) *trace.Trace {
 }
 
 // messageSpans returns n connect.message spans. They have no span.kind because they are never
-// trace roots here. The harness returns the first span matching each expectation, so identical
-// siblings all match the same span: n documents the expected count but cannot enforce it.
+// trace roots here. Every test case implements ExpectedSpanCount, so the harness matches each
+// expected span to a different span: the parent needs n of them, and the count rules out more.
 func messageSpans(r rpc, n int) []*trace.Trace {
 	spans := make([]*trace.Trace, 0, n)
 	for range n {

@@ -29,6 +29,7 @@ const (
 	PackageConfluentKafkaGo     Package = "confluentinc/confluent-kafka-go/kafka"
 	PackageConfluentKafkaGoV2   Package = "confluentinc/confluent-kafka-go/kafka.v2"
 	PackageConnectRPC           Package = "connectrpc.com/connect"
+	PackageConnectRPCV2         Package = "connectrpc.com/connect.v2"
 	PackageDatabaseSQL          Package = "database/sql"
 	PackageDimfeldHTTPTreeMuxV5 Package = "dimfeld/httptreemux.v5"
 	PackageGoElasticSearchV6    Package = "elastic/go-elasticsearch.v6"
@@ -315,6 +316,10 @@ var packages = map[Package]PackageInfo{
 	},
 	PackageConnectRPC: {
 		TracedPackage: "connectrpc.com/connect",
+		EnvVarPrefix:  "CONNECT",
+	},
+	PackageConnectRPCV2: {
+		TracedPackage: "connectrpc.com/connect/v2",
 		EnvVarPrefix:  "CONNECT",
 	},
 	PackageDatabaseSQL: {

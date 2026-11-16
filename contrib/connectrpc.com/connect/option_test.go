@@ -6,15 +6,19 @@
 package connect
 
 import (
+	"cmp"
 	"context"
 	"errors"
-	"math"
+	"maps"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 
 	connectrpc "connectrpc.com/connect"
 
+	"github.com/DataDog/dd-trace-go/v2/contrib/connectrpc.com/connectshared"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -28,6 +32,8 @@ import (
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
+// TestOptions checks that each option configures the setting it documents; connectshared tests the
+// settings themselves.
 func TestOptions(t *testing.T) {
 	for _, test := range []struct {
 		name  string
@@ -37,85 +43,111 @@ func TestOptions(t *testing.T) {
 		{
 			name: "defaults",
 			check: func(t *testing.T, cfg *config) {
-				assert.Nil(t, cfg.service.Load())
-				assert.Equal(t, map[connectrpc.Code]bool{connectrpc.CodeCanceled: true}, cfg.nonErrorCodes)
-				assert.Nil(t, cfg.errCheck)
-				assert.True(t, cfg.traceStreamCalls)
-				assert.True(t, cfg.traceStreamMessages)
-				assert.False(t, cfg.noDebugStack)
-				assert.Empty(t, cfg.untracedMethods)
-				assert.False(t, cfg.withMetadataTags)
-				assert.False(t, cfg.withRequestTags)
-				assert.False(t, cfg.withErrorDetailTags)
-				assert.True(t, math.IsNaN(cfg.analyticsRate))
-				assert.Empty(t, cfg.spanOpts)
-				assert.Nil(t, cfg.customTags)
-				for _, key := range []string{"authorization", "cookie", "traceparent", "tracestate", "baggage", "b3", "x-datadog-trace-id", "x-api-key"} {
-					assert.Contains(t, cfg.ignoredMetadata, key)
+				assert.True(t, cfg.core.StreamCalls())
+				assert.True(t, cfg.core.StreamMessages())
+				assert.True(t, traces(cfg, unaryProcedure))
+				assert.False(t, cfg.core.MetadataTags())
+				assert.False(t, cfg.core.RequestTags())
+				// CodeCanceled is the only non-error code, no error check suppresses errors, and recorded
+				// errors have a stack trace but no detail tags.
+				assert.False(t, recordsError(t, cfg, connectrpc.NewError(connectrpc.CodeCanceled, errors.New("canceled"))))
+				failed := finishedWith(t, cfg, errorWithDetails(connectrpc.CodeNotFound))
+				assert.NotNil(t, failed.Tag(ext.ErrorMsg))
+				assert.NotNil(t, failed.Tag(ext.ErrorHandlingStack))
+				assert.Nil(t, failed.Tag("connect.status_details._0"))
+				for _, span := range startedSpans(t, cfg) {
+					assert.Equal(t, "connectrpc.com/connect", span.Tag(ext.Component), span.OperationName())
 				}
 			},
 		},
 		{
 			name: "WithService", opts: []Option{WithService("svc")},
 			check: func(t *testing.T, cfg *config) {
-				require.NotNil(t, cfg.service.Load())
-				assert.Equal(t, "svc", cfg.service.Load().name)
+				for _, span := range startedSpans(t, cfg) {
+					assert.Equal(t, "svc", span.Tag(ext.ServiceName), span.OperationName())
+					assert.Equal(t, "opt.with_service", span.Tag(ext.KeyServiceSource), span.OperationName())
+				}
 			},
 		},
 		{
 			name: "WithStreamCalls and WithStreamMessages", opts: []Option{WithStreamCalls(false), WithStreamMessages(false)},
 			check: func(t *testing.T, cfg *config) {
-				assert.False(t, cfg.traceStreamCalls)
-				assert.False(t, cfg.traceStreamMessages)
+				assert.False(t, cfg.core.StreamCalls())
+				assert.False(t, cfg.core.StreamMessages())
 			},
 		},
-		{name: "NoDebugStack", opts: []Option{NoDebugStack()}, check: func(t *testing.T, cfg *config) { assert.True(t, cfg.noDebugStack) }},
+		{name: "NoDebugStack", opts: []Option{NoDebugStack()}, check: assertNoDebugStack},
 		{
 			name: "NonErrorCodes replaces the defaults", opts: []Option{NonErrorCodes(connectrpc.CodeNotFound, connectrpc.CodeAborted)},
 			check: func(t *testing.T, cfg *config) {
-				assert.Equal(t, map[connectrpc.Code]bool{connectrpc.CodeNotFound: true, connectrpc.CodeAborted: true}, cfg.nonErrorCodes)
+				assert.False(t, recordsError(t, cfg, connectrpc.NewError(connectrpc.CodeNotFound, errors.New("nope"))))
+				assert.False(t, recordsError(t, cfg, connectrpc.NewError(connectrpc.CodeAborted, errors.New("aborted"))))
+				assert.True(t, recordsError(t, cfg, connectrpc.NewError(connectrpc.CodeCanceled, errors.New("canceled"))))
 			},
 		},
-		{name: "NonErrorCodes without codes", opts: []Option{NonErrorCodes()}, check: func(t *testing.T, cfg *config) { assert.Empty(t, cfg.nonErrorCodes) }},
+		{
+			name: "NonErrorCodes without codes", opts: []Option{NonErrorCodes()},
+			check: func(t *testing.T, cfg *config) {
+				assert.True(t, recordsError(t, cfg, connectrpc.NewError(connectrpc.CodeCanceled, errors.New("canceled"))))
+			},
+		},
 		{
 			name: "WithErrorCheck", opts: []Option{WithErrorCheck(func(string, error) bool { return false })},
-			check: func(t *testing.T, cfg *config) { assert.NotNil(t, cfg.errCheck) },
+			check: func(t *testing.T, cfg *config) {
+				assert.False(t, recordsError(t, cfg, connectrpc.NewError(connectrpc.CodeInternal, errors.New("boom"))))
+			},
 		},
 		{
 			name: "WithUntracedMethods", opts: []Option{WithUntracedMethods(unaryProcedure, bidiProcedure)},
 			check: func(t *testing.T, cfg *config) {
-				assert.Equal(t, map[string]struct{}{unaryProcedure: {}, bidiProcedure: {}}, cfg.untracedMethods)
+				assert.False(t, traces(cfg, unaryProcedure))
+				assert.False(t, traces(cfg, bidiProcedure))
+				assert.True(t, traces(cfg, clientStreamProcedure))
 			},
 		},
 		{
 			name: "WithIgnoredMetadata lowercases keys", opts: []Option{WithMetadataTags(), WithIgnoredMetadata("X-Secret")},
 			check: func(t *testing.T, cfg *config) {
-				assert.True(t, cfg.withMetadataTags)
-				assert.Contains(t, cfg.ignoredMetadata, "x-secret")
-				assert.Contains(t, cfg.ignoredMetadata, "authorization", "the defaults are kept")
+				assert.True(t, cfg.core.MetadataTags())
+				mt := mocktracer.Start()
+				t.Cleanup(mt.Stop)
+				span := tracer.StartSpan("metadata")
+				cfg.core.SetMetadataTags(span, maps.All(http.Header{"X-Test": {"a"}, "X-Secret": {"hidden"}, "Authorization": {"Bearer secret"}}))
+				span.Finish()
+				// The default ignored keys are kept.
+				assert.Equal(t, map[string]any{tagRequestMetadataPrefix + "x-test.0": "a"}, tagsWithPrefix(mt.FinishedSpans()[0], tagRequestMetadataPrefix))
 			},
 		},
 		{
 			name: "WithRequestTags and WithErrorDetailTags", opts: []Option{WithRequestTags(), WithErrorDetailTags()},
 			check: func(t *testing.T, cfg *config) {
-				assert.True(t, cfg.withRequestTags)
-				assert.True(t, cfg.withErrorDetailTags)
+				assert.True(t, cfg.core.RequestTags())
+				assert.Equal(t, "seconds:1", finishedWith(t, cfg, errorWithDetails(connectrpc.CodeInternal)).Tag("connect.status_details._0"))
 			},
 		},
 		{
 			name: "WithCustomTag", opts: []Option{WithCustomTag("a", 1), WithCustomTag("b", "two"), WithCustomTag("a", "one")},
 			check: func(t *testing.T, cfg *config) {
-				assert.Equal(t, map[string]any{"a": "one", "b": "two"}, cfg.tags)
-				assert.NotNil(t, cfg.customTags)
+				for _, span := range startedSpans(t, cfg) {
+					assert.Equal(t, "one", span.Tag("a"), span.OperationName())
+					assert.Equal(t, "two", span.Tag("b"), span.OperationName())
+				}
 			},
 		},
 		{
 			name: "WithSpanOptions appends", opts: []Option{WithSpanOptions(tracer.Tag("a", 1)), WithSpanOptions(tracer.Tag("b", 2), tracer.Tag("c", 3))},
-			check: func(t *testing.T, cfg *config) { assert.Len(t, cfg.spanOpts, 3) },
+			check: func(t *testing.T, cfg *config) {
+				// The tracer stores numeric tags as float64 metrics.
+				for _, span := range startedSpans(t, cfg) {
+					for key, value := range map[string]any{"a": 1.0, "b": 2.0, "c": 3.0} {
+						assert.Equal(t, value, span.Tag(key), span.OperationName())
+					}
+				}
+			},
 		},
 		{
-			name: "OptionFn", opts: []Option{OptionFn(func(cfg *config) { cfg.noDebugStack = true })},
-			check: func(t *testing.T, cfg *config) { assert.True(t, cfg.noDebugStack) },
+			name: "OptionFn", opts: []Option{OptionFn(func(cfg *config) { cfg.core.SetNoDebugStack() })},
+			check: assertNoDebugStack,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -124,109 +156,55 @@ func TestOptions(t *testing.T) {
 	}
 }
 
+// traces reports whether an interceptor configured with cfg traces a call to procedure.
+func traces(cfg *config, procedure string) bool {
+	_, traced := cfg.core.ClaimCall(context.Background(), instrumentation.ComponentServer, procedure, nil)
+	return traced
+}
+
+// finishedWith returns the call span of a unary RPC over Connect that cfg finishes with err.
+func finishedWith(t *testing.T, cfg *config, err error) *mocktracer.Span {
+	t.Helper()
+	mt := mocktracer.Start()
+	t.Cleanup(mt.Stop)
+	cfg.core.FinishSpan(tracer.StartSpan("finish"), err, connectshared.SpanFinish{Procedure: unaryProcedure, Protocol: connectProtocol})
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	return spans[0]
+}
+
+// recordsError reports whether cfg records err on the span it finishes with it.
+func recordsError(t *testing.T, cfg *config, err error) bool {
+	t.Helper()
+	return finishedWith(t, cfg, err).Tag(ext.ErrorMsg) != nil
+}
+
+// assertNoDebugStack checks that cfg records errors without a stack trace.
+func assertNoDebugStack(t *testing.T, cfg *config) {
+	failed := finishedWith(t, cfg, connectrpc.NewError(connectrpc.CodeInternal, errors.New("boom")))
+	assert.NotNil(t, failed.Tag(ext.ErrorMsg))
+	assert.Nil(t, failed.Tag(ext.ErrorHandlingStack))
+}
+
+// startedSpans returns the four spans that startAllSpanKinds starts with cfg.
+func startedSpans(t *testing.T, cfg *config) []*mocktracer.Span {
+	t.Helper()
+	mt := mocktracer.Start()
+	t.Cleanup(mt.Stop)
+	startAllSpanKinds(context.Background(), cfg)
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 4)
+	return spans
+}
+
 func TestService(t *testing.T) {
-	t.Run("WithService", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		startAllSpanKinds(context.Background(), newConfig(WithService("svc")))
-		spans := mt.FinishedSpans()
-		require.Len(t, spans, 4)
-		for _, span := range spans {
-			assert.Equal(t, "svc", span.Tag(ext.ServiceName), span.OperationName())
-			assert.Equal(t, "opt.with_service", span.Tag(ext.KeyServiceSource), span.OperationName())
-		}
-	})
-
-	// With the mock tracer, which does not mark the tracer as started, the default is resolved for
-	// every span.
-	for _, test := range []struct {
-		name        string
-		configFirst bool
-	}{
-		{name: "defaults to the global service"},
-		{name: "default is resolved when spans start", configFirst: true},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			mt := mocktracer.Start()
-			defer mt.Stop()
-			var cfg *config
-			if test.configFirst {
-				cfg = newConfig()
-			}
-			testutils.SetGlobalServiceName(t, "global-svc")
-			if !test.configFirst {
-				cfg = newConfig()
-			}
-			startAllSpanKinds(context.Background(), cfg)
-			spans := mt.FinishedSpans()
-			require.Len(t, spans, 4)
-			for _, span := range spans {
-				assert.Equal(t, "global-svc", span.Tag(ext.ServiceName), span.OperationName())
-				// No service source is reported for the global service.
-				assert.Nil(t, span.Tag(ext.KeyServiceSource), span.OperationName())
-			}
-		})
-	}
-
-	// An empty service on a message span would make the tracer mark it top-level, as the tracer
-	// only then fills in its default service. Call spans, and server message spans without a call
-	// span, get the empty service regardless, so that they don't inherit their parent's.
-	for _, test := range []struct {
-		name string
-		opts []Option
-		// wantReset is the set of spans that don't inherit the parent's service.
-		wantReset map[string]bool
-	}{
-		{
-			name:      "an empty default only applies to call spans",
-			wantReset: map[string]bool{"client call": true, "server call": true},
-		},
-		{
-			name: "an empty default applies to server message spans without a call span", opts: []Option{WithStreamCalls(false)},
-			wantReset: map[string]bool{"client call": true, "server call": true, "server message": true},
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			testutils.SetGlobalServiceName(t, "")
-			mt := mocktracer.Start()
-			defer mt.Stop()
-			cfg := newConfig(test.opts...)
-			parent, ctx := tracer.StartSpanFromContext(context.Background(), "parent", tracer.ServiceName("parent-svc"))
-			names := make([]string, 0, 4)
-			for side, component := range map[string]instrumentation.Component{"client": instrumentation.ComponentClient, "server": instrumentation.ComponentServer} {
-				call, _ := cfg.startCallSpan(ctx, component, bidiProcedure, nil, map[string]any{})
-				call.Finish()
-				cfg.startMessageSpan(ctx, messageTags(bidiSpec, &connectProtocol), component).Finish()
-				names = append(names, side+" call", side+" message")
-			}
-			parent.Finish()
-			spans := mt.FinishedSpans()
-			require.Len(t, spans, len(names)+1)
-			for i, name := range names {
-				span := spans[i]
-				if test.wantReset[name] {
-					assert.NotEqual(t, "parent-svc", span.Tag(ext.ServiceName), name)
-					assert.EqualValues(t, 1, span.Tag("_dd.top_level"), name)
-					// The tracer's own default service is not an override.
-					assert.Nil(t, span.Tag(ext.KeyServiceSource), name)
-					continue
-				}
-				assert.Equal(t, "parent-svc", span.Tag(ext.ServiceName), name)
-				assert.Nil(t, span.Tag("_dd.top_level"), name)
-				if name == "server message" {
-					assert.EqualValues(t, 1, span.Tag("_dd.measured"), name)
-				}
-			}
-		})
-	}
-
 	// With the real tracer and no DD_SERVICE, the spans have the tracer's default service and no
 	// service source.
 	t.Run("empty default reports no service source", func(t *testing.T) {
 		testutils.SetGlobalServiceName(t, "") // restored after the tracer, which sets it, stops
 		tr, agent, err := tracertest.Bootstrap(t, tracer.WithLogger(testutils.DiscardLogger()))
 		require.NoError(t, err)
-		require.Empty(t, newConfig().resolveService().name)
+		require.Empty(t, instr.ServiceName(instrumentation.ComponentDefault, nil))
 		rig := newTestRig(t, nil, nil)
 		_, err = rig.client(unaryProcedure).CallUnary(context.Background(), connectrpc.NewRequest(wrapperspb.String("hello")))
 		require.NoError(t, err)
@@ -239,20 +217,48 @@ func TestService(t *testing.T) {
 		})))
 	})
 
+	// With the real tracer and no DD_SERVICE, message spans have the tracer's default service, not
+	// that of a local parent such as an HTTP server span. Under a call span they are not top-level,
+	// and the server's are measured; without one, they are the entry points of their service.
+	for _, test := range []struct {
+		name  string
+		calls bool
+		spans int
+	}{{name: "with stream calls", calls: true, spans: 9}, {name: "without stream calls", spans: 7}} {
+		t.Run("message spans of the default service/"+test.name, func(t *testing.T) {
+			testutils.SetGlobalServiceName(t, "") // restored after the tracer, which sets it, stops
+			tr, agent, err := tracertest.Bootstrap(t, tracer.WithLogger(testutils.DiscardLogger()))
+			require.NoError(t, err)
+			rig := newTestRig(t, []Option{WithStreamCalls(test.calls), WithCustomTag("side", "server")}, []Option{WithStreamCalls(test.calls)})
+			parent, ctx := tracer.StartSpanFromContext(context.Background(), "http.request",
+				tracer.ServiceName("http.router"), tracer.SpanType(ext.SpanTypeWeb), tracer.Tag(ext.SpanKind, ext.SpanKindServer))
+			runBidi(t, rig.client(bidiProcedure).CallBidiStream(ctx))
+			parent.Finish()
+			tr.Flush()
+			require.Equal(t, test.spans, agent.CountSpans())
+			messages := 0
+			for _, span := range agent.(agenttest.SpanLister).Spans() {
+				if span.Operation != operationMessage {
+					continue
+				}
+				messages++
+				side := cmp.Or(span.Meta["side"], "client")
+				assert.Equal(t, filepath.Base(os.Args[0]), span.Service, side)
+				_, topLevel := span.Metrics["_dd.top_level"]
+				assert.Equal(t, !test.calls, topLevel, "%s: _dd.top_level", side)
+				assert.Equal(t, test.calls && side == "server", span.Metrics["_dd.measured"] == 1, "%s: _dd.measured", side)
+			}
+			assert.Equal(t, 6, messages)
+		})
+	}
+
 	// Orchestrion starts the tracer after package-level clients and handlers are built. This needs
 	// the real tracer: the mock tracer never marks the tracer as started.
 	t.Run("default is cached once the tracer has started", func(t *testing.T) {
 		testutils.SetGlobalServiceName(t, "") // restored after the tracer, which sets it, stops
 		rig := newTestRig(t, []Option{WithCustomTag("side", "server")}, nil)
-		cfg := newConfig()
-		assert.Empty(t, cfg.resolveService().name)
-		assert.Nil(t, cfg.service.Load(), "cached before the tracer started")
-
 		tr, agent, err := tracertest.Bootstrap(t, tracer.WithService("started-svc"), tracer.WithLogger(testutils.DiscardLogger()))
 		require.NoError(t, err)
-		assert.Equal(t, "started-svc", cfg.resolveService().name)
-		require.NotNil(t, cfg.service.Load(), "not cached after the tracer started")
-
 		runBidi(t, rig.client(bidiProcedure).CallBidiStream(context.Background()))
 		tr.Flush()
 		require.Equal(t, 8, agent.CountSpans())
@@ -301,56 +307,6 @@ func TestAnalytics(t *testing.T) {
 }
 
 func TestSpanOptions(t *testing.T) {
-	t.Run("precedence", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		cfg := newConfig(
-			WithSpanOptions(
-				tracer.Tag(ext.RPCMethod, "from-span-option"),
-				tracer.Tag("both", "from-span-option"),
-				tracer.SpanType("from-span-option"),
-			),
-			WithCustomTag(ext.ResourceName, "from-custom-tag"),
-			WithCustomTag("both", "from-custom-tag"),
-		)
-		startAllSpanKinds(context.Background(), cfg)
-		spans := mt.FinishedSpans()
-		require.Len(t, spans, 4)
-		for _, span := range spans {
-			// Custom tags beat the defaults (resource) and span options (both); span options beat
-			// the per-call defaults (rpc.method) and the cached ones (span.type).
-			assert.Equal(t, "from-custom-tag", span.Tag(ext.ResourceName), span.OperationName())
-			assert.Equal(t, "from-custom-tag", span.Tag("both"), span.OperationName())
-			assert.Equal(t, "from-span-option", span.Tag(ext.RPCMethod), span.OperationName())
-			assert.Equal(t, "from-span-option", span.Tag(ext.SpanType), span.OperationName())
-		}
-	})
-
-	// The tracer applies start tags in random map order, so a lost race shows over many spans.
-	for _, test := range []struct {
-		name string
-		opts []Option
-	}{
-		{name: "WithSpanOptions", opts: []Option{WithSpanOptions(tracer.ServiceName("user-svc"))}},
-		{name: "WithSpanOptions and WithService", opts: []Option{WithService("opt-svc"), WithSpanOptions(tracer.ServiceName("user-svc"))}},
-		{name: "WithCustomTag and WithService", opts: []Option{WithService("opt-svc"), WithCustomTag(ext.ServiceName, "user-svc")}},
-	} {
-		t.Run("user service beats the interceptor's/"+test.name, func(t *testing.T) {
-			testutils.SetGlobalServiceName(t, "global-svc")
-			mt := mocktracer.Start()
-			defer mt.Stop()
-			cfg := newConfig(test.opts...)
-			for range 50 {
-				startAllSpanKinds(context.Background(), cfg)
-			}
-			spans := mt.FinishedSpans()
-			require.Len(t, spans, 200)
-			for _, span := range spans {
-				require.Equal(t, "user-svc", span.Tag(ext.ServiceName), span.OperationName())
-			}
-		})
-	}
-
 	t.Run("parent beats the propagated parent", func(t *testing.T) {
 		mt := mocktracer.Start()
 		defer mt.Stop()
@@ -387,95 +343,4 @@ func TestSpanOptions(t *testing.T) {
 		assert.Len(t, mt.FinishedSpans(), 6)
 		assert.EqualValues(t, 6, calls.Load())
 	})
-}
-
-func TestMetadataTags(t *testing.T) {
-	header := http.Header{
-		"X-Test":              {"a", "b"},
-		"X-Secret":            {"hidden"},
-		"X-Other":             {"other"},
-		"Authorization":       {"Bearer secret"},
-		"Cookie":              {"session=secret"},
-		"Traceparent":         {"00-1-2-01"},
-		"X-Datadog-Trace-Id":  {"1"},
-		"B3":                  {"trace-span-1"},
-		"Payload-Bin":         {"binary"},
-		"Ot-Baggage-Secret":   {"secret"},
-		"Proxy-Authorization": {"secret"},
-	}
-	for _, test := range []struct {
-		name string
-		opts []Option
-		want map[string]any
-	}{
-		{name: "disabled by default", want: map[string]any{}},
-		{
-			name: "enabled", opts: []Option{WithMetadataTags()},
-			want: map[string]any{
-				"rpc.request.metadata.x-test.0":   "a",
-				"rpc.request.metadata.x-test.1":   "b",
-				"rpc.request.metadata.x-secret.0": "hidden",
-				"rpc.request.metadata.x-other.0":  "other",
-			},
-		},
-		{
-			name: "ignored keys are case-insensitive", opts: []Option{WithMetadataTags(), WithIgnoredMetadata("X-SECRET", "x-other")},
-			want: map[string]any{"rpc.request.metadata.x-test.0": "a", "rpc.request.metadata.x-test.1": "b"},
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			mt := mocktracer.Start()
-			defer mt.Stop()
-			span := tracer.StartSpan("metadata")
-			setMetadataTags(newConfig(test.opts...), header, span)
-			span.Finish()
-			assert.Equal(t, test.want, tagsWithPrefix(mt.FinishedSpans()[0], "rpc.request.metadata."))
-		})
-	}
-
-	t.Run("ignored keys are per configuration", func(t *testing.T) {
-		mt := mocktracer.Start()
-		defer mt.Stop()
-		_ = newConfig(WithIgnoredMetadata("x-test"))
-		span := tracer.StartSpan("metadata")
-		setMetadataTags(newConfig(WithMetadataTags()), header, span)
-		span.Finish()
-		assert.Equal(t, "a", metadataTag(mt.FinishedSpans()[0], "x-test"))
-	})
-
-	t.Run("nil span", func(t *testing.T) {
-		assert.NotPanics(t, func() { setMetadataTags(newConfig(WithMetadataTags()), header, nil) })
-	})
-}
-
-// TestErrorCheckArguments checks what WithErrorCheck is called with: the procedure and the error,
-// but only for errors that the NonErrorCodes rules did not already suppress.
-func TestErrorCheckArguments(t *testing.T) {
-	type call struct {
-		procedure string
-		err       error
-	}
-	boom := connectrpc.NewError(connectrpc.CodeInternal, errors.New("boom"))
-	for _, test := range []struct {
-		name string
-		err  error
-		want []call
-	}{
-		{name: "error", err: boom, want: []call{{procedure: unaryProcedure, err: boom}}},
-		{name: "suppressed by code", err: connectrpc.NewError(connectrpc.CodeCanceled, errors.New("canceled"))},
-		{name: "uncoded cancellation", err: context.Canceled},
-		{name: "nil", err: nil},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			mt := mocktracer.Start()
-			defer mt.Stop()
-			var calls []call
-			cfg := newConfig(WithErrorCheck(func(procedure string, err error) bool {
-				calls = append(calls, call{procedure: procedure, err: err})
-				return true
-			}))
-			finishSpan(tracer.StartSpan("check"), test.err, unaryProcedure, &connectProtocol, finishMode{}, cfg)
-			assert.Equal(t, test.want, calls)
-		})
-	}
 }

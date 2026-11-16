@@ -59,6 +59,8 @@ func (tc *TestCaseBidiStream) Run(ctx context.Context, t *testing.T) {
 	tc.stop()
 }
 
+func (*TestCaseBidiStream) ExpectedSpanCount() int { return 14 }
+
 func (tc *TestCaseBidiStream) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		// Send x2, then Receive x3 (two responses and the EOF).

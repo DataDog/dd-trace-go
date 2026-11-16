@@ -83,6 +83,8 @@ func (tc *TestCaseSharedOptions) Run(ctx context.Context, t *testing.T) {
 	require.Equal(t, int32(1), tc.serverIntercepted.Load(), "user handler interceptor calls")
 }
 
+func (*TestCaseSharedOptions) ExpectedSpanCount() int { return 8 }
+
 func (tc *TestCaseSharedOptions) ExpectedTraces() trace.Traces {
 	traces := make(trace.Traces, 0, 2)
 	for _, s := range []*server{&tc.protoServer, &tc.jsonServer} {

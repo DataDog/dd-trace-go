@@ -58,7 +58,11 @@ type TestCase interface {
 }
 
 // TestCaseExpectedSpanCount is an optional interface for test cases that need
-// to assert the total number of spans produced during Run.
+// to assert the total number of spans produced during Run. Implementing it also
+// makes matching exclusive: each expected span must match a different received
+// span, so a span expected n times under a parent must be received n times
+// under it. Matching is greedy, in ExpectedTraces order, so list an expected
+// span before any less specific sibling that would also match its span.
 type TestCaseExpectedSpanCount interface {
 	ExpectedSpanCount() int
 }
@@ -108,10 +112,11 @@ func Run(t *testing.T, tc TestCase) {
 
 	spanCount := agent.CountSpans()
 	t.Logf("Received %d spans", spanCount)
-	if expected, ok := tc.(TestCaseExpectedSpanCount); ok {
+	expected, exclusive := tc.(TestCaseExpectedSpanCount)
+	if exclusive {
 		require.Equal(t, expected.ExpectedSpanCount(), spanCount)
 	}
-	requireTraceMatch(t, agent, tc.ExpectedTraces())
+	requireTraceMatch(t, agent, tc.ExpectedTraces(), exclusive)
 }
 
 type testLogger struct {
@@ -122,22 +127,41 @@ func (l testLogger) Log(msg string) {
 	l.T.Log(msg)
 }
 
-func requireTraceMatch(t testing.TB, a agenttest.Agent, expected trace.Traces) {
+// requireTraceMatch requires a received span for each expected span, under the
+// span that its parent matched. If exclusive, no two expected spans may match
+// the same received span.
+func requireTraceMatch(t testing.TB, a agenttest.Agent, expected trace.Traces, exclusive bool) {
 	t.Helper()
+	var matched map[uint64]struct{}
+	if exclusive {
+		matched = make(map[uint64]struct{})
+	}
 	for _, exp := range expected {
-		requireSpanMatch(t, a, exp, 0)
+		requireSpanMatch(t, a, exp, 0, matched)
 	}
 }
 
-func requireSpanMatch(t testing.TB, a agenttest.Agent, exp *trace.Trace, parentSpanID uint64) {
+// requireSpanMatch matches exp and its children, and records the received
+// spans they match in matched. A nil matched lets several expected spans match
+// the same received span.
+func requireSpanMatch(t testing.TB, a agenttest.Agent, exp *trace.Trace, parentSpanID uint64, matched map[uint64]struct{}) {
 	t.Helper()
 	m := traceToMatcher(exp)
 	if parentSpanID != 0 {
 		m = m.ParentOf(parentSpanID)
 	}
+	if matched != nil {
+		m = m.Condition("not matched by another expected span", func(s *agenttest.Span) bool {
+			_, ok := matched[s.SpanID]
+			return !ok
+		})
+	}
 	found := a.RequireSpan(t, m)
+	if matched != nil {
+		matched[found.SpanID] = struct{}{}
+	}
 	for _, child := range exp.Children {
-		requireSpanMatch(t, a, child, uint64(found.SpanID))
+		requireSpanMatch(t, a, child, uint64(found.SpanID), matched)
 	}
 }
 

@@ -20,9 +20,14 @@ meta:
       add the interceptor manually.
     - The interceptor is appended last, so it is the innermost one: RPCs rejected by earlier
       interceptors, or before the interceptor chain runs (for example while decoding a unary
-      request), produce no server span.
+      request, or by a `connect.WithRequestGate` check, added in connect v1.21.0), produce no
+      server span.
     - Handlers created by helper libraries such as `grpchealth` and `grpcreflect` are instrumented
       too.
+    - Handler constructors called with a multi-value expression as their arguments, such as
+      `connect.NewUnaryHandler(f())`, fail to compile once woven: opt them out with
+      `//orchestrion:ignore` and add the interceptor manually.
+    - Opt a call out with an `//orchestrion:ignore` comment.
 
 aspects:
   - id: Client
@@ -34,8 +39,11 @@ aspects:
         - not:
             import-path: github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2
     advice:
-      # Wrapping the call, unlike append-args, never appends into the spare capacity of a caller's
-      # `opts...` slice, which other slices of the caller may share.
+      # Wrapping the option, rather than extending its arguments with append-args, leaves a caller's
+      # `opts...` slice untouched, references only qualified identifiers, and works with every
+      # Orchestrion version: append-args writes into the slice's spare capacity in v1.14.0 and
+      # earlier, which lack DataDog/orchestrion#929 (see DataDog/orchestrion#913), and users who
+      # import this integration individually may still weave with one of them.
       - wrap-expression:
           imports:
             connect: connectrpc.com/connect
@@ -58,8 +66,10 @@ aspects:
         - not:
             import-path: github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2
     advice:
-      # A spread `opts...` slice may share its backing array with other slices of the caller, so it
-      # is passed through connect.WithHandlerOptions rather than appended to, as append-args would.
+      # A spread `opts...` slice is passed through connect.WithHandlerOptions unchanged, never copied
+      # or appended to, so neither it nor any slice sharing its backing array is written, with every
+      # Orchestrion version (append-args writes into it in v1.14.0 and earlier, which lack
+      # DataDog/orchestrion#929). The template references only qualified identifiers.
       # Every matched constructor takes two arguments before the options.
       - wrap-expression:
           imports:

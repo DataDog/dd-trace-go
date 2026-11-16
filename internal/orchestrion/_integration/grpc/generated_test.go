@@ -28,3 +28,7 @@ func TestDial(t *testing.T) {
 func TestDialContext(t *testing.T) {
 	harness.Run(t, new(TestCaseDialContext))
 }
+
+func TestSpreadOpts(t *testing.T) {
+	harness.Run(t, new(TestCaseSpreadOpts))
+}
