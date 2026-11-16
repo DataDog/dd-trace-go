@@ -152,6 +152,7 @@ integration-suites:
     contrib/hashicorp/vault: [ vault ]
     contrib/IBM/sarama: [ ibm_sarama ]
     contrib/jackc/pgx.v5: [ pgx ]
+    contrib/jackc/pgx.v5/otelc: [ pgx ]
     contrib/jmoiron/sqlx: []
     contrib/julienschmidt/httprouter: [ julienschmidt_httprouter ]
     contrib/julienschmidt/httprouter/otelc: [ julienschmidt_httprouter ]
@@ -495,6 +496,7 @@ components:
       - contrib/google.golang.org/grpc/**
       - contrib/gorilla/mux/**
       - contrib/gorm.io/gorm.v1/**
+      - contrib/jackc/pgx.v5/**
       - contrib/julienschmidt/httprouter/**
       - contrib/labstack/echo.v4/**
       - contrib/labstack/echo.v5/**
