@@ -676,13 +676,11 @@ func TestSpanContextConcurrentWithEnd(t *testing.T) {
 	want := sp.SpanContext().SpanID()
 	var wg sync.WaitGroup
 	for range 4 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 100 {
 				assert.Equal(t, want, sp.SpanContext().SpanID())
 			}
-		}()
+		})
 	}
 	sp.End()
 	wg.Wait()
