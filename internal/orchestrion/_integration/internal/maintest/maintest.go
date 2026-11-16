@@ -8,8 +8,9 @@
 // there, and go test never builds one.
 //
 // Each otelc build here recompiles most of the dependency closure, which takes
-// minutes in CI. Only otelc-autostart uses it, for the rule with target: main.
-// Check a rule that applies to every package with a harness test case instead.
+// minutes in CI. Only otelc-autostart uses it, for the rules that apply to a
+// package main. Check a rule that applies to every package with a harness test
+// case instead.
 package maintest
 
 import (
