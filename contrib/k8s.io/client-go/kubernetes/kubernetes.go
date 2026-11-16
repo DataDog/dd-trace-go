@@ -70,8 +70,17 @@ func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTr
 }
 
 // tracedKey marks the context of a request that a round tripper of this
-// package already traces.
+// package already traces. The value is the request's tracedRequest.
 type tracedKey struct{}
+
+// tracedRequest identifies a request by method and URL, so the clones that
+// round trippers further down make of it match, and another request built
+// from its context does not.
+type tracedRequest struct{ method, url string }
+
+func requestOf(req *http.Request) tracedRequest {
+	return tracedRequest{method: req.Method, url: req.URL.String()}
+}
 
 // roundTripper traces a request unless a round tripper of this package further
 // up the chain already does. A WrapTransport can put the contrib above or below
@@ -83,10 +92,11 @@ type roundTripper struct {
 }
 
 func (rt *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	if req.Context().Value(tracedKey{}) != nil {
+	id := requestOf(req)
+	if marked, ok := req.Context().Value(tracedKey{}).(tracedRequest); ok && marked == id {
 		return rt.base.RoundTrip(req)
 	}
-	return rt.traced.RoundTrip(req.WithContext(context.WithValue(req.Context(), tracedKey{}, struct{}{})))
+	return rt.traced.RoundTrip(req.WithContext(context.WithValue(req.Context(), tracedKey{}, id)))
 }
 
 // RequestToResource parses a Kubernetes request and extracts a resource name from it.

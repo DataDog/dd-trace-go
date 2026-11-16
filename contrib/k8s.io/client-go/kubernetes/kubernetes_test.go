@@ -161,6 +161,32 @@ func TestAnalyticsSettings(t *testing.T) {
 
 type passThrough struct{ base http.RoundTripper }
 
+type cloning struct{ base http.RoundTripper }
+
+func (rt cloning) RoundTrip(req *http.Request) (*http.Response, error) {
+	return rt.base.RoundTrip(req.Clone(req.Context()))
+}
+
+// sideCall sends its own request, built from the context of the one it
+// forwards, through other before forwarding.
+type sideCall struct {
+	base, other http.RoundTripper
+	url         string
+}
+
+func (rt sideCall) RoundTrip(req *http.Request) (*http.Response, error) {
+	side, err := http.NewRequestWithContext(req.Context(), http.MethodGet, rt.url, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := rt.other.RoundTrip(side)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body.Close()
+	return rt.base.RoundTrip(req)
+}
+
 func (rt passThrough) RoundTrip(req *http.Request) (*http.Response, error) {
 	return rt.base.RoundTrip(req)
 }
@@ -178,6 +204,9 @@ func TestWrapRoundTripperOnce(t *testing.T) {
 		"separated": func(rt http.RoundTripper) http.RoundTripper {
 			return WrapRoundTripper(passThrough{WrapRoundTripper(rt)})
 		},
+		"cloned": func(rt http.RoundTripper) http.RoundTripper {
+			return WrapRoundTripper(cloning{WrapRoundTripper(rt)})
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			mt := mocktracer.Start()
@@ -191,4 +220,25 @@ func TestWrapRoundTripperOnce(t *testing.T) {
 			assert.Len(t, mt.FinishedSpans(), 1)
 		})
 	}
+}
+
+// TestWrapRoundTripperTracesSideCalls checks that a separate request built from
+// the context of a traced one still gets its own span.
+func TestWrapRoundTripperTracesSideCalls(t *testing.T) {
+	s := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer s.Close()
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rt := WrapRoundTripper(sideCall{
+		base:  http.DefaultTransport,
+		other: WrapRoundTripper(http.DefaultTransport),
+		url:   s.URL + "/api/v1/pods",
+	})
+	req, err := http.NewRequest(http.MethodGet, s.URL+"/api/v1/namespaces", nil)
+	assert.NoError(t, err)
+	resp, err := rt.RoundTrip(req)
+	assert.NoError(t, err)
+	resp.Body.Close()
+	assert.Len(t, mt.FinishedSpans(), 2)
 }
