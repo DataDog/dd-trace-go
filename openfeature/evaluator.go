@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"maps"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -113,9 +114,13 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 
 			// Reserve allocation/doLog, four provider stamps, feature metadata, and the optional serial ID.
 			features := split.featureMetadata()
-			capacity := 6 + len(features)
+			fixedEntries := 6
 			if split.SerialID != nil {
-				capacity++
+				fixedEntries++
+			}
+			capacity := len(features)
+			if capacity <= math.MaxInt-fixedEntries {
+				capacity += fixedEntries
 			}
 			metadata := make(map[string]any, capacity)
 			metadata[metadataAllocationKey] = allocation.Key
