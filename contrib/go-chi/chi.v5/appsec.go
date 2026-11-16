@@ -21,11 +21,13 @@ import (
 //
 // With Use before routing, chi has not selected the route when this middleware
 // starts: the WAF gets the route and the path parameters that chi knows at that
-// time, as before the route was reported. After the handler, the handler reports
-// the route that chi selected (RouteMatched without parameters), because API
-// Security uses the route as the sampling key. It gives no path parameters to the
-// WAF at any time. The response writer is wrapped in a commitTracker (see
-// writer_appsec.go) to know if a late block can still replace the response.
+// time, as before the route was reported (for example the parameters of an endpoint
+// middleware or of a parent mount). It adds no newly discovered path parameters.
+// After the handler, the handler reports the route that chi selected
+// (RouteMatched without parameters), because API Security uses the route as the
+// sampling key: this adds no additional native WAF evaluation. The response writer
+// is wrapped in a commitTracker (see writer_appsec.go) to know if a late block can
+// still replace the response.
 func withAppsec(next http.Handler, span trace.TagSetter, cfg *config, cache *sync.Map) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// A copy for each request: httpsec.BeforeHandle writes in the config.

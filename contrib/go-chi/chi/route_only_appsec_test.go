@@ -276,7 +276,8 @@ func TestRepeatedReports(t *testing.T) {
 		roRule("header-monitor", "", roCondition(roResponseHeaders, "x-stage", "ready")))
 	router := chi.NewRouter()
 	router.Use(chitrace.Middleware())
-	router.Get("/items/{id}/{n}", func(http.ResponseWriter, *http.Request) {})
+	calls := 0
+	router.Get("/items/{id}/{n}", func(http.ResponseWriter, *http.Request) { calls++ })
 	ids := []string{}
 	h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		tw, tr, after, handled := httpsec.BeforeHandle(w, req, nil, &httpsec.Config{Framework: "parent"})
@@ -303,6 +304,7 @@ func TestRepeatedReports(t *testing.T) {
 	})
 	code, _ := roServe(t, h, "/")
 	assert.Equal(t, http.StatusOK, code)
+	assert.Equal(t, 12, calls, "the endpoint ran for each repeated request")
 	assert.Equal(t, []string{"header-monitor"}, ids)
 	_ = mt
 }

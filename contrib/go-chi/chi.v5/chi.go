@@ -37,14 +37,15 @@ func init() {
 //
 // With Use before routing, chi selects the route after this middleware starts. The
 // WAF gets the route and the path parameters that chi knows when the middleware
-// starts, as before the route was reported: with Use before routing, no path
-// parameter, so a rule on path parameters does not match. Use
-// r.With(Middleware()) on the endpoint for these rules: chi knows the route and
-// its path parameters before the middleware starts.
+// starts, as before the route was reported (for example the parameters of an
+// endpoint middleware or of a parent mount; they can block). It adds no newly
+// discovered path parameters: with Use before routing, chi knows none, so a rule on
+// path parameters does not match. Use r.With(Middleware()) on the endpoint for these
+// rules: chi knows the route and its path parameters before the middleware starts.
 //
 // After the handler returns, the middleware reports the route that chi selected to
-// AppSec (API Security uses it as the sampling key of the endpoint). It gives no
-// path parameters to the WAF at any time: this report adds no WAF evaluation. A
+// AppSec (API Security uses it as the sampling key of the endpoint). This report
+// sends only the route and causes no additional native WAF evaluation. A
 // block or a redirect that the WAF stored replaces the response only if the
 // response is not sent yet: it never stops the handler, which already ran. If the
 // response is sent, it does not change; AppSec reports a failed block (a redirect
