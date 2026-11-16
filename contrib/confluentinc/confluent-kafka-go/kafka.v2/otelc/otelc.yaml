@@ -8,6 +8,9 @@
 # traces the clients it builds itself, and because this module imports it. The
 # rewritten package imports this module, so the contrib is initialized before
 # a client built in a package-level var or init.
+#
+# A client built through a function value, as in `f := kafka.NewProducer`, is
+# not registered, so it is not traced.
 kafkav2_new_consumer:
   target:
     - "**"
