@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -37,6 +39,7 @@ func useLibraries() {
 		Credentials: credentials.AnonymousCredentials,
 		Region:      new("us-east-1"),
 	}))
+	_ = dynamodb.NewFromConfig(awsv2.Config{Region: "us-east-1"})
 	_ = mongooptions.Client()
 	_ = mongov2options.Client()
 }

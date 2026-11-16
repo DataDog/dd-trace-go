@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -63,19 +64,26 @@ func prepConfig(opts ...Option) *config {
 	return cfg
 }
 
-func appendMiddleware(cfg *config, apiOptions *[]func(*middleware.Stack) error) {
-	tm := traceMiddleware{
-		cfg:         cfg,
-		sqs:         sqsTracer.NewEnricher(cfg.injectSQS),
-		sns:         snsTracer.NewEnricher(cfg.injectSNS),
-		kinesis:     kinesisTracer.NewEnricher(cfg.injectKinesis),
-		eventBridge: eventBridgeTracer.NewEnricher(cfg.injectEventBridge),
-		sfn:         sfnTracer.NewEnricher(cfg.injectSFN),
+func newTraceMiddleware(cfg *config, autoInstrumented bool) traceMiddleware {
+	return traceMiddleware{
+		cfg:              cfg,
+		sqs:              sqsTracer.NewEnricher(cfg.injectSQS),
+		sns:              snsTracer.NewEnricher(cfg.injectSNS),
+		kinesis:          kinesisTracer.NewEnricher(cfg.injectKinesis),
+		eventBridge:      eventBridgeTracer.NewEnricher(cfg.injectEventBridge),
+		sfn:              sfnTracer.NewEnricher(cfg.injectSFN),
+		autoInstrumented: autoInstrumented,
 	}
+}
+
+func appendMiddleware(cfg *config, apiOptions *[]func(*middleware.Stack) error) {
+	tm := newTraceMiddleware(cfg, false)
 	*apiOptions = append(*apiOptions, tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware)
 }
 
 // AppendMiddleware takes the aws.Config and adds the Datadog tracing middleware into the APIOptions middleware stack.
+// A request that gets the middleware more than once is traced once, with the options of the first AppendMiddleware
+// call.
 //
 // To instrument an aws.Config that isn't directly accessible (e.g. it is built by
 // (github.com/aws/aws-sdk-go-v2/config).LoadDefaultConfig), use
@@ -83,6 +91,21 @@ func appendMiddleware(cfg *config, apiOptions *[]func(*middleware.Stack) error) 
 // See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
 func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
 	appendMiddleware(prepConfig(opts...), &awsCfg.APIOptions)
+}
+
+// APIOptionsWithTracing returns a copy of apiOptions with the Datadog tracing
+// middleware added, with the default options. It is meant for compile-time
+// instrumentation (Orchestrion and otelc), which calls it for every aws.Config
+// the application builds and for the API options config.LoadDefaultConfig reads
+// from its options. Applications should use AppendMiddleware or
+// awsconfig.WithDataDogTracer instead.
+//
+// When the application also adds the middleware with AppendMiddleware or
+// awsconfig.WithDataDogTracer, before or after this call, each request is
+// traced once, with the options passed there.
+func APIOptionsWithTracing(apiOptions []func(*middleware.Stack) error) []func(*middleware.Stack) error {
+	tm := newTraceMiddleware(prepConfig(), true)
+	return append(slices.Clip(apiOptions), tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware)
 }
 
 // enricher adds the Datadog trace context and the Data Streams checkpoint to the request of one AWS service.
@@ -97,10 +120,25 @@ type traceMiddleware struct {
 	kinesis     enricher
 	eventBridge enricher
 	sfn         enricher
+	// autoInstrumented is set for the middleware that compile-time
+	// instrumentation adds through APIOptionsWithTracing. A middleware the
+	// application adds replaces it.
+	autoInstrumented bool
 }
 
+const (
+	initTraceMiddlewareID        = "InitTraceMiddleware"
+	startTraceMiddlewareID       = "StartTraceMiddleware"
+	deserializeTraceMiddlewareID = "DeserializeTraceMiddleware"
+)
+
 func (mw *traceMiddleware) initTraceMiddleware(stack *middleware.Stack) error {
-	return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("InitTraceMiddleware", func(
+	if existing, ok := stack.Initialize.Get(initTraceMiddlewareID); ok {
+		if _, ours := existing.(*initMiddleware); ours {
+			return nil
+		}
+	}
+	return stack.Initialize.Add(&initMiddleware{middleware.InitializeMiddlewareFunc(initTraceMiddlewareID, func(
 		ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
 	) (
 		out middleware.InitializeOutput, metadata middleware.Metadata, err error,
@@ -108,11 +146,22 @@ func (mw *traceMiddleware) initTraceMiddleware(stack *middleware.Stack) error {
 		// Bind the timestamp to the context so that we can use it when we have enough information to start the trace.
 		ctx = context.WithValue(ctx, spanTimestampKey{}, time.Now())
 		return next.HandleInitialize(ctx, in)
-	}), middleware.Before)
+	})}, middleware.Before)
+}
+
+// initMiddleware and deserializeMiddleware mark the middleware this package
+// adds, so a stack that already has one of ours skips adding it again, while a
+// foreign middleware with the same ID still fails to add.
+type initMiddleware struct {
+	middleware.InitializeMiddleware
+}
+
+type deserializeMiddleware struct {
+	middleware.DeserializeMiddleware
 }
 
 func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
-	return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("StartTraceMiddleware", func(
+	return mw.addStart(stack, func(
 		ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
 	) (
 		out middleware.InitializeOutput, metadata middleware.Metadata, err error,
@@ -183,7 +232,39 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		span.Finish()
 
 		return out, metadata, err
-	}), middleware.After)
+	})
+}
+
+type initializeFunc = func(context.Context, middleware.InitializeInput, middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error)
+
+// startMiddleware is the middleware that starts the span. It records who added
+// it, so a stack that gets the middleware twice can keep the right one.
+type startMiddleware struct {
+	fn               initializeFunc
+	autoInstrumented bool
+}
+
+func (*startMiddleware) ID() string { return startTraceMiddlewareID }
+
+func (m *startMiddleware) HandleInitialize(ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
+	return m.fn(ctx, in, next)
+}
+
+// addStart adds the middleware that starts the span, unless the stack already
+// has one. One added by AppendMiddleware replaces one added by
+// APIOptionsWithTracing, so the options the application passed win.
+func (mw *traceMiddleware) addStart(stack *middleware.Stack, fn initializeFunc) error {
+	start := &startMiddleware{fn: fn, autoInstrumented: mw.autoInstrumented}
+	if existing, ok := stack.Initialize.Get(startTraceMiddlewareID); ok {
+		if prev, ours := existing.(*startMiddleware); ours {
+			if prev.autoInstrumented && !start.autoInstrumented {
+				_, err := stack.Initialize.Swap(startTraceMiddlewareID, start)
+				return err
+			}
+			return nil
+		}
+	}
+	return stack.Initialize.Add(start, middleware.After)
 }
 
 func awsPartition(region string) string {
@@ -419,7 +500,12 @@ func stateMachineName(requestInput middleware.InitializeInput) string {
 }
 
 func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) error {
-	return stack.Deserialize.Add(middleware.DeserializeMiddlewareFunc("DeserializeTraceMiddleware", func(
+	if existing, ok := stack.Deserialize.Get(deserializeTraceMiddlewareID); ok {
+		if _, ours := existing.(*deserializeMiddleware); ours {
+			return nil
+		}
+	}
+	return stack.Deserialize.Add(&deserializeMiddleware{middleware.DeserializeMiddlewareFunc(deserializeTraceMiddlewareID, func(
 		ctx context.Context, in middleware.DeserializeInput, next middleware.DeserializeHandler,
 	) (
 		out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
@@ -456,7 +542,7 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 		spanpointers.AddSpanPointers(ctx, in, out, span)
 
 		return out, metadata, err
-	}), middleware.Before)
+	})}, middleware.Before)
 }
 
 func spanName(awsService, awsOperation string) string {

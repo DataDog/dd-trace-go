@@ -97,6 +97,7 @@ integration-suites:
     contrib/aerospike/aerospike-client-go.v7: [ aerospike.v7 ]
     contrib/aws/aws-sdk-go: [ aws.v1 ]
     contrib/aws/aws-sdk-go-v2: [ aws.v2 ]
+    contrib/aws/aws-sdk-go-v2/otelc: [ aws.v2 ]
     contrib/aws/aws-sdk-go/otelc: [aws.v1]
     contrib/aws/datadog-lambda-go: []
     contrib/aws/datadog-lambda-go/test/integration_tests/error: []
@@ -480,6 +481,7 @@ components:
       contrib entry claims them without the gate.
     paths:
       - contrib/99designs/gqlgen/**
+      - contrib/aws/aws-sdk-go-v2/**
       - contrib/aws/aws-sdk-go/**
       - contrib/database/sql/**
       - contrib/gin-gonic/gin/**
