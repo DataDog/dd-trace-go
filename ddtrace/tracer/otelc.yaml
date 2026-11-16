@@ -219,7 +219,8 @@ create_tracer:
 # cycle.
 #
 # The imports keep the plain aliases. In package main, create_tracer already
-# adds `tracer`, and otelc rejects another alias for that path there. A
+# adds `tracer`, and otelc rejects another alias for that path there
+# (internal/orchestrion/_integration/otelc-autostart checks it). A
 # package-level `tracer` or `context` identifier in a file that does not import
 # them breaks the build.
 dd_span:
