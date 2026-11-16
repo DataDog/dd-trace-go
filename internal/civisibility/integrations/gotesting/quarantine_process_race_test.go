@@ -38,6 +38,14 @@ import (
 const (
 	quarantinedRaceIsolationFixtureEnv = "DD_TEST_QUARANTINED_RACE_ISOLATION"
 	quarantinedRaceIsolationPIDDirEnv  = "DD_TEST_QUARANTINED_RACE_ISOLATION_PID_DIR"
+
+	// Hang limits for scenarios whose regression is a protocol deadlock. They
+	// must not measure instrumentation speed: every per-test coverage snapshot
+	// rewrites and re-parses the whole profile under a process-wide lock, which
+	// takes seconds per snapshot in the gotip gVisor sandbox. There, the first
+	// parallel-atf-sibling invocation alone can exceed 30s.
+	quarantinedRaceHangTimeoutArg     = "-test.timeout=5m"
+	quarantinedRaceProcessHangTimeout = "2m"
 )
 
 func quarantinedRaceIsolationFixtureSelected() bool {
@@ -68,16 +76,8 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 	if scenario == "parallel-root-slots" || scenario == "parallel-root-coordination" {
 		requireEnv(constants.CIVisibilityRetryProcessMaxConcurrencyEnvironmentVariable, "1")
 	}
-	// These fixture limits detect protocol deadlocks, not instrumentation speed.
-	// Each scenario re-execs the test binary twice (fixture child, then the
-	// quarantine machinery's own grandchild), and that grandchild is race- and
-	// coverage-instrumented, so process startup alone can take several seconds
-	// under load or inside a sandbox (e.g. the gotip gVisor job).
-	if scenario == "parallel-atf-sibling" {
-		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "30s")
-	}
-	if scenario == "parallel-denied" {
-		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, "30s")
+	if scenario == "parallel-atf-sibling" || scenario == "parallel-denied" {
+		requireEnv(constants.CIVisibilityRetryProcessTimeoutEnvironmentVariable, quarantinedRaceProcessHangTimeout)
 	}
 
 	module := "github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting"
@@ -340,9 +340,18 @@ func runQuarantinedRaceIsolationFixture(m *testing.M) {
 		os.Exit(0)
 	case "parallel-wait-duration":
 		root := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelWaitDurationFixture/root", 1)
-		child := checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelWaitDurationFixture/root/slow", 1)
-		if root[0].Duration() >= child[0].Duration() {
-			panic(fmt.Sprintf("parallel descendant wait leaked into root duration: root=%s child=%s", root[0].Duration(), child[0].Duration()))
+		checkSpansByResourceName(spans, suite+".TestQuarantinedRaceParallelWaitDurationFixture/root/slow", 1)
+		// The parallel child's body only runs after the root's body returns, so
+		// a root duration that excludes the wait ends before the child does.
+		// Comparing durations instead depends on the root's own coverage
+		// snapshots being cheaper than the child's work, which fails under the
+		// gotip gVisor sandbox.
+		childFinished, err := strconv.ParseInt(readPID("parallel-wait-duration-child-finished"), 10, 64)
+		if err != nil {
+			panic(err)
+		}
+		if rootFinished := root[0].FinishTime(); !rootFinished.Before(time.Unix(0, childFinished)) {
+			panic(fmt.Sprintf("parallel descendant wait leaked into root duration: root=%s finished %s after the child body", root[0].Duration(), rootFinished.Sub(time.Unix(0, childFinished))))
 		}
 		os.Exit(0)
 	case "dynamic-descendant-finality":
@@ -765,26 +774,26 @@ func TestQuarantinedRaceFailfastEndToEnd(t *testing.T) {
 }
 
 func TestQuarantinedRaceParallelAdmissionEndToEnd(t *testing.T) {
-	runQuarantinedRaceEndToEnd(t, "parallel-admission", "^TestQuarantinedRaceParallelFixture$", "-test.timeout=1m")
+	runQuarantinedRaceEndToEnd(t, "parallel-admission", "^TestQuarantinedRaceParallelFixture$", quarantinedRaceHangTimeoutArg)
 }
 
 func TestQuarantinedRaceParallelDeniedEndToEnd(t *testing.T) {
-	runQuarantinedRaceEndToEnd(t, "parallel-denied", "^TestQuarantinedRaceParallelDeniedFixture$", "-test.timeout=1m")
+	runQuarantinedRaceEndToEnd(t, "parallel-denied", "^TestQuarantinedRaceParallelDeniedFixture$", quarantinedRaceHangTimeoutArg)
 }
 
 func TestQuarantinedRaceParallelRootsReleaseProcessSlotsEndToEnd(t *testing.T) {
-	runQuarantinedRaceEndToEnd(t, "parallel-root-slots", "^TestQuarantinedRaceParallelRootsFixture$", "-test.timeout=1m")
+	runQuarantinedRaceEndToEnd(t, "parallel-root-slots", "^TestQuarantinedRaceParallelRootsFixture$", quarantinedRaceHangTimeoutArg)
 }
 
 func TestQuarantinedRaceParallelRootsCoordinateAfterResumeEndToEnd(t *testing.T) {
-	runQuarantinedRaceEndToEnd(t, "parallel-root-coordination", "^TestQuarantinedRaceParallelRootsFixture$", "-test.timeout=1m")
+	runQuarantinedRaceEndToEnd(t, "parallel-root-coordination", "^TestQuarantinedRaceParallelRootsFixture$", quarantinedRaceHangTimeoutArg)
 }
 
 func TestQuarantinedRaceParallelCoverageEndToEnd(t *testing.T) {
 	if testing.CoverMode() == "" {
 		t.Skip("requires coverage instrumentation")
 	}
-	runQuarantinedRaceEndToEnd(t, "parallel-coverage", "^TestQuarantinedRaceParallelCoverageFixture$", "-test.timeout=1m")
+	runQuarantinedRaceEndToEnd(t, "parallel-coverage", "^TestQuarantinedRaceParallelCoverageFixture$", quarantinedRaceHangTimeoutArg)
 }
 
 func TestQuarantinedRaceNestedAggregateCoverageEndToEnd(t *testing.T) {
@@ -887,7 +896,7 @@ func TestQuarantinedRaceOwnerGenerationFinalityEndToEnd(t *testing.T) {
 }
 
 func TestQuarantinedRaceParallelATFSiblingEndToEnd(t *testing.T) {
-	runQuarantinedRaceEndToEnd(t, "parallel-atf-sibling", "^TestQuarantinedRaceParallelATFFixture$", "-test.timeout=1m")
+	runQuarantinedRaceEndToEnd(t, "parallel-atf-sibling", "^TestQuarantinedRaceParallelATFFixture$", quarantinedRaceHangTimeoutArg)
 }
 
 func TestQuarantinedRaceSerialATFDoesNotRepeatSiblingEndToEnd(t *testing.T) {
@@ -1271,6 +1280,8 @@ func TestQuarantinedRaceParallelWaitDurationFixture(t *testing.T) {
 		t.Run("slow", instrumentTestingTFunc(func(t *testing.T) {
 			(*T)(t).Parallel()
 			runQuarantinedRaceActiveWork()
+			path := filepath.Join(os.Getenv(quarantinedRaceIsolationPIDDirEnv), "parallel-wait-duration-child-finished")
+			require.NoError(t, os.WriteFile(path, []byte(strconv.FormatInt(time.Now().UnixNano(), 10)), 0o600))
 		}))
 	}))
 }

@@ -12,6 +12,7 @@ use (
 	./contrib/aws/aws-sdk-go
 	./contrib/aws/aws-sdk-go/otelc
 	./contrib/aws/aws-sdk-go-v2
+	./contrib/aws/aws-sdk-go-v2/otelc
 	./contrib/aws/datadog-lambda-go
 	./contrib/bradfitz/gomemcache
 	./contrib/cloud.google.com/go/pubsub.v1

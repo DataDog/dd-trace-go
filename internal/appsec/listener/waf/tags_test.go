@@ -6,6 +6,7 @@
 package waf
 
 import (
+	"errors"
 	"maps"
 	"slices"
 	"sync/atomic"
@@ -208,12 +209,78 @@ func TestWAFErrorCodeSpanTag(t *testing.T) {
 	} {
 		t.Run("waf_timeout_does_not_hide_real_error/"+order.name, func(t *testing.T) {
 			tags := tagsAfter(t, wafAddrs, order.errs...)
-			require.Equal(t, int32(waferrors.ErrInternal), tags[wafErrorTag])
+			require.Equal(t, int32(-3), tags[wafErrorTag])
 		})
 
 		t.Run("rasp_timeout_does_not_hide_real_error/"+order.name, func(t *testing.T) {
 			tags := tagsAfter(t, raspAddrs, order.errs...)
-			require.Equal(t, int32(waferrors.ErrInternal), tags[raspErrorTag])
+			require.Equal(t, int32(-3), tags[raspErrorTag])
 		})
 	}
+
+	t.Run("errors_set_ddwaf_run_code", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			errs []error
+			want int32
+		}{
+			{name: "invalid_object", errs: []error{waferrors.ErrInvalidObject}, want: -2},
+			{name: "bindings", errs: []error{errors.New("bindings")}, want: -127},
+			// The span tag keeps the code closest to zero: -1 over -3 and -127.
+			{name: "least_negative_wins", errs: []error{waferrors.ErrInternal, waferrors.ErrInvalidArgument, waferrors.ErrOutOfMemory}, want: -1},
+		} {
+			t.Run("waf/"+tc.name, func(t *testing.T) {
+				tags := tagsAfter(t, wafAddrs, tc.errs...)
+				require.Equal(t, tc.want, tags[wafErrorTag])
+				require.NotContains(t, tags, raspErrorTag)
+			})
+			t.Run("rasp/"+tc.name, func(t *testing.T) {
+				tags := tagsAfter(t, raspAddrs, tc.errs...)
+				require.Equal(t, tc.want, tags[raspErrorTag])
+				require.NotContains(t, tags, wafErrorTag)
+			})
+		}
+	})
+
+	t.Run("waf_timeout_does_not_hide_real_error", func(t *testing.T) {
+		tags := tagsAfter(t, wafAddrs, errors.Join(waferrors.ErrTimeout, waferrors.ErrInternal))
+		require.Equal(t, int32(-3), tags[wafErrorTag])
+	})
+
+	t.Run("rasp_timeout_does_not_hide_real_error", func(t *testing.T) {
+		tags := tagsAfter(t, raspAddrs, errors.Join(waferrors.ErrTimeout, waferrors.ErrInternal))
+		require.Equal(t, int32(-3), tags[raspErrorTag])
+	})
+
+	t.Run("timeout_invalid_input_keeps_exception_tags", func(t *testing.T) {
+		for _, tc := range []struct {
+			name    string
+			addrs   func() addresses.RunAddressData
+			wantMsg string
+		}{
+			{
+				name: "unknown_rasp_rule_type",
+				addrs: func() addresses.RunAddressData {
+					return addresses.RunAddressData{
+						TimerKey: addresses.RASPScope,
+						Data:     map[string]any{addresses.ServerIONetResponseHeadersAddr: map[string][]string{"a": {"b"}}},
+					}
+				},
+				wantMsg: "unknown RASP rule type",
+			},
+			{
+				name:    "invalid_scope",
+				addrs:   func() addresses.RunAddressData { return addresses.RunAddressData{TimerKey: addresses.Scope("bogus")} },
+				wantMsg: "unexpected WAF error scope",
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				tags := tagsAfter(t, tc.addrs, waferrors.ErrTimeout)
+				require.NotContains(t, tags, wafErrorTag)
+				require.NotContains(t, tags, raspErrorTag)
+				require.Equal(t, emitter.ExceptionTypeInstrumentation, tags["_dd.appsec.error.type"])
+				require.Contains(t, tags["_dd.appsec.error.message"], tc.wantMsg)
+			})
+		}
+	})
 }

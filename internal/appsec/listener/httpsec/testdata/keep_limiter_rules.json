@@ -1,0 +1,125 @@
+{
+  "rules_compat": [
+    {
+      "id": "kl-001",
+      "name": "Keep Limiter: Keep, Event",
+      "tags": {
+        "type": "security_scanner",
+        "category": "attack_attempt"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.headers.no_cookies",
+                "key_path": [
+                  "user-agent"
+                ]
+              }
+            ],
+            "regex": "^KeepLimiter\\/event"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "output": {
+        "event": true,
+        "keep": true
+      },
+      "on_match": []
+    },
+    {
+      "id": "kl-002",
+      "name": "Keep Limiter: Keep, No Event (with attributes)",
+      "tags": {
+        "type": "security_scanner",
+        "category": "attack_attempt"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.headers.no_cookies",
+                "key_path": [
+                  "user-agent"
+                ]
+              }
+            ],
+            "regex": "^KeepLimiter\\/noevent"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "output": {
+        "event": false,
+        "keep": true,
+        "attributes": {
+          "_dd.appsec.trace.integer": {
+            "value": 1729
+          }
+        }
+      },
+      "on_match": []
+    },
+    {
+      "id": "kl-003",
+      "name": "Keep Limiter: No Keep, Event",
+      "tags": {
+        "type": "security_scanner",
+        "category": "attack_attempt"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.request.headers.no_cookies",
+                "key_path": [
+                  "user-agent"
+                ]
+              }
+            ],
+            "regex": "^KeepLimiter\\/nokeep"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "output": {
+        "event": true,
+        "keep": false
+      },
+      "on_match": []
+    },
+    {
+      "id": "kl-004",
+      "name": "Keep Limiter: Keep, Event (response)",
+      "tags": {
+        "type": "keep_limiter_response",
+        "category": "attack_attempt"
+      },
+      "conditions": [
+        {
+          "parameters": {
+            "inputs": [
+              {
+                "address": "server.response.headers.no_cookies",
+                "key_path": [
+                  "x-keep-limiter"
+                ]
+              }
+            ],
+            "regex": "^again$"
+          },
+          "operator": "match_regex"
+        }
+      ],
+      "output": {
+        "event": true,
+        "keep": true
+      },
+      "on_match": []
+    }
+  ]
+}

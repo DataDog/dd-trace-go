@@ -119,6 +119,8 @@ type client struct {
 	flushTicker *internal.Ticker
 	// flushMu is used to ensure that only one flush is happening at a time
 	flushMu sync.Mutex
+	// startAppFlush tracks the asynchronous flush launched by StartApp so Close can wait for it.
+	startAppFlush sync.WaitGroup
 
 	// writer is the writer to use to send the payloads to the backend or the agent
 	writer internal.Writer
@@ -407,5 +409,19 @@ func (c *client) AppStop() {
 
 func (c *client) Close() error {
 	c.flushTicker.Stop()
+	// Owners close their HTTP client's idle connections right after Close. A
+	// StartApp flush still in flight would otherwise return its keep-alive
+	// connection to the idle pool afterwards, where nothing ever closes it.
+	c.startAppFlush.Wait()
 	return nil
+}
+
+// trackStartAppFlush registers the flush StartApp is about to launch, so that
+// Close waits for it, and returns the function that marks it done.
+func trackStartAppFlush(c Client) (done func()) {
+	if c, ok := c.(*client); ok {
+		c.startAppFlush.Add(1)
+		return c.startAppFlush.Done
+	}
+	return func() {}
 }

@@ -34,13 +34,15 @@ concurrency:
 env:
   # The single place to bump the tested otelc release. Upstream only; do not point
   # this at a fork.
-  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.2.1-0.20261105152245-5f2bd2ed6ac8' }}
+  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.2.1-0.20261109141436-15ecaa2b8324' }}
   # Modules otelc reads, tidied by both jobs next to the application each one
   # builds.
   OTELC_MODULES: >-
     otelc/all
     contrib/99designs/gqlgen
     contrib/99designs/gqlgen/otelc
+    contrib/aws/aws-sdk-go-v2
+    contrib/aws/aws-sdk-go-v2/otelc
     contrib/aws/aws-sdk-go
     contrib/aws/aws-sdk-go/otelc
     contrib/net/http
@@ -91,6 +93,7 @@ env:
     grpc
     gorilla_mux
     99designs.gqlgen
+    aws.v2
     mongo
     mongo.v2
     echo.v4
