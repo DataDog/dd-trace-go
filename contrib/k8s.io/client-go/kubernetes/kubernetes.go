@@ -7,6 +7,7 @@
 package kubernetes // import "github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2/kubernetes"
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
@@ -62,7 +63,30 @@ func wrapRoundTripperWithOptions(rt http.RoundTripper, opts ...httptrace.RoundTr
 		span.SetTag("kubernetes.audit_id", traceID)
 	}))
 	instr.Logger().Debug("contrib/k8s.io/client-go/kubernetes: Wrapping RoundTripper.")
-	return httptrace.WrapRoundTripper(rt, localOpts...)
+	if rt == nil {
+		rt = http.DefaultTransport
+	}
+	return &roundTripper{traced: httptrace.WrapRoundTripper(rt, localOpts...), base: rt}
+}
+
+// tracedKey marks the context of a request that a round tripper of this
+// package already traces.
+type tracedKey struct{}
+
+// roundTripper traces a request unless a round tripper of this package further
+// up the chain already does. A WrapTransport can put the contrib above or below
+// other round trippers, and the orchestrion and otelc rules add one more, so
+// each request still gets one span, with the options of the outermost one.
+type roundTripper struct {
+	traced http.RoundTripper
+	base   http.RoundTripper
+}
+
+func (rt *roundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.Context().Value(tracedKey{}) != nil {
+		return rt.base.RoundTrip(req)
+	}
+	return rt.traced.RoundTrip(req.WithContext(context.WithValue(req.Context(), tracedKey{}, struct{}{})))
 }
 
 // RequestToResource parses a Kubernetes request and extracts a resource name from it.
