@@ -117,6 +117,22 @@ func TestHooksTraceRegisteredClients(t *testing.T) {
 	}
 }
 
+func TestPollHooksLeaveEventsChannelConsumersAlone(t *testing.T) {
+	conf := newCluster(t)
+	consumerConf := &kafka.ConfigMap{"group.id": "otelc-hooks-events", "go.events.channel.enable": true}
+	for k, v := range *conf {
+		consumerConf.SetKey(k, v)
+	}
+	c, err := kafka.NewConsumer(consumerConf)
+	require.NoError(t, err)
+	TraceConsumer(c, consumerConf)
+
+	ictx := hooktest.NewMockHookContext(c, 100)
+	BeforeConsumerPoll(ictx, c, 100)
+	assert.Nil(t, ictx.GetData(), "Poll must not touch the span the events channel goroutine owns")
+	require.NoError(t, closeConsumer(c))
+}
+
 func TestHooksLeaveUnregisteredClientsAlone(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()

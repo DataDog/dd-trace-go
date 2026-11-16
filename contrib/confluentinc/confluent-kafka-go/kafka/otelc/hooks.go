@@ -94,9 +94,11 @@ func tracedProducer(p *kafka.Producer) *kafkatrace.Producer {
 // after hook, and does nothing for other clients.
 
 // BeforeConsumerPoll finishes the span of the previous message. Poll also runs
-// inside kafka.Consumer.ReadMessage and kafka.Consumer.Close.
+// inside kafka.Consumer.ReadMessage and kafka.Consumer.Close. A consumer that
+// reads from its events channel is left alone: the goroutine that traces the
+// channel owns the previous span, and kafka.Consumer.Close still calls Poll.
 func BeforeConsumerPoll(ictx hook.HookContext, c *kafka.Consumer, _ int) {
-	if w := tracedConsumer(c); w != nil {
+	if w := tracedConsumer(c); w != nil && w.Events() == nil {
 		w.BeforePoll()
 		ictx.SetData(w)
 	}
