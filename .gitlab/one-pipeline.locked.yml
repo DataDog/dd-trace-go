@@ -4,9 +4,17 @@
 include:
   - remote: https://gitlab-templates.ddbuild.io/libdatadog/include/versions/1.13.0/one-pipeline.yml
 
-# publish_dora_metrics is not gated by SKIP_SHARED_PIPELINE: it defaults to `when: manual` with
-# non-optional `needs:` on the (skipped) packaging jobs, which would fail pipeline creation.
-# Override it to `when: never` so only the config-registry jobs run.
+# SKIP_SHARED_PIPELINE skips the packaging jobs these template jobs need, but their rules can still add
+# them (promote-oci-to-prod on vX.Y.Z tags, promote-oci-to-staging on NIGHTLY_BUILD, publish_dora_metrics
+# on older pins), which fails pipeline creation. Override them to `when: never`.
 publish_dora_metrics:
+  rules:
+    - when: never
+
+promote-oci-to-prod:
+  rules:
+    - when: never
+
+promote-oci-to-staging:
   rules:
     - when: never
