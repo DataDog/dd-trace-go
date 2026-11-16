@@ -26,7 +26,7 @@ const (
 	apiBaseURL    = "https://api.github.com"
 	apiVersion    = "2022-11-28"
 	perPage       = 100
-	maxAttempts   = 4
+	maxAttempts   = 6 // 1+2+4+8+16 = 31s of backoff, enough to ride out a GitHub API 5xx burst
 	gatherWorkers = 4
 
 	// maxRateLimitWait is the longest pause the client accepts before it

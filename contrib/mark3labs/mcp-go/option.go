@@ -90,21 +90,21 @@ func WithMCPServerTracing(options *TracingConfig) server.ServerOption {
 
 		server.WithHooks(hooks)(s)
 
-		// Register the redaction middleware first (when enabled) so its ctx
-		// flag is set before toolHandlerMiddleware annotates the LLMObs span.
+		// mcp-go runs middleware in registration order (first registered runs first).
+		// Intent capture runs first so the span records the request without the
+		// telemetry parameter, and toolHandlerMiddleware annotates the intent from ctx.
+		predicate := intentCapturePredicate(options)
+		if predicate != nil {
+			hooks.AddAfterListTools(injectTelemetryListToolsHookFor(predicate))
+			server.WithToolHandlerMiddleware(processAndRemoveTelemetryToolMiddlewareFor(predicate))(s)
+		}
+
+		// The redaction middleware sets its ctx flag before toolHandlerMiddleware
+		// annotates the LLMObs span.
 		if options.RedactToolOutput {
 			server.WithToolHandlerMiddleware(redactToolOutputMiddleware)(s)
 		}
 
-		// Register toolHandlerMiddleware first so it runs first (creates the span)
-		// Note: mcp-go middleware runs in registration order (first registered runs first)
 		server.WithToolHandlerMiddleware(toolHandlerMiddleware)(s)
-
-		predicate := intentCapturePredicate(options)
-		if predicate != nil {
-			hooks.AddAfterListTools(injectTelemetryListToolsHookFor(predicate))
-			// Register intent capture middleware second so it runs second (after span is created)
-			server.WithToolHandlerMiddleware(processAndRemoveTelemetryToolMiddlewareFor(predicate))(s)
-		}
 	}
 }

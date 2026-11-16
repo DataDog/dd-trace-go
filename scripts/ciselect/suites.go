@@ -51,8 +51,8 @@ func feedsOtelcExternalApp(file string) bool {
 // suiteImportRef matches a quoted import path naming a suite package of the
 // integration module, e.g.
 // "github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/twirp".
-// The capture group is the suite directory name; deeper packages (such as a
-// suite's mainapp) do not match, so only whole-suite imports form edges.
+// The capture group is the suite directory name; deeper packages do not
+// match, so only whole-suite imports form edges.
 var suiteImportRef = regexp.MustCompile(`"[^"]*/internal/orchestrion/_integration/([A-Za-z0-9._-]+)"`)
 
 // SuiteVerdict is one lane's selection of integration suites. At most one of

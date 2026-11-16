@@ -228,6 +228,9 @@
 // resource is built at startup, so global tags changed later through Remote
 // Config are written on spans instead.
 //
+// When exporting traces over OTLP, the tracing library delegates APM RED metrics
+// computation to the OpenTelemetry Collector or Datadog intake by default.
+//
 // # Disabling the OpenTelemetry SDK
 //
 // OTEL_SDK_DISABLED=true disables tracing, unless DD_TRACE_ENABLED is set

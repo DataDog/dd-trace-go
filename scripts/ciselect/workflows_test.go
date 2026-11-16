@@ -128,6 +128,63 @@ func TestCacheSeedAndDisableLiterals(t *testing.T) {
 	}
 }
 
+// TestSeedGatesAndTraceCheckPairing pins the literals that decide whether
+// the nightly run seeds: the three seed gates must stay identical and name
+// both supported versions, and the push-gated version matrix must keep the
+// single highest version on pushes. It also pins the trace-check artifact
+// name/pattern pairing: a one-sided edit passes every check and silently
+// drops a lane's results.
+func TestSeedGatesAndTraceCheckPairing(t *testing.T) {
+	root, _ := workflowPaths(t)
+
+	// The three seed gates are identical and name both aliases.
+	ui := readText(t, filepath.Join(root, workflowDir), "unit-integration-tests.yml")
+	gates := regexp.MustCompile(`(?m)^\s+seed: .+$`).FindAllString(ui, -1)
+	const wantGate = `seed: ${{ inputs.go-version == '1.26' || inputs.go-version == '1.27' }}`
+	if len(gates) != 3 {
+		t.Fatalf("unit-integration-tests.yml has %d seed literals, want 3", len(gates))
+	}
+	for i, gate := range gates {
+		if got := strings.TrimSpace(gate); got != wantGate {
+			t.Errorf("seed gate %d = %q, want %q", i+1, got, wantGate)
+		}
+	}
+
+	// The push matrix keeps the single highest version; every other
+	// event runs both supported versions.
+	mb := readText(t, filepath.Join(root, workflowDir), "main-branch-tests.yml")
+	const wantMatrix = `go-version: ${{ fromJSON(github.event_name == 'push' && '["1.27"]' || '["1.26", "1.27"]') }}`
+	if !strings.Contains(mb, wantMatrix) {
+		t.Errorf("main-branch-tests.yml lacks the push-gated version matrix %q", wantMatrix)
+	}
+
+	// The trace-check download pattern pairs with the upload name.
+	doc, _ := parseWorkflow(t, filepath.Join(root, workflowDir, "unit-integration-tests.yml"))
+	jobs, _ := doc["jobs"].(map[string]any)
+	var name, pattern string
+	for _, jobAny := range []any{jobs["test-contrib-matrix"], jobs["test-contrib"]} {
+		job, _ := jobAny.(map[string]any)
+		steps, _ := job["steps"].([]any)
+		for _, s := range steps {
+			step, _ := s.(map[string]any)
+			uses, _ := step["uses"].(string)
+			with, _ := step["with"].(map[string]any)
+			switch {
+			case strings.Contains(uses, "upload-artifact"):
+				name, _ = with["name"].(string)
+			case strings.Contains(uses, "download-artifact"):
+				pattern, _ = with["pattern"].(string)
+			}
+		}
+	}
+	if name == "" || pattern == "" {
+		t.Fatalf("trace-check upload name %q or download pattern %q not found", name, pattern)
+	}
+	if !strings.HasPrefix(pattern, strings.TrimSuffix(name, "-${{ strategy.job-index }}")) {
+		t.Errorf("pattern %q does not pair with upload name %q", pattern, name)
+	}
+}
+
 var (
 	seedLiteral       = regexp.MustCompile(`(?m)^\s+seed:`)
 	cacheFalseLiteral = regexp.MustCompile(`(?m)^\s+cache: "false"$`)
@@ -512,7 +569,8 @@ func TestJoinJobsRejectDependencyInducedSkips(t *testing.T) {
 			deps: []string{
 				"changes", "warm-repo-cache", "build-weblog-images",
 				"build-service-extensions-callout", "build-haproxy",
-				"build-apim-callout", "system-tests", "tracer-release",
+				"build-apim-callout", "system-tests", "build-system-tests-binaries",
+				"tracer-release",
 			},
 		},
 		{
