@@ -111,10 +111,13 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 				}
 			}
 
-			// Reserve the split's HOOK keys and scalar event-feature snapshots, plus
-			// allocation/serial/doLog, two provider stamps and the exposure decision.
+			// Reserve allocation/doLog, four provider stamps, feature metadata, and the optional serial ID.
 			features := split.featureMetadata()
-			metadata := make(map[string]any, 6+len(features))
+			capacity := 6 + len(features)
+			if split.SerialID != nil {
+				capacity++
+			}
+			metadata := make(map[string]any, capacity)
 			metadata[metadataAllocationKey] = allocation.Key
 
 			// Get doLog value (defaults to true if not specified)

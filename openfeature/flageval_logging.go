@@ -556,7 +556,8 @@ func (w *flagEvalLoggingWriter) buildFlushEvents(flushTimeMs int64) []flagEvalLo
 	for key, e := range full {
 		ev := baseFlagEvalLoggingEvent(key.flagKey, e, flushTimeMs)
 		if key.environment != (environment{}) {
-			ev.Environment = &key.environment
+			identity := key.environment
+			ev.Environment = &identity
 		}
 		ev.RuntimeDefault = e.runtimeDefault
 		// Consent-on emits raw targeting_key + context; consent-off emits the hashed key and
@@ -587,7 +588,8 @@ func (w *flagEvalLoggingWriter) buildFlushEvents(flushTimeMs int64) []flagEvalLo
 	for key, e := range degraded {
 		ev := baseFlagEvalLoggingEvent(key.flagKey, e, flushTimeMs)
 		if key.environment != (environment{}) {
-			ev.Environment = &key.environment
+			identity := key.environment
+			ev.Environment = &identity
 		}
 		ev.RuntimeDefault = e.runtimeDefault
 		if key.variant != "" {
