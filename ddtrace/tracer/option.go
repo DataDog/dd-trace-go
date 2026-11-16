@@ -1511,7 +1511,8 @@ func WithTags(tags map[string]any) StartSpanOption {
 	}
 }
 
-// ServiceName sets the given service name on the started span. For example "http.server".
+// ServiceName sets the service name on the started span, for example "http.server".
+// It takes precedence over a service name supplied by the integration in the same start options.
 func ServiceName(name string) StartSpanOption {
 	return Tag(ext.ServiceName, name)
 }
