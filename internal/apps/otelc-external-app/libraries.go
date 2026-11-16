@@ -21,6 +21,8 @@ import (
 	"github.com/valyala/fasthttp"
 	mongooptions "go.mongodb.org/mongo-driver/mongo/options"
 	mongov2options "go.mongodb.org/mongo-driver/v2/mongo/options"
+	"gorm.io/gorm"
+	gormtests "gorm.io/gorm/utils/tests"
 )
 
 // useLibraries calls libraries whose otelc rules bring their contrib into the
@@ -42,4 +44,5 @@ func useLibraries() {
 	_ = dynamodb.NewFromConfig(awsv2.Config{Region: "us-east-1"})
 	_ = mongooptions.Client()
 	_ = mongov2options.Client()
+	_, _ = gorm.Open(gormtests.DummyDialector{})
 }
