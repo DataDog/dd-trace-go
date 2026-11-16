@@ -30,6 +30,7 @@ func TestEndToEnd_BooleanFlag(t *testing.T) {
 	// below starts the background flush ticker, which could otherwise drain
 	// a correctly recorded event out of the buffer before a subtest reads it.
 	provider := newDatadogProvider(ProviderConfig{ExposureFlushInterval: time.Hour})
+	cleanupProvider(t, provider)
 	config := createE2EBooleanConfig()
 	provider.updateConfiguration(&config)
 
@@ -153,6 +154,7 @@ func TestEndToEnd_BooleanFlag(t *testing.T) {
 // TestEndToEnd_StringFlag tests string flag evaluation with the OpenFeature SDK.
 func TestEndToEnd_StringFlag(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	config := createE2EStringConfig()
 	provider.updateConfiguration(config)
 
@@ -232,6 +234,7 @@ func TestEndToEnd_StringFlag(t *testing.T) {
 // TestEndToEnd_IntegerFlag tests integer flag evaluation.
 func TestEndToEnd_IntegerFlag(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	config := createE2EIntegerConfig()
 	provider.updateConfiguration(config)
 
@@ -312,6 +315,7 @@ func TestEndToEnd_FloatFlag(t *testing.T) {
 	// writer's buffer, and the background flush ticker could otherwise drain
 	// it first.
 	provider := newDatadogProvider(ProviderConfig{ExposureFlushInterval: time.Hour})
+	cleanupProvider(t, provider)
 	config := createE2EFloatConfig()
 	provider.updateConfiguration(config)
 
@@ -363,6 +367,7 @@ func TestEndToEnd_FloatFlag(t *testing.T) {
 // TestEndToEnd_ObjectFlag tests JSON/object flag evaluation.
 func TestEndToEnd_ObjectFlag(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	config := createE2EObjectConfig()
 	provider.updateConfiguration(config)
 
@@ -430,6 +435,7 @@ func TestEndToEnd_ObjectFlag(t *testing.T) {
 // TestEndToEnd_DisabledFlag tests that disabled flags return defaults.
 func TestEndToEnd_DisabledFlag(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	config := &universalFlagsConfiguration{
 		Format: "SERVER",
 		Environment: environment{
@@ -475,6 +481,7 @@ func TestEndToEnd_DisabledFlag(t *testing.T) {
 // TestEndToEnd_MissingFlag tests error handling for non-existent flags.
 func TestEndToEnd_MissingFlag(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	config := &universalFlagsConfiguration{
 		Format: "SERVER",
 		Environment: environment{
@@ -512,6 +519,7 @@ func TestEndToEnd_MissingFlag(t *testing.T) {
 // TestEndToEnd_ConfigurationUpdate tests that configuration updates are reflected in evaluations.
 func TestEndToEnd_ConfigurationUpdate(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	provider.updateConfiguration(&universalFlagsConfiguration{})
 	err := of.SetProviderAndWait(provider)
 	if err != nil {
@@ -546,6 +554,7 @@ func TestEndToEnd_ConfigurationUpdate(t *testing.T) {
 // TestEndToEnd_TrafficSharding tests that traffic distribution works correctly.
 func TestEndToEnd_TrafficSharding(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	config := createE2EShardingConfig()
 	provider.updateConfiguration(config)
 
@@ -1024,6 +1033,7 @@ func TestEndToEnd_JSONSerialization(t *testing.T) {
 
 	// Use the parsed config
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	provider.updateConfiguration(&parsedConfig)
 
 	err = of.SetProviderAndWait(provider)
@@ -1051,6 +1061,7 @@ func TestEndToEnd_JSONSerialization(t *testing.T) {
 // This covers the fix where empty rules should match everyone (no targeting restrictions).
 func TestEndToEnd_EmptyRulesAllocation(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	config := &universalFlagsConfiguration{
 		Format: "SERVER",
 		Environment: environment{
@@ -1123,6 +1134,7 @@ func TestEndToEnd_EmptyRulesAllocation(t *testing.T) {
 // salt + "-" + targetingKey (with dash separator) to match Eppo SDK implementation.
 func TestEndToEnd_ShardCalculationWithDash(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	config := &universalFlagsConfiguration{
 		Format: "SERVER",
 		Environment: environment{
@@ -1233,6 +1245,7 @@ func TestEndToEnd_ShardCalculationWithDash(t *testing.T) {
 // explicitly provided, the targeting key is used as the "id" value.
 func TestEndToEnd_IdAttributeFallback(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	config := &universalFlagsConfiguration{
 		Format: "SERVER",
 		Environment: environment{
@@ -1415,6 +1428,7 @@ func TestEndToEnd_ExposurePayloadStructure(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{
 		ExposureFlushInterval: 50 * time.Millisecond,
 	})
+	cleanupProvider(t, provider)
 	config := createE2EBooleanConfig()
 	provider.updateConfiguration(&config)
 
@@ -1563,6 +1577,7 @@ func TestEndToEnd_ExposureFlushInterval(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{
 		ExposureFlushInterval: flushInterval,
 	})
+	cleanupProvider(t, provider)
 	config := createE2EBooleanConfig()
 	provider.updateConfiguration(&config)
 
@@ -1640,6 +1655,7 @@ func TestEndToEnd_ExposureDoLogFalse(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{
 		ExposureFlushInterval: time.Hour,
 	})
+	cleanupProvider(t, provider)
 
 	// no-log-flag has DoLog=false: evaluating it must never buffer an event.
 	// logged-flag has the default DoLog (true) and is the positive control:
@@ -1780,6 +1796,7 @@ func TestEndToEnd_ExposureContextAttributes(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{
 		ExposureFlushInterval: 50 * time.Millisecond,
 	})
+	cleanupProvider(t, provider)
 	config := createE2EBooleanConfig()
 	provider.updateConfiguration(&config)
 
@@ -1918,6 +1935,7 @@ func TestEndToEnd_ExposureAgentSide(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{
 		ExposureFlushInterval: 50 * time.Millisecond,
 	})
+	cleanupProvider(t, provider)
 	config := createE2EBooleanConfig()
 	provider.updateConfiguration(&config)
 
@@ -1980,6 +1998,7 @@ func TestEndToEnd_ExposureAgentSide(t *testing.T) {
 // TestEndToEnd_AllThreeFixes tests a complex scenario that exercises all three fixes together.
 func TestEndToEnd_AllThreeFixes(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	config := &universalFlagsConfiguration{
 		Format: "SERVER",
 		Environment: environment{
@@ -2099,6 +2118,7 @@ func TestEndToEnd_AllThreeFixes(t *testing.T) {
 
 func TestEndToEnd_ExposureSerialID(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	status := processConfigUpdate(provider, "datadog/2/ASM_FEATURES/test/config", []byte(`{
 		"createdAt":"2026-01-01T00:00:00Z",
 		"format":"SERVER",

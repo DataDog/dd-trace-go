@@ -79,6 +79,17 @@ type ProviderConfig struct {
 	// FlagEvaluationFlushInterval is the interval for flushing EVP flag evaluation events.
 	// Default: 10 seconds. Leave zero to use the default.
 	FlagEvaluationFlushInterval time.Duration
+
+	// FlagSelection limits the flags the provider loads; see FlagSelection.
+	// Nil loads every flag. Each provider sends its own selection, which it
+	// copies at construction. There is no environment variable for it.
+	// The selection applies to the agentless configuration source, the
+	// default. With Remote Config, the provider logs a warning and loads
+	// every flag.
+	// When this provider is the default OpenFeature provider, LLM
+	// Observability prompt flags are evaluated through it and share its
+	// selection.
+	FlagSelection *FlagSelection
 }
 
 // DatadogProvider is an OpenFeature provider that evaluates feature flags
@@ -126,6 +137,10 @@ type DatadogProvider struct {
 	agentless *agentlessSource
 	// shutdownCalled reports whether ShutdownWithContext has already run. // +checklocks:mu
 	shutdownCalled bool
+	// teardownDone is closed when the teardown goroutine started by
+	// ShutdownWithContext finishes; nil until shutdown is called. It is
+	// written once under mu. // +checklocks:mu
+	teardownDone chan struct{}
 	// deliveryErr is set when no delivery source could start; permanent for the process. // +checklocks:mu
 	deliveryErr error
 	// writersStarted ensures updateConfiguration only starts the periodic
@@ -181,6 +196,7 @@ func NewDatadogProvider(config ProviderConfig) (openfeature.FeatureProvider, err
 	switch settings.Source {
 	case internalffe.SourceRemoteConfig:
 		logOnboarding("configuration source is %s", settings.Source.String())
+		warnFlagSelectionWithRemoteConfig(config.FlagSelection)
 		return startWithRemoteConfig(config)
 	case internalffe.SourceAgentless:
 		logOnboarding("configuration source is %s", settings.Source.String())
@@ -367,7 +383,7 @@ func startWithAgentless(config ProviderConfig, settings internalffe.Settings) (*
 		newAgentlessEVPClient(settings),
 	)
 
-	src, err := newAgentlessSource(settings, p.updateConfiguration)
+	src, err := newAgentlessSource(settings, config.FlagSelection, p.updateConfiguration)
 	if err != nil {
 		// err never contains the configured endpoint or credentials.
 		log.Error("openfeature: failed to start agentless configuration source: %v", err.Error()) //errtrack:ignore invalid user configuration
@@ -594,6 +610,8 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 		return nil
 	}
 	p.shutdownCalled = true
+	teardownDone := make(chan struct{})
+	p.teardownDone = teardownDone
 	source := p.source
 	agentless := p.agentless
 	p.configuration = nil
@@ -610,6 +628,7 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 
 	done := make(chan error, 1)
 	go func() {
+		defer close(teardownDone)
 		var err error
 		// An agentless provider never registered an RC capability, so it
 		// must not unregister one.

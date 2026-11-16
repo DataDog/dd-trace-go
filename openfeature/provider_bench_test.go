@@ -21,6 +21,7 @@ func newBenchmarkClient(b *testing.B) *openfeature.Client {
 	b.Helper()
 
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(b, provider)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -67,6 +68,7 @@ func BenchmarkOpenFeatureClientConcurrentEvaluations(b *testing.B) {
 // BenchmarkBooleanEvaluation benchmarks boolean flag evaluation
 func BenchmarkBooleanEvaluation(b *testing.B) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(b, provider)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -88,6 +90,7 @@ func BenchmarkBooleanEvaluationOptOut(b *testing.B) {
 	provider := newDatadogProvider(ProviderConfig{
 		ExperimentationOptOutMode: ExperimentationOptOutImmediate,
 	})
+	cleanupProvider(b, provider)
 	config := createTestConfig()
 	f := config.Flags["bool-flag"]
 	f.Allocations[0].DoLog = new(true)
@@ -122,6 +125,7 @@ func BenchmarkBooleanEvaluationOptOut(b *testing.B) {
 // BenchmarkStringEvaluation benchmarks string flag evaluation
 func BenchmarkStringEvaluation(b *testing.B) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(b, provider)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -142,6 +146,7 @@ func BenchmarkStringEvaluation(b *testing.B) {
 // BenchmarkIntEvaluation benchmarks integer flag evaluation
 func BenchmarkIntEvaluation(b *testing.B) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(b, provider)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -162,6 +167,7 @@ func BenchmarkIntEvaluation(b *testing.B) {
 // BenchmarkFloatEvaluation benchmarks float flag evaluation
 func BenchmarkFloatEvaluation(b *testing.B) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(b, provider)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -182,6 +188,7 @@ func BenchmarkFloatEvaluation(b *testing.B) {
 // BenchmarkEvaluation benchmarks object flag evaluation
 func BenchmarkEvaluation(b *testing.B) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(b, provider)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -214,6 +221,7 @@ func BenchmarkEvaluationWithVaryingContextSize(b *testing.B) {
 	for _, size := range contextSizes {
 		b.Run(size.name, func(b *testing.B) {
 			provider := newDatadogProvider(ProviderConfig{})
+			cleanupProvider(b, provider)
 			config := createTestConfig()
 			provider.updateConfiguration(config)
 
@@ -253,6 +261,7 @@ func BenchmarkEvaluationWithVaryingFlagCounts(b *testing.B) {
 	for _, count := range flagCounts {
 		b.Run(count.name, func(b *testing.B) {
 			provider := newDatadogProvider(ProviderConfig{})
+			cleanupProvider(b, provider)
 			config := createTestConfig()
 
 			// Add additional flags
@@ -301,6 +310,7 @@ func BenchmarkEvaluationWithVaryingFlagCounts(b *testing.B) {
 // BenchmarkConcurrentEvaluations benchmarks concurrent flag evaluations
 func BenchmarkConcurrentEvaluations(b *testing.B) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(b, provider)
 	config := createTestConfig()
 	provider.updateConfiguration(config)
 
@@ -418,6 +428,7 @@ func runFlagEvalBenchmark(b *testing.B, configureHooks func(p *DatadogProvider))
 	for _, p := range flagEvalBenchProfiles {
 		b.Run(p.name, func(b *testing.B) {
 			provider := newDatadogProvider(ProviderConfig{FlagEvaluationFlushInterval: 24 * time.Hour})
+			cleanupProvider(b, provider)
 			configureHooks(provider)
 
 			config := makeBenchmarkConfig(p.numFlags)
@@ -555,6 +566,7 @@ func BenchmarkFlagEvaluationOTelPlusEVPParallel(b *testing.B) {
 	p := scaleBenchProfile()
 
 	provider := newDatadogProvider(ProviderConfig{FlagEvaluationFlushInterval: 24 * time.Hour})
+	cleanupProvider(b, provider)
 	// Disable only the exposure hook; OTel hook + EVP hook + aggregator all run, so this
 	// measures the combined Path A + Path B cost under contention.
 	removeHookType[*exposureHook](provider)
