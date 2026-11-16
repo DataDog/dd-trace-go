@@ -195,6 +195,7 @@ func TestAgentlessSource_StartDoesNotBlock(t *testing.T) {
 
 	start := time.Now()
 	src.start()
+	t.Cleanup(func() { stopAgentlessSource(t, src) })
 	elapsed := time.Since(start)
 
 	assert.Less(t, elapsed, 50*time.Millisecond, "start must not block on the first poll")
@@ -310,6 +311,7 @@ func TestAgentlessSource_RetryWithinPoll(t *testing.T) {
 	})
 
 	src.start()
+	t.Cleanup(func() { stopAgentlessSource(t, src) })
 
 	require.Eventually(t, func() bool {
 		mu.Lock()
@@ -337,6 +339,7 @@ func TestAgentlessSource_RetriesExhausted(t *testing.T) {
 	})
 
 	src.start()
+	t.Cleanup(func() { stopAgentlessSource(t, src) })
 
 	require.Eventually(t, func() bool {
 		requests, _, _, _ := backend.status()
@@ -381,6 +384,7 @@ func TestAgentlessSource_NoWarningOnGracefulShutdownCancel(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		src.start()
+		t.Cleanup(func() { stopAgentlessSource(t, src) })
 		close(done)
 	}()
 
@@ -399,6 +403,7 @@ func TestAgentlessSource_NonRetryableStopsImmediately(t *testing.T) {
 
 	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
 	src.start()
+	t.Cleanup(func() { stopAgentlessSource(t, src) })
 
 	require.Eventually(t, func() bool {
 		requests, _, _, _ := backend.status()
@@ -427,6 +432,7 @@ func TestAgentlessSource_LastKnownGood(t *testing.T) {
 				applied = append(applied, c)
 			})
 			src.start()
+			t.Cleanup(func() { stopAgentlessSource(t, src) })
 
 			require.Eventually(t, func() bool {
 				requests, _, _, _ := backend.status()
@@ -446,6 +452,7 @@ func TestAgentlessSource_NoOverlap(t *testing.T) {
 
 	src := newTestAgentlessSource(t, backend, 20*time.Millisecond, func(*universalFlagsConfiguration) {})
 	src.start()
+	t.Cleanup(func() { stopAgentlessSource(t, src) })
 
 	require.Eventually(t, func() bool {
 		requests, _, _, _ := backend.status()
@@ -488,6 +495,7 @@ func TestAgentlessSource_DoesNotFollowRedirects(t *testing.T) {
 	require.NoError(t, err)
 
 	src.start()
+	t.Cleanup(func() { stopAgentlessSource(t, src) })
 
 	// Wait for the poll to actually reach the backend before asserting the
 	// redirect target was never hit — start() only schedules the poll
@@ -535,6 +543,7 @@ func TestAgentlessSource_APIKeyOnlySentToManagedEndpoint(t *testing.T) {
 		src.Stop(ctx)
 	})
 	src.start()
+	t.Cleanup(func() { stopAgentlessSource(t, src) })
 
 	// Wait for the poll to actually reach the backend before asserting no
 	// Authorization header arrived — start() only schedules the poll goroutine
@@ -564,6 +573,7 @@ func TestAgentlessSource_Headers(t *testing.T) {
 
 	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
 	src.start()
+	t.Cleanup(func() { stopAgentlessSource(t, src) })
 
 	require.Eventually(t, func() bool {
 		mu.Lock()
@@ -590,6 +600,7 @@ func TestAgentlessSource_Gzip(t *testing.T) {
 		applied++
 	})
 	src.start()
+	t.Cleanup(func() { stopAgentlessSource(t, src) })
 
 	require.Eventually(t, func() bool {
 		mu.Lock()
@@ -607,6 +618,7 @@ func TestAgentlessSource_WarningDedupe(t *testing.T) {
 
 	src := newTestAgentlessSource(t, backend, 5*time.Millisecond, func(*universalFlagsConfiguration) {})
 	src.start()
+	t.Cleanup(func() { stopAgentlessSource(t, src) })
 
 	require.Eventually(t, func() bool {
 		requests, _, _, _ := backend.status()
@@ -629,6 +641,7 @@ func TestAgentlessSource_WarningDedupeIsPerCause(t *testing.T) {
 
 	src := newTestAgentlessSource(t, backend, time.Hour, func(*universalFlagsConfiguration) {})
 	src.start()
+	t.Cleanup(func() { stopAgentlessSource(t, src) })
 
 	// Wait on the second warning itself, not on the request count: the backend
 	// counts a request before the client has processed its response, so
@@ -662,6 +675,7 @@ func TestAgentlessSource_NoLogContainsTheEndpoint(t *testing.T) {
 		src.retryDelay = func(int) time.Duration { return 0 }
 
 		src.start()
+		t.Cleanup(func() { stopAgentlessSource(t, src) })
 
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		src.Stop(ctx)

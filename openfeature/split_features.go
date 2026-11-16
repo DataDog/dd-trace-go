@@ -39,7 +39,7 @@ func (f *splitFeatures) UnmarshalJSON(data []byte) error {
 	*f = nil
 	var entries []json.RawMessage
 	if err := json.Unmarshal(data, &entries); err != nil {
-		log.Debug("openfeature: ignoring malformed split features: expected an array")
+		logOnboarding("ignoring malformed split features: expected an array")
 		return nil
 	}
 	seenKeys := make(map[string]struct{})
@@ -47,7 +47,7 @@ func (f *splitFeatures) UnmarshalJSON(data []byte) error {
 		// Bound metadata retained for evaluation and telemetry. Do not truncate keys
 		// or values: truncation can merge distinct analysis dimensions.
 		if len(*f) >= maxContextFields {
-			log.Debug("openfeature: ignoring remaining split features: entry limit reached")
+			logOnboarding("ignoring remaining split features: entry limit reached")
 			break
 		}
 		var raw struct {
@@ -56,22 +56,22 @@ func (f *splitFeatures) UnmarshalJSON(data []byte) error {
 			Destinations []any  `json:"destinations"`
 		}
 		if err := json.Unmarshal(entry, &raw); err != nil {
-			log.Debug("openfeature: ignoring malformed split feature entry %d: invalid fields", i)
+			logOnboarding("ignoring malformed split feature entry %d: invalid fields", i)
 			continue
 		}
 		if raw.Key == "" || len(raw.Key) > maxFieldLength {
-			log.Debug("openfeature: ignoring malformed split feature entry %d: invalid key length", i)
+			logOnboarding("ignoring malformed split feature entry %d: invalid key length", i)
 			continue
 		}
 		switch value := raw.Value.(type) {
 		case string:
 			if len(value) > maxFieldLength {
-				log.Debug("openfeature: ignoring malformed split feature entry %d: string value too long", i)
+				logOnboarding("ignoring malformed split feature entry %d: string value too long", i)
 				continue
 			}
 		case bool, float64:
 		default:
-			log.Debug("openfeature: ignoring malformed split feature entry %d: expected a scalar value", i)
+			logOnboarding("ignoring malformed split feature entry %d: expected a scalar value", i)
 			continue
 		}
 		var destinations []string
@@ -81,7 +81,7 @@ func (f *splitFeatures) UnmarshalJSON(data []byte) error {
 			}
 		}
 		if len(destinations) == 0 {
-			log.Debug("openfeature: ignoring malformed split feature entry %d: no destinations", i)
+			logOnboarding("ignoring malformed split feature entry %d: no destinations", i)
 			continue
 		}
 		if _, duplicate := seenKeys[raw.Key]; duplicate {
