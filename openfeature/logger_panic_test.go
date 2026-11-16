@@ -223,6 +223,38 @@ var strayProviderGoroutines = []string{
 	"(*agentlessSource).run",
 }
 
+// strayGoroutineKind returns the entry of strayProviderGoroutines whose
+// function a stack frame line names, or "" if it names none of them.
+func strayGoroutineKind(line string) string {
+	for _, fn := range strayProviderGoroutines {
+		if strings.HasPrefix(line, "github.com/DataDog/dd-trace-go/v2/openfeature."+fn+"(") {
+			return fn
+		}
+	}
+	return ""
+}
+
+// providerGoroutineKinds returns the strayProviderGoroutines entries that
+// match at least one running goroutine.
+func providerGoroutineKinds() []string {
+	var kinds []string
+	for _, g := range providerGoroutines() {
+		for line := range strings.SplitSeq(g, "\n") {
+			if strings.HasPrefix(line, "created by ") {
+				continue
+			}
+			if fn := strayGoroutineKind(line); fn != "" {
+				if !slices.Contains(kinds, fn) {
+					kinds = append(kinds, fn)
+				}
+				break
+			}
+		}
+	}
+	slices.Sort(kinds)
+	return kinds
+}
+
 // providerGoroutines returns the stacks of the running goroutines listed in
 // strayProviderGoroutines.
 func providerGoroutines() []string {
@@ -241,9 +273,7 @@ func providerGoroutines() []string {
 			if strings.HasPrefix(line, "created by ") {
 				continue
 			}
-			if slices.ContainsFunc(strayProviderGoroutines, func(fn string) bool {
-				return strings.HasPrefix(line, "github.com/DataDog/dd-trace-go/v2/openfeature."+fn+"(")
-			}) {
+			if strayGoroutineKind(line) != "" {
 				found = append(found, g)
 				break
 			}
@@ -359,95 +389,136 @@ func TestMalformedSplitFeatureDecode_ContainsLoggerPanics(t *testing.T) {
 }
 
 // TestProviderGoroutines_FindsRunningProvider guards providerGoroutines
-// against renames: if a matcher stops matching the provider's goroutines,
-// leak detection is silently disabled for that goroutine class. Hold every
-// goroutine class live at once - both writers, an in-flight agentless poll,
-// and a blocked shutdown teardown - and require each matcher to find its
-// own goroutine, so one working matcher cannot hide a broken one.
+// against renames: if a matcher stops matching its goroutine, leak detection
+// is silently disabled for that goroutine class. Each subtest starts only
+// one class and holds it live, then requires the scan to report exactly that
+// class, and to report nothing once the goroutine has been joined. A broken
+// matcher therefore fails its own subtest, and no other class can satisfy it.
 func TestProviderGoroutines_FindsRunningProvider(t *testing.T) {
 	t.Setenv(flagEvalCountsEnabledEnvVar, "true")
 
-	// Every request to srv blocks until release, so a goroutine waiting on
-	// its response stays live while the test snapshots stacks.
-	entered := make(chan string, 16)
-	release := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case entered <- r.URL.Path:
-		default:
-		}
-		<-release
-		w.WriteHeader(http.StatusAccepted)
-	}))
-	t.Cleanup(srv.Close)
-	var once sync.Once
-	unblock := func() { once.Do(func() { close(release) }) }
-	// Defers run before cleanups: unblocking first keeps the provider
-	// shutdowns below from stalling on a blocked handler if the test fails.
-	defer unblock()
-
-	// The agentless provider: its poll goroutine blocks in flight, and both
-	// writers start (hourly flushes, so they never touch srv).
-	polling, err := startWithAgentless(
-		ProviderConfig{ExposureFlushInterval: time.Hour, FlagEvaluationFlushInterval: time.Hour},
-		internalffe.Settings{
-			AgentlessBaseURL: srv.URL,
-			APIKey:           "test-api-key",
-			PollInterval:     time.Hour,
-			RequestTimeout:   time.Minute,
-		})
-	require.NoError(t, err)
-	cleanupProvider(t, polling)
-	polling.updateConfiguration(createTestConfig())
-	select {
-	case <-entered:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the agentless poll never started")
-	}
-
-	// The second provider: its teardown flush is the only send to srv, so the
-	// pending event below keeps the teardown goroutine blocked in it, live
-	// for the snapshot. Its writers flush hourly and stay running too.
-	secondEvp := testAgentlessEVPClient(t, nil, srv, "test-api-key")
-	shuttingDown := newDatadogProviderWithSourceAndEVP(ProviderConfig{
-		ExposureFlushInterval:       time.Hour,
-		FlagEvaluationFlushInterval: time.Hour,
-	}, internalffe.SourceAgentless, secondEvp)
-	cleanupProvider(t, shuttingDown)
-	shuttingDown.updateConfiguration(createTestConfig())
-	shuttingDown.exposureWriter.append(exposureEvent{Flag: exposureFlag{Key: "bool-flag"}, Subject: exposureSubject{ID: "user-1"}})
-	shutdownDone := make(chan error, 1)
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		shutdownDone <- shuttingDown.ShutdownWithContext(ctx)
-	}()
-
-	// The teardown goroutine needs a moment to start, so poll until every
-	// matcher has found its goroutine or the deadline expires.
-	found := make(map[string]bool, len(strayProviderGoroutines))
-	deadline := time.Now().Add(5 * time.Second)
-	for len(found) < len(strayProviderGoroutines) && time.Now().Before(deadline) {
-		for _, stack := range providerGoroutines() {
-			for _, fn := range strayProviderGoroutines {
-				if !found[fn] && strings.Contains(stack, "openfeature."+fn+"(") {
-					found[fn] = true
-				}
+	// blockingServer answers every request only after release is called, so
+	// a goroutine waiting on its response stays live. entered receives once
+	// a request arrives.
+	blockingServer := func(t *testing.T) (srv *httptest.Server, entered <-chan struct{}, release func()) {
+		t.Helper()
+		in := make(chan struct{}, 1)
+		gate := make(chan struct{})
+		srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			select {
+			case in <- struct{}{}:
+			default:
 			}
-		}
-		if len(found) < len(strayProviderGoroutines) {
-			time.Sleep(time.Millisecond)
+			<-gate
+			w.WriteHeader(http.StatusAccepted)
+		}))
+		var once sync.Once
+		release = func() { once.Do(func() { close(gate) }) }
+		t.Cleanup(srv.Close)
+		// Registered after srv.Close, so it runs first: a failing subtest
+		// never leaves the handler, or a join waiting on it, blocked.
+		t.Cleanup(release)
+		return srv, in, release
+	}
+	waitEntered := func(t *testing.T, entered <-chan struct{}) {
+		t.Helper()
+		select {
+		case <-entered:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the request never reached the server")
 		}
 	}
-	unblock()
-	require.NoError(t, <-shutdownDone)
+	waitClosed := func(t *testing.T, done <-chan struct{}) {
+		t.Helper()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the goroutine did not exit")
+		}
+	}
+	hourly := ProviderConfig{ExposureFlushInterval: time.Hour, FlagEvaluationFlushInterval: time.Hour}
 
-	var missing []string
-	for _, fn := range strayProviderGoroutines {
-		if !found[fn] {
-			missing = append(missing, fn)
-		}
+	covered := make([]string, 0, len(strayProviderGoroutines))
+	for _, tc := range []struct {
+		kind string
+		// start starts only goroutines of kind, held live until stop
+		// returns, and stop joins them.
+		start func(t *testing.T) (stop func())
+	}{
+		{
+			kind: "(*exposureWriter).start.func1",
+			start: func(t *testing.T) func() {
+				w := newExposureWriterWithEVP(hourly, newEVPClientBase())
+				require.True(t, w.datadogLoggingEnabled, "the exposure writer only starts with exposure delivery enabled")
+				w.start()
+				done := w.workerDone
+				t.Cleanup(w.stop)
+				return func() { w.stop(); waitClosed(t, done) }
+			},
+		},
+		{
+			kind: "(*flagEvalLoggingWriter).start.func1",
+			start: func(t *testing.T) func() {
+				w := newFlagEvalLoggingWriterWithEVP(hourly, newEVPClientBase())
+				w.start()
+				t.Cleanup(w.stop)
+				return w.stop // stop joins the worker
+			},
+		},
+		{
+			kind: "(*DatadogProvider).ShutdownWithContext.func1",
+			start: func(t *testing.T) func() {
+				srv, entered, release := blockingServer(t)
+				// No configuration is applied, so the writers never start;
+				// the teardown's final exposure flush is the only send, and
+				// it holds the teardown goroutine blocked in the handler.
+				p := newDatadogProviderWithSourceAndEVP(hourly, internalffe.SourceAgentless,
+					testAgentlessEVPClient(t, nil, srv, "test-api-key"))
+				cleanupProvider(t, p)
+				t.Cleanup(release) // runs before cleanupProvider joins the blocked teardown
+				p.exposureWriter.append(exposureEvent{Flag: exposureFlag{Key: "bool-flag"}, Subject: exposureSubject{ID: "user-1"}})
+				ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+				defer cancel()
+				require.ErrorIs(t, p.ShutdownWithContext(ctx), context.DeadlineExceeded)
+				waitEntered(t, entered)
+				return func() { release(); shutdownAndWait(t, p) }
+			},
+		},
+		{
+			kind: "(*agentlessSource).run",
+			start: func(t *testing.T) func() {
+				srv, entered, release := blockingServer(t)
+				src, err := newAgentlessSource(internalffe.Settings{
+					AgentlessBaseURL: srv.URL,
+					APIKey:           "test-api-key",
+					PollInterval:     time.Hour,
+					RequestTimeout:   time.Minute,
+				}, nil, func(*universalFlagsConfiguration) {})
+				require.NoError(t, err)
+				src.start()
+				t.Cleanup(func() { stopAgentlessSource(t, src) })
+				// The first poll blocks in the handler, so run stays live.
+				waitEntered(t, entered)
+				return func() { release(); stopAgentlessSource(t, src) }
+			},
+		},
+	} {
+		covered = append(covered, tc.kind)
+		t.Run(tc.kind, func(t *testing.T) {
+			require.Contains(t, strayProviderGoroutines, tc.kind)
+			requireNoStrayProviderGoroutines(t)
+
+			stop := tc.start(t)
+			require.Eventually(t, func() bool { return slices.Equal(providerGoroutineKinds(), []string{tc.kind}) },
+				5*time.Second, time.Millisecond,
+				"providerGoroutines must report only %s while it runs; it reports %v", tc.kind, providerGoroutineKinds())
+
+			stop()
+			require.Eventually(t, func() bool { return len(providerGoroutines()) == 0 },
+				time.Second, time.Millisecond, "the %s goroutine is still reported after it was joined", tc.kind)
+		})
 	}
-	require.Empty(t, missing,
-		"providerGoroutines no longer matches these goroutine classes; leak detection is silently disabled for them: %v", missing)
+
+	// Every matcher has a subtest above.
+	assert.ElementsMatch(t, strayProviderGoroutines, covered, "add a subtest for every strayProviderGoroutines entry")
 }
