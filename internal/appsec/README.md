@@ -312,3 +312,55 @@ monitoring) removes the `block_request` and `redirect_request` actions. It
 reports a removed `block_request` as `block:failure` on `rasp.rule.match`. It
 does not count as a requested block on `waf.requests`, so it cannot hide a
 later block of the same request.
+
+### go-chi: route report and response commit
+
+The go-chi contribs (`contrib/go-chi/chi.v5` and `contrib/go-chi/chi`) add the
+`Middleware` with `Use` before routing, so chi selects the route after the
+middleware starts. `withAppsec` handles this in 2 steps:
+
+- **Input of the WAF.** The operation starts with the route and the path
+  parameters that chi knows at that time. They can block. For example, an
+  endpoint middleware (`r.With(Middleware())`) and a sub-router `Use` know the
+  parameters of the route or of the parent mount; a `Use` at the root knows none.
+  The middleware adds no newly discovered path parameters, so a rule on path
+  parameters does not match with a `Use` at the root.
+- **Late route report.** After the handler, it calls
+  `httpsec.RouteMatched(ctx, route, nil)` when the route that chi selected is not
+  the start route. API Security uses the route as the sampling key, and
+  `api_security.missing_route` counts the requests without it. The call sends no
+  data, so it causes no additional native WAF evaluation: no new match or event,
+  no use of the request budget or of the event limit, and a stored action is not
+  replaced.
+
+A block or a redirect that the WAF stored replaces the response only if the
+response is not sent yet. It never stops the handler. If the response is sent,
+the bytes do not change: the block is a `block_failure`, and a redirect is not
+counted as a block (see the block outcome telemetry below). chi's writer does
+not see every way a response starts, so `commitTracker`
+(`contrib/go-chi/*/writer_appsec.go`) wraps it and records `WriteHeader`,
+`Write`, `Flush`, `ReadFrom` and `Hijack`, also through
+`http.ResponseController`. The tracker has the interface set of the chi writer,
+plus `FlushError()` when a writer under it can flush.
+
+How a flush is classified:
+
+- A flush that returns an error does not mark the response as sent.
+- A successful flush marks it only if the writer that really got the flush is
+  known to send it. The tracker does the walk of `http.ResponseController`
+  itself, in one pass (`FlushError`, then `Flush`, then `Unwrap`), and
+  classifies that writer. It is on the wire if it is a known server writer
+  (`knownServerWriters`: net/http HTTP/1 and HTTP/2, `golang.org/x/net/http2`,
+  `httptest.ResponseRecorder`, matched by package path and type name) or an outer
+  tracker that recorded the flush. Any other writer (a compressing writer that
+  ignores a flush, a buffering writer) leaves the state as it is without the
+  tracker: a block can then add its body after the flushed output.
+- The type names are private and change with the Go version. A test walks the
+  real writers of the running Go version and fails on a renamed type.
+
+A tracker finds an outer tracker through the `Unwrap()` chain only (at most 16
+writers), which proves that both write to the same response. A writer without
+`Unwrap()` between 2 trackers hides the outer one. The middlewares between
+`Middleware` and the handler must send the response through the writer that they
+get and return it from `Unwrap()`; a middleware that writes or flushes before
+`Middleware` is not visible to AppSec.

@@ -28,6 +28,8 @@ import (
 // sampling key: this adds no additional native WAF evaluation. The response writer
 // is wrapped in a commitTracker (see writer_appsec.go) to know if a late block can
 // still replace the response.
+// Details: internal/appsec/README.md, section "go-chi: route report and response
+// commit".
 func withAppsec(next http.Handler, span trace.TagSetter, cfg *config, cache *sync.Map) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// A copy for each request: httpsec.BeforeHandle writes in the config.

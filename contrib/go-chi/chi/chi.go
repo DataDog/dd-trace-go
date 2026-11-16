@@ -30,43 +30,16 @@ func init() {
 
 // Middleware returns middleware that will trace incoming requests.
 //
-// # AppSec and the route
+// # AppSec
 //
-// With Use before routing, chi selects the route after this middleware starts. The
-// WAF gets the route and the path parameters that chi knows when the middleware
-// starts, as before the route was reported (for example the parameters of an
-// endpoint middleware or of a parent mount; they can block). It adds no newly
-// discovered path parameters: with Use at the root before routing, chi knows no path
-// parameters yet, so a rule on path parameters does not match (Use in a sub-router
-// knows the parameters of the parent mount). Use r.With(Middleware()) on the
-// endpoint for these rules: chi knows the route and its path parameters before the
-// middleware starts.
+// Add Middleware before any middleware that writes or flushes the response, and
+// make the response writers of the middlewares after it implement Unwrap(): AppSec
+// must see the response to decide if a block can still replace it.
 //
-// After the handler returns, the middleware reports the route that chi selected to
-// AppSec (API Security uses it as the sampling key of the endpoint). This report
-// sends only the route and causes no additional native WAF evaluation. A
-// block or a redirect that the WAF stored replaces the response only if the
-// response is not sent yet: it never stops the handler, which already ran. If the
-// response is sent, it does not change; AppSec reports a failed block (a redirect
-// is not counted as a block). A flush that returns an error does not itself mark
-// the response as sent: if it wrote part of the response, a block can add its body
-// after that output. A flush (direct, or through http.ResponseController) that
-// reaches a writer that does not send it (for example a compressing writer that
-// ignores a flush before the first write, or a buffering writer that returns nil)
-// does not mark the response as sent either, unless the writer that really flushes
-// is a known server writer (net/http HTTP/1 and HTTP/2, golang.org/x/net/http2,
-// httptest.ResponseRecorder) or an outer middleware of this kind that recorded the
-// flush; if the writer sent the output, a block can then add its body after it, as
-// before this version.
-//
-// The middlewares between this middleware and the handler must send the response
-// through the writer that they get, and return it from Unwrap(). With a writer
-// without Unwrap() between 2 of these middlewares and a flush between them, a block
-// on response data can add its body after the response (as before this version).
-//
-// A middleware that writes or flushes the response must come after this
-// middleware: AppSec cannot see a response that was sent before it, and a block
-// can then add its body after that response.
+// With Use before routing, chi selects the route after Middleware starts, so AppSec
+// gets the route after the handler returns. With Use at the root, it gets no path
+// parameters. Use r.With(Middleware()) on the endpoint to get the route and the path
+// parameters before the handler (for example for rules on path parameters).
 func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 	cfg := new(config)
 	defaults(cfg)
