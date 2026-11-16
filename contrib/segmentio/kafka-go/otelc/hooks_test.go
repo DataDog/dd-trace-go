@@ -126,8 +126,9 @@ func TestFetchMessageHooks(t *testing.T) {
 	fetchMessage(context.Background(), r, kafka.Message{Topic: "topic"}, nil)
 	closeReader(r)
 	assert.Len(t, mt.FinishedSpans(), 2, "Close finishes the last span")
-	_, ok := readers.Load(weak.Make(r))
-	assert.False(t, ok, "Close drops the reader's tracer")
+
+	fetchMessage(context.Background(), r, kafka.Message{Topic: "topic"}, nil)
+	assert.Len(t, mt.FinishedSpans(), 3, "a fetch after Close finishes its span right away")
 }
 
 func TestFetchMessageHooksContinueTrace(t *testing.T) {

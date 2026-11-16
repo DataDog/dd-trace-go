@@ -87,14 +87,14 @@ func AfterReaderFetchMessage(ictx hook.HookContext, msg kafka.Message, err error
 	ictx.SetReturnVal(0, msg)
 }
 
-// BeforeReaderClose finishes the span of the last message r fetched.
+// BeforeReaderClose finishes the span of the last message r fetched. The
+// closed tracer stays until r is freed, so a fetch that returns during Close
+// gets a span that is finished right away.
 func BeforeReaderClose(_ hook.HookContext, r *kafka.Reader) {
 	if r == nil {
 		return
 	}
-	if rt, ok := readers.LoadAndDelete(weak.Make(r)); ok {
-		rt.(*kafkatrace.ReaderTracer).Close()
-	}
+	readerTracer(r).Close()
 }
 
 // BeforeWriterWriteMessages starts one span for each message w writes. Calls
