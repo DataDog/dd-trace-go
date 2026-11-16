@@ -21,9 +21,10 @@ import (
 )
 
 // maxUnwrapWalk is the maximum number of writers that newCommitTracker visits
-// when it follows the Unwrap() chain under the chi writer. A longer chain (or a
-// cycle) ends the walk: the tracker then has no parent and no FlushError from the
-// writers that it did not visit.
+// when it follows the Unwrap() chain under the chi writer (the parent walk). A
+// longer chain (or a cycle) ends the walk: the tracker then has no parent and no
+// FlushError from the writers that it did not visit. The flush walk of flushError
+// also visits the chi writer, so it has 1 more step.
 const maxUnwrapWalk = 16
 
 // commitTracker records when the response of a request started, so that AppSec
@@ -32,6 +33,12 @@ const maxUnwrapWalk = 16
 // (Flush and Hijack, also through http.ResponseController), so the commitTracker
 // wraps the chi writer and records those. It is only used when AppSec is
 // enabled.
+//
+// A tracker finds an outer tracker only through the Unwrap() chain, which proves
+// that both write to the same response. A writer without Unwrap() between 2
+// trackers hides the outer one. So the middlewares after Middleware must send the
+// response through the writer that they get and return it from Unwrap(), and a
+// middleware that writes or flushes before Middleware is not visible.
 //
 // A commitTracker is not safe for concurrent use, like the writer that it wraps.
 type commitTracker struct {
@@ -96,10 +103,10 @@ func (t *commitTracker) markFlushed() {
 	}
 }
 
-// flush is the Flush method of the trackers whose chi writer has Flush. The chi
-// writer sends the flush to the writer under it, which is the writer that is
-// classified (see flushError for the rule). A flush that nothing sends does not
-// mark the response as sent, as without the tracker.
+// flush is the Flush method of the trackers whose chi writer has Flush. This is the
+// direct Flush path: chi's writer sends the flush to its immediate target, which is
+// the writer that is classified (see flushError for the rule). A flush that nothing
+// sends does not mark the response as sent, as without the tracker.
 func (t *commitTracker) flush() {
 	target := t.WrapResponseWriter.Unwrap()
 	t.WrapResponseWriter.(http.Flusher).Flush()
@@ -114,8 +121,9 @@ func (t *commitTracker) flush() {
 // the wire: an opaque writer can ignore a flush, or buffer it, and still return
 // nil, and a block that works without the tracker would be lost.
 //
-// It does the walk of http.ResponseController.Flush (FlushError, then Flush, then
-// Unwrap) itself, in one pass: the writer that gets the flush is the writer that
+// This is the http.ResponseController path, for a tracker without Flush. It does
+// the walk of http.ResponseController.Flush (FlushError, then Flush, then Unwrap)
+// itself, in one pass, from the chi writer: the writer that gets the flush is the writer that
 // is classified. A second walk could find another writer, if an Unwrap method
 // returns a different writer after the flush. The first writer that flushes is
 // on the wire if it is a known server writer (its Flush always sends the status
@@ -215,10 +223,10 @@ type unwrapper interface{ Unwrap() http.ResponseWriter }
 
 // newCommitTracker wraps the chi writer ww in a commit tracker. The result has
 // exactly the interface set of ww (http.Flusher, http.Hijacker, io.ReaderFrom,
-// http.Pusher), plus FlushError() only when ww is not an http.Flusher and a
-// writer under it can flush: http.ResponseController would otherwise bypass the
-// tracker. It also implements middleware.WrapResponseWriter, and Unwrap()
-// returns the same target as ww.
+// http.Pusher), plus FlushError() only when ww has no Flush() and a writer under
+// it can flush: http.ResponseController would otherwise bypass the tracker. It
+// also implements middleware.WrapResponseWriter, and Unwrap() returns the same
+// target as ww.
 func newCommitTracker(ww middleware.WrapResponseWriter) http.ResponseWriter {
 	ct := &commitTracker{WrapResponseWriter: ww}
 

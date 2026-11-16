@@ -19,16 +19,22 @@ import (
 // The handler expects the chi response writer that [Middleware] creates.
 //
 // With Use before routing, chi has not selected the route when this middleware
-// starts: the WAF gets the route and the path parameters that chi knows at that
-// time, as before the route was reported (for example the parameters of an endpoint
-// middleware or of a parent mount). It adds no newly discovered path parameters.
-// After the handler, the handler reports the route that chi selected
-// (RouteMatched without parameters), because API Security uses the route as the
-// sampling key: this adds no additional native WAF evaluation. The response writer
-// is wrapped in a commitTracker (see writer_appsec.go) to know if a late block can
-// still replace the response.
-// Details: internal/appsec/README.md, section "go-chi: route report and response
-// commit".
+// starts. The WAF gets the route and the path parameters that chi knows at that
+// time, as before the route was reported. They can block: an endpoint middleware
+// (r.With(Middleware())) and a Use in a sub-router know the parameters of the route
+// or of the parent mount, and a Use at the root knows none. The middleware adds no
+// newly discovered path parameters, so a rule on path parameters does not match
+// with a Use at the root.
+//
+// After the handler, it reports the route that chi selected when it is not the start
+// route (RouteMatched without parameters): API Security uses the route as the
+// sampling key, and api_security.missing_route counts the requests without it. The
+// report sends only the route and causes no additional native WAF evaluation. A late
+// block replaces the response only if it is not sent yet (see "Late blocks and route
+// reports in HTTP contribs" in internal/appsec/README.md).
+//
+// The response writer is wrapped in a commitTracker (see writer_appsec.go) to know
+// if the response is sent.
 func withAppsec(next http.Handler, span trace.TagSetter) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg := &httpsec.Config{Framework: "github.com/go-chi/chi"}
