@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"io"
 	"strconv"
 	"strings"
 	"testing"
@@ -74,6 +75,30 @@ func TestPlainBuildCorrelatesPerHook(t *testing.T) {
 		assert.Equal(t, 2, strings.Count(line, `"dd.trace_id"`), line)
 		assert.Equal(t, 2, strings.Count(line, `"dd.span_id"`), line)
 	}
+}
+
+// forwardHook logs each event's context to another logger, as an application
+// hook that copies events elsewhere might.
+type forwardHook struct{ to zerolog.Logger }
+
+func (h forwardHook) Run(e *zerolog.Event, _ zerolog.Level, msg string) {
+	h.to.Info().Ctx(e.GetCtx()).Msg(msg)
+}
+
+func TestOtelcForwardedContextIsCorrelated(t *testing.T) {
+	setOtelcEnabled(t, true)
+	tracer.Start(tracer.WithLogStartup(false))
+	t.Cleanup(tracer.Stop)
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "test.root")
+	defer span.Finish()
+
+	var forwarded strings.Builder
+	to := zerolog.New(&forwarded).Hook(DDContextLogHook{})
+	logger := zerolog.New(io.Discard).Hook(DDContextLogHook{}, forwardHook{to: to})
+	logger.Info().Ctx(ctx).Msg("forwarded")
+
+	assert.Equal(t, 1, strings.Count(forwarded.String(), `"dd.trace_id"`), forwarded.String())
+	assert.Equal(t, 1, strings.Count(forwarded.String(), `"dd.span_id"`), forwarded.String())
 }
 
 func TestOtelcNoSpan(t *testing.T) {

@@ -44,7 +44,7 @@ func newConfig() *config {
 func (d DDContextLogHook) Run(e *zerolog.Event, _ zerolog.Level, _ string) {
 	ctx := e.GetCtx()
 	span, found := tracer.SpanFromContext(ctx)
-	if !found || correlatedByOther(ctx) {
+	if !found || correlatedByOther(ctx, e) {
 		return
 	}
 	if cfg.log128bits && span.Context().TraceID() != tracer.TraceIDZero {
