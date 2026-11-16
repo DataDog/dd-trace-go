@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -36,7 +37,9 @@ type span struct {
 	// endCtx is the Datadog span context saved at End. With the span pool on, the
 	// Datadog span can be reused after End, but its old context object is not, so
 	// SpanContext reads endCtx to keep returning the IDs of this span.
-	endCtx     *tracer.SpanContext
+	// It is atomic, not guarded by mu, so SpanContext can run while End holds mu,
+	// for example from a FinishOption callback.
+	endCtx     atomic.Pointer[tracer.SpanContext]
 	attributes map[string]any
 	spanKind   oteltrace.SpanKind
 	finishOpts []tracer.FinishOption
@@ -82,7 +85,7 @@ func (s *span) End(options ...oteltrace.SpanEndOption) {
 		return
 	}
 	s.finished = true
-	s.endCtx = s.DD.Context()
+	s.endCtx.Store(s.DD.Context())
 	if !s.otelSemanticsEnabled {
 		// Datadog operation-name handling. Under OTel semantics the span name maps to
 		// the resource (the OTLP span-name field) and operation.name is suppressed on
@@ -163,12 +166,12 @@ func EndOptions(sp oteltrace.Span, options ...tracer.FinishOption) {
 
 // SpanContext returns implementation of the oteltrace.SpanContext.
 func (s *span) SpanContext() oteltrace.SpanContext {
-	s.mu.RLock()
-	ctx := s.endCtx
+	// No lock: s.DD is set before the span is shared and only replaced after End
+	// has stored endCtx, so a nil endCtx means s.DD is still this span's.
+	ctx := s.endCtx.Load()
 	if ctx == nil {
 		ctx = s.DD.Context()
 	}
-	s.mu.RUnlock()
 	return spanContextFromDD(ctx)
 }
 

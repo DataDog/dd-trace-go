@@ -642,3 +642,48 @@ func assertSameTraceState(t *testing.T, want, got oteltrace.TraceState) {
 		return true
 	})
 }
+
+func TestSpanContextFromFinishOptionDuringEnd(t *testing.T) {
+	tp, _, cleanup := mockTracerProvider(t, tracer.WithSpanPool(true))
+	defer cleanup()
+
+	_, sp := tp.Tracer("").Start(context.Background(), "otel.op")
+	want := sp.SpanContext()
+	var got oteltrace.SpanContext
+	EndOptions(sp, func(*tracer.FinishConfig) {
+		// End holds the span mutex while it runs finish options.
+		got = sp.SpanContext()
+	})
+	done := make(chan struct{})
+	go func() {
+		sp.End()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("End deadlocked when a FinishOption called SpanContext")
+	}
+	assert.Equal(t, want.TraceID(), got.TraceID())
+	assert.Equal(t, want.SpanID(), got.SpanID())
+}
+
+func TestSpanContextConcurrentWithEnd(t *testing.T) {
+	tp, _, cleanup := mockTracerProvider(t, tracer.WithSpanPool(true))
+	defer cleanup()
+
+	_, sp := tp.Tracer("").Start(context.Background(), "otel.op")
+	want := sp.SpanContext().SpanID()
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 100 {
+				assert.Equal(t, want, sp.SpanContext().SpanID())
+			}
+		}()
+	}
+	sp.End()
+	wg.Wait()
+}
