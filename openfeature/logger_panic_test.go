@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	of "github.com/open-feature/go-sdk/openfeature"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -289,20 +290,164 @@ func stopAgentlessSource(tb testing.TB, src *agentlessSource) {
 	}
 }
 
+// Malformed split-feature diagnostics fire inside json.Unmarshal while
+// decoding server-delivered UFC data: both the agentless poll goroutine and
+// the Remote Config callback decode it before any outer error branch runs,
+// so only the decoder itself can contain a panicking application logger.
+// The configuration must still apply: malformed features are dropped, the
+// valid ones kept.
+func TestMalformedSplitFeatureDecode_ContainsLoggerPanics(t *testing.T) {
+	const ufcWithMalformedSplitFeatures = `{
+		"createdAt": "2026-10-01T12:00:00Z",
+		"format": "SERVER",
+		"environment": {"name": "Test"},
+		"flags": {
+			"split-flag": {"key": "split-flag", "enabled": true, "variationType": "BOOLEAN",
+				"variations": {"on": {"key": "on", "value": true}},
+				"allocations": [{"key": "alloc-1", "splits": [{"variationKey": "on", "shards": [],
+					"features": [
+						{"key": "kept", "value": true, "destinations": ["HOOK_EXPOSURE"]},
+						{"key": "dropped", "value": {"nested": true}, "destinations": ["HOOK_EXPOSURE"]}
+					]}]}]}
+		}
+	}`
+
+	assertApplied := func(t *testing.T, config *universalFlagsConfiguration) {
+		t.Helper()
+		require.NotNil(t, config, "a failing logger must not skip applying configuration")
+		f := config.Flags["split-flag"]
+		require.NotNil(t, f)
+		require.Len(t, f.Allocations, 1)
+		require.Len(t, f.Allocations[0].Splits, 1)
+		features := f.Allocations[0].Splits[0].Features
+		if assert.Len(t, features, 1, "the malformed entry must be dropped, the valid one kept") {
+			assert.Equal(t, "kept", features[0].Key)
+		}
+	}
+
+	t.Run("agentless poll", func(t *testing.T) {
+		withPanickingLogger(t, log.LevelDebug)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("ETag", `"v7"`)
+			_, _ = w.Write([]byte(`{"data":{"id":"1","type":"universal-flag-configuration","attributes":` + ufcWithMalformedSplitFeatures + `}}`))
+		}))
+		t.Cleanup(srv.Close)
+		src := newDebugAgentlessSource(t, srv.URL)
+		var applied *universalFlagsConfiguration
+		src.apply = func(config *universalFlagsConfiguration) { applied = config }
+
+		require.NotPanics(t, src.poll)
+
+		assertApplied(t, applied)
+	})
+
+	t.Run("remote config", func(t *testing.T) {
+		// Built before the panicking logger is installed: construction logs a
+		// span-enrichment debug line on this goroutine.
+		p := newDatadogProvider(ProviderConfig{})
+		cleanupProvider(t, p)
+		withPanickingLogger(t, log.LevelDebug)
+
+		var status rc.ApplyStatus
+		require.NotPanics(t, func() {
+			status = processConfigUpdate(p, "datadog/2/FFE_FLAGS/config/config", []byte(ufcWithMalformedSplitFeatures))
+		})
+
+		assert.Equal(t, rc.ApplyStateAcknowledged, status.State)
+		assertApplied(t, p.getConfiguration())
+	})
+}
+
 // TestProviderGoroutines_FindsRunningProvider guards providerGoroutines
-// against renames: if it stops matching the provider's goroutines, leak
-// detection is silently disabled.
+// against renames: if a matcher stops matching the provider's goroutines,
+// leak detection is silently disabled for that goroutine class. Hold every
+// goroutine class live at once - both writers, an in-flight agentless poll,
+// and a blocked shutdown teardown - and require each matcher to find its
+// own goroutine, so one working matcher cannot hide a broken one.
 func TestProviderGoroutines_FindsRunningProvider(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	t.Setenv(flagEvalCountsEnabledEnvVar, "true")
+
+	// Every request to srv blocks until release, so a goroutine waiting on
+	// its response stays live while the test snapshots stacks.
+	entered := make(chan string, 16)
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case entered <- r.URL.Path:
+		default:
+		}
+		<-release
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	t.Cleanup(srv.Close)
-	evp := testAgentlessEVPClient(t, nil, srv, "test-api-key")
-	p := newDatadogProviderWithSourceAndEVP(ProviderConfig{}, internalffe.SourceAgentless, evp)
-	cleanupProvider(t, p)
+	var once sync.Once
+	unblock := func() { once.Do(func() { close(release) }) }
+	// Defers run before cleanups: unblocking first keeps the provider
+	// shutdowns below from stalling on a blocked handler if the test fails.
+	defer unblock()
 
-	p.updateConfiguration(createTestConfig())
-	if len(providerGoroutines()) == 0 {
-		t.Fatal("providerGoroutines found no goroutines of a running provider")
+	// The agentless provider: its poll goroutine blocks in flight, and both
+	// writers start (hourly flushes, so they never touch srv).
+	polling, err := startWithAgentless(
+		ProviderConfig{ExposureFlushInterval: time.Hour, FlagEvaluationFlushInterval: time.Hour},
+		internalffe.Settings{
+			AgentlessBaseURL: srv.URL,
+			APIKey:           "test-api-key",
+			PollInterval:     time.Hour,
+			RequestTimeout:   time.Minute,
+		})
+	require.NoError(t, err)
+	cleanupProvider(t, polling)
+	polling.updateConfiguration(createTestConfig())
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the agentless poll never started")
 	}
+
+	// The second provider: its teardown flush is the only send to srv, so the
+	// pending event below keeps the teardown goroutine blocked in it, live
+	// for the snapshot. Its writers flush hourly and stay running too.
+	secondEvp := testAgentlessEVPClient(t, nil, srv, "test-api-key")
+	shuttingDown := newDatadogProviderWithSourceAndEVP(ProviderConfig{
+		ExposureFlushInterval:       time.Hour,
+		FlagEvaluationFlushInterval: time.Hour,
+	}, internalffe.SourceAgentless, secondEvp)
+	cleanupProvider(t, shuttingDown)
+	shuttingDown.updateConfiguration(createTestConfig())
+	shuttingDown.exposureWriter.append(exposureEvent{Flag: exposureFlag{Key: "bool-flag"}, Subject: exposureSubject{ID: "user-1"}})
+	shutdownDone := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		shutdownDone <- shuttingDown.ShutdownWithContext(ctx)
+	}()
+
+	// The teardown goroutine needs a moment to start, so poll until every
+	// matcher has found its goroutine or the deadline expires.
+	found := make(map[string]bool, len(strayProviderGoroutines))
+	deadline := time.Now().Add(5 * time.Second)
+	for len(found) < len(strayProviderGoroutines) && time.Now().Before(deadline) {
+		for _, stack := range providerGoroutines() {
+			for _, fn := range strayProviderGoroutines {
+				if !found[fn] && strings.Contains(stack, "openfeature."+fn+"(") {
+					found[fn] = true
+				}
+			}
+		}
+		if len(found) < len(strayProviderGoroutines) {
+			time.Sleep(time.Millisecond)
+		}
+	}
+	unblock()
+	require.NoError(t, <-shutdownDone)
+
+	var missing []string
+	for _, fn := range strayProviderGoroutines {
+		if !found[fn] {
+			missing = append(missing, fn)
+		}
+	}
+	require.Empty(t, missing,
+		"providerGoroutines no longer matches these goroutine classes; leak detection is silently disabled for them: %v", missing)
 }
