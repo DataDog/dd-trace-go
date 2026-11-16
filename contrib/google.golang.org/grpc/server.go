@@ -132,6 +132,13 @@ func splitFullMethod(fm string) (service, method string, ok bool) {
 }
 
 // StreamServerInterceptor will trace streaming requests to the given gRPC server.
+//
+// Calls served by grpc.UnknownServiceHandler get the "_OTHER" resource, and the
+// requested method is kept in the rpc.method_original tag. grpc gives the
+// interceptor a nil server and a bidi stream for these calls. A registered bidi
+// method whose service implementation is nil gets the same arguments, and
+// grpc's public API has no other way to tell the two apart. Such a method also
+// gets "_OTHER" unless WithServiceInfo is set.
 func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 	cfg := new(config)
 	serverDefaults(cfg)
