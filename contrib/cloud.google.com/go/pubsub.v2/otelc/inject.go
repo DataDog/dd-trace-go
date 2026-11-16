@@ -39,9 +39,10 @@ func __dd_pubsubTracePublish(ctx context.Context, t *Publisher, msg *Message) (c
 }
 
 // __dd_pubsubWrapReceiveHandler wraps the handler of (*Subscriber).Receive
-// so that each message gets a receive span.
+// so that each message gets a receive span. A handler from the contrib's
+// WrapReceiveHandler already gets one, and is left as it is.
 func __dd_pubsubWrapReceiveHandler(s *Subscriber, f func(context.Context, *Message)) func(context.Context, *Message) {
-	if f == nil {
+	if f == nil || pubsubtrace.ReceiveHandlerTraced(f) {
 		return f
 	}
 	traceFn := __dd_pubsubTracer.TraceReceiveFunc(s)

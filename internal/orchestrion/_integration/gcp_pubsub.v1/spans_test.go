@@ -102,6 +102,37 @@ func TestContribPublishSpans(t *testing.T) {
 	}, countSpans(t, spans()))
 }
 
+// TestContribReceiveSpans checks that a message received through a handler
+// from the contrib's WrapReceiveHandler gets one receive span, not one from the
+// contrib and one from the instrumented Receive.
+func TestContribReceiveSpans(t *testing.T) {
+	if built.WithOrchestrion {
+		t.Skip("orchestrion reports two receive spans here, one from the contrib and one from Subscription.Receive")
+	}
+	ctx := context.Background()
+	srv := newServer(t)
+	spans := startTracer(t)
+
+	client := newClient(ctx, t, srv)
+	topic, err := client.CreateTopic(ctx, "contrib-receive-topic")
+	require.NoError(t, err)
+	sub, err := client.CreateSubscription(ctx, "contrib-receive-subscription", pubsub.SubscriptionConfig{Topic: topic})
+	require.NoError(t, err)
+	_, err = topic.Publish(ctx, &pubsub.Message{Data: []byte("contrib")}).Get(ctx)
+	require.NoError(t, err)
+	topic.Stop()
+	receiveWith(ctx, t, sub, 1, func(h func(context.Context, *pubsub.Message)) func(context.Context, *pubsub.Message) {
+		return pubsubcontrib.WrapReceiveHandler(sub, h)
+	})
+
+	assert.Equal(t, map[string]int{
+		"pubsub.publish":                        1,
+		"pubsub.receive":                        1,
+		"gcp.pubsub.request CreateTopic":        1,
+		"gcp.pubsub.request CreateSubscription": 1,
+	}, countSpans(t, spans()))
+}
+
 // TestAdminSpans checks that each admin client gets the interceptor once,
 // whether pubsub.NewClient, pubsub.NewSchemaClient, a test function or a
 // dependency module builds it.
@@ -170,20 +201,25 @@ func newClient(ctx context.Context, t *testing.T, srv *pstest.Server) *pubsub.Cl
 
 // receive acks messages until it has seen n of them.
 func receive(ctx context.Context, t *testing.T, sub *pubsub.Subscription, n int) {
+	receiveWith(ctx, t, sub, n, func(h func(context.Context, *pubsub.Message)) func(context.Context, *pubsub.Message) { return h })
+}
+
+// receiveWith is receive with the handler passed through wrap.
+func receiveWith(ctx context.Context, t *testing.T, sub *pubsub.Subscription, n int, wrap func(func(context.Context, *pubsub.Message)) func(context.Context, *pubsub.Message)) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var (
 		mu   sync.Mutex
 		seen int
 	)
-	require.NoError(t, sub.Receive(ctx, func(_ context.Context, msg *pubsub.Message) {
+	require.NoError(t, sub.Receive(ctx, wrap(func(_ context.Context, msg *pubsub.Message) {
 		msg.Ack()
 		mu.Lock()
 		defer mu.Unlock()
 		if seen++; seen == n {
 			cancel()
 		}
-	}))
+	})))
 	require.Equal(t, n, seen)
 }
 

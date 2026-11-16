@@ -22,3 +22,15 @@ func TestPublishTraced(t *testing.T) {
 	assert.True(t, PublishTraced(context.WithValue(MarkPublishTraced(ctx), otherKey{}, 1)),
 		"the mark must survive contexts derived from the marked one")
 }
+
+func TestReceiveHandlerTraced(t *testing.T) {
+	wrap := func(f func()) func() { return func() { f() } }
+	marked := wrap(func() {})
+	MarkReceiveHandler(marked)
+	assert.True(t, ReceiveHandlerTraced(marked))
+	assert.True(t, ReceiveHandlerTraced(wrap(func() {})), "handlers from the same literal share the mark")
+	assert.False(t, ReceiveHandlerTraced(func() {}))
+	assert.False(t, ReceiveHandlerTraced(nil))
+	assert.False(t, ReceiveHandlerTraced((func())(nil)))
+	assert.False(t, ReceiveHandlerTraced(42))
+}

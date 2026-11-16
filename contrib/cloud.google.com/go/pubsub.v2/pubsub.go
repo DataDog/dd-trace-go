@@ -67,11 +67,13 @@ func (r *PublishResult) Get(ctx context.Context) (string, error) {
 // receive span.
 func WrapReceiveHandler(s *pubsub.Subscriber, f func(context.Context, *pubsub.Message), opts ...Option) func(context.Context, *pubsub.Message) {
 	traceFn := pstrace.TraceReceiveFunc(s, opts...)
-	return func(ctx context.Context, msg *pubsub.Message) {
+	h := func(ctx context.Context, msg *pubsub.Message) {
 		ctx, closeSpan := traceFn(ctx, newTraceMessage(msg))
 		defer closeSpan()
 		f(ctx, msg)
 	}
+	pubsubtrace.MarkReceiveHandler(h)
+	return h
 }
 
 func newTraceMessage(msg *pubsub.Message) *pubsubtrace.Message {
