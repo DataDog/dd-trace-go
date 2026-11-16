@@ -15,6 +15,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	kafkatest "github.com/testcontainers/testcontainers-go/modules/kafka"
 
@@ -90,10 +91,14 @@ func (tc *TestCase) produceMessageWithNilDeliveryChannel(t *testing.T) {
 	producer, err := kafka.NewProducer(cfg)
 	require.NoError(t, err, "failed to create producer")
 	defer func() {
-		// Wait for the delivery, but close without reading Events(), so the
-		// delivery report is still in the channel when Close closes it.
-		require.Zero(t, producer.Flush(15_000), "messages still in flight")
-		producer.Close()
+		// Close always runs, even if the wait fails: assert does not stop
+		// the goroutine like require does.
+		defer producer.Close()
+		// Wait until the delivery report is in Events(), but do not read it,
+		// so Close runs with the report unread. Flush cannot be used for
+		// this: it counts unread events and would wait for its full timeout.
+		assert.Eventually(t, func() bool { return len(producer.Events()) > 0 },
+			15*time.Second, 10*time.Millisecond, "no delivery report in Events()")
 	}()
 
 	err = producer.Produce(&kafka.Message{
