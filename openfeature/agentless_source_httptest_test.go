@@ -168,7 +168,7 @@ func newAgentlessSourceOnly(t *testing.T, backend *fakeUFCBackend, pollInterval 
 		AgentlessBaseURL: backend.server.URL,
 		PollInterval:     pollInterval,
 		RequestTimeout:   2 * time.Second,
-	}, apply)
+	}, nil, apply)
 	require.NoError(t, err)
 	src.retryDelay = func(int) time.Duration { return 0 }
 	return src
@@ -375,7 +375,7 @@ func TestAgentlessSource_NoWarningOnGracefulShutdownCancel(t *testing.T) {
 		AgentlessBaseURL: backend.server.URL,
 		PollInterval:     time.Hour,
 		RequestTimeout:   5 * time.Second,
-	}, func(*universalFlagsConfiguration) {})
+	}, nil, func(*universalFlagsConfiguration) {})
 	require.NoError(t, err)
 
 	done := make(chan struct{})
@@ -484,7 +484,7 @@ func TestAgentlessSource_DoesNotFollowRedirects(t *testing.T) {
 		APIKey:           "secret-api-key",
 		PollInterval:     time.Hour,
 		RequestTimeout:   2 * time.Second,
-	}, func(*universalFlagsConfiguration) {})
+	}, nil, func(*universalFlagsConfiguration) {})
 	require.NoError(t, err)
 
 	src.start()
@@ -525,7 +525,7 @@ func TestAgentlessSource_APIKeyOnlySentToManagedEndpoint(t *testing.T) {
 		APIKey:           "secret-api-key",
 		PollInterval:     time.Hour,
 		RequestTimeout:   2 * time.Second,
-	}, func(*universalFlagsConfiguration) {})
+	}, nil, func(*universalFlagsConfiguration) {})
 	require.NoError(t, err)
 	assert.Empty(t, src.apiKey, "a custom endpoint must never receive the API key")
 
@@ -657,7 +657,7 @@ func TestAgentlessSource_NoLogContainsTheEndpoint(t *testing.T) {
 			AgentlessBaseURL: backend.server.URL + "/" + secret,
 			PollInterval:     time.Hour,
 			RequestTimeout:   2 * time.Second,
-		}, func(*universalFlagsConfiguration) {})
+		}, nil, func(*universalFlagsConfiguration) {})
 		require.NoError(t, err)
 		src.retryDelay = func(int) time.Duration { return 0 }
 

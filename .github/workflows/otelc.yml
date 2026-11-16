@@ -41,6 +41,8 @@ env:
     otelc/all
     contrib/99designs/gqlgen
     contrib/99designs/gqlgen/otelc
+    contrib/aws/aws-sdk-go-v2
+    contrib/aws/aws-sdk-go-v2/otelc
     contrib/aws/aws-sdk-go
     contrib/aws/aws-sdk-go/otelc
     contrib/net/http
@@ -61,6 +63,8 @@ env:
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
     contrib/google.golang.org/grpc/otelc
+    contrib/gorm.io/gorm.v1
+    contrib/gorm.io/gorm.v1/otelc
     contrib/go.mongodb.org/mongo-driver
     contrib/go.mongodb.org/mongo-driver/otelc
     contrib/go.mongodb.org/mongo-driver.v2
@@ -91,6 +95,8 @@ env:
     grpc
     gorilla_mux
     99designs.gqlgen
+    gorm
+    aws.v2
     mongo
     mongo.v2
     echo.v4

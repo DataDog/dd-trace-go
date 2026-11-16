@@ -343,7 +343,7 @@ func newDebugAgentlessSource(t *testing.T, baseURL string) *agentlessSource {
 		Env:              "staging",
 		PollInterval:     time.Hour,
 		RequestTimeout:   2 * time.Second,
-	}, func(*universalFlagsConfiguration) {})
+	}, nil, func(*universalFlagsConfiguration) {})
 	require.NoError(t, err)
 	src.retryDelay = func(int) time.Duration { return 0 }
 	return src
@@ -903,7 +903,7 @@ func TestAgentlessSource_RequestedEnvironment(t *testing.T) {
 		})
 	}
 
-	src, err := newAgentlessSource(internalffe.Settings{APIKey: "key", Env: "production"}, func(*universalFlagsConfiguration) {})
+	src, err := newAgentlessSource(internalffe.Settings{APIKey: "key", Env: "production"}, nil, func(*universalFlagsConfiguration) {})
 	require.NoError(t, err)
 	assert.True(t, src.managed)
 	assert.Contains(t, src.endpoint, "dd_env=production", "requested_env must match what the managed endpoint receives")
@@ -1146,7 +1146,7 @@ func TestAgentlessPollLoop_ContainsLoggerPanics(t *testing.T) {
 		AgentlessBaseURL: srv.URL,
 		PollInterval:     time.Hour,
 		RequestTimeout:   2 * time.Second,
-	}, func(*universalFlagsConfiguration) {})
+	}, nil, func(*universalFlagsConfiguration) {})
 	require.NoError(t, err)
 	src.retryDelay = func(int) time.Duration { return 0 }
 	t.Cleanup(log.UseLogger(panickingLogger{}))
