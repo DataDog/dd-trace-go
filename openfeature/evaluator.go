@@ -259,7 +259,6 @@ func evaluateConfiguredFlagLookedUp(
 	now time.Time,
 	exclusion experimentationExclusion,
 ) evaluationResult {
-	maxDependencyDepth := configuredMaxDependencyDepth(config)
 	if !exists || !flag.Enabled || !flagMayEvaluateDependencies(flag) {
 		if exists && !(exclusion.mode == ExperimentationOptOutFutureExperimentsOnly && flag.invalidActivation) {
 			return evaluateFlagWithResolver(flag, defaultValue, context, now, exclusion, nil)
@@ -272,7 +271,6 @@ func evaluateConfiguredFlagLookedUp(
 		context:     context,
 		now:         now,
 		exclusion:   exclusion,
-		maxDepth:    maxDependencyDepth,
 	}
 	result := evaluateConfiguredFlagOnce(config, flagKey, defaultValue, context, now, exclusion, resolver)
 	if resolver.session == nil {
@@ -289,13 +287,9 @@ func evaluateConfiguredFlagLookedUp(
 }
 
 // flagMayEvaluateDependencies reports whether a flag contains any authored
-// prerequisite condition. Accepted provider configurations have this marker
-// prepared once at update time. The scan fallback preserves the behavior of
-// package-internal callers and tests that assemble flags directly.
+// prerequisite condition. This preserves the independent-evaluation fast path
+// without adding evaluator state to the parsed UFC model.
 func flagMayEvaluateDependencies(flag *flag) bool {
-	if flag.dependencyConditionsPrepared {
-		return flag.hasDependencyConditions
-	}
 	return flagContainsDependencyConditions(flag)
 }
 
@@ -316,19 +310,6 @@ func flagContainsDependencyConditions(flag *flag) bool {
 		}
 	}
 	return false
-}
-
-func prepareDependencyConditions(config *universalFlagsConfiguration) {
-	if config == nil {
-		return
-	}
-	for _, flag := range config.Flags {
-		if flag == nil || flag.dependencyConditionsPrepared {
-			continue
-		}
-		flag.hasDependencyConditions = flagContainsDependencyConditions(flag)
-		flag.dependencyConditionsPrepared = true
-	}
 }
 
 func evaluateConfiguredFlagOnce(
@@ -581,7 +562,6 @@ type lazyDependencyResolver struct {
 	context     map[string]any
 	now         time.Time
 	exclusion   experimentationExclusion
-	maxDepth    int
 	session     *dependencyEvaluationSession
 }
 
@@ -592,7 +572,7 @@ func (r *lazyDependencyResolver) Resolve(ref *flagEvaluation) (string, error) {
 			context:           r.context,
 			now:               r.now,
 			exclusion:         r.exclusion,
-			maxDepth:          r.maxDepth,
+			maxDepth:          configuredMaxDependencyDepth(r.config),
 			active:            map[string]bool{r.rootFlagKey: true},
 			memo:              make(map[string]memoizedDependency),
 			exposureKeys:      make(map[string]struct{}),

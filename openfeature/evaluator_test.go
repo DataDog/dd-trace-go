@@ -729,7 +729,6 @@ func assertDependentFixtureCase(t *testing.T, configData []byte, tc fixtureEvalu
 	t.Helper()
 	var cfg universalFlagsConfiguration
 	require.NoError(t, json.Unmarshal(configData, &cfg))
-	prepareDependencyConditions(&cfg)
 
 	// Each corpus case gets an isolated provider, cache, writers, and transport
 	// sink so no earlier subject or aggregation bucket can affect its events.

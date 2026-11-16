@@ -590,7 +590,7 @@ func TestDependentFlags_InvalidConfiguredDepthPublishesSuccessfulDependencyBatch
 	require.Len(t, h.sink.exposures, 2)
 }
 
-func TestDependentFlags_InvalidConfiguredDepthIsReadOnceForIndependentRoot(t *testing.T) {
+func TestDependentFlags_InvalidConfiguredDepthIsNotReadForIndependentRoot(t *testing.T) {
 	logger := withLogLevel(t, log.LevelDebug)
 	config := dependencyTestConfig(dependencyTestFlag("root", "on", nil))
 	require.NoError(t, json.Unmarshal([]byte(`{"maxDependencyDepth":null}`), &config.EvaluatorParams))
@@ -600,7 +600,27 @@ func TestDependentFlags_InvalidConfiguredDepthIsReadOnceForIndependentRoot(t *te
 	require.Equal(t, of.StaticReason, result.Reason)
 	require.True(t, result.Value.(bool))
 	log.Flush()
-	require.Equal(t, 1, logger.countContaining("DEBUG: openfeature: maxDependencyDepth must be an integer from 0 through 255; using default 10"), "each root evaluation resolves the option once")
+	require.Zero(t, logger.countContaining("maxDependencyDepth must be an integer from 0 through 255; using default 10"))
+}
+
+func TestDependentFlags_InvalidConfiguredDepthIsNotReadBeforeDependencyCondition(t *testing.T) {
+	logger := withLogLevel(t, log.LevelDebug)
+	config := dependencyTestConfig(
+		dependencyTestFlag("dependency", "on", nil),
+		dependencyTestFlag("root", "on",
+			&condition{Attribute: "country", Operator: operatorOneOf, Value: []string{"US"}},
+			dependencyCondition("dependency", operatorOneOf, "on"),
+		),
+	)
+	require.NoError(t, json.Unmarshal([]byte(`{"maxDependencyDepth":null}`), &config.EvaluatorParams))
+
+	result := evaluateConfiguredFlag(config, "root", false, map[string]any{"country": "CA"}, time.Now(), experimentationExclusion{})
+	require.NoError(t, result.Error)
+	require.Equal(t, of.DefaultReason, result.Reason)
+	require.False(t, result.Value.(bool))
+	require.Empty(t, result.DependencyEvaluations)
+	log.Flush()
+	require.Zero(t, logger.countContaining("maxDependencyDepth must be an integer from 0 through 255; using default 10"))
 }
 
 func TestDependentFlags_MalformedOptionsObjectsLogAndFallBack(t *testing.T) {
@@ -1133,8 +1153,6 @@ func TestIndependentEvaluationDoesNotCreateDependencyTrace(t *testing.T) {
 		Key: "root", Enabled: true, VariationType: valueTypeBoolean,
 		Variations: map[string]*variant{},
 	})
-	prepareDependencyConditions(config)
-
 	result := evaluateConfiguredFlag(config, "root", false, nil, time.Time{}, experimentationExclusion{})
 	require.NoError(t, result.Error)
 	require.Empty(t, result.DependencyEvaluations)
@@ -1146,7 +1164,6 @@ func BenchmarkIndependentEvaluationWithoutDependencyTrace(b *testing.B) {
 		Key: "root", Enabled: true, VariationType: valueTypeBoolean,
 		Variations: map[string]*variant{},
 	})
-	prepareDependencyConditions(config)
 	b.ReportAllocs()
 	for b.Loop() {
 		result := evaluateConfiguredFlag(config, "root", false, nil, time.Time{}, experimentationExclusion{})
