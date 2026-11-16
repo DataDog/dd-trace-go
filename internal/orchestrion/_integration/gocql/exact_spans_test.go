@@ -233,6 +233,17 @@ func TestExactSpans(t *testing.T) {
 			},
 		},
 		{
+			// The observer otelc set at gocql.NewCluster is removed too.
+			// Orchestrion sets its own there, which the contrib keeps.
+			name:         "ContribCreateTracedSessionNewClusterQueryDisabled",
+			otelcQueries: 0, orchestrionQueries: 1,
+			session: func(t *testing.T) *gocql.Session {
+				session, err := gocqltrace.CreateTracedSession(gocql.NewCluster(host), gocqltrace.WithTraceQuery(false))
+				require.NoError(t, err)
+				return session
+			},
+		},
+		{
 			// The observers are set on the cluster dependency.NewCluster returns.
 			name:         "DependencyNewCluster",
 			otelcQueries: 1, orchestrionQueries: 1,

@@ -30,10 +30,11 @@ func TestObserveClusterSetsNilObservers(t *testing.T) {
 	cluster := gocql.NewCluster("10.0.0.1", "10.0.0.2")
 	require.True(t, ObserveCluster(cluster))
 
-	obs, ok := cluster.QueryObserver.(autoObserver)
+	obs, ok := cluster.QueryObserver.(*gocqltrace.Observer)
 	require.True(t, ok, "QueryObserver is %T", cluster.QueryObserver)
-	assert.Equal(t, obs, cluster.BatchObserver)
-	assert.Equal(t, obs, cluster.ConnectObserver)
+	assert.True(t, obs.Automatic())
+	assert.Same(t, obs, cluster.BatchObserver)
+	assert.Same(t, obs, cluster.ConnectObserver)
 
 	// The observer reads the contact points from the cluster it was built from.
 	obs.ObserveConnect(gocql.ObservedConnect{})
@@ -48,8 +49,8 @@ func TestObserveClusterKeepsObservers(t *testing.T) {
 	cluster.QueryObserver = app
 	require.True(t, ObserveCluster(cluster))
 	assert.Equal(t, app, cluster.QueryObserver)
-	assert.IsType(t, autoObserver{}, cluster.BatchObserver)
-	assert.IsType(t, autoObserver{}, cluster.ConnectObserver)
+	assert.IsType(t, &gocqltrace.Observer{}, cluster.BatchObserver)
+	assert.IsType(t, &gocqltrace.Observer{}, cluster.ConnectObserver)
 
 	// Nothing to set when the application set every observer.
 	contrib := gocqltrace.NewObserver(cluster)
@@ -84,7 +85,7 @@ func TestBeforeCreateSessionCopiesCluster(t *testing.T) {
 	traced, ok := ictx.GetParam(0).(*gocql.ClusterConfig)
 	require.True(t, ok)
 	assert.NotSame(t, cluster, traced)
-	assert.IsType(t, autoObserver{}, traced.QueryObserver)
+	assert.IsType(t, &gocqltrace.Observer{}, traced.QueryObserver)
 	assert.Nil(t, cluster.QueryObserver, "the application's cluster is unchanged")
 	assert.Nil(t, cluster.BatchObserver)
 	assert.Nil(t, cluster.ConnectObserver)

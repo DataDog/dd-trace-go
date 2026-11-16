@@ -15,10 +15,6 @@ import (
 	gocqltrace "github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2"
 )
 
-// autoObserver is an observer that ObserveCluster set, so that a later call
-// can build it again from the cluster's current hosts.
-type autoObserver struct{ *gocqltrace.Observer }
-
 // ObserveCluster sets each observer of cluster that is nil, or that an earlier
 // call set, to one contrib Observer built from cluster, and reports whether it
 // set any. The observer reads the contact points from cluster.Hosts, so hosts
@@ -28,10 +24,10 @@ func ObserveCluster(cluster *gocql.ClusterConfig) bool {
 	if cluster == nil {
 		return false
 	}
-	var obs autoObserver
-	observer := func() autoObserver {
-		if obs.Observer == nil {
-			obs = autoObserver{gocqltrace.NewObserver(cluster)}
+	var obs *gocqltrace.Observer
+	observer := func() *gocqltrace.Observer {
+		if obs == nil {
+			obs = gocqltrace.NewAutomaticObserver(cluster)
 		}
 		return obs
 	}
@@ -44,7 +40,7 @@ func ObserveCluster(cluster *gocql.ClusterConfig) bool {
 	if replaceable(cluster.ConnectObserver) {
 		cluster.ConnectObserver = observer()
 	}
-	return obs.Observer != nil
+	return obs != nil
 }
 
 // replaceable reports whether ObserveCluster may set an observer: it is nil,
@@ -53,8 +49,8 @@ func replaceable(o any) bool {
 	if o == nil {
 		return true
 	}
-	_, ok := o.(autoObserver)
-	return ok
+	obs, ok := o.(*gocqltrace.Observer)
+	return ok && obs.Automatic()
 }
 
 // BeforeCreateSession passes a copy of cluster with the observers set on to
