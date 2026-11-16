@@ -176,16 +176,16 @@ func (tc *TestCaseProduceAndPoll) ExpectedTraces() trace.Traces {
 }
 func (*TestCaseProduceAndPoll) ExpectedSpanCount() int { return 2 }
 
-// TestCaseReadMessage covers Consumer.ReadMessage followed by
-// Consumer.CommitMessage.
-type TestCaseReadMessage struct{ mockCluster }
+// TestCaseNilDeliveryChannelAndReadMessage covers Producer.Produce without a
+// delivery channel, whose report goes to Producer.Events, and
+// Consumer.ReadMessage followed by Consumer.CommitMessage.
+type TestCaseNilDeliveryChannelAndReadMessage struct{ mockCluster }
 
-func (tc *TestCaseReadMessage) Run(_ context.Context, t *testing.T) {
+func (tc *TestCaseNilDeliveryChannelAndReadMessage) Run(_ context.Context, t *testing.T) {
 	p, err := kafka.NewProducer(tc.producerConfig())
 	require.NoError(t, err)
-	delivery := make(chan kafka.Event, 1)
-	require.NoError(t, p.Produce(mockMessage("read-message"), delivery))
-	requireDelivered(t, delivery)
+	require.NoError(t, p.Produce(mockMessage("read-message"), nil))
+	requireDelivered(t, p.Events())
 	p.Close()
 
 	c, err := kafka.NewConsumer(tc.consumerConfig("read-message"))
@@ -199,10 +199,10 @@ func (tc *TestCaseReadMessage) Run(_ context.Context, t *testing.T) {
 	require.NoError(t, c.Close())
 }
 
-func (tc *TestCaseReadMessage) ExpectedTraces() trace.Traces {
+func (tc *TestCaseNilDeliveryChannelAndReadMessage) ExpectedTraces() trace.Traces {
 	return trace.Traces{tc.mockTrace()}
 }
-func (*TestCaseReadMessage) ExpectedSpanCount() int { return 2 }
+func (*TestCaseNilDeliveryChannelAndReadMessage) ExpectedSpanCount() int { return 2 }
 
 // TestCaseChannels covers Producer.ProduceChannel, and a consumer reading
 // Consumer.Events followed by Consumer.CommitOffsets.
