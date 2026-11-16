@@ -274,8 +274,7 @@ func rewriteSamePattern(next http.Handler) http.Handler {
 }
 
 // fixtureSamePatternRewrite is setup 17: the parent rewrites the route path so
-// that the mount "/api/{id}" gets another "id" than the URL of the request. The
-// lookup of the URL gives the same patterns, with the other value.
+// that the mount "/api/{id}" gets another "id" than the URL of the request.
 func fixtureSamePatternRewrite(rootTracer bool) routerFixture {
 	name := "17 parent rewrites the value of a mount parameter"
 	if rootTracer {

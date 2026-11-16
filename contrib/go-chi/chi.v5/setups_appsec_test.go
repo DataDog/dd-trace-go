@@ -98,7 +98,8 @@ func serveFixtureWith(t *testing.T, rec *metricsRecorder, capture *opCapture, f 
 
 // TestAppSecRouteSetups checks the AppSec route, the path parameters that the WAF
 // gets and the blocking behavior, for the router setups where the middleware
-// runs before chi routes the request.
+// runs before chi routes the request. The WAF gets the input that chi has when the
+// middleware starts, and the route that chi selected is reported after the handler.
 func TestAppSecRouteSetups(t *testing.T) {
 	rec := startAppSecRules(t, rulePathBlock, ruleWildcardValue)
 	capture := newOpCapture()
@@ -112,7 +113,6 @@ func TestAppSecRouteSetups(t *testing.T) {
 		early       bool     // blocked before the handler
 		route       string   // op.Route()
 		events      []string // rule ids
-		failure     bool     // the late block could not replace the response
 		spanRoute   string   // http.route of the outer span, when the request is blocked early
 		earlyRoute  string   // the route that the first operation started with
 		earlyParams map[string]string
@@ -130,66 +130,62 @@ func TestAppSecRouteSetups(t *testing.T) {
 		clean  clean
 		attack attack
 	}{
+		// With Use before routing, chi knows no path parameter when the middleware
+		// starts: the WAF gets none, and a rule on a path parameter does not match (the
+		// result before the route was reported). The route is the route that chi
+		// selected.
 		{fixtureRootUse(),
 			clean{[]string{"/users/{id}"}, nil, 0},
-			attack{early: true, route: "/users/{id}", events: pathBlock, spanRoute: "",
-				earlyRoute: "/users/{id}", earlyParams: pp("id", "attack-1")}},
+			attack{route: "/users/{id}"}},
+		// chi knows the "*" of the mount when the sub-router middleware starts.
 		{fixtureSubRouterUse(),
 			clean{[]string{"/api/users/{id}"}, nil, 0},
-			attack{early: true, route: "/api/users/{id}", events: pathBlock, spanRoute: "/api/*",
-				earlyRoute: "/api/users/{id}", earlyParams: pp("*", "", "id", "attack-1")}},
+			attack{route: "/api/users/{id}", earlyRoute: "/api/*", earlyParams: pp("*", "")}},
+		// With the middleware on the endpoint, chi knows the parameters: an early block.
 		{fixtureWith(),
 			clean{[]string{"/users/{id}"}, nil, 0},
 			attack{early: true, route: "/users/{id}", events: pathBlock, spanRoute: "/users/{id}",
 				earlyRoute: "/users/{id}", earlyParams: pp("id", "attack-1")}},
 		{fixtureStripSlashes(false),
 			clean{[]string{"/users/{id}"}, nil, 0},
-			attack{route: "/users/{id}", events: pathBlock, failure: true}},
+			attack{route: "/users/{id}"}},
 		{fixtureStripSlashes(true),
-			clean{[]string{"/users/{id}"}, []string{"wildcard-value"}, 0},
-			attack{route: "/users/{id}", events: []string{"path-block", "wildcard-value"}, failure: true,
-				earlyRoute: "/*", earlyParams: pp("*", "users/attack-1/")}},
+			clean{[]string{"/users/{id}"}, nil, 0},
+			attack{route: "/users/{id}"}},
 		{fixtureGetHead(),
 			clean{[]string{"/users/{id}"}, nil, 0},
-			attack{route: "/users/{id}", events: pathBlock, failure: true}},
+			attack{route: "/users/{id}"}},
 		{fixtureDirectMount(),
 			clean{[]string{"/api/users/{id}"}, nil, 0},
-			attack{early: true, route: "/api/users/{id}", events: pathBlock, spanRoute: "",
-				earlyRoute: "/api/users/{id}", earlyParams: pp("*", "", "id", "attack-1")}},
+			attack{route: "/api/users/{id}"}},
 		{fixtureWrappedMount(),
-			clean{[]string{"/api/users/{id}"}, []string{"wildcard-value"}, 0},
-			attack{route: "/api/users/{id}", events: []string{"path-block", "wildcard-value"}, failure: true,
-				earlyRoute: "/api/*", earlyParams: pp("*", "users/attack-1")}},
+			clean{[]string{"/api/users/{id}"}, nil, 0},
+			attack{route: "/api/users/{id}"}},
 		{fixtureRewrite("name"),
-			clean{[]string{"/files/{name}"}, []string{"wildcard-value"}, 0},
-			attack{route: "/files/{name}", events: []string{"wildcard-value"},
-				earlyRoute: "/*", earlyParams: pp("*", "old/attack-1")}},
+			clean{[]string{"/files/{name}"}, nil, 0},
+			attack{route: "/files/{name}"}},
 		{fixtureTwoTracers(),
 			clean{[]string{"/api/users/{id}", "/api/users/{id}"}, nil, 0},
-			attack{early: true, route: "/api/users/{id}", events: pathBlock, spanRoute: "",
-				earlyRoute: "/api/users/{id}", earlyParams: pp("*", "", "id", "attack-1")}},
+			attack{route: "/api/users/{id}"}},
 		// The tracer wraps the mount handler: chi has not reset the "*" of the mount
-		// yet. The lookup would change the known "*", so it is dropped: AppSec keeps the
-		// input that it had before the lookup existed (a rule on "*" blocks as before),
-		// and reports only the final route.
+		// yet, so the WAF gets the "*" that chi knows (a rule on "*" matches, as before
+		// the route was reported). The route is the route that chi selected.
 		{fixtureWithMount(),
 			clean{[]string{"/api/users/{id}"}, []string{"wildcard-value"}, 0},
 			attack{route: "/api/users/{id}", events: []string{"wildcard-value"},
 				earlyRoute: "/api/*", earlyParams: pp("*", "users/attack-1")}},
 		{fixtureLiteralLeaf(),
 			clean{[]string{"/api/attack"}, nil, 0},
-			attack{route: "/api/attack", earlyRoute: "/api/attack", earlyParams: pp("*", "")}},
+			attack{route: "/api/attack"}},
 		{fixtureReplacedContext(),
 			clean{[]string{"/users/{id}"}, nil, 0},
-			attack{route: "/users/{id}", events: pathBlock, failure: true}},
-		// chi matched "/api/*" (the parent rewrote the route path); the lookup of the
-		// URL of the request gives "/*", which does not extend it: it is dropped.
+			attack{route: "/users/{id}"}},
+		// chi matched "/api/*" (the parent rewrote the route path).
 		{fixtureParentRewrite(),
 			clean{[]string{"/api/files/{id}"}, nil, 0},
 			attack{route: "/api/files/{id}", earlyRoute: "/api/*", earlyParams: pp("*", "")}},
 		// chi matched "/api/{id}/*" with "id" (the parent routed the mount with a
-		// parameter): the lookup does not extend it, so it is dropped and the request is
-		// blocked as before the lookup existed.
+		// parameter): the request is blocked as before the route was reported.
 		{fixtureNamedMountRewrite(),
 			clean{[]string{"/api/{id}/items/{item}"}, nil, 0},
 			attack{early: true, route: "/api/{id}/*", events: pathBlock, spanRoute: "/api/{id}/*",
@@ -241,19 +237,16 @@ func TestAppSecRouteSetups(t *testing.T) {
 						assert.Equal(t, "application-body", o.body)
 					}
 					assert.Zero(t, count(o.metrics, "waf.requests", "request_blocked:true"))
-					want := 0.0
-					if a.failure {
-						want = 1
-					}
-					assert.Equal(t, want, count(o.metrics, "waf.requests", "block_failure:true"))
+					assert.Zero(t, count(o.metrics, "waf.requests", "block_failure:true"))
 				}
 			})
 		})
 	}
 }
 
-// TestAppSecRouteSetupsAnyParam uses a rule on any path parameter: when the
-// early lookup gives the wrong parameters, the rule blocks on them.
+// TestAppSecRouteSetupsAnyParam uses a rule on any path parameter. With Use before
+// routing, the WAF gets no path parameter from these setups: the request is not
+// blocked, the handler runs, and the route is the route that chi selected.
 func TestAppSecRouteSetupsAnyParam(t *testing.T) {
 	rec := startAppSecRules(t, rulePathAny)
 	capture := newOpCapture()
@@ -261,17 +254,18 @@ func TestAppSecRouteSetupsAnyParam(t *testing.T) {
 		f     routerFixture
 		route string
 	}{
-		{fixtureStripSlashes(true), "/*"},
-		{fixtureWrappedMount(), "/api/*"},
-		{fixtureRewrite("name"), "/*"},
+		{fixtureStripSlashes(true), "/users/{id}"},
+		{fixtureWrappedMount(), "/api/users/{id}"},
+		{fixtureRewrite("name"), "/files/{name}"},
 		{fixtureOrdinaryMount(), "/files/*"},
 	} {
 		t.Run(c.f.name, func(t *testing.T) {
 			o := serveFixture(t, rec, capture, c.f, "attack-1")
-			assert.Equal(t, http.StatusForbidden, o.status)
-			assert.False(t, o.ran)
+			assert.Equal(t, http.StatusOK, o.status)
+			assert.True(t, o.ran)
 			assert.Equal(t, []string{c.route}, o.routes)
-			assert.Equal(t, []string{"path-any"}, o.events)
+			assert.Empty(t, o.events)
+			assert.Zero(t, count(o.metrics, "waf.requests", "request_blocked:true"))
 		})
 	}
 }
@@ -315,17 +309,25 @@ func TestAppSecMissingRoute(t *testing.T) {
 		o := serveFixture(t, rec, capture, f, "a")
 		assert.Equal(t, []string{"/files/*"}, o.routes)
 		assert.Equal(t, "/files/*", o.spanRoute)
-		assert.Equal(t, []string{"wildcard-value"}, o.events)
+		assert.Empty(t, o.events, "the WAF gets no path parameter with Use before routing")
 		assert.Zero(t, count(o.metrics, "api_security.missing_route"))
 	})
 }
 
-// schemaRouter returns a router with 2 endpoints that have a path parameter.
+// schemaRouter returns a router with 2 endpoints that have a path parameter, and
+// the middleware before routing.
 func schemaRouter() http.Handler {
 	router := chi.NewRouter()
 	router.Use(Middleware())
 	router.Get("/schema-a/{id}", okHandler)
 	router.Get("/schema-b/{id}", okHandler)
+	return router
+}
+
+// schemaEndpointRouter returns a router with the middleware on the endpoint.
+func schemaEndpointRouter() http.Handler {
+	router := chi.NewRouter()
+	router.With(Middleware()).Get("/schema-c/{id}", okHandler)
 	return router
 }
 
@@ -341,9 +343,11 @@ func requestTags(t *testing.T, router http.Handler, target string) map[string]an
 }
 
 // TestAppSecSchemaPerEndpoint checks that each endpoint gets an API Security
-// schema in the same delay, with the path parameters. The schema extraction needs
-// a WAF budget that CI load cannot exhaust, so the test sets its own timeout (the
-// default is 2 ms). TestAppSecSamplingPerEndpoint checks the sampling decision.
+// schema in the same delay. The schema has the path parameters only when chi knows
+// them when the middleware starts (the middleware is on the endpoint): with Use
+// before routing, the WAF gets no path parameters. The schema extraction needs a WAF
+// budget that CI load cannot exhaust, so the test sets its own timeout (the default
+// is 2 ms). TestAppSecSamplingPerEndpoint checks the sampling decision.
 func TestAppSecSchemaPerEndpoint(t *testing.T) {
 	t.Setenv("DD_API_SECURITY_SAMPLE_DELAY", "30")
 	t.Setenv("DD_API_SECURITY_ENABLED", "true")
@@ -355,8 +359,11 @@ func TestAppSecSchemaPerEndpoint(t *testing.T) {
 	for _, target := range []string{"/schema-a/1", "/schema-b/1"} {
 		got := requestTags(t, router, target)
 		assert.Contains(t, got, "_dd.appsec.s.req.headers", target)
-		assert.Contains(t, got, "_dd.appsec.s.req.params", "%s: the schema has the path parameters", target)
+		assert.NotContains(t, got, "_dd.appsec.s.req.params", "%s: Use before routing gives no path parameters", target)
 	}
+	got := requestTags(t, schemaEndpointRouter(), "/schema-c/1")
+	assert.Contains(t, got, "_dd.appsec.s.req.headers")
+	assert.Contains(t, got, "_dd.appsec.s.req.params", "the middleware on the endpoint knows the path parameters")
 }
 
 // TestAppSecSamplingPerEndpoint checks that each endpoint has its own API Security
@@ -380,10 +387,10 @@ func TestAppSecSamplingPerEndpoint(t *testing.T) {
 	assert.NotEqualValues(t, 2, requestTags(t, router, "/schema-a/2")[priority], "the same endpoint is sampled once in the delay")
 }
 
-// TestAppSecHandlerPanic checks that the late WAF run does not run in a panic,
-// and that the panic reaches the recovering middleware unchanged. The request
-// is one that the lookup cannot match (StripSlashes removes the slash after the
-// tracer), so a late run would have given the route and the attack to the WAF.
+// TestAppSecHandlerPanic checks that the route report after the handler does not
+// run in a panic, and that the panic reaches the recovering middleware unchanged.
+// StripSlashes removes the slash after the tracer, so chi selects another route
+// than the one that it had when the tracer started.
 func TestAppSecHandlerPanic(t *testing.T) {
 	rec := startAppSecRules(t, rulePathBlock)
 	capture := newOpCapture()
@@ -475,55 +482,6 @@ func TestAppSecSubrouterRoutePatterns(t *testing.T) {
 	}
 }
 
-// TestAppSecSameTypeMonitorRules documents the detection loss of the early
-// lookup: the WAF does not report a second rule of the same tags.type that has
-// no action. When the early lookup gives wrong parameters that match a detection
-// rule, the event of the rule that matches the correct parameters is hidden. A
-// rule with a block action is not hidden.
-func TestAppSecSameTypeMonitorRules(t *testing.T) {
-	fixtures := []routerFixture{
-		fixtureStripSlashes(true), fixtureWrappedMount(), fixtureRewrite("id"), fixtureWrappedEndpoint(),
-	}
-	t.Run("same type", func(t *testing.T) {
-		rec := startAppSecRules(t, pathRule("mon-wild", "mon-test", "*", ""), pathRule("mon-id", "mon-test", "id", ""))
-		capture := newOpCapture()
-		for _, f := range fixtures {
-			t.Run(f.name, func(t *testing.T) {
-				o := serveFixtureWith(t, rec, capture, f, "attack-1", false)
-				assert.Equal(t, []string{"mon-wild"}, o.events, "mon-id is hidden by the event on the early data")
-			})
-		}
-	})
-
-	t.Run("different types", func(t *testing.T) {
-		rec := startAppSecRules(t, pathRule("mon-wild", "mon-wild-test", "*", ""), pathRule("mon-id", "mon-test", "id", ""))
-		capture := newOpCapture()
-		for _, f := range fixtures {
-			t.Run(f.name, func(t *testing.T) {
-				o := serveFixtureWith(t, rec, capture, f, "attack-1", false)
-				assert.Equal(t, []string{"mon-id", "mon-wild"}, o.events)
-			})
-		}
-	})
-
-	t.Run("blocking rule of the same type", func(t *testing.T) {
-		rec := startAppSecRules(t, pathRule("mon-wild", "mon-test", "*", ""), pathRule("blk-id", "mon-test", "id", "block"))
-		capture := newOpCapture()
-		for _, f := range fixtures {
-			t.Run(f.name, func(t *testing.T) {
-				o := serveFixtureWith(t, rec, capture, f, "attack-1", false)
-				assert.Equal(t, http.StatusForbidden, o.status, "blk-id still matches")
-				assert.Contains(t, o.events, "blk-id")
-				assert.Contains(t, o.events, "mon-wild", "the early data matched the detection rule")
-				// The block replaces the response after the handler (nothing was
-				// sent), except when the endpoint has its own tracer: it gets "id"
-				// before its handler.
-				assert.Equal(t, !strings.HasPrefix(f.name, "14"), o.ran)
-			})
-		}
-	})
-}
-
 // TestAppSecConcurrentRequests sends concurrent requests through one middleware
 // instance: each request must have its own parameters, route and tracker.
 func TestAppSecConcurrentRequests(t *testing.T) {
@@ -531,9 +489,10 @@ func TestAppSecConcurrentRequests(t *testing.T) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
+	// The middleware is on the endpoint: chi knows the path parameters when it
+	// starts, so a rule on a path parameter blocks before the handler.
 	router := chi.NewRouter()
-	router.Use(Middleware())
-	router.Get("/users/{id}/orders/{order}", func(w http.ResponseWriter, r *http.Request) {
+	router.With(Middleware()).Get("/users/{id}/orders/{order}", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(chi.URLParam(r, "id") + "/" + chi.URLParam(r, "order")))
 	})
@@ -575,8 +534,8 @@ func TestAppSecConcurrentRequests(t *testing.T) {
 }
 
 // TestAppSecSamePatternRewriteNested adds a tracer on the root router, before the
-// rewrite: its prediction uses the URL of the request ("id" = "clean"), but the
-// tracer of the child router must still block with the "id" that chi matched.
+// rewrite: the tracer of the child router must still block with the "id" that chi
+// matched when it started.
 func TestAppSecSamePatternRewriteNested(t *testing.T) {
 	rec := startAppSecRules(t, rulePathBlock)
 	capture := newOpCapture()

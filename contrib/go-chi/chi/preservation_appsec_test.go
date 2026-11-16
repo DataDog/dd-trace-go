@@ -24,16 +24,16 @@ import (
 )
 
 // TestExistingPathBlocks checks requests that AppSec blocked before the route
-// lookup existed, with a rule on a path parameter. They need no rewrite, hidden
+// was reported, with a rule on a path parameter. They need no rewrite, hidden
 // writer or flush: the parameters are known to chi when the tracer starts. They
 // must still be blocked before the handler. These tests use only the public API
-// and pass on the code before the lookup.
+// and pass on the code before the route was reported.
 func TestExistingPathBlocks(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		key    string // the parameter that the rule checks
 		target string
-		// wantBlocked is false when the code before the lookup did not block either.
+		// wantBlocked is false when the code before the route was reported did not block either.
 		wantBlocked bool
 		build       func(h http.HandlerFunc) http.Handler
 	}{
@@ -49,7 +49,7 @@ func TestExistingPathBlocks(t *testing.T) {
 			},
 		},
 		{
-			// The route is final (no lookup), the name is used twice.
+			// The route is final, the name is used twice.
 			name: "endpoint-duplicate-id", key: "id", target: "/tenant/attack/items/clean", wantBlocked: existingDuplicateBlock,
 			build: func(h http.HandlerFunc) http.Handler {
 				root, child := chi.NewRouter(), chi.NewRouter()
@@ -90,11 +90,11 @@ func TestExistingPathBlocks(t *testing.T) {
 }
 
 // existingDuplicateBlock: chi read the last value of a name that is used at
-// several levels before the lookup existed, so it did not block here.
+// several levels before the route was reported, so it did not block here.
 const existingDuplicateBlock = false
 
-// TestNoCombinedPathParams checks that the early check never mixes the values of
-// the lookup with the values that chi matched: the rule needs id = attack (the
+// TestNoCombinedPathParams checks that the WAF never gets a mix of the values of 2
+// routing stages: the rule needs id = attack (the
 // mount) AND op = danger (the endpoint), but the endpoint has its own "id" = clean.
 // No request has this combination, so it must not be blocked.
 func TestNoCombinedPathParams(t *testing.T) {
@@ -137,14 +137,14 @@ func headerCondition(name, value string) string {
 // TestResponsePhaseCompatibility checks the result of rules whose conditions are
 // on a path parameter AND on the response, or on 2 path parameters, in setups
 // where chi knows a parameter before the handler and the final value is another
-// one. Every expectation is the result of the code before the lookup existed
+// one. Every expectation is the result of the code before the route was reported
 // (the test uses only the public API and passes there). The handlers write
 // nothing unless stated: a rule on the response header is evaluated after the
 // handler. The WAF keeps the match of a condition between its runs, so the
 // parameters that AppSec gives at each step must not mix the values of the
 // routing stages.
 func TestResponsePhaseCompatibility(t *testing.T) {
-	const legacy = true // chi v1 read the last value of a name before the lookup
+	const legacy = true // chi v1 read the last value of a name before the route was reported
 	alpha, beta := pathCondition("id", "alpha"), pathCondition("id", "beta")
 	stage := headerCondition("x-stage", "ready")
 
@@ -154,7 +154,7 @@ func TestResponsePhaseCompatibility(t *testing.T) {
 		target     string
 		build      func(h http.HandlerFunc) http.Handler
 		writes     bool // the handler sends the status 200
-		wantBlock  bool // 403 before the lookup existed
+		wantBlock  bool // 403 before the route was reported
 	}{
 		{
 			// chi matched id=alpha; the endpoint has id=beta. The response header is the
@@ -181,7 +181,7 @@ func TestResponsePhaseCompatibility(t *testing.T) {
 		},
 		{
 			// chi never has id = alpha and op = gamma: id is beta when op is known.
-			name: "dropped-prediction-combination", conditions: []string{alpha, pathCondition("op", "gamma")},
+			name: "no-combination", conditions: []string{alpha, pathCondition("op", "gamma")},
 			target: "/tenant/alpha/users/beta/gamma", build: mountWithTracerOnChild("/users/{id}/{op}"),
 		},
 		{
@@ -256,7 +256,7 @@ func mountWithTracerOnEndpoint(route string) func(h http.HandlerFunc) http.Handl
 // nestedRouter has a tracer on the root router and on a child router that is
 // mounted with a parameter. The root has a middleware that sets the response
 // header after the child returned (or before it, when headerBefore is true), and
-// StripSlashes: with a trailing slash the early lookups do not match.
+// StripSlashes: with a trailing slash the route that chi selects changes after the tracer.
 func nestedRouter(endpoint string, headerBefore bool, h http.HandlerFunc) http.Handler {
 	root, child := chi.NewRouter(), chi.NewRouter()
 	root.Use(Middleware(), func(next http.Handler) http.Handler {
@@ -275,10 +275,10 @@ func nestedRouter(endpoint string, headerBefore bool, h http.HandlerFunc) http.H
 }
 
 // TestNestedResponsePreservation checks 2 tracers of one request, where the outer
-// one evaluates a response rule after the inner one returned. The tracers share
-// the baseline input of the WAF: the outer tracer must not replace the value that
-// the inner tracer kept ("alpha" instead of the final "beta"). Every expectation is
-// the result of the code before the lookup existed.
+// one evaluates a response rule after the inner one returned. The outer tracer gives
+// no path parameter after the handler, so it cannot replace the value that the inner
+// tracer kept ("alpha" instead of the final "beta"). Every expectation is the result
+// of the code before the route was reported.
 func TestNestedResponsePreservation(t *testing.T) {
 	alpha := pathCondition("id", "alpha")
 	stage := headerCondition("x-stage", "ready")
@@ -305,34 +305,33 @@ func TestNestedResponsePreservation(t *testing.T) {
 	}
 }
 
-// TestNestedNewParams checks that nested tracers still give a new name to the WAF
-// when it does not contradict the shared input: the endpoint has "item" (a name
-// that no tracer knew when it started), and the response rule needs it.
-func TestNestedNewParams(t *testing.T) {
+// TestNestedNoNewParams checks that nested tracers give no new name to the WAF: the
+// endpoint has "item" (a name that no tracer knew when it started), and the
+// response rule needs it. The WAF input is the input that the code before the route
+// was reported gave (200, and the route only is reported after the handler).
+func TestNestedNoNewParams(t *testing.T) {
 	rule := fmt.Sprintf(`{"id":"nested-new","name":"nested-new","tags":{"type":"nested-new-test","category":"attack_attempt"},
 		"conditions":[%s],"on_match":["block"]}`, headerCondition("x-stage", "ready")+","+pathCondition("item", "beta"))
 	startAppSecRules(t, rule)
 	router := nestedRouter("/items/{item}", false, func(http.ResponseWriter, *http.Request) {})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/tenant/alpha/items/beta/", nil))
-	assert.Equal(t, http.StatusForbidden, w.Code, "the new name reached the WAF")
+	assert.Equal(t, http.StatusOK, w.Code, "the new name does not reach the WAF, as before the route was reported")
 }
 
 type savedContextKey struct{}
 
-// TestSharedInputContext checks tracers whose writer chain is intact but whose
+// TestReplacedContextBetweenTracers checks tracers whose writer chain is intact but whose
 // request contexts differ:
 //
 //	tracer A → save the context → tracer B → restore the saved context
 //	    → response header middleware, StripSlashes → mount → tracer C
 //
-// C finds B through the writer chain and A through the restored context: it cannot
-// share the baseline input of A and B, but it still gives its known parameters to
-// their WAF context, as before this change. A and B must not report parameters
-// that contradict it, because the WAF would evaluate the response rule with
-// them. Every expectation is the result before the lookup existed, and holds with
-// this change. A new context (control) is another WAF context: no block.
-func TestSharedInputContext(t *testing.T) {
+// C gives its known parameters to the WAF context of A and B, as before this change.
+// A and B report no parameters after the handler, so the WAF evaluates the response
+// rule with the parameters of C. Every expectation is the result before the route was
+// reported. A new context (control) is another WAF context: no block.
+func TestReplacedContextBetweenTracers(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		want int
@@ -377,19 +376,19 @@ func TestSharedInputContext(t *testing.T) {
 	}
 }
 
-// TestPredictionPhaseCombination documents a limit: the WAF keeps the match of a
-// condition between its runs. A prediction that the WAF got early (id = alpha) can
-// combine with a final value (op = delete) in a rule across the 2 runs, although no
-// single input has both. The expectation is the result of this change (403), not of
-// the code before the lookup existed (200): the baseline input is protected, a
-// predicted value is not.
-func TestPredictionPhaseCombination(t *testing.T) {
+// TestNoPredictionPhaseCombination checks that no value of an early prediction
+// combines with a final value: the WAF keeps the match of a condition between its
+// runs, so a prediction (id = alpha) and a final value (op = delete) could combine
+// in a rule although no single routing stage has both. The middleware gives no
+// path parameters after the handler, so the result is the result of the code before
+// the route was reported (200).
+func TestNoPredictionPhaseCombination(t *testing.T) {
 	startAppSecRules(t, fmt.Sprintf(`{"id":"combined","name":"combined","tags":{"type":"combined-test","category":"attack_attempt"},
 		"conditions":[%s],"on_match":["block"]}`, pathCondition("id", "alpha")+","+pathCondition("op", "delete")))
 	root := chi.NewRouter()
 	root.Use(Middleware(), func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			chi.RouteContext(r.Context()).RoutePath = "/items/beta/delete" // after the lookup of the request
+			chi.RouteContext(r.Context()).RoutePath = "/items/beta/delete" // after the tracer started
 			next.ServeHTTP(w, r)
 		})
 	})
@@ -397,20 +396,17 @@ func TestPredictionPhaseCombination(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	root.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/items/alpha/read", nil))
-	assert.Equal(t, http.StatusForbidden, w.Code, "documented limit: the code before the lookup returned 200")
+	assert.Equal(t, http.StatusOK, w.Code, "the code before the route was reported returned 200")
 }
 
-// TestSequentialRouterCombination documents a limit of the guard on the baseline
-// input: it protects the baseline input that is already known when a late update
-// happens. It cannot undo a match that the WAF already kept when a later tracer
-// replaces the baseline input (or sets the uncertain flag). Here a first router
-// reports id = beta and op = read after its handler (no input was known, and the
-// trailing slash makes its lookup miss). Then a later tracer gives its known
+// TestSequentialRouterNoCombination checks 2 routers in sequence. A first router
+// has id = beta and op = read after its handler (no input was known, and the
+// trailing slash makes chi select the route after the handler). Then a later tracer gives its known
 // parameters id = alpha and op = delete. No single input has id = beta and
-// op = delete, but the WAF kept the earlier match of the id condition. The
-// expectation is the result of this change (403), not of the code before the lookup
-// existed (200).
-func TestSequentialRouterCombination(t *testing.T) {
+// op = delete. The first tracer gives no parameters after its handler, so the WAF
+// never has id = beta: the result is the result of the code before the route was
+// reported (200).
+func TestSequentialRouterNoCombination(t *testing.T) {
 	startAppSecRules(t, fmt.Sprintf(`{"id":"sequential","name":"sequential","tags":{"type":"sequential-test","category":"attack_attempt"},
 		"conditions":[%s],"on_match":["block"]}`, pathCondition("id", "beta")+","+pathCondition("op", "delete")))
 	first, second := chi.NewRouter(), chi.NewRouter()
@@ -419,8 +415,7 @@ func TestSequentialRouterCombination(t *testing.T) {
 	second.With(Middleware()).Get("/items/{id}/{op}", func(http.ResponseWriter, *http.Request) {})
 
 	outer := Middleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// No parameters are known at entry, and the trailing slash makes the first
-		// lookup miss: the first tracer can only send beta/read in its late run.
+		// No parameters are known at entry: the first tracer never sends beta/read.
 		firstContext := chi.NewRouteContext()
 		firstContext.Routes = first
 		first.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, firstContext)))
@@ -430,7 +425,7 @@ func TestSequentialRouterCombination(t *testing.T) {
 			next := r.Clone(saved)
 			next.URL.Path = "/items/alpha/delete"
 			// The writer includes the later tracer, but the context is restored to the
-			// outer one: the endpoint tracer cannot share the baseline input.
+			// outer one.
 			secondContext := chi.NewRouteContext()
 			secondContext.Routes = second
 			second.ServeHTTP(w, next.WithContext(context.WithValue(next.Context(), chi.RouteCtxKey, secondContext)))
@@ -443,17 +438,14 @@ func TestSequentialRouterCombination(t *testing.T) {
 	})
 	w := httptest.NewRecorder()
 	entry.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/items/beta/read/", nil))
-	assert.Equal(t, http.StatusForbidden, w.Code, "documented limit: the code before the lookup returned 200")
+	assert.Equal(t, http.StatusOK, w.Code, "the code before the route was reported returned 200")
 }
 
-// TestBothLinksHiddenLimit documents the limit of the visibility of the tracers:
-// a middleware keeps the WAF operation but drops the context value of the tracer
-// and hides the writer chain. The inner tracer then cannot find the outer one
-// (neither through the writer chain nor through the context), so it cannot mark
-// it as uncertain, and the outer late run replaces the value that the inner tracer
-// kept. The expectation is the result of this change (200); the code before the
-// lookup existed returned 403 for this request.
-func TestBothLinksHiddenLimit(t *testing.T) {
+// TestBothLinksHidden checks a middleware that keeps the WAF operation but drops
+// the context value of the tracer and hides the writer chain. The tracers share no
+// parameters, so the outer late run cannot replace the value that the inner tracer
+// kept: the result is the result of the code before the route was reported (403).
+func TestBothLinksHidden(t *testing.T) {
 	startAppSecRules(t, fmt.Sprintf(`{"id":"hidden-links","name":"hidden-links","tags":{"type":"hidden-links-test","category":"attack_attempt"},
 		"conditions":[%s],"on_match":["block"]}`, headerCondition("x-stage", "ready")+","+pathCondition("id", "alpha")))
 	root, child := chi.NewRouter(), chi.NewRouter()
@@ -477,5 +469,5 @@ func TestBothLinksHiddenLimit(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	root.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/tenant/alpha/items/beta/", nil))
-	assert.Equal(t, http.StatusOK, w.Code, "documented limit: the code before the lookup returned 403")
+	assert.Equal(t, http.StatusForbidden, w.Code, "the code before the route was reported returned 403")
 }

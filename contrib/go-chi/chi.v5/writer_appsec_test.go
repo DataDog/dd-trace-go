@@ -8,7 +8,6 @@ package chi
 import (
 	"bufio"
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -222,11 +221,11 @@ func (w hijackOnly) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 func (w hijackOnly) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // track wraps raw in a chi writer and a commit tracker.
-func track(t testing.TB, raw http.ResponseWriter, proto int, ctx context.Context) (http.ResponseWriter, *commitTracker, middleware.WrapResponseWriter) {
+func track(t testing.TB, raw http.ResponseWriter, proto int) (http.ResponseWriter, *commitTracker, middleware.WrapResponseWriter) {
 	t.Helper()
 	ww := middleware.NewWrapResponseWriter(raw, proto)
-	tw, ct := newCommitTracker(ww, ctx)
-	return tw, ct, ww
+	tw := newCommitTracker(ww)
+	return tw, tw.(trackerCarrier).tracker(), ww
 }
 
 type ifaces struct{ flusher, hijacker, readerFrom, pusher, flushError bool }
@@ -254,7 +253,7 @@ func TestCommitTrackerInterfaces(t *testing.T) {
 				if flushUnder {
 					raw = flushErrorOnly{raw}
 				}
-				tw, _, ww := track(t, raw, proto, nil)
+				tw, _, ww := track(t, raw, proto)
 
 				want := ifacesOf(ww)
 				_, wwFlusher := ww.(http.Flusher)
@@ -297,7 +296,7 @@ func TestCommitTrackerGeneratedTypes(t *testing.T) {
 		}
 		n++
 		raw := newFakeRaw()
-		ct := &commitTracker{WrapResponseWriter: fakeChi{fakeRaw: raw}, complete: true}
+		ct := &commitTracker{WrapResponseWriter: fakeChi{fakeRaw: raw}}
 		w := wrapCommitTracker(ct, flags)
 		assert.Equal(t, ifaces{
 			flusher:    flags&hasFlusher != 0,
@@ -351,7 +350,7 @@ func TestCommitTrackerGeneratedTypes(t *testing.T) {
 func TestCommitTrackerState(t *testing.T) {
 	full := func() (http.ResponseWriter, *commitTracker, middleware.WrapResponseWriter, *fakeRaw) {
 		f := newFakeRaw()
-		tw, ct, ww := track(t, rawWith(f, rawFlusher|rawHijacker|rawReaderFrom), 1, nil)
+		tw, ct, ww := track(t, rawWith(f, rawFlusher|rawHijacker|rawReaderFrom), 1)
 		return tw, ct, ww, f
 	}
 
@@ -378,7 +377,7 @@ func TestCommitTrackerState(t *testing.T) {
 	t.Run("flush", func(t *testing.T) {
 		// The recorder is a known server writer: its Flush locks the status.
 		rec := httptest.NewRecorder()
-		tw, ct, ww := track(t, rec, 1, nil)
+		tw, ct, ww := track(t, rec, 1)
 		tw.(http.Flusher).Flush()
 		assert.True(t, ct.Committed())
 		assert.Equal(t, 200, ct.Status(), "chi reports 0 after a flush")
@@ -389,7 +388,7 @@ func TestCommitTrackerState(t *testing.T) {
 
 	t.Run("ResponseController flush", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		tw, ct, _ := track(t, rec, 1, nil)
+		tw, ct, _ := track(t, rec, 1)
 		require.NoError(t, http.NewResponseController(tw).Flush())
 		assert.True(t, ct.Committed())
 		assert.True(t, rec.Flushed)
@@ -398,7 +397,7 @@ func TestCommitTrackerState(t *testing.T) {
 	t.Run("FlushError, known server writer", func(t *testing.T) {
 		// The recorder is a known writer: its Flush locks the status.
 		rec := httptest.NewRecorder()
-		tw, ct, _ := track(t, plain{rec}, 1, nil)
+		tw, ct, _ := track(t, plain{rec}, 1)
 		_, isFlusher := tw.(http.Flusher)
 		require.False(t, isFlusher)
 		require.NoError(t, http.NewResponseController(tw).Flush())
@@ -411,7 +410,7 @@ func TestCommitTrackerState(t *testing.T) {
 		// A writer that the tracker does not know can ignore the flush, or buffer it:
 		// the flush reaches it, but the state stays the one without the tracker.
 		f := newFakeRaw()
-		tw, ct, _ := track(t, flushErrorOnly{f}, 1, nil)
+		tw, ct, _ := track(t, flushErrorOnly{f}, 1)
 		require.NoError(t, http.NewResponseController(tw).Flush())
 		assert.Equal(t, 1, f.flushes)
 		assert.False(t, ct.Committed())
@@ -419,7 +418,7 @@ func TestCommitTrackerState(t *testing.T) {
 
 		// A compressing writer ignores a flush before the first write.
 		rec := httptest.NewRecorder()
-		tw, ct, _ = track(t, plain{&ignoringWriter{ResponseWriter: rec}}, 1, nil)
+		tw, ct, _ = track(t, plain{&ignoringWriter{ResponseWriter: rec}}, 1)
 		require.NoError(t, http.NewResponseController(tw).Flush())
 		assert.False(t, rec.Flushed)
 		assert.False(t, ct.Committed())
@@ -428,18 +427,16 @@ func TestCommitTrackerState(t *testing.T) {
 	t.Run("FlushError, outer tracker", func(t *testing.T) {
 		// The outer tracker recorded a flush (known writer): the inner one records it.
 		rec := httptest.NewRecorder()
-		otw, oct, _ := track(t, rec, 1, nil)
-		ctx := context.WithValue(context.Background(), trackerCtxKey{}, oct)
-		_, ict, _ := track(t, plain{otw}, 1, ctx)
+		otw, oct, _ := track(t, rec, 1)
+		_, ict, _ := track(t, plain{otw}, 1)
 		require.NoError(t, http.NewResponseController(ict).Flush())
 		assert.True(t, oct.Committed())
 		assert.True(t, ict.Committed())
 
 		// The outer tracker did not record it (an unknown writer under it): neither does the inner one.
 		raw := &ignoringWriter{ResponseWriter: httptest.NewRecorder()}
-		otw, oct, _ = track(t, plain{raw}, 1, nil)
-		ctx = context.WithValue(context.Background(), trackerCtxKey{}, oct)
-		_, ict, _ = track(t, plain{otw}, 1, ctx)
+		otw, oct, _ = track(t, plain{raw}, 1)
+		_, ict, _ = track(t, plain{otw}, 1)
 		require.NoError(t, http.NewResponseController(ict).Flush())
 		assert.False(t, oct.Committed())
 		assert.False(t, ict.Committed())
@@ -448,23 +445,22 @@ func TestCommitTrackerState(t *testing.T) {
 	t.Run("flush then WriteHeader", func(t *testing.T) {
 		// The controller flush sends the implicit 200 and bypasses chi: a later
 		// WriteHeader changes chi's status, but not the response.
-		tw, ct, _ := track(t, plain{httptest.NewRecorder()}, 1, nil)
+		tw, ct, _ := track(t, plain{httptest.NewRecorder()}, 1)
 		require.NoError(t, http.NewResponseController(tw).Flush())
 		tw.WriteHeader(404)
 		assert.Equal(t, 200, ct.Status())
 		assert.Equal(t, 200, tw.(middleware.WrapResponseWriter).Status())
 
 		// A status that was sent before the flush stays.
-		tw, ct, _ = track(t, plain{httptest.NewRecorder()}, 1, nil)
+		tw, ct, _ = track(t, plain{httptest.NewRecorder()}, 1)
 		tw.WriteHeader(201)
 		require.NoError(t, http.NewResponseController(tw).Flush())
 		tw.WriteHeader(404)
 		assert.Equal(t, 201, ct.Status())
 
 		// A child tracker reads the same status from its parent.
-		tw, ct, _ = track(t, plain{httptest.NewRecorder()}, 1, nil)
-		ctx := context.WithValue(context.Background(), trackerCtxKey{}, ct)
-		_, child, _ := track(t, plain{tw}, 1, ctx)
+		tw, ct, _ = track(t, plain{httptest.NewRecorder()}, 1)
+		_, child, _ := track(t, plain{tw}, 1)
 		require.NoError(t, http.NewResponseController(tw).Flush())
 		tw.WriteHeader(404)
 		assert.Equal(t, 200, child.Status())
@@ -473,19 +469,19 @@ func TestCommitTrackerState(t *testing.T) {
 	t.Run("flush error", func(t *testing.T) {
 		f := newFakeRaw()
 		f.flushErr = errors.New("flush failed")
-		tw, ct, _ := track(t, flushErrorOnly{f}, 1, nil)
+		tw, ct, _ := track(t, flushErrorOnly{f}, 1)
 		assert.EqualError(t, http.NewResponseController(tw).Flush(), "flush failed")
 		assert.False(t, ct.Committed(), "an error does not itself mark the response as sent")
 
 		// ... and it does not clear a state that is known.
-		tw, ct, _ = track(t, flushErrorOnly{f}, 1, nil)
+		tw, ct, _ = track(t, flushErrorOnly{f}, 1)
 		tw.WriteHeader(200)
 		assert.Error(t, http.NewResponseController(tw).Flush())
 		assert.True(t, ct.Committed())
 	})
 
 	t.Run("flush not supported", func(t *testing.T) {
-		tw, ct, _ := track(t, rawWith(newFakeRaw(), 0), 1, nil)
+		tw, ct, _ := track(t, rawWith(newFakeRaw(), 0), 1)
 		assert.False(t, ifacesOf(tw).flushError, "nothing under the writer can flush")
 		assert.ErrorIs(t, http.NewResponseController(tw).Flush(), http.ErrNotSupported)
 		assert.False(t, ct.Committed())
@@ -534,7 +530,7 @@ func TestCommitTrackerState(t *testing.T) {
 
 	t.Run("Push", func(t *testing.T) {
 		f := newFakeRaw()
-		tw, ct, _ := track(t, rawWith(f, rawFlusher|rawPusher), 2, nil)
+		tw, ct, _ := track(t, rawWith(f, rawFlusher|rawPusher), 2)
 		require.NoError(t, tw.(http.Pusher).Push("/x", nil))
 		assert.False(t, ct.Committed())
 	})
@@ -545,25 +541,6 @@ func TestCommitTrackerState(t *testing.T) {
 		_, _ = tw.Write([]byte("discarded"))
 		assert.True(t, ct.Committed(), "chi sets its status on Write, also when it discards")
 		assert.Empty(t, f.codes)
-	})
-
-	t.Run("complete", func(t *testing.T) {
-		for name, c := range map[string]struct {
-			raw      func() http.ResponseWriter
-			complete bool
-		}{
-			"plain":                    {func() http.ResponseWriter { return newFakeRaw() }, true},
-			"hijacker behind Unwrap":   {func() http.ResponseWriter { return plain{hijackOnly{newFakeRaw()}} }, false},
-			"15 plain wrappers":        {func() http.ResponseWriter { return wrapN(rawWith(newFakeRaw(), 0), 15) }, true},
-			"16 plain wrappers":        {func() http.ResponseWriter { return wrapN(rawWith(newFakeRaw(), 0), 16) }, false},
-			"17 plain wrappers":        {func() http.ResponseWriter { return wrapN(rawWith(newFakeRaw(), 0), 17) }, false},
-			"Unwrap returns itself":    {func() http.ResponseWriter { return &cyclic{ResponseWriter: rawWith(newFakeRaw(), 0)} }, false},
-			"opaque (no Unwrap)":       {func() http.ResponseWriter { return opaque{newFakeRaw()} }, true},
-			"hijacker, chi can hijack": {func() http.ResponseWriter { return rawWith(newFakeRaw(), rawHijacker) }, true},
-		} {
-			_, ct, _ := track(t, c.raw(), 1, nil)
-			assert.Equal(t, c.complete, ct.complete, name)
-		}
 	})
 }
 
@@ -577,25 +554,23 @@ func wrapN(w http.ResponseWriter, n int) http.ResponseWriter {
 
 // TestCommitTrackerParent checks how a tracker reads the state of an outer tracker.
 func TestCommitTrackerParent(t *testing.T) {
-	// outer returns an outer tracker with its context.
-	outer := func() (http.ResponseWriter, *commitTracker, context.Context, *fakeRaw) {
+	outer := func() (http.ResponseWriter, *commitTracker, *fakeRaw) {
 		f := newFakeRaw()
-		tw, ct, _ := track(t, rawWith(f, rawFlusher|rawHijacker), 1, nil)
-		return tw, ct, context.WithValue(context.Background(), trackerCtxKey{}, ct), f
+		tw, ct, _ := track(t, rawWith(f, rawFlusher|rawHijacker), 1)
+		return tw, ct, f
 	}
 	// outerRecorder is like outer, over a recorder: a known server writer, so a
 	// flush is recorded.
-	outerRecorder := func() (http.ResponseWriter, *commitTracker, context.Context, *httptest.ResponseRecorder) {
+	outerRecorder := func() (http.ResponseWriter, *commitTracker, *httptest.ResponseRecorder) {
 		rec := httptest.NewRecorder()
-		tw, ct, _ := track(t, rec, 1, nil)
-		return tw, ct, context.WithValue(context.Background(), trackerCtxKey{}, ct), rec
+		tw, ct, _ := track(t, rec, 1)
+		return tw, ct, rec
 	}
 
 	t.Run("through Unwrap", func(t *testing.T) {
-		otw, oct, ctx, rec := outerRecorder()
-		_, ict, _ := track(t, plain{otw}, 1, ctx)
+		otw, oct, rec := outerRecorder()
+		_, ict, _ := track(t, plain{otw}, 1)
 		require.Same(t, oct, ict.parent)
-		assert.True(t, ict.complete)
 		assert.False(t, ict.Committed())
 
 		// The state is read live, also when the outer flush is after the creation.
@@ -605,14 +580,25 @@ func TestCommitTrackerParent(t *testing.T) {
 		assert.True(t, rec.Flushed)
 
 		// A flush before the creation.
-		_, ict, _ = track(t, plain{otw}, 1, ctx)
+		_, ict, _ = track(t, plain{otw}, 1)
 		assert.True(t, ict.Committed())
 		assert.Equal(t, 200, ict.Status())
 	})
 
+	t.Run("walk bound", func(t *testing.T) {
+		// The walk visits at most maxUnwrapWalk writers under the chi writer.
+		otw, oct, _ := outer()
+		_, ict, _ := track(t, wrapN(otw, maxUnwrapWalk-1), 1)
+		assert.Same(t, oct, ict.parent, "the outer tracker is the last writer that the walk visits")
+		_, ict, _ = track(t, wrapN(otw, maxUnwrapWalk), 1)
+		assert.Nil(t, ict.parent, "the walk ends before the outer tracker")
+		_, ict, _ = track(t, &cyclic{ResponseWriter: newFakeRaw()}, 1)
+		assert.Nil(t, ict.parent, "a cycle ends the walk")
+	})
+
 	t.Run("hijack of the outer writer", func(t *testing.T) {
-		otw, _, ctx, _ := outer()
-		_, ict, _ := track(t, plain{otw}, 1, ctx)
+		otw, _, _ := outer()
+		_, ict, _ := track(t, plain{otw}, 1)
 		_, _, err := otw.(http.Hijacker).Hijack()
 		require.NoError(t, err)
 		assert.True(t, ict.Committed())
@@ -620,37 +606,23 @@ func TestCommitTrackerParent(t *testing.T) {
 	})
 
 	t.Run("hidden parent", func(t *testing.T) {
-		otw, _, ctx, _ := outer()
-		// A wrapper without Unwrap() is between them: the tracer is in the context,
-		// but the writer chain does not reach it.
-		_, ict, _ := track(t, opaque{otw}, 1, ctx)
+		otw, _, _ := outer()
+		// A wrapper without Unwrap() is between them: the writer chain does not reach
+		// the outer tracker.
+		_, ict, _ := track(t, opaque{otw}, 1)
 		assert.Nil(t, ict.parent)
-		assert.False(t, ict.complete)
 		otw.(http.Flusher).Flush()
 		assert.False(t, ict.Committed(), "own state only")
 		assert.Equal(t, 0, ict.Status())
 	})
 
 	t.Run("replaced writer", func(t *testing.T) {
-		otw, _, ctx, _ := outer()
-		_, ict, _ := track(t, newFakeRaw(), 1, ctx) // another writer, same context
+		otw, _, _ := outer()
+		_, ict, _ := track(t, newFakeRaw(), 1) // another writer
 		assert.Nil(t, ict.parent)
-		assert.False(t, ict.complete)
 		otw.WriteHeader(201)
 		assert.Equal(t, 0, ict.Status())
 		assert.False(t, ict.Committed())
-	})
-
-	t.Run("no outer tracer detectable", func(t *testing.T) {
-		_, ict, _ := track(t, newFakeRaw(), 1, context.Background())
-		assert.Nil(t, ict.parent)
-		assert.True(t, ict.complete)
-		// The same when a middleware replaced the context but kept the writer chain
-		// opaque: it is not detected (documented limit).
-		otw, _, _, _ := outer()
-		_, ict, _ = track(t, opaque{otw}, 1, context.Background())
-		assert.Nil(t, ict.parent)
-		assert.True(t, ict.complete, "no context value: no detectable outer tracker")
 	})
 
 	t.Run("status", func(t *testing.T) {
@@ -661,113 +633,23 @@ func TestCommitTrackerParent(t *testing.T) {
 			}{plain{w}, w.(http.Flusher)}
 		}
 		// The outer status wins, also over the status of the inner chi writer.
-		otw, _, ctx, _ := outer()
-		itw, ict, _ := track(t, flusherPlain(otw), 1, ctx)
+		otw, _, _ := outer()
+		itw, ict, _ := track(t, flusherPlain(otw), 1)
 		otw.WriteHeader(201)
 		itw.(http.Flusher).Flush()
 		assert.Equal(t, 201, ict.Status())
 
-		otw, _, ctx, _ = outer()
-		itw, ict, _ = track(t, plain{otw}, 1, ctx)
+		otw, _, _ = outer()
+		itw, ict, _ = track(t, plain{otw}, 1)
 		otw.WriteHeader(201)
 		_, _ = itw.Write([]byte("x")) // chi's inner status is 200
 		assert.Equal(t, 201, ict.Status())
 
-		otw, _, ctx, _ = outerRecorder()
-		itw, ict, _ = track(t, plain{otw}, 1, ctx)
+		otw, _, _ = outerRecorder()
+		itw, ict, _ = track(t, plain{otw}, 1)
 		otw.(http.Flusher).Flush()
 		itw.WriteHeader(404)
 		assert.Equal(t, 200, ict.Status())
-	})
-
-	t.Run("incomplete parent", func(t *testing.T) {
-		f := newFakeRaw()
-		otw, oct, _ := track(t, &cyclic{ResponseWriter: f}, 1, nil)
-		require.False(t, oct.complete)
-		ctx := context.WithValue(context.Background(), trackerCtxKey{}, oct)
-		_, ict, _ := track(t, plain{otw}, 1, ctx)
-		require.Same(t, oct, ict.parent)
-		assert.False(t, ict.complete)
-		// An incomplete tracker with a visible parent reads the state of the parent.
-		otw.WriteHeader(202)
-		assert.True(t, ict.Committed())
-		assert.Equal(t, 202, ict.Status())
-	})
-}
-
-// TestCommitTrackerSharedInput checks which tracker shares the baseline input of
-// the WAF with which.
-func TestCommitTrackerSharedInput(t *testing.T) {
-	outer := func() (http.ResponseWriter, *commitTracker, context.Context) {
-		tw, ct, _ := track(t, rawWith(newFakeRaw(), rawFlusher|rawHijacker), 1, nil)
-		return tw, ct, context.WithValue(context.Background(), trackerCtxKey{}, ct)
-	}
-
-	t.Run("first tracer", func(t *testing.T) {
-		_, ct, _ := track(t, newFakeRaw(), 1, context.Background())
-		require.NotNil(t, ct.shared)
-		assert.True(t, ct.complete)
-	})
-
-	t.Run("through the writer chain and the context", func(t *testing.T) {
-		otw, oct, ctx := outer()
-		_, ict, _ := track(t, plain{otw}, 1, ctx)
-		assert.Same(t, oct.shared, ict.shared)
-		assert.True(t, ict.complete)
-		assert.False(t, oct.shared.uncertain)
-
-		// 3 tracers: the third one shares it with the first.
-		itw, ict, _ := track(t, plain{otw}, 1, ctx)
-		ctx2 := context.WithValue(context.Background(), trackerCtxKey{}, ict)
-		_, third, _ := track(t, plain{itw}, 1, ctx2)
-		assert.Same(t, oct.shared, third.shared)
-	})
-
-	t.Run("the context was replaced: no access", func(t *testing.T) {
-		otw, oct, _ := outer()
-		// The writer chain reaches the outer tracer, but the context has no tracer.
-		_, ict, _ := track(t, plain{otw}, 1, context.Background())
-		assert.Same(t, oct, ict.parent, "the state of the response is still read")
-		assert.NotSame(t, oct.shared, ict.shared)
-		assert.False(t, ict.complete, "no new parameters: only the route")
-		assert.True(t, oct.shared.uncertain, "the outer tracers must know that it can give baseline input")
-
-		// The context has another tracer than the one of the writer chain.
-		_, other, _ := track(t, newFakeRaw(), 1, nil)
-		wrong := context.WithValue(context.Background(), trackerCtxKey{}, other)
-		oct.shared.uncertain = false
-		_, ict, _ = track(t, plain{otw}, 1, wrong)
-		assert.NotSame(t, oct.shared, ict.shared)
-		assert.False(t, ict.complete)
-		assert.True(t, oct.shared.uncertain)
-	})
-
-	t.Run("the flag reaches every outer tracker of the writer chain", func(t *testing.T) {
-		// A <- B (reaches A) <- C (reaches B through the writer chain, but not through the context).
-		atw, act, actx := outer()
-		btw, bct, _ := track(t, plain{atw}, 1, actx)
-		require.Same(t, act.shared, bct.shared)
-		_, cct, _ := track(t, plain{btw}, 1, context.WithValue(context.Background(), trackerCtxKey{}, act))
-		assert.False(t, cct.complete)
-		assert.True(t, bct.shared.uncertain)
-		assert.True(t, act.shared.uncertain, "A shares the set with B")
-	})
-
-	t.Run("the writer chain does not reach the outer tracer", func(t *testing.T) {
-		otw, oct, ctx := outer()
-		_, ict, _ := track(t, opaque{otw}, 1, ctx)
-		assert.NotSame(t, oct.shared, ict.shared)
-		assert.False(t, ict.complete)
-		assert.True(t, oct.shared.uncertain, "it still gives its known parameters to the WAF context of the outer tracer")
-	})
-
-	t.Run("get and set", func(t *testing.T) {
-		s := &sharedInput{}
-		assert.Nil(t, s.get())
-		in := map[string]string{"id": "1"}
-		s.set(in)
-		in["id"] = "changed"
-		assert.Equal(t, map[string]string{"id": "1"}, s.get(), "the set owns a copy")
 	})
 }
 

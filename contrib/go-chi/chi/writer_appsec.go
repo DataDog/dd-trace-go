@@ -12,9 +12,7 @@ package chi
 
 import (
 	"bufio"
-	"context"
 	"io"
-	"maps"
 	"net"
 	"net/http"
 	"reflect"
@@ -24,14 +22,9 @@ import (
 
 // maxUnwrapWalk is the maximum number of writers that newCommitTracker visits
 // when it follows the Unwrap() chain under the chi writer. A longer chain (or a
-// cycle) makes the tracker incomplete.
+// cycle) ends the walk: the tracker then has no parent and no FlushError from the
+// writers that it did not visit.
 const maxUnwrapWalk = 16
-
-// trackerCtxKey is the request context key of the commitTracker of the nearest
-// outer AppSec-enabled Middleware. The context only detects that an outer
-// tracker exists for the request: it never provides state, because a middleware
-// can replace the response writer and keep the request context.
-type trackerCtxKey struct{}
 
 // commitTracker records when the response of a request started, so that AppSec
 // does not add a block response after bytes that were already sent. chi's
@@ -56,51 +49,6 @@ type commitTracker struct {
 	// status that chi had, or 200 (what the client got). A later WriteHeader does
 	// not change it: the wire already has the status.
 	flushStatus int
-
-	// complete is false when the tracker cannot see every way the response can
-	// start, so the WAF gets no newly discovered path parameters for it.
-	complete bool
-
-	// shared is the path parameters that the tracers of this request gave to the
-	// WAF as the baseline input (see sharedInput). All the trackers of a request
-	// have the same one: a tracker takes it from its parent, which is reached
-	// through the writer chain and the request context. A tracker that cannot
-	// reach the one of the outer tracers has its own, and is not complete: it marks
-	// the shared input of the outer tracers as uncertain.
-	shared *sharedInput
-}
-
-// sharedInput is the path parameters that AppSec gave to the WAF as its baseline
-// input: what the tracers of the request knew when they started (the input of
-// AppSec before the route lookup existed), and what they reported after the
-// handler. Early predictions are not recorded in it.
-//
-// A tracer replaces the baseline input at its entry with what it knows, as it did
-// before the route lookup existed. Everything else must pass a conflict check
-// against it: a prediction or a late report adds new names, but it never changes
-// a value in the set, because that would change the result of a rule that the WAF
-// evaluates later, or combine the values of 2 tracers. The tracers of a request
-// run one after the other, so no lock is needed.
-type sharedInput struct {
-	params map[string]string
-
-	// uncertain is set when a tracer that shares the WAF context of the tracers of
-	// this set could not share the set (see newCommitTracker): it can give baseline
-	// input that the set does not have. The tracers that share the set then report
-	// only the route.
-	uncertain bool
-}
-
-func (s *sharedInput) get() map[string]string { return s.params }
-
-func (s *sharedInput) set(params map[string]string) { s.params = maps.Clone(params) }
-
-// markUncertain sets the flag of the shared input of t and of every outer tracker
-// that t reaches through the writer chain.
-func (t *commitTracker) markUncertain() {
-	for ; t != nil; t = t.parent {
-		t.shared.uncertain = true
-	}
 }
 
 // trackerCarrier is implemented by all the generated tracker types.
@@ -271,23 +219,12 @@ type unwrapper interface{ Unwrap() http.ResponseWriter }
 // writer under it can flush: http.ResponseController would otherwise bypass the
 // tracker. It also implements middleware.WrapResponseWriter, and Unwrap()
 // returns the same target as ww.
-//
-// ctx is the request context. It only detects that an outer tracker handles the
-// same request (see trackerCtxKey).
-func newCommitTracker(ww middleware.WrapResponseWriter, ctx context.Context) (http.ResponseWriter, *commitTracker) {
-	ct := &commitTracker{WrapResponseWriter: ww, complete: true}
+func newCommitTracker(ww middleware.WrapResponseWriter) http.ResponseWriter {
+	ct := &commitTracker{WrapResponseWriter: ww}
 
-	var (
-		lowerHijacker bool // a writer under ww can hijack, before the walk ends or finds a tracker
-		lowerFlush    bool // a writer under ww declares FlushError or Flush
-		truncated     bool
-	)
+	lowerFlush := false // a writer under ww declares FlushError or Flush
 	cur := ww.Unwrap()
-	for steps := 0; cur != nil; steps++ {
-		if steps == maxUnwrapWalk {
-			truncated = true
-			break
-		}
+	for steps := 0; cur != nil && steps < maxUnwrapWalk; steps++ {
 		if _, ok := cur.(interface{ FlushError() error }); ok {
 			lowerFlush = true
 		} else if _, ok := cur.(http.Flusher); ok {
@@ -298,9 +235,6 @@ func newCommitTracker(ww middleware.WrapResponseWriter, ctx context.Context) (ht
 			ct.parent = tc.tracker()
 			break
 		}
-		if _, ok := cur.(http.Hijacker); ok {
-			lowerHijacker = true
-		}
 		u, ok := cur.(unwrapper)
 		if !ok {
 			break
@@ -308,17 +242,11 @@ func newCommitTracker(ww middleware.WrapResponseWriter, ctx context.Context) (ht
 		cur = u.Unwrap()
 	}
 
-	var outer *commitTracker
-	if ctx != nil {
-		outer, _ = ctx.Value(trackerCtxKey{}).(*commitTracker)
-	}
-
 	var flags uint8
 	if _, ok := ww.(http.Flusher); ok {
 		flags |= hasFlusher
 	}
-	_, isHijacker := ww.(http.Hijacker)
-	if isHijacker {
+	if _, ok := ww.(http.Hijacker); ok {
 		flags |= hasHijacker
 	}
 	if _, ok := ww.(io.ReaderFrom); ok {
@@ -331,39 +259,5 @@ func newCommitTracker(ww middleware.WrapResponseWriter, ctx context.Context) (ht
 		flags |= hasFlushError
 	}
 
-	switch {
-	case truncated:
-		// A cycle or a very long chain.
-		ct.complete = false
-	case lowerHijacker && !isHijacker:
-		// http.ResponseController.Hijack would bypass the tracker.
-		ct.complete = false
-	case ct.parent != nil && !ct.parent.complete:
-		ct.complete = false
-	case ct.parent == nil && outer != nil:
-		// An outer tracer handles this request, but the writer chain does not
-		// reach it: a writer without Unwrap() or another writer was put in
-		// between. They may not write to the same response.
-		ct.complete = false
-	case ct.parent != nil && outer != ct.parent:
-		// The writer chain reaches an outer tracer, but the request context does not
-		// give it (a middleware replaced the context): this tracker cannot reach the
-		// shared input of the outer tracers.
-		ct.complete = false
-	}
-	if ct.parent != nil && outer == ct.parent {
-		ct.shared = ct.parent.shared
-	} else {
-		// The first tracer of the request, or one that cannot reach the shared input.
-		ct.shared = &sharedInput{}
-		// In the second case, this tracer can still give its known parameters to the
-		// WAF context of the outer tracers (it keeps its original behavior): they
-		// must not report parameters that contradict it without knowing it. The outer
-		// tracers that it finds through the writer chain and through the request
-		// context get the flag.
-		ct.parent.markUncertain()
-		outer.markUncertain()
-	}
-
-	return wrapCommitTracker(ct, flags), ct
+	return wrapCommitTracker(ct, flags)
 }

@@ -40,10 +40,9 @@ const benchRules = `{
 
 // BenchmarkMiddlewareAppSec measures a request through Use(Middleware()) with
 // AppSec enabled, for 0, 4 and 16 writers with Unwrap() under chi's writer.
-// The request has the route lookup, the commit tracker, the context value and,
-// when chi selects another route, the late run. Path parameters are new WAF
-// input: "no-params" shows the cost without them. A chain of 16 writers is too
-// long for the tracker (it is not complete, and does not run the lookup).
+// The request has the commit tracker and, when chi selects another route, the
+// route report after the handler. The WAF gets no path parameters. A chain of 16
+// writers is too long for the tracker to find an outer tracker.
 func BenchmarkMiddlewareAppSec(b *testing.B) {
 	rules := filepath.Join(b.TempDir(), "rules.json")
 	require.NoError(b, os.WriteFile(rules, []byte(benchRules), 0o600))

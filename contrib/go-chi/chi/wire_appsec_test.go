@@ -299,15 +299,21 @@ type wireSet struct {
 	rules    []string
 	event    string // the rule id that the event must have
 	redirect bool
+	// noPath: the rules need path parameters. With Use before routing, the WAF gets
+	// no path parameter (as before the route was reported), so nothing matches: the
+	// response is the response of the application.
+	noPath bool
 }
 
 var (
-	wireL  = wireSet{"L", []string{rulePathBlock}, "path-block", false}
-	wireLr = wireSet{"Lr", []string{rulePathRedirect}, "path-redirect", true}
-	wireH  = wireSet{"H", []string{ruleHeaderBlock}, "header-block", false}
-	wireM  = wireSet{"M", []string{ruleMixedBlock}, "mixed-block", false}
-	wireMr = wireSet{"Mr", []string{ruleMixedRedirect}, "mixed-redirect", true}
-	wireS  = wireSet{"S", []string{ruleSamePath, ruleSameHeader}, "same-path", false}
+	wireL  = wireSet{"L", []string{rulePathBlock}, "path-block", false, true}
+	wireLr = wireSet{"Lr", []string{rulePathRedirect}, "path-redirect", true, true}
+	wireH  = wireSet{"H", []string{ruleHeaderBlock}, "header-block", false, false}
+	wireM  = wireSet{"M", []string{ruleMixedBlock}, "mixed-block", false, true}
+	wireMr = wireSet{"Mr", []string{ruleMixedRedirect}, "mixed-redirect", true, true}
+	// S has a rule on a path parameter and a rule on a response header: only the
+	// header rule matches.
+	wireS = wireSet{"S", []string{ruleSamePath, ruleSameHeader}, "same-header", false, false}
 )
 
 // wireEndpoint sets the response header that the response rules match, then runs the mode.
@@ -319,9 +325,9 @@ func wireEndpoint(m wireMode, ran *bool) http.HandlerFunc {
 	}
 }
 
-// buildWire returns the router of the mode. late: the lookup cannot match (a
-// trailing slash that StripSlashes removes after the tracer), so the late run
-// gives the path parameters. Otherwise the lookup gives them before the handler.
+// buildWire returns the router of the mode. late: the path has a trailing slash that
+// StripSlashes removes after the tracer, so the route that chi selects is only known
+// after the handler. In both cases, the WAF gets no path parameter.
 func buildWire(first func(http.Handler) http.Handler, m wireMode, late bool, h http.HandlerFunc) (http.Handler, string) {
 	r := chi.NewRouter()
 	switch {
@@ -356,6 +362,20 @@ func buildWire(first func(http.Handler) http.Handler, m wireMode, late bool, h h
 // subtests.
 func requireWire(t *testing.T, set wireSet, m wireMode, res wireResult) {
 	t.Helper()
+	if set.noPath {
+		t.Run("wire", func(t *testing.T) {
+			assert.Empty(t, res.log, "no server log")
+			assert.Equal(t, 200, res.status)
+			assert.Equal(t, m.body, res.body, "the bytes of the application, and no more")
+			assert.Empty(t, res.location)
+			assert.Zero(t, res.requestBlocked())
+			assert.Zero(t, res.blockFailure())
+		})
+		t.Run("events", func(t *testing.T) {
+			assert.Empty(t, res.events, "the WAF gets no path parameter")
+		})
+		return
+	}
 	t.Run("wire", func(t *testing.T) {
 		if m.asMain {
 			assert.Equal(t, 200, res.status)
@@ -402,7 +422,7 @@ func requireWire(t *testing.T, set wireSet, m wireMode, res wireResult) {
 func TestAppSecWire(t *testing.T) {
 	type run struct {
 		set   wireSet
-		late  bool // router WL (late run) or WE (lookup)
+		late  bool // router WL (trailing slash, StripSlashes) or WE
 		modes []string
 	}
 	four := []string{"write", "flush-only", "hijack", "none"}
@@ -477,10 +497,33 @@ func simpleRouter(first func(http.Handler) http.Handler, late bool, h http.Handl
 }
 
 func TestAppSecWireSpecial(t *testing.T) {
-	t.Run("E: early block", func(t *testing.T) {
+	// With Use before routing, chi knows no path parameter when the middleware starts:
+	// no block before the handler (the result before the route was reported).
+	t.Run("E: no early block", func(t *testing.T) {
 		res := wireOnce(t, []string{rulePathBlock}, func(c *opCapture, ran *bool) (wireServer, string) {
 			r, target := simpleRouter(c.middleware, false, readyHandler(ran, nil))
 			return wireServer{router: r}, target
+		})
+		t.Run("wire", func(t *testing.T) {
+			assert.True(t, res.ran, "the handler runs")
+			assert.Equal(t, 200, res.status)
+			assert.Empty(t, res.body)
+			assert.Zero(t, res.requestBlocked())
+			assert.Zero(t, res.blockFailure())
+			assert.Empty(t, res.log)
+		})
+		t.Run("events", func(t *testing.T) { assert.Empty(t, res.events) })
+		t.Run("route", func(t *testing.T) { assert.Equal(t, []string{"/items/{id}"}, res.routes) })
+	})
+
+	// With the middleware on the endpoint, chi knows the path parameters: block
+	// before the handler.
+	t.Run("E-with: early block", func(t *testing.T) {
+		res := wireOnce(t, []string{rulePathBlock}, func(c *opCapture, ran *bool) (wireServer, string) {
+			r := chi.NewRouter()
+			r.Use(c.middleware)
+			r.With(Middleware()).Get("/items/{id}", readyHandler(ran, nil))
+			return wireServer{router: r}, "/items/attack"
 		})
 		t.Run("wire", func(t *testing.T) {
 			assert.False(t, res.ran, "blocked before the handler")
@@ -494,8 +537,8 @@ func TestAppSecWireSpecial(t *testing.T) {
 	})
 
 	// A chain that can hijack only through Unwrap() and a chi writer that cannot:
-	// the tracker cannot see a controller hijack, so it is not complete and the
-	// WAF gets no newly discovered data.
+	// the response of the application is not changed (the WAF gets no path parameter
+	// with Use before routing).
 	hijackThroughUnwrap := wireServer{wrap: wrapWriter(func(w http.ResponseWriter) http.ResponseWriter { return unwrapOnly{w} })}
 	for _, c := range []struct {
 		name  string
@@ -668,9 +711,9 @@ func TestAppSecWireSpecial(t *testing.T) {
 	}
 
 	// The flush walk has 1 more step than newCommitTracker: the chi writer. With 15
-	// Unwrap()-only wrappers above the server writer, the tracker is complete and
-	// the flush is marked: no block body follows the sent response. With 1 more
-	// wrapper, the tracker is not complete: the flush is not tracked, as on main
+	// Unwrap()-only wrappers above the server writer, the walk reaches it and the
+	// flush is marked: no block body follows the sent response. With 1 more wrapper,
+	// the walk ends before the server writer: the flush is not tracked, as on main
 	// (the sent response is followed by the block body, and the server logs it).
 	for _, c := range []struct {
 		name     string
@@ -778,12 +821,13 @@ func hideWriter(next http.Handler) http.Handler {
 
 // TestAppSecWireHiddenParent covers a writer that hides the outer tracer from the
 // inner one: they are in the same request, but the writer chain does not link
-// them. The inner tracker is not complete: it gets no newly discovered path
-// parameters. The documented limits are the rows with a flush.
+// them. The WAF gets no path parameter from Use before routing, so a rule on path
+// parameters does not match. The documented limits are the rows with a flush and a
+// rule on response data.
 func TestAppSecWireHiddenParent(t *testing.T) {
 	// mounted: root Use(tracer, [flush], hide), Mount("/api", child), child
-	// Use(tracer, [StripSlashes]). With the trailing slash, the root lookup does not
-	// match, so the root gets "id" after the handler. Without it, it gets "id" before.
+	// Use(tracer, [StripSlashes]). The trailing slash only changes when chi selects the
+	// route of the child.
 	mounted := func(c *opCapture, ran *bool, flush, trailingSlash bool) (wireServer, string) {
 		r := chi.NewRouter()
 		r.Use(c.middleware, Middleware())
@@ -810,11 +854,8 @@ func TestAppSecWireHiddenParent(t *testing.T) {
 		t.Run("route", func(t *testing.T) {
 			assert.Equal(t, []string{"/api/items/{id}", "/api/items/{id}"}, res.routes, "the AppSec route of each operation")
 		})
-		// The inner tracker cannot share the baseline input of the root tracer (the
-		// writer chain does not reach it) but it still gives its known parameters to
-		// the same WAF context: it marks the shared input as uncertain, so the root
-		// reports only its route after the handler. The WAF never gets "id": the same
-		// result as before this change (no match, no event, no block).
+		// The WAF never gets "id": the same result as before this change (no match, no
+		// event, no block).
 		assert.Equal(t, 200, res.status)
 		assert.Empty(t, res.body)
 		assert.Empty(t, res.log)
@@ -830,7 +871,7 @@ func TestAppSecWireHiddenParent(t *testing.T) {
 		t.Run("route", func(t *testing.T) {
 			assert.Equal(t, []string{"/api/items/{id}", "/api/items/{id}"}, res.routes, "the AppSec route of each operation")
 		})
-		// As above: the root reports only its route, so no rule on "id" matches.
+		// As above: no rule on "id" matches.
 		assert.Equal(t, 200, res.status)
 		assert.Empty(t, res.events)
 		assert.Empty(t, res.log)
@@ -839,12 +880,7 @@ func TestAppSecWireHiddenParent(t *testing.T) {
 	})
 
 	// The inner tracer starts after chi routed the mount, so the path parameters
-	// that it knows ({"*": ""}) replace the "id" that the root lookup gave to the
-	// WAF. The inner tracker is not complete: it does not add the final "id". The
-	// root sees no change at the end, so it does not run the WAF again. Whether the
-	// rule matches depends on the order of its conditions (a WAF detail): with the
-	// response header first, the path parameter is not evaluated before the
-	// response, when "id" is no longer there: no match.
+	// that it knows are {"*": ""}: the WAF never gets "id".
 	t.Run("hidden-parent-early", func(t *testing.T) {
 		res := wireOnce(t, []string{ruleMixedBlockHeaderFirst}, func(c *opCapture, ran *bool) (wireServer, string) {
 			return mounted(c, ran, true, false)
@@ -860,9 +896,7 @@ func TestAppSecWireHiddenParent(t *testing.T) {
 		assert.Zero(t, res.blockFailure())
 	})
 
-	// With the path parameter first, the WAF kept the match on "id" from the root
-	// lookup: this is the documented remaining risk (the inner tracker does not see
-	// the flush).
+	// With the path parameter first, the WAF still never gets "id": no match.
 	t.Run("hidden-parent-early-path-first", func(t *testing.T) {
 		res := wireOnce(t, []string{ruleMixedBlock}, func(c *opCapture, ran *bool) (wireServer, string) {
 			return mounted(c, ran, true, false)
@@ -871,9 +905,10 @@ func TestAppSecWireHiddenParent(t *testing.T) {
 			assert.Equal(t, []string{"/api/items/{id}", "/api/items/{id}"}, res.routes, "the AppSec route of each operation")
 		})
 		assert.Equal(t, 200, res.status)
-		assert.Contains(t, res.body, `{"errors":`, "documented limit")
-		assert.Equal(t, []string{"mixed-block"}, res.events)
-		assert.EqualValues(t, 1, res.requestBlocked(), "a false report")
+		assert.Empty(t, res.body)
+		assert.Empty(t, res.events)
+		assert.Zero(t, res.requestBlocked())
+		assert.Zero(t, res.blockFailure())
 	})
 
 	// The same existing failure as before this change: a rule on a response header
@@ -892,10 +927,10 @@ func TestAppSecWireHiddenParent(t *testing.T) {
 	})
 
 	// The remaining risk: 2 tracers before routing on the same router, a flush and a
-	// hidden writer between them, and a rule on path parameters and the response.
-	// The outer lookup gave "id" to the WAF; no mount parameters replace it.
+	// hidden writer between them, and a rule on response data: a block adds its body
+	// after the flushed response (this exists without this change).
 	t.Run("hidden-parent-adjacent", func(t *testing.T) {
-		res := wireOnce(t, []string{ruleMixedBlockHeaderFirst}, func(c *opCapture, ran *bool) (wireServer, string) {
+		res := wireOnce(t, []string{ruleHeaderBlock}, func(c *opCapture, ran *bool) (wireServer, string) {
 			r := chi.NewRouter()
 			r.Use(c.middleware, Middleware(), flushMiddleware, hideWriter, Middleware())
 			r.Get("/items/{id}", readyHandler(ran, nil))
@@ -907,16 +942,16 @@ func TestAppSecWireHiddenParent(t *testing.T) {
 		assert.Equal(t, 200, res.status)
 		assert.Contains(t, res.body, `{"errors":`, "documented limit")
 		assert.Empty(t, res.log)
-		assert.Equal(t, []string{"mixed-block"}, res.events)
+		assert.Equal(t, []string{"header-block"}, res.events)
 		assert.EqualValues(t, 1, res.requestBlocked(), "a false report")
 	})
 
 	// The context is replaced after the tracer (the chi route context is kept) and
-	// the writer chain is hidden: the inner tracker finds no outer tracker, so it is
-	// complete. It gives the final "id" and adds a block body after the flushed
-	// response (documented limit: no outer tracker can be detected).
+	// the writer chain is hidden: the inner tracker finds no outer tracker. A block on
+	// response data adds its body after the flushed response (this exists without
+	// this change).
 	t.Run("hidden-parent-reset-context", func(t *testing.T) {
-		res := wireOnce(t, []string{ruleMixedBlockHeaderFirst}, func(c *opCapture, ran *bool) (wireServer, string) {
+		res := wireOnce(t, []string{ruleHeaderBlock}, func(c *opCapture, ran *bool) (wireServer, string) {
 			r := chi.NewRouter()
 			r.Use(c.middleware, Middleware(), flushMiddleware, hideWriter, replaceContext)
 			child := chi.NewRouter()
@@ -934,11 +969,10 @@ func TestAppSecWireHiddenParent(t *testing.T) {
 	})
 }
 
-// TestAppSecWireStaleParams documents that AppSec cannot remove path parameters
-// that it already has. The early lookup gave "id" to the WAF; a middleware after
-// the tracer then routes the request to a route without parameters. The late run
-// has nothing to give (the WAF ignores an empty set of parameters), so the
-// response rule can still match with the early "id".
+// TestAppSecWireStaleParams: a middleware after the tracer routes the request to a
+// route without parameters. The WAF never gets "id" (Use before routing gives no
+// path parameter), so the rule on "id" does not match, and the route is the route
+// that chi selected.
 func TestAppSecWireStaleParams(t *testing.T) {
 	res := wireOnce(t, []string{ruleMixedBlockHeaderFirst}, func(c *opCapture, ran *bool) (wireServer, string) {
 		r := chi.NewRouter()
@@ -953,8 +987,8 @@ func TestAppSecWireStaleParams(t *testing.T) {
 		return wireServer{router: r}, "/items/attack"
 	})
 	assert.True(t, res.ran, "the handler of /health ran")
-	assert.Equal(t, 403, res.status, "documented limit: blocked with the early parameter")
-	assert.Equal(t, []string{"mixed-block"}, res.events)
+	assert.Equal(t, 200, res.status)
+	assert.Empty(t, res.events)
 	assert.Equal(t, []string{"/health"}, res.routes, "the route is the route that chi selected")
 }
 
