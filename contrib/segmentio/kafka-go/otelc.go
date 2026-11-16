@@ -22,8 +22,9 @@ import (
 type ReaderTracer struct {
 	tracer *tracing.Tracer
 
-	mu   sync.Mutex
-	prev *tracer.Span
+	mu     sync.Mutex
+	prev   *tracer.Span
+	closed bool
 }
 
 // NewReaderTracer returns a ReaderTracer configured from r.
@@ -43,6 +44,16 @@ func (rt *ReaderTracer) FinishPrevious() {
 	}
 }
 
+// Close finishes the span of the last message traced. A span started after
+// Close, by a fetch that returned while the reader was closing, is finished
+// right away.
+func (rt *ReaderTracer) Close() {
+	rt.mu.Lock()
+	rt.closed = true
+	rt.mu.Unlock()
+	rt.FinishPrevious()
+}
+
 // StartConsumeSpan starts the span for msg and injects its context into the
 // message headers. The span stays open until the next call to FinishPrevious.
 func (rt *ReaderTracer) StartConsumeSpan(ctx context.Context, msg *kafka.Message) {
@@ -50,6 +61,11 @@ func (rt *ReaderTracer) StartConsumeSpan(ctx context.Context, msg *kafka.Message
 	span := rt.tracer.StartConsumeSpan(ctx, tMsg)
 	rt.tracer.SetConsumeDSMCheckpoint(tMsg)
 	rt.mu.Lock()
+	if rt.closed {
+		rt.mu.Unlock()
+		span.Finish()
+		return
+	}
 	prev := rt.prev
 	rt.prev = span
 	rt.mu.Unlock()

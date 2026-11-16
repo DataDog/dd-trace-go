@@ -93,7 +93,7 @@ func BeforeReaderClose(_ hook.HookContext, r *kafka.Reader) {
 		return
 	}
 	if rt, ok := readers.LoadAndDelete(weak.Make(r)); ok {
-		rt.(*kafkatrace.ReaderTracer).FinishPrevious()
+		rt.(*kafkatrace.ReaderTracer).Close()
 	}
 }
 

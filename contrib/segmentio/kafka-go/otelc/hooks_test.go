@@ -148,6 +148,26 @@ func TestFetchMessageHooksContinueTrace(t *testing.T) {
 	assert.Equal(t, produced.TraceID(), consumed.TraceID())
 }
 
+// TestFetchMessageReturningDuringClose covers a fetch that returns while
+// another goroutine closes the reader: its span is finished, not left open on
+// the tracer Close removed.
+func TestFetchMessageReturningDuringClose(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	r := newReader(t)
+	ictx := hooktest.NewMockHookContext(r, context.Background())
+	BeforeReaderFetchMessage(ictx, r, context.Background())
+	closeReader(r)
+	msg := kafka.Message{Topic: "topic", Value: []byte("late")}
+	ictx.ReturnVals = []any{msg, nil}
+	AfterReaderFetchMessage(ictx, msg, nil)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "kafka.consume", spans[0].OperationName())
+}
+
 func TestTracersFreeReaderAndWriter(t *testing.T) {
 	r := kafka.NewReader(kafka.ReaderConfig{Brokers: []string{"broker:9092"}, Topic: "topic"})
 	w := &kafka.Writer{Addr: kafka.TCP("broker:9092")}
