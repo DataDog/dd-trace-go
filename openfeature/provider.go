@@ -91,7 +91,11 @@ type DatadogProvider struct {
 
 	mu            sync.RWMutex
 	configuration *universalFlagsConfiguration
-	metadata      openfeature.Metadata
+	// dependencyEvaluatorState resolves evaluator options lazily and at most
+	// once for the current immutable configuration. It is replaced together
+	// with configuration under mu. // +checklocks:mu
+	dependencyEvaluatorState *dependencyEvaluatorState
+	metadata                 openfeature.Metadata
 
 	// configChange is closed and replaced with a fresh channel each time
 	// updateConfiguration runs, so a waiter that reads it while p.mu is held
@@ -439,6 +443,11 @@ func (p *DatadogProvider) setConfiguration(config *universalFlagsConfiguration) 
 		return readinessUnchanged
 	}
 	p.configuration = config
+	if config == nil {
+		p.dependencyEvaluatorState = nil
+	} else {
+		p.dependencyEvaluatorState = new(dependencyEvaluatorState)
+	}
 	// Wake every waiter blocked on the current generation, then start a fresh
 	// one for the next update: a closed channel cannot be reused as a signal.
 	// configChange is nil on a DatadogProvider built as a bare struct literal
@@ -470,6 +479,12 @@ func (p *DatadogProvider) getConfiguration() *universalFlagsConfiguration {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.configuration
+}
+
+func (p *DatadogProvider) getEvaluationConfiguration() (*universalFlagsConfiguration, *dependencyEvaluatorState) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.configuration, p.dependencyEvaluatorState
 }
 
 // Metadata returns provider metadata including the provider name.
@@ -617,6 +632,7 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 	p.remoteConfigToken = 0
 	agentless := p.agentless
 	p.configuration = nil
+	p.dependencyEvaluatorState = nil
 	// Wake any Init parked on the current generation so it observes
 	// shutdownCalled instead of waiting out its timeout.
 	if p.configChange != nil {
@@ -960,7 +976,7 @@ func (p *DatadogProvider) evaluate(
 	default:
 	}
 
-	config := p.getConfiguration()
+	config, dependencyEvaluatorState := p.getEvaluationConfiguration()
 
 	// Check if configuration is loaded
 	if config == nil {
@@ -1010,7 +1026,8 @@ func (p *DatadogProvider) evaluate(
 	// returned batch is detached from its memo and exposure state, and each record
 	// is cloned again before publication so a failed or mutating publisher cannot
 	// affect the root result or another record.
-	res = evaluateConfiguredFlagLookedUp(config, flagKey, rootFlag, rootExists, defaultValue, flatCtx, evalNow, exclusion)
+	res = evaluateConfiguredFlagLookedUpWithState(config, flagKey, rootFlag, rootExists, defaultValue,
+		flatCtx, evalNow, exclusion, dependencyEvaluatorState)
 	p.publishDependencyEvaluations(ctx, flatCtx, res.DependencyEvaluations)
 	res.DependencyEvaluations = nil
 	return res

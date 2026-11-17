@@ -259,6 +259,20 @@ func evaluateConfiguredFlagLookedUp(
 	now time.Time,
 	exclusion experimentationExclusion,
 ) evaluationResult {
+	return evaluateConfiguredFlagLookedUpWithState(config, flagKey, flag, exists, defaultValue, context, now, exclusion, nil)
+}
+
+func evaluateConfiguredFlagLookedUpWithState(
+	config *universalFlagsConfiguration,
+	flagKey string,
+	flag *flag,
+	exists bool,
+	defaultValue any,
+	context map[string]any,
+	now time.Time,
+	exclusion experimentationExclusion,
+	evaluatorState *dependencyEvaluatorState,
+) evaluationResult {
 	if !exists || !flag.Enabled || !flagMayEvaluateDependencies(flag) {
 		if exists && !(exclusion.mode == ExperimentationOptOutFutureExperimentsOnly && flag.invalidActivation) {
 			return evaluateFlagWithResolver(flag, defaultValue, context, now, exclusion, nil)
@@ -266,11 +280,12 @@ func evaluateConfiguredFlagLookedUp(
 		return evaluateConfiguredFlagOnce(config, flagKey, defaultValue, context, now, exclusion, nil)
 	}
 	resolver := &lazyDependencyResolver{
-		config:      config,
-		rootFlagKey: flagKey,
-		context:     context,
-		now:         now,
-		exclusion:   exclusion,
+		config:         config,
+		rootFlagKey:    flagKey,
+		context:        context,
+		now:            now,
+		exclusion:      exclusion,
+		evaluatorState: evaluatorState,
 	}
 	result := evaluateConfiguredFlagOnce(config, flagKey, defaultValue, context, now, exclusion, resolver)
 	if resolver.session == nil {
@@ -369,7 +384,26 @@ func configuredMaxDependencyDepth(config *universalFlagsConfiguration) int {
 }
 
 func logInvalidMaxDependencyDepth() {
-	log.Debug("openfeature: maxDependencyDepth must be an integer from 0 through 255; using default %d", defaultMaxDependencyDepth)
+	log.Error("openfeature: maxDependencyDepth must be an integer from 0 through 255; using default %d", defaultMaxDependencyDepth) //errtrack:ignore malformed customer configuration
+}
+
+// dependencyEvaluatorState owns evaluator-option state outside the immutable
+// UFC data. A provider replaces it with each accepted configuration, and the
+// first reached prerequisite resolves the option for all evaluations that use
+// that configuration.
+type dependencyEvaluatorState struct {
+	maxDependencyDepthOnce sync.Once
+	maxDependencyDepth     int
+}
+
+func (s *dependencyEvaluatorState) resolveMaxDependencyDepth(config *universalFlagsConfiguration) int {
+	if s == nil {
+		return configuredMaxDependencyDepth(config)
+	}
+	s.maxDependencyDepthOnce.Do(func() {
+		s.maxDependencyDepth = configuredMaxDependencyDepth(config)
+	})
+	return s.maxDependencyDepth
 }
 
 // evaluateAllocation evaluates an allocation and returns the matching split if any.
@@ -557,12 +591,13 @@ type dependencyEvaluationSession struct {
 // lazyDependencyResolver keeps the dependency session and all of its maps off
 // the ordinary evaluation path until a flagEvaluation condition is reached.
 type lazyDependencyResolver struct {
-	config      *universalFlagsConfiguration
-	rootFlagKey string
-	context     map[string]any
-	now         time.Time
-	exclusion   experimentationExclusion
-	session     *dependencyEvaluationSession
+	config         *universalFlagsConfiguration
+	rootFlagKey    string
+	context        map[string]any
+	now            time.Time
+	exclusion      experimentationExclusion
+	evaluatorState *dependencyEvaluatorState
+	session        *dependencyEvaluationSession
 }
 
 func (r *lazyDependencyResolver) Resolve(ref *flagEvaluation) (string, error) {
@@ -572,7 +607,7 @@ func (r *lazyDependencyResolver) Resolve(ref *flagEvaluation) (string, error) {
 			context:           r.context,
 			now:               r.now,
 			exclusion:         r.exclusion,
-			maxDepth:          configuredMaxDependencyDepth(r.config),
+			maxDepth:          r.evaluatorState.resolveMaxDependencyDepth(r.config),
 			active:            map[string]bool{r.rootFlagKey: true},
 			memo:              make(map[string]memoizedDependency),
 			exposureKeys:      make(map[string]struct{}),
