@@ -123,6 +123,57 @@ func (tc *TestCaseContribWrapTransportChain) ExpectedTraces() trace.Traces {
 	return tc.base.expectedTraces()
 }
 
+// TestCaseContribWrapTransportChainOuter pins the spans of a WrapTransport
+// which uses the contrib over another round tripper. The otelc rule puts the
+// contrib innermost, and httptrace only replaces a round tripper it wraps
+// directly, so otelc reports two client-go spans here. Orchestrion puts the
+// contrib outermost and reports one.
+type TestCaseContribWrapTransportChainOuter struct {
+	base
+	rtCalled bool
+}
+
+func (tc *TestCaseContribWrapTransportChainOuter) Setup(ctx context.Context, t *testing.T) {
+	tc.base.setup(ctx, t)
+
+	cfg := &rest.Config{
+		Host: tc.server.URL,
+		WrapTransport: transport.Wrappers(
+			func(rt http.RoundTripper) http.RoundTripper {
+				return &calledRoundTripper{base: rt, called: &tc.rtCalled}
+			},
+			kubernetestrace.WrapRoundTripper,
+		),
+	}
+	client, err := kubernetes.NewForConfig(cfg)
+	require.NoError(t, err)
+	tc.base.client = client
+}
+
+func (tc *TestCaseContribWrapTransportChainOuter) Run(ctx context.Context, t *testing.T) {
+	tc.base.run(ctx, t)
+	assert.True(t, tc.rtCalled, "the round tripper of the original WrapTransport was not called")
+}
+
+func (*TestCaseContribWrapTransportChainOuter) ExpectedSpanCount() int {
+	if otelc.Enabled() {
+		return spansPerRequest + 1
+	}
+	return spansPerRequest
+}
+
+func (tc *TestCaseContribWrapTransportChainOuter) ExpectedTraces() trace.Traces {
+	traces := tc.base.expectedTraces()
+	if otelc.Enabled() {
+		// The span of the application's wrapper is the parent of the one the
+		// otelc rule adds.
+		outer := *traces[0]
+		outer.Children = trace.Traces{traces[0]}
+		return trace.Traces{&outer}
+	}
+	return traces
+}
+
 // TestCaseContribConfigWrap checks that a config from clientcmd, which the
 // rules already wrap, gets one client-go span when the application adds the
 // contrib with rest.Config.Wrap, and keeps the contrib's options.
