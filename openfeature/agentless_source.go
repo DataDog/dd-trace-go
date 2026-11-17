@@ -413,39 +413,21 @@ func (s *agentlessSource) usageService() string {
 // normalizeUsageService returns the DD-Service value for service. The value is
 // the service name that APM shows, from the Agent's own NormalizeService. For
 // example, "My Service" becomes my_service. As in APM, a name longer than 100
-// bytes is cut to 100 bytes. It returns "" in two cases:
-//   - The Agent replaces service with its fallback name.
-//   - The APM name is not plain ASCII, for example café-api.
+// bytes is cut to 100 bytes. It returns "" when the Agent replaces service with
+// its fallback name, because that name is not the name of this service.
 //
-// It does not change the APM name. Thus usage goes only to a service that APM
-// shows, or to no service. The CDN alone decides which values it accepts, so
-// the SDK does not copy that rule. APM keeps non-ASCII letters, and the HTTP
-// clients of some SDKs refuse them in a header. Go's client sends them, but all
-// SDKs apply the same ASCII check, so a service gets the same header in every
-// language. The tracer's service stays as configured.
+// The value can have non-ASCII letters, for example café-api. Go's HTTP client
+// sends their UTF-8 bytes. The CDN alone decides which values it accepts, so
+// the SDK does not copy that rule. The tracer's service stays as configured.
 func normalizeUsageService(service string) string {
 	apmService, err := normalize.NormalizeService(service, "")
 	if errors.Is(err, normalize.ErrEmpty) || errors.Is(err, normalize.ErrInvalid) {
-		apmService = "" // the Agent's fallback name is not the name of this service
-	}
-	if apmService != "" && isPrintableASCII(apmService) {
-		return apmService
-	}
-	if service != "" {
-		logOnboarding("service %q has no ASCII APM name; DD-Service header not sent", service)
-	}
-	return ""
-}
-
-// isPrintableASCII reports whether every byte of s is printable ASCII
-// (0x21-0x7E).
-func isPrintableASCII(s string) bool {
-	for i := range len(s) {
-		if s[i] < 0x21 || s[i] > 0x7e {
-			return false
+		if service != "" {
+			logOnboarding("service %q has no APM name; DD-Service header not sent", service)
 		}
+		return ""
 	}
-	return true
+	return apmService
 }
 
 func (s *agentlessSource) currentETag() string {

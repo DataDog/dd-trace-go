@@ -649,17 +649,17 @@ func TestAgentlessSource_ServiceHeader(t *testing.T) {
 
 // TestAgentlessSource_ServiceHeaderNormalization checks the DD-Service value
 // of each poll. The value is the name that APM shows for the tracer's service.
-// When that name is not plain ASCII, the poll has no DD-Service header.
+// A name with non-ASCII letters is sent as UTF-8, and the poll still succeeds.
 func TestAgentlessSource_ServiceHeaderNormalization(t *testing.T) {
 	internalconfig.SetUseFreshConfig(true)
 	t.Cleanup(func() { internalconfig.SetUseFreshConfig(false); internalconfig.CreateNew() })
 	logger := withLogLevel(t, log.LevelDebug)
 	notSentMessage := func(service string) string {
-		return "openfeature: service " + strconv.Quote(service) + " has no ASCII APM name; DD-Service header not sent"
+		return "openfeature: service " + strconv.Quote(service) + " has no APM name; DD-Service header not sent"
 	}
 
 	// The Agent's NormalizeService (datadog-agent v0.82.3) gave each apm value.
-	// The header is apm when apm is printable ASCII.
+	// The header is apm, unless the Agent returns its fallback name.
 	for _, tc := range []struct {
 		name    string
 		service string
@@ -695,12 +695,12 @@ func TestAgentlessSource_ServiceHeaderNormalization(t *testing.T) {
 		{name: "leading dot", service: ".svc", apm: ".svc", header: ".svc"},
 		{name: "leading colon", service: ":svc", apm: ":svc", header: ":svc"},
 		{name: "only a hyphen", service: "-", apm: "-", header: "-"},
-		// The name that APM shows is not plain ASCII. The poll sends no header.
-		{name: "non-ASCII letter", service: "café-api", apm: "café-api"},
-		{name: "uppercase non-ASCII letter", service: "Café", apm: "café"},
-		{name: "non-Latin script", service: "支付", apm: "支付"},
-		{name: "dotted capital I", service: "İstanbul", apm: "İstanbul"},
-		{name: "too long, non-ASCII", service: strings.Repeat("é", 60), apm: strings.Repeat("é", 50)},
+		// The name that APM shows has non-ASCII letters. The poll sends it as UTF-8.
+		{name: "non-ASCII letter", service: "café-api", apm: "café-api", header: "café-api"},
+		{name: "uppercase non-ASCII letter", service: "Café", apm: "café", header: "café"},
+		{name: "non-Latin script", service: "支付", apm: "支付", header: "支付"},
+		{name: "dotted capital I", service: "İstanbul", apm: "İstanbul", header: "İstanbul"},
+		{name: "too long, non-ASCII", service: strings.Repeat("é", 60), apm: strings.Repeat("é", 50), header: strings.Repeat("é", 50)},
 		// The Agent returns its fallback name. The poll sends no header.
 		{name: "only underscores", service: "___"},
 		{name: "only spaces", service: "   "},
