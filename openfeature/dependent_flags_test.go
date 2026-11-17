@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
 	"strings"
 	"sync"
 	"testing"
@@ -546,6 +548,35 @@ func TestDependentFlags_InvalidDepthDiagnosticIsError(t *testing.T) {
 	require.Equal(t, 1, logger.countContaining("ERROR: openfeature: maxDependencyDepth must be an integer from 0 through 255; using default 10"))
 }
 
+// DD_LOGGING_RATE is read when the log package initializes. Run this case in a
+// subprocess so log.Error reaches the application logger synchronously and can
+// prove a logger panic neither escapes nor leaves sync.Once with a zero depth.
+func TestDependentFlags_InvalidDepthPanickingLoggerStillUsesDefault(t *testing.T) {
+	if os.Getenv("DD_DEPENDENCY_DEPTH_PANIC_SUBPROCESS") != "1" {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestDependentFlags_InvalidDepthPanickingLoggerStillUsesDefault$", "-test.count=1")
+		cmd.Env = append(os.Environ(), "DD_DEPENDENCY_DEPTH_PANIC_SUBPROCESS=1", "DD_LOGGING_RATE=0")
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		return
+	}
+
+	withPanickingLogger(t, log.LevelWarn)
+	config := dependencyTestConfig(
+		dependencyTestFlag("dependency", "on", nil),
+		dependencyTestFlag("root", "on", dependencyCondition("dependency", operatorOneOf, "on")),
+	)
+	config.EvaluatorParams = json.RawMessage(`{"maxDependencyDepth":null}`)
+	state := new(dependencyEvaluatorState)
+	for range 2 {
+		root, exists := config.Flags["root"]
+		result := evaluateConfiguredFlagLookedUpWithState(config, "root", root, exists, false, nil,
+			time.Now(), experimentationExclusion{}, state)
+		require.NoError(t, result.Error)
+		require.True(t, result.Value.(bool))
+		require.Equal(t, []string{"dependency"}, dependencyEvaluationKeys(result))
+	}
+}
+
 func TestDependentFlags_ExactIntegerDepthForms(t *testing.T) {
 	for configured, want := range map[string]int{
 		"3.0":    3,
@@ -954,6 +985,111 @@ func TestDependentFlags_ConsentIsSnapshottedAtDependencyEvaluation(t *testing.T)
 			}
 		})
 	}
+}
+
+func TestDependentFlags_EnvironmentIdentityIsSnapshottedBeforeDrain(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{})
+	want := environment{ID: testEnvironmentID, Name: "Production"}
+	config := dependencyTestConfig(
+		dependencyTestFlag("dependency", "dependency-on", nil),
+		dependencyTestFlag("root", "root-on", dependencyCondition("dependency", operatorOneOf, "dependency-on")),
+	)
+	config.Environment = want
+	h.provider.setConfiguration(config)
+
+	_, err := h.client.BooleanValue(context.Background(), "root", false,
+		of.NewEvaluationContext("subject", nil))
+	require.NoError(t, err)
+
+	// Both events already carry the evaluated configuration's identity. Replacing
+	// the provider configuration before the writer drains must not relabel either.
+	replacement := dependencyTestConfig()
+	replacement.Environment = environment{ID: "22222222-2222-4222-8222-222222222222", Name: "Replacement"}
+	h.provider.setConfiguration(replacement)
+	h.provider.flagEvalLoggingWriter.stop()
+	require.Len(t, h.sink.events, 2)
+	for _, event := range h.sink.events {
+		require.NotNil(t, event.Environment)
+		require.Equal(t, want, *event.Environment, "flag %s", event.Flag.Key)
+	}
+}
+
+func TestDependentFlags_EnvironmentIdentityRemainsCoherentDuringConcurrentRefresh(t *testing.T) {
+	h := newOptOutHarness(t, ProviderConfig{})
+	identities := []environment{
+		{ID: testEnvironmentID, Name: "Production"},
+		{ID: "22222222-2222-4222-8222-222222222222", Name: "Renamed"},
+		{Name: "Legacy"},
+	}
+	configs := make([]*universalFlagsConfiguration, len(identities))
+	for i, identity := range identities {
+		configs[i] = dependencyTestConfig(
+			dependencyTestFlag("dependency", "dependency-on", nil),
+			dependencyTestFlag("root", "root-on", dependencyCondition("dependency", operatorOneOf, "dependency-on")),
+		)
+		configs[i].Environment = identity
+	}
+	h.provider.setConfiguration(configs[0])
+
+	const workers = 8
+	const evaluationsPerWorker = 50
+	start := make(chan struct{})
+	errCh := make(chan error, workers*evaluationsPerWorker)
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-start
+		for i := range workers * evaluationsPerWorker {
+			h.provider.setConfiguration(configs[i%len(configs)])
+		}
+	}()
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			for range evaluationsPerWorker {
+				value, err := h.client.BooleanValue(context.Background(), "root", false,
+					of.NewEvaluationContext("subject", nil))
+				if err != nil {
+					errCh <- err
+					continue
+				}
+				if !value {
+					errCh <- errors.New("root evaluated false")
+				}
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		require.NoError(t, err)
+	}
+
+	// Join the background worker before asserting exact concurrent counts.
+	h.provider.flagEvalLoggingWriter.stop()
+	counts := make(map[environment]map[string]int64)
+	for _, event := range h.sink.events {
+		require.NotNil(t, event.Environment, "flag %s", event.Flag.Key)
+		byFlag := counts[*event.Environment]
+		if byFlag == nil {
+			byFlag = make(map[string]int64)
+			counts[*event.Environment] = byFlag
+		}
+		byFlag[event.Flag.Key] += event.EvaluationCount
+	}
+	var roots, dependencies int64
+	for identity, byFlag := range counts {
+		require.Contains(t, identities, identity)
+		require.Equal(t, byFlag["root"], byFlag["dependency"], "identity %+v", identity)
+		roots += byFlag["root"]
+		dependencies += byFlag["dependency"]
+	}
+	require.Equal(t, int64(workers*evaluationsPerWorker), roots)
+	require.Equal(t, roots, dependencies)
 }
 
 func TestDependentFlags_PerPrerequisiteDoLogAndRollback(t *testing.T) {

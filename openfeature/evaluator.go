@@ -394,7 +394,9 @@ func configuredMaxDependencyDepth(config *universalFlagsConfiguration) int {
 }
 
 func logInvalidMaxDependencyDepth() {
-	log.Error("openfeature: maxDependencyDepth must be an integer from 0 through 255; using default %d", defaultMaxDependencyDepth) //errtrack:ignore malformed customer configuration
+	containLoggerPanic(func() {
+		log.Error("openfeature: maxDependencyDepth must be an integer from 0 through 255; using default %d", defaultMaxDependencyDepth) //errtrack:ignore malformed customer configuration
+	})
 }
 
 // dependencyEvaluatorState owns evaluator-option state outside the immutable
@@ -857,10 +859,13 @@ func withoutEvaluationValue(result evaluationResult) evaluationResult {
 func (s *dependencyEvaluationSession) emit(flagKey string, flagType valueType, defaultValue any, result evaluationResult) {
 	index := s.reserve(flagKey, flagType, defaultValue)
 	if result.Metadata == nil {
-		result.Metadata = make(map[string]any, 2)
+		result.Metadata = make(map[string]any, 4)
 	}
+	environmentID, environmentName := s.config.environmentMetadata()
 	result.Metadata[metadataEvalTimeKey] = s.now.UnixMilli()
 	result.Metadata[metadataObserveFullEvaluationDataKey] = s.config.ObserveFullEvaluationData
+	result.Metadata[metadataEnvironmentIDKey] = environmentID
+	result.Metadata[metadataEnvironmentNameKey] = environmentName
 	s.evaluations[index] = dependencyEvaluationRecord{
 		FlagKey:      flagKey,
 		FlagType:     flagType,
