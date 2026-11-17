@@ -144,18 +144,29 @@ func AttachCallback(cb Callback) (ProviderToken, bool) {
 	rcState.callbackToken = token
 
 	if rcState.buffered != nil {
-		log.Debug("openfeature: replaying buffered RC config to provider")
 		// Apply statuses are intentionally discarded: the RC client already received
 		// ApplyStateAcknowledged from forwardingCallback when this update was buffered.
 		// This call only initializes the provider's in-memory state.
 		cb(rcState.buffered)
 		rcState.buffered = nil
+		containLoggerPanic(func() {
+			log.Debug("openfeature: replayed buffered RC config to provider")
+		})
 	} else if len(rcState.delivered) > 0 {
-		log.Debug("openfeature: replaying last delivered RC config to replacement provider")
 		cb(rcState.delivered)
+		containLoggerPanic(func() {
+			log.Debug("openfeature: replayed last delivered RC config to replacement provider")
+		})
 	}
 
 	return token, true
+}
+
+// containLoggerPanic keeps an application logger from interrupting ownership
+// transitions after the callback state has already changed.
+func containLoggerPanic(logf func()) {
+	defer func() { _ = recover() }()
+	logf()
 }
 
 // SubscribeProvider attempts to subscribe a provider callback to RC. A

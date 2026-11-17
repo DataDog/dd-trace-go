@@ -6,14 +6,21 @@
 package openfeature
 
 import (
+	"os"
+	"os/exec"
 	"testing"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 )
+
+type panickingRCLogger struct{}
+
+func (panickingRCLogger) Log(string) { panic("logger failure") }
 
 func TestForwardingCallbackBuffersWhenNoCallback(t *testing.T) {
 	ResetForTest()
@@ -220,5 +227,51 @@ func TestFastPathDetachBuffersForReplacement(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, has, "fast-path detach must keep tracer capability %d", capability)
 	}
+	require.NoError(t, UnsubscribeProvider(replacementToken))
+}
+
+func TestAttachReplacementReplaysDeliveredStateWithPanickingDebugLogger(t *testing.T) {
+	if os.Getenv("DD_RC_REPLAY_LOGGER_PANIC_SUBPROCESS") != "1" {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestAttachReplacementReplaysDeliveredStateWithPanickingDebugLogger$", "-test.count=1")
+		cmd.Env = append(os.Environ(), "DD_RC_REPLAY_LOGGER_PANIC_SUBPROCESS=1", "DD_LOGGING_RATE=0")
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		return
+	}
+
+	ResetForTest()
+	t.Cleanup(ResetForTest)
+	rcState.Lock()
+	rcState.subscribed = true
+	rcState.Unlock()
+
+	firstToken, attached := AttachCallback(func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus { return nil })
+	require.True(t, attached)
+	forwardingCallback(remoteconfig.ProductUpdate{"delivered/state": []byte("value")})
+	require.NoError(t, UnsubscribeProvider(firstToken))
+
+	previousLevel := log.GetLevel()
+	log.SetLevel(log.LevelDebug)
+	undoLogger := log.UseLogger(panickingRCLogger{})
+	t.Cleanup(func() {
+		undoLogger()
+		log.SetLevel(previousLevel)
+	})
+
+	var replacementUpdates []string
+	replacementToken, attached := AttachCallback(func(update remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+		for path := range update {
+			replacementUpdates = append(replacementUpdates, path)
+		}
+		return nil
+	})
+	require.True(t, attached)
+	require.NotZero(t, replacementToken)
+	require.Equal(t, []string{"delivered/state"}, replacementUpdates)
+
+	// The detached provider's stale token cannot remove replacement ownership.
+	require.NoError(t, UnsubscribeProvider(firstToken))
+	forwardingCallback(remoteconfig.ProductUpdate{"live/state": []byte("next")})
+	require.Equal(t, []string{"delivered/state", "live/state"}, replacementUpdates)
 	require.NoError(t, UnsubscribeProvider(replacementToken))
 }
