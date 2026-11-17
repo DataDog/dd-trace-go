@@ -204,11 +204,35 @@ func WithUntracedMethods(ms ...string) OptionFn {
 	}
 }
 
-// WithServiceInfo gives the server interceptors the registered services,
-// usually (*grpc.Server).GetServiceInfo. With it, a call is served by
-// grpc.UnknownServiceHandler (and gets the "_OTHER" resource) only when its
-// method is not registered. Without it, a bidi stream call with a nil
-// service implementation is taken to be an unknown-service call.
+// WithServiceInfo gives StreamServerInterceptor the services registered on
+// the server, usually through (*grpc.Server).GetServiceInfo. Only
+// StreamServerInterceptor uses it. The unary interceptor and the stats
+// handlers ignore it.
+//
+// By default, StreamServerInterceptor treats a call as served by
+// grpc.UnknownServiceHandler when grpc passes it a nil server and a bidi
+// stream. Such a call gets the "_OTHER" resource. A registered bidi method
+// whose service implementation is nil, as in RegisterService(desc, nil), gets
+// the same arguments from grpc. So if the server also has an
+// UnknownServiceHandler, that method gets "_OTHER" too. With WithServiceInfo,
+// the interceptor looks up the method in the registered services, and only
+// methods that are not registered get "_OTHER". You need this option only
+// when a server has both an UnknownServiceHandler and a service registered
+// with a nil implementation.
+//
+// The function is called on each such call, after the server is built, so it
+// can read the server through a closure:
+//
+//	var srv *grpc.Server
+//	srv = grpc.NewServer(
+//		grpc.StreamInterceptor(grpctrace.StreamServerInterceptor(
+//			grpctrace.WithServiceInfo(func() map[string]grpc.ServiceInfo {
+//				return srv.GetServiceInfo()
+//			}),
+//		)),
+//		grpc.UnknownServiceHandler(catchAll),
+//	)
+//	srv.RegisterService(&desc, nil)
 func WithServiceInfo(fn func() map[string]grpc.ServiceInfo) OptionFn {
 	return func(cfg *config) {
 		cfg.serviceInfo = fn
