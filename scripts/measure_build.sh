@@ -141,11 +141,9 @@ fi
 
 # For otelc mode, clone and install the otelc binary (untimed)
 if [[ "$MODE" == "otelc" ]]; then
-  message "Cloning and installing otelc binary..."
-  OTELC_SRC_DIR="$OUT_DIR/otelc-src"
+  message "Installing otelc binary..."
   OTELC_VERSION="${OTELC_VERSION:?pin from .github/workflows/otelc.yml, set by the workflow}"
   retry_on_corruption go install "go.opentelemetry.io/otelc/tool/cmd/otelc@$OTELC_VERSION" || die "Failed to install otelc"
-  OTELC_VERSION="${OTELC_REF:0:12}"
   message "  Otelc version: $OTELC_VERSION"
 fi
 
@@ -172,8 +170,8 @@ do_build() {
   elif [[ "$MODE" == "orchestrion" ]]; then
     go test -c -toolexec='orchestrion toolexec' -o "$bin_path" "./$SAMPLE" || build_status=$?
   else
-    otelc -rules="$REPO_ROOT" go test -c -o "$bin_path" "./$SAMPLE" || build_status=$?
-  fi
+    GOWORK=off otelc go test -c -o "$bin_path" "./$SAMPLE" || build_status=$?
+  fi >&2
 
   if [[ "$build_status" -ne 0 ]]; then
     message "  Build failed ($MODE, exit $build_status); recording null metrics for this run"
