@@ -6,7 +6,7 @@ name: Build Metrics
 # built three ways from identical source:
 #   - Standard Go toolchain (go test -c)
 #   - Orchestrion (go test -c -toolexec='orchestrion toolexec')
-#   - otelc (go test -c -toolexec='otelc toolexec')
+#   - otelc (otelc -rules="$REPO_ROOT" go test -c)
 #
 # Key features:
 # - Cold cache measurement: cleans build cache before each measurement to capture full compilation cost
@@ -18,7 +18,7 @@ name: Build Metrics
 #   the flaky GitHub-release download only runs on a cache miss; utilization
 #   is published as ci.cache.*.hit measures for hit-rate tracking
 # - Datadog CI Visibility: publishes metrics and tags to job spans for dashboard trending and regression monitoring
-# - Runs on: Pull requests (when this file, scripts/*, an aspect orchestrion.yml, or any go.mod changes) and pushes to main
+# - Runs on: Pull requests (when this file, scripts/*, an aspect orchestrion.yml, an otelc.yaml, or any go.mod changes) and pushes to main
 # - Tags metrics by: build.toolchain, build.sample, build.cache, go.version, orchestrion.version, otelc.version
 #
 # Dashboard: View trends in Datadog CI Visibility (filter @git.branch:main, split by build.toolchain)

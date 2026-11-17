@@ -143,14 +143,9 @@ fi
 if [[ "$MODE" == "otelc" ]]; then
   message "Cloning and installing otelc binary..."
   OTELC_SRC_DIR="$OUT_DIR/otelc-src"
-  OTELC_REF="3b9beed7a1200cf16e59bafa431dd4c4a0601f41" # v1.0.1
-  mkdir -p "$OTELC_SRC_DIR"
-  git -C "$OTELC_SRC_DIR" init -q
-  git -C "$OTELC_SRC_DIR" remote add origin https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation.git
-  git -C "$OTELC_SRC_DIR" fetch --depth 1 origin "$OTELC_REF" || die "Failed to fetch otelc commit $OTELC_REF"
-  git -C "$OTELC_SRC_DIR" checkout -q FETCH_HEAD || die "Failed to checkout otelc commit $OTELC_REF"
-  (cd "$OTELC_SRC_DIR" && make install) || die "Failed to install otelc"
-  OTELC_VERSION="$OTELC_REF"
+  OTELC_VERSION="${OTELC_VERSION:?pin from .github/workflows/otelc.yml, set by the workflow}"
+  retry_on_corruption go install "go.opentelemetry.io/otelc/tool/cmd/otelc@$OTELC_VERSION" || die "Failed to install otelc"
+  OTELC_VERSION="${OTELC_REF:0:12}"
   message "  Otelc version: $OTELC_VERSION"
 fi
 
@@ -216,7 +211,7 @@ for i in $(seq 1 "$REPEATS"); do
   build_output="$(do_build)" || failures=$((failures + 1))
   read -r d s <<< "$build_output"
   durations+=("$d")
-  size="$s"
+  if [[ "$s" != "null" ]]; then size="$s"; else size="${size:-null}"; fi
 done
 message "Durations: ${durations[*]}, size: $size bytes"
 if [[ "$failures" -gt 0 ]]; then
