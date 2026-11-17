@@ -78,6 +78,7 @@ func TestExperimentationOptOutInvalidMode(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			p, err := NewDatadogProvider(ProviderConfig{ExperimentationOptOutMode: tc.mode})
 			require.ErrorContains(t, err, "unsupported experimentation opt-out mode")
+			cleanupProvider(t, p)
 			assert.Nil(t, p)
 		})
 	}
@@ -172,6 +173,7 @@ func TestExperimentationOptOutConfiguration(t *testing.T) {
 				assert.Nil(t, provider)
 				return
 			}
+			cleanupProvider(t, provider)
 			require.NoError(t, err)
 			p := provider.(*DatadogProvider)
 			t.Cleanup(func() {
@@ -410,6 +412,7 @@ func TestExperimentationOptOutDisabledProviderWinsOverInvalidMode(t *testing.T) 
 			for _, mode := range []ExperimentationOptOutMode{ExperimentationOptOutDefault, -1} {
 				p, err := NewDatadogProvider(ProviderConfig{ExperimentationOptOutMode: mode})
 				require.NoError(t, err)
+				cleanupProvider(t, p)
 				assert.IsType(t, &of.NoopProvider{}, p)
 			}
 		})
