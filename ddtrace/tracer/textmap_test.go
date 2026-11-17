@@ -3131,6 +3131,7 @@ func TestParseTraceparentHighFlagBits(t *testing.T) {
 		"81": 1,
 		"ff": 1,
 		"fe": 0,
+		"FF": 1,
 	} {
 		t.Run(flags, func(t *testing.T) {
 			ctx := new(SpanContext)
@@ -3140,6 +3141,14 @@ func TestParseTraceparentHighFlagBits(t *testing.T) {
 			p, ok := ctx.SamplingPriority()
 			require.True(t, ok)
 			assert.Equal(t, want, p)
+		})
+	}
+	for _, flags := range []string{"+1", "-1"} {
+		t.Run("signed "+flags, func(t *testing.T) {
+			ctx := new(SpanContext)
+			ctx.trace = newTrace()
+			err := parseTraceparent(ctx, "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-"+flags)
+			assert.Equal(t, ErrSpanContextCorrupted, err)
 		})
 	}
 }
