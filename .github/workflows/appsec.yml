@@ -253,6 +253,17 @@ jobs:
         with:
           policy: dd-trace-go
 
+      # Windows keeps the Go build cache in the default location under the
+      # user profile on the C: volume, which also carries the OS. Provision
+      # a Dev Drive for it before the cache restore runs. GOMODCACHE stays
+      # managed by this job, restored into the workspace below, so only
+      # gocache moves onto the Dev Drive.
+      - name: Provision Windows Dev Drive
+        if: runner.os == 'Windows'
+        uses: ./.github/actions/windows-dev-drive
+        with:
+          redirect: gocache
+
       - name: Restore Go modules cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
