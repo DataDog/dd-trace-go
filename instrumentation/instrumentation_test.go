@@ -13,6 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
@@ -160,4 +161,19 @@ func TestInstrumentation_AnalyticsRate(t *testing.T) {
 			require.Equal(t, 1.0, rate)
 		})
 	}
+}
+
+// TestServiceNameWithSourceAllocs checks that applying a reused
+// ServiceNameWithSource option allocates no more than a tracer.Tag option
+// with the same payload built once.
+func TestServiceNameWithSourceAllocs(t *testing.T) {
+	t.Skip("reproduces #5811; remove when fixed")
+	cfg := &tracer.StartSpanConfig{Tags: map[string]any{}}
+	opt := ServiceNameWithSource("svc", "opt.integration")
+	control := tracer.Tag(ext.KeyServiceSource, ServiceOverride{Name: "svc", Source: "opt.integration"})
+
+	controlAllocs := testing.AllocsPerRun(1000, func() { control(cfg) })
+	require.Zero(t, controlAllocs, "control tracer.Tag option should not allocate")
+	allocs := testing.AllocsPerRun(1000, func() { opt(cfg) })
+	require.Zero(t, allocs, "ServiceNameWithSource option should not allocate per apply")
 }
