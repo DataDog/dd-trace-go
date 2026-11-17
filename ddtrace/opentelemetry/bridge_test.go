@@ -8,6 +8,7 @@ package opentelemetry
 import (
 	"context"
 	"errors"
+	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 
 	"github.com/stretchr/testify/assert"
@@ -698,27 +700,17 @@ func TestSpanContextConcurrentWithEnd(t *testing.T) {
 }
 
 func TestSpanContextStableAfterRealPoolReuse(t *testing.T) {
-	tp, payloads, cleanup := mockTracerProvider(t, tracer.WithSpanPool(true))
-	// The test agent sends each payload on the unbuffered payloads channel. If the
-	// loop below crosses a flush tick, that send would block forever, so drain the
-	// channel until the provider has shut down. t.Cleanup runs after the deferred
-	// cleanup, so the drainer stops only once no more payloads can arrive.
-	stop := make(chan struct{})
-	var drained sync.WaitGroup
-	drained.Go(func() {
-		for {
-			select {
-			case <-payloads:
-			case <-stop:
-				return
-			}
-		}
-	})
-	t.Cleanup(func() {
-		close(stop)
-		drained.Wait()
-	})
-	defer cleanup()
+	// This test does not read payloads, so its agent only answers 200. A handler
+	// that sends on a channel could block after cleanup if a flush is still in flight.
+	srv, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	tp := NewTracerProvider(tracer.WithHTTPClient(c), tracer.WithSpanPool(true))
+	otel.SetTracerProvider(tp)
+	defer func() {
+		assert.NoError(t, tp.Shutdown())
+		assert.NoError(t, srv.Close())
+	}()
 	tr := tp.Tracer("")
 
 	_, sp := tr.Start(context.Background(), "otel.op")
