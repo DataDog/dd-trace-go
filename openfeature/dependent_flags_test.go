@@ -495,10 +495,18 @@ func TestDependentFlags_InvalidDepthDiagnosticStateCanBeSharedAcrossConfigCopies
 		dependencyTestFlag("root", "on", dependencyCondition("dependency", operatorOneOf, "on")),
 	)
 	require.NoError(t, json.Unmarshal([]byte(`{"maxDependencyDepth":null}`), &config.EvaluatorParams))
-	copied := *config
+	copied := &universalFlagsConfiguration{
+		CreatedAt:                 config.CreatedAt,
+		Format:                    config.Format,
+		Environment:               config.Environment,
+		ObserveFullEvaluationData: config.ObserveFullEvaluationData,
+		EvaluatorParams:           config.EvaluatorParams,
+		Flags:                     config.Flags,
+		invalidFlags:              config.invalidFlags,
+	}
 	state := new(dependencyEvaluatorState)
 
-	for _, candidate := range []*universalFlagsConfiguration{config, &copied, config, &copied} {
+	for _, candidate := range []*universalFlagsConfiguration{config, copied, config, copied} {
 		root, exists := candidate.Flags["root"]
 		result := evaluateConfiguredFlagLookedUpWithState(candidate, "root", root, exists, false, nil,
 			time.Now(), experimentationExclusion{}, state)
@@ -1055,18 +1063,14 @@ func TestDependentFlags_EnvironmentIdentityRemainsCoherentDuringConcurrentRefres
 	start := make(chan struct{})
 	errCh := make(chan error, workers*evaluationsPerWorker)
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		<-start
 		for i := range workers * evaluationsPerWorker {
 			h.provider.setConfiguration(configs[i%len(configs)])
 		}
-	}()
+	})
 	for range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			<-start
 			for range evaluationsPerWorker {
 				value, err := h.client.BooleanValue(context.Background(), "root", false,
@@ -1079,7 +1083,7 @@ func TestDependentFlags_EnvironmentIdentityRemainsCoherentDuringConcurrentRefres
 					errCh <- errors.New("root evaluated false")
 				}
 			}
-		}()
+		})
 	}
 	close(start)
 	wg.Wait()
