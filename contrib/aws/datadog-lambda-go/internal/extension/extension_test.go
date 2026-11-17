@@ -139,7 +139,7 @@ func TestFlushSuccess(t *testing.T) {
 
 func TestExtensionStartInvoke(t *testing.T) {
 	em := &ExtensionManager{
-		startInvocationUrl: startInvocationUrl,
+		startInvocationUrl: extensionURL + startInvocationPath,
 		httpClient:         &ClientSuccessStartInvoke{},
 	}
 	ctx := em.SendStartInvocationRequest(context.TODO(), []byte{})
@@ -159,7 +159,7 @@ func TestExtensionStartInvokeLambdaRequestId(t *testing.T) {
 	capturingClient := &capturingClient{hdr: headers}
 
 	em := &ExtensionManager{
-		startInvocationUrl: startInvocationUrl,
+		startInvocationUrl: extensionURL + startInvocationPath,
 		httpClient:         capturingClient,
 	}
 
@@ -177,7 +177,7 @@ func TestExtensionStartInvokeLambdaRequestId(t *testing.T) {
 
 func TestExtensionStartInvokeLambdaRequestIdError(t *testing.T) {
 	em := &ExtensionManager{
-		startInvocationUrl: startInvocationUrl,
+		startInvocationUrl: extensionURL + startInvocationPath,
 		httpClient:         &ClientSuccessStartInvoke{},
 	}
 
@@ -196,7 +196,7 @@ func TestExtensionStartInvokeWithTraceContext(t *testing.T) {
 	headers.Set(string(DdSamplingPriority), mockSamplingPriority)
 
 	em := &ExtensionManager{
-		startInvocationUrl: startInvocationUrl,
+		startInvocationUrl: extensionURL + startInvocationPath,
 		httpClient: &ClientSuccessStartInvoke{
 			headers: headers,
 		},
@@ -219,7 +219,7 @@ func TestExtensionStartInvokeWithTraceContextNoParentID(t *testing.T) {
 	headers.Set(string(DdSamplingPriority), mockSamplingPriority)
 
 	em := &ExtensionManager{
-		startInvocationUrl: startInvocationUrl,
+		startInvocationUrl: extensionURL + startInvocationPath,
 		httpClient: &ClientSuccessStartInvoke{
 			headers: headers,
 		},
@@ -238,7 +238,7 @@ func TestExtensionStartInvokeWithTraceContextNoParentID(t *testing.T) {
 
 func TestExtensionEndInvocation(t *testing.T) {
 	em := &ExtensionManager{
-		endInvocationUrl: endInvocationUrl,
+		endInvocationUrl: extensionURL + endInvocationPath,
 		httpClient:       &ClientSuccessEndInvoke{},
 	}
 	ctx := lambdacontext.NewContext(context.TODO(), &lambdacontext.LambdaContext{})
@@ -254,7 +254,7 @@ func TestExtensionEndInvokeLambdaRequestId(t *testing.T) {
 	capturingClient := &capturingClient{hdr: headers}
 
 	em := &ExtensionManager{
-		endInvocationUrl: endInvocationUrl,
+		endInvocationUrl: extensionURL + endInvocationPath,
 		httpClient:       capturingClient,
 	}
 
@@ -278,7 +278,7 @@ func TestExtensionEndInvokeLambdaRequestIdError(t *testing.T) {
 	ctx := context.WithValue(context.TODO(), DdSamplingPriority, mockSamplingPriority)
 	ctx = context.WithValue(ctx, DdTraceId, mockTraceId)
 	em := &ExtensionManager{
-		endInvocationUrl: endInvocationUrl,
+		endInvocationUrl: extensionURL + endInvocationPath,
 		httpClient:       capturingClient,
 	}
 
@@ -295,7 +295,7 @@ func TestExtensionEndInvokeLambdaRequestIdError(t *testing.T) {
 
 func TestExtensionEndInvocationError(t *testing.T) {
 	em := &ExtensionManager{
-		endInvocationUrl: endInvocationUrl,
+		endInvocationUrl: extensionURL + endInvocationPath,
 		httpClient:       &ClientErrorMock{},
 	}
 	span := tracer.StartSpan("aws.lambda")
