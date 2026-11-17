@@ -331,9 +331,13 @@ func (h *ExposureHook) invoke(evaluationContext of.EvaluationContext, flagKey st
 	defer func() {
 		if recover() != nil {
 			if h.panicWarned.CompareAndSwap(false, true) {
-				log.Warn("openfeature: customer exposure callback panicked for flag %q; later panics are logged at debug level", flagKey) //errtrack:ignore customer callback
+				containLoggerPanic(func() {
+					log.Warn("openfeature: customer exposure callback panicked for flag %q; later panics are logged at debug level", flagKey) //errtrack:ignore customer callback
+				})
 			} else {
-				log.Debug("openfeature: customer exposure callback panicked for flag %q", flagKey)
+				containLoggerPanic(func() {
+					log.Debug("openfeature: customer exposure callback panicked for flag %q", flagKey)
+				})
 			}
 		}
 	}()

@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
+	"os/exec"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -567,6 +569,42 @@ func TestCustomerExposureHookPanicLogging(t *testing.T) {
 	assert.Equal(t, 2, logger.countContaining("later panics are logged at debug level"), "each independent hook warns once")
 	assert.Equal(t, 40, logger.countContaining(`customer exposure callback panicked for flag "experiment"`))
 	assert.Zero(t, logger.countContaining("private callback value"))
+}
+
+// DD_LOGGING_RATE is initialized once by the log package. The subprocess makes
+// both callback-recovery logs immediate while a customer logger panics on them.
+func TestCustomerExposureHookDependencyPanicAndLoggerPanicDoNotChangeAssignment(t *testing.T) {
+	if os.Getenv("DD_EXPOSURE_CALLBACK_PANIC_SUBPROCESS") != "1" {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestCustomerExposureHookDependencyPanicAndLoggerPanicDoNotChangeAssignment$", "-test.count=1")
+		cmd.Env = append(os.Environ(), "DD_EXPOSURE_CALLBACK_PANIC_SUBPROCESS=1", "DD_LOGGING_RATE=0")
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		return
+	}
+
+	h := newOptOutHarness(t, ProviderConfig{})
+	h.provider.setConfiguration(dependencyTestConfig(
+		dependencyTestFlag("dependency", "dependency-on", nil),
+		dependencyTestFlag("root", "root-on", dependencyCondition("dependency", operatorOneOf, "dependency-on")),
+	))
+	var callbacks atomic.Int32
+	h.client.AddHooks(NewExposureHook(func(ExposureEvaluation) {
+		callbacks.Add(1)
+		panic("private callback value")
+	}))
+	previousLevel := log.GetLevel()
+	log.SetLevel(log.LevelDebug)
+	undoLogger := log.UseLogger(panickingLogger{})
+	t.Cleanup(func() {
+		undoLogger()
+		log.SetLevel(previousLevel)
+	})
+
+	value, err := h.client.BooleanValue(context.Background(), "root", false,
+		of.NewEvaluationContext("subject", nil))
+	require.NoError(t, err)
+	require.True(t, value)
+	require.Equal(t, int32(2), callbacks.Load(), "dependency and root callbacks both run")
 }
 
 func TestCustomerExposureHookAfterPanicLimitation(t *testing.T) {
