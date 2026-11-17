@@ -141,9 +141,13 @@ fi
 
 # For otelc mode, clone and install the otelc binary (untimed)
 if [[ "$MODE" == "otelc" ]]; then
-  message "Installing otelc binary..."
   OTELC_VERSION="${OTELC_VERSION:?pin from .github/workflows/otelc.yml, set by the workflow}"
-  retry_on_corruption go install "go.opentelemetry.io/otelc/tool/cmd/otelc@$OTELC_VERSION" || die "Failed to install otelc"
+  if command -v otelc &> /dev/null; then
+    message "Using otelc already on PATH..."
+  else
+    message "Installing otelc binary..."
+    retry_on_corruption go install "go.opentelemetry.io/otelc/tool/cmd/otelc@$OTELC_VERSION" || die "Failed to install otelc"
+  fi
   message "  Otelc version: $OTELC_VERSION"
 fi
 
