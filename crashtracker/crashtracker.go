@@ -21,41 +21,34 @@ var (
 	startErr  error // preserved from the first Start call; returned on subsequent calls
 )
 
-// init intercepts the monitor child process as early as package initialization
-// allows. It runs before main and therefore before Start, but Go does not
-// guarantee it runs before init functions in independently imported packages.
-// See the package documentation for that limitation.
+// Start starts crash tracking. It must be the first statement in main.
 //
-// The monitor's configuration comes from monitorConfigFromEnv, which reads the
-// internal DD_CRASHTRACKING_MONITOR_* variables set by spawnMonitor: this is how
-// options passed to Start in the application process (WithService, WithAPIKey,
-// etc.) reach the monitor, which is a separate process and cannot see them
-// directly. Because package initialization completes before main begins, Start's
-// own monitor-role branch is unreachable and intentionally does not exist.
-func init() {
-	if isMonitorProcess() {
-		runMonitor(monitorConfigFromEnv()) // never returns; calls os.Exit
-	}
-}
-
-// Start initialises the crashtracker. It must be called as early as possible in main().
+// The original process becomes a supervisor and does not return from Start.
+// It runs the application in a child process with the same arguments and standard
+// streams. All package initialization and any code before Start run twice.
+// The application's PID differs from the container main PID. Its parent PID is
+// the supervisor's PID. On Unix, the supervisor forwards signals to the child.
+// It uploads any crash report before it exits with the child's exit status.
+// The upload phase has an overall deadline of 10 seconds.
 //
-// Start spawns a monitor child process, registers the crash pipe via
-// runtime/debug.SetCrashOutput, and returns so the application continues normally.
-// There is no corresponding Stop: process exit alone closes the pipe, which is
-// all the cleanup the monitor needs (it reads EOF and exits without a report).
-// An explicit unregister-and-close step is unnecessary and actively harmful if
-// deferred, since deferred functions run during panic unwinding — before the
-// runtime writes the crash dump — which would disable reporting for the most
-// common crash: an unrecovered panic. See the package doc for the full example.
+// In the child, Start registers the inherited crash pipe and returns nil.
+// It ignores options because the supervisor already resolved the configuration.
+// If startup fails, Start returns an error and the application can continue
+// without crash tracking. When disabled, Start returns nil without a child.
+// There is no Stop. A deferred unregister would disable reports during a panic.
 //
-// Start is idempotent: subsequent calls after the first are no-ops.
+// Start is idempotent. Later calls return the result of the first call.
 func Start(opts ...Option) error {
 	startOnce.Do(func() { startErr = start(opts...) })
 	return startErr
 }
 
 func start(opts ...Option) error {
+	if fd, ok := env.Lookup(supervisedFDEnv); ok {
+		_ = os.Unsetenv(supervisedFDEnv)
+		return registerCrashOutput(fd)
+	}
+
 	cfg := defaultConfig()
 	for _, o := range opts {
 		o(cfg)
@@ -65,7 +58,7 @@ func start(opts ...Option) error {
 		return nil
 	}
 
-	return spawnMonitor(cfg)
+	return supervise(cfg)
 }
 
 func defaultConfig() *config {

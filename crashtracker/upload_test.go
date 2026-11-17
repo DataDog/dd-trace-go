@@ -7,6 +7,8 @@ package crashtracker
 
 import (
 	"compress/gzip"
+	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -15,6 +17,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // decompressBody gunzips a captured request body for JSON assertions.
@@ -63,6 +66,39 @@ func newTestReport() *Report {
 	return r
 }
 
+func TestUploadReportContextStopsRetryBackoff(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		cancel()
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	started := time.Now()
+	err := uploadReport(ctx, &config{agentURL: srv.URL}, newTestReport())
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("uploadReport = %v, want context.Canceled", err)
+	}
+	if requests != 1 || time.Since(started) >= uploadRetryBackoff {
+		t.Fatalf("canceled upload made %d requests in %s", requests, time.Since(started))
+	}
+}
+
+func TestUploadReportContextDeadlineInterruptsRequest(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) { <-release }))
+	defer srv.Close()
+	defer close(release)
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	err := uploadReport(ctx, &config{agentURL: srv.URL}, newTestReport())
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("uploadReport = %v, want context.DeadlineExceeded", err)
+	}
+}
+
 func TestUploadReportAgentPath(t *testing.T) {
 	var capturedReq *http.Request
 	var capturedBody []byte
@@ -83,7 +119,7 @@ func TestUploadReportAgentPath(t *testing.T) {
 		httpClient: srv.Client(),
 	}
 
-	if err := uploadReport(cfg, newTestReport()); err != nil {
+	if err := uploadReport(t.Context(), cfg, newTestReport()); err != nil {
 		t.Fatalf("uploadReport returned unexpected error: %v", err)
 	}
 
@@ -131,7 +167,7 @@ func TestUploadReportAgentlessPath(t *testing.T) {
 		httpClient:   srv.Client(),
 	}
 
-	if err := uploadReport(cfg, newTestReport()); err != nil {
+	if err := uploadReport(t.Context(), cfg, newTestReport()); err != nil {
 		t.Fatalf("uploadReport returned unexpected error: %v", err)
 	}
 
@@ -190,7 +226,7 @@ func TestUploadReportServerError(t *testing.T) {
 		httpClient: srv.Client(),
 	}
 
-	err := uploadReport(cfg, newTestReport())
+	err := uploadReport(t.Context(), cfg, newTestReport())
 	if err == nil {
 		t.Fatal("expected error for 500 response, got nil")
 	}
@@ -216,7 +252,7 @@ func TestUploadReportRejects3xx(t *testing.T) {
 		httpClient: srv.Client(),
 	}
 
-	err := uploadReport(cfg, newTestReport())
+	err := uploadReport(t.Context(), cfg, newTestReport())
 	if err == nil {
 		t.Fatal("expected error for 304 response, got nil")
 	}
@@ -246,7 +282,7 @@ func TestUploadReportRetriesTransientFailure(t *testing.T) {
 		httpClient: srv.Client(),
 	}
 
-	if err := uploadReport(cfg, newTestReport()); err != nil {
+	if err := uploadReport(t.Context(), cfg, newTestReport()); err != nil {
 		t.Fatalf("uploadReport returned unexpected error: %v", err)
 	}
 	if requestCount != 2 {
@@ -276,7 +312,7 @@ func TestUploadReportRetries408(t *testing.T) {
 		httpClient: srv.Client(),
 	}
 
-	if err := uploadReport(cfg, newTestReport()); err != nil {
+	if err := uploadReport(t.Context(), cfg, newTestReport()); err != nil {
 		t.Fatalf("uploadReport returned unexpected error: %v", err)
 	}
 	if requestCount != 2 {
@@ -285,7 +321,7 @@ func TestUploadReportRetries408(t *testing.T) {
 }
 
 // TestUploadReportDoesNotRetryBadRequest proves a non-retryable 4xx (which
-// will fail identically on every attempt) does not waste the monitor's
+// will fail identically on every attempt) does not waste the supervisor's
 // remaining time before exit retrying a request that can never succeed.
 func TestUploadReportDoesNotRetryBadRequest(t *testing.T) {
 	var requestCount int
@@ -300,7 +336,7 @@ func TestUploadReportDoesNotRetryBadRequest(t *testing.T) {
 		httpClient: srv.Client(),
 	}
 
-	err := uploadReport(cfg, newTestReport())
+	err := uploadReport(t.Context(), cfg, newTestReport())
 	if err == nil {
 		t.Fatal("expected error for 400 response, got nil")
 	}
@@ -325,7 +361,7 @@ func TestUploadReportGivesUpAfterAllAttemptsFail(t *testing.T) {
 		httpClient: srv.Client(),
 	}
 
-	err := uploadReport(cfg, newTestReport())
+	err := uploadReport(t.Context(), cfg, newTestReport())
 	if err == nil {
 		t.Fatal("expected error after every attempt fails, got nil")
 	}
@@ -344,7 +380,7 @@ func TestUploadReportGivesUpAfterAllAttemptsFail(t *testing.T) {
 // a request that never actually carried the report. cfg deliberately omits
 // httpClient (unlike every other test in this file) so this exercises
 // buildRequestAndClient's own internal.DefaultHTTPClient branch, the one the
-// fix lives on and the one real (monitor) uploads always use.
+// fix lives on and the one supervisor uploads use when no custom client is configured.
 func TestUploadReportRejectsRedirect(t *testing.T) {
 	var redirectRequests int
 	mux := http.NewServeMux()
@@ -360,7 +396,7 @@ func TestUploadReportRejectsRedirect(t *testing.T) {
 
 	cfg := &config{agentURL: srv.URL}
 
-	err := uploadReport(cfg, newTestReport())
+	err := uploadReport(t.Context(), cfg, newTestReport())
 	if err == nil {
 		t.Fatal("expected error for a redirected response, got nil")
 	}
@@ -408,7 +444,7 @@ func TestUploadReportUnixSocket(t *testing.T) {
 
 	cfg := &config{agentURL: "unix://" + socketPath}
 
-	if err := uploadReport(cfg, newTestReport()); err != nil {
+	if err := uploadReport(t.Context(), cfg, newTestReport()); err != nil {
 		t.Fatalf("uploadReport over unix socket returned unexpected error: %v", err)
 	}
 	if gotMethod != http.MethodPost {

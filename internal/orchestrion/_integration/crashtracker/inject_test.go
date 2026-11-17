@@ -335,13 +335,14 @@ func runVictim(t *testing.T, binary, agentURL string) []byte {
 // DD_TRACE_AGENT_URL: an ambient key from a developer's shell or CI
 // environment would send the victim's report to the real intake instead of
 // srv, and the caller would wait out its full 15s timeout for a report that
-// never arrives.
+// never arrives. The internal crash-pipe marker must not select the child
+// role in an unrelated victim process.
 func filterInjectionEnv(env []string) []string {
 	filtered := make([]string, 0, len(env))
 	for _, kv := range env {
 		if strings.HasPrefix(kv, "DD_TRACE_AGENT_URL=") ||
 			strings.HasPrefix(kv, "DD_CRASHTRACKING_ENABLED=") ||
-			strings.HasPrefix(kv, "DD_CRASHTRACKING_IS_MONITOR_PROCESS=") ||
+			strings.HasPrefix(kv, "_DD_CRASHTRACKING_SUPERVISED_FD=") ||
 			strings.HasPrefix(kv, "DD_TRACE_ENABLED=") ||
 			strings.HasPrefix(kv, "DD_INSTRUMENTATION_TELEMETRY_ENABLED=") ||
 			strings.HasPrefix(kv, "DD_REMOTE_CONFIGURATION_ENABLED=") ||

@@ -6,23 +6,53 @@
 package crashtracker
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"syscall"
 )
 
-// ignoreTerminalSignals ignores Ctrl-C (the only console-control-forwarded
-// signal os/signal exposes portably on Windows). detachProcessGroup already
-// removes the monitor from the parent's console process group, which is what
-// stops Ctrl-Break from reaching it.
-func ignoreTerminalSignals() {
-	signal.Ignore(os.Interrupt)
+func configureChild(cmd *exec.Cmd, pipe *os.File) (string, error) {
+	h := syscall.Handle(pipe.Fd())
+	if err := syscall.SetHandleInformation(h, syscall.HANDLE_FLAG_INHERIT, syscall.HANDLE_FLAG_INHERIT); err != nil {
+		return "", err
+	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{AdditionalInheritedHandles: []syscall.Handle{h}}
+	return strconv.FormatUint(uint64(h), 10), nil
 }
 
-// detachProcessGroup creates the monitor in a new process group so console
-// control events (Ctrl-C, Ctrl-Break) delivered to the parent's console are
-// not also delivered to the monitor.
-func detachProcessGroup(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP}
+func inheritedCrashPipe(fd uintptr) (_ *os.File, err error) {
+	f := os.NewFile(fd, "crashtracker-pipe")
+	if f == nil {
+		return nil, os.ErrInvalid
+	}
+	defer func() {
+		if err != nil {
+			_ = f.Close()
+		}
+	}()
+	h := syscall.Handle(fd)
+	kind, err := syscall.GetFileType(h)
+	if err != nil {
+		return nil, err
+	}
+	if kind != syscall.FILE_TYPE_PIPE {
+		return nil, errors.New("handle is not a pipe")
+	}
+	if err := syscall.SetHandleInformation(h, syscall.HANDLE_FLAG_INHERIT, 0); err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+func supervisorSignals() (start func(*os.Process), stop func()) {
+	// Console Ctrl events reach both processes without forwarding.
+	signal.Ignore(os.Interrupt)
+	return func(*os.Process) {}, func() { signal.Reset(os.Interrupt) }
+}
+
+func exitWithChildStatus(state *os.ProcessState) {
+	os.Exit(state.ExitCode())
 }

@@ -14,16 +14,16 @@ import (
 	"time"
 )
 
-// TestParseCrashDumpManyGoroutinesStaysWithinMonitorMemoryBudget answers a
+// TestParseCrashDumpManyGoroutinesStaysWithinSupervisorMemoryBudget answers a
 // resource-validation question raised in review (not a demonstrated bug):
 // whether a near-32MiB dump containing many shallow goroutines -- as opposed
 // to one deeply recursive goroutine, a different allocation pattern -- pushes
-// peak parsing memory past the monitor's 256MiB GOMEMLIMIT, since capThreads
+// peak parsing memory past the supervisor's 256MiB GOMEMLIMIT, since capThreads
 // runs after parseThreads has already allocated every goroutine's frames.
 // Measured directly rather than assumed: peak HeapAlloc for a ~213k-goroutine
 // dump is ~124MiB, under half the budget, so the threshold below has real
 // margin against measurement noise from the sampling goroutine's timing.
-func TestParseCrashDumpManyGoroutinesStaysWithinMonitorMemoryBudget(t *testing.T) {
+func TestParseCrashDumpManyGoroutinesStaysWithinSupervisorMemoryBudget(t *testing.T) {
 	const targetSize = 31 * 1024 * 1024 // just under maxCrashDumpSize (32 MiB)
 	var buf bytes.Buffer
 	buf.WriteString("SIGQUIT: quit\n\n")
@@ -70,13 +70,13 @@ func TestParseCrashDumpManyGoroutinesStaysWithinMonitorMemoryBudget(t *testing.T
 	close(stop)
 	<-done
 
-	const monitorGOMEMLIMITBytes = 256 * 1024 * 1024
+	const supervisorMemoryLimitBytes = 256 * 1024 * 1024
 	peakAboveBaseline := peakHeapAlloc - baseline.HeapAlloc
 	t.Logf("threads parsed (pre-cap would have been %d, capThreads reduced to): %d", goroutineNum-1, len(report.Error.Threads))
 	t.Logf("peak HeapAlloc above baseline during parseCrashDump: %d bytes (%.1f MiB)", peakAboveBaseline, float64(peakAboveBaseline)/(1024*1024))
 
-	if peakAboveBaseline > monitorGOMEMLIMITBytes {
-		t.Errorf("peak parsing allocation = %.1f MiB, want under the monitor's %.0f MiB GOMEMLIMIT budget for this many-shallow-goroutines shape",
-			float64(peakAboveBaseline)/(1024*1024), float64(monitorGOMEMLIMITBytes)/(1024*1024))
+	if peakAboveBaseline > supervisorMemoryLimitBytes {
+		t.Errorf("peak parsing allocation = %.1f MiB, want under the supervisor's %.0f MiB GOMEMLIMIT budget for this many-shallow-goroutines shape",
+			float64(peakAboveBaseline)/(1024*1024), float64(supervisorMemoryLimitBytes)/(1024*1024))
 	}
 }

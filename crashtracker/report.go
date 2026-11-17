@@ -26,7 +26,7 @@ const dataSchemaVersion = "1.8"
 
 // Report is the errorsintake payload sent to Datadog Error Tracking on a crash.
 type Report struct {
-	Timestamp int64    `json:"timestamp"` // unix ms when the monitor built the report (no crash time is available in the dump)
+	Timestamp int64    `json:"timestamp"` // unix ms when the supervisor built the report (no crash time is available in the dump)
 	DDSource  string   `json:"ddsource"`  // "crashtracker"
 	DDTags    string   `json:"ddtags"`    // service,env,version,language_name:go,data_schema_version:...
 	Error     Error    `json:"error"`

@@ -8,31 +8,108 @@
 package crashtracker
 
 import (
+	"errors"
+	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
 	"syscall"
+	"time"
+
+	"golang.org/x/sys/unix"
 )
 
-// ignoreTerminalSignals makes the monitor immune to the signals a terminal or
-// supervisor commonly forwards to a whole process group (Ctrl-\ sends SIGQUIT
-// to the foreground group; dumb-init without --single-child forwards SIGTERM
-// the same way). Without this, the monitor can be killed at the exact moment
-// the app it is meant to report on receives the same signal.
-//
-// SIGPIPE is ignored for a different reason: the monitor's own stdout/stderr
-// is the app's inherited stderr (see spawnMonitor), which can itself be a
-// broken pipe if the app's output is piped to a consumer that has already
-// exited. A write to a broken pipe on fd 1 or 2 raises SIGPIPE, which by
-// default terminates the process; ignoring it turns such a write into a
-// harmless EPIPE instead, so a diagnostic log line can never kill the
-// monitor before it has uploaded the report.
-func ignoreTerminalSignals() {
-	signal.Ignore(syscall.SIGINT, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGPIPE)
+func configureChild(cmd *exec.Cmd, pipe *os.File) (string, error) {
+	cmd.ExtraFiles = []*os.File{pipe}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if foreground, err := unix.IoctlGetInt(int(os.Stdin.Fd()), unix.TIOCGPGRP); err == nil && foreground == syscall.Getpgrp() {
+		cmd.SysProcAttr.Foreground = true
+		cmd.SysProcAttr.Ctty = int(os.Stdin.Fd())
+	}
+	return "3", nil
 }
 
-// detachProcessGroup puts the monitor in its own process group so signals
-// delivered to the parent's group (terminal signals, a supervisor's group
-// broadcast) are not also delivered to the monitor by the kernel.
-func detachProcessGroup(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+func inheritedCrashPipe(fd uintptr) (_ *os.File, err error) {
+	f := os.NewFile(fd, "crashtracker-pipe")
+	if f == nil {
+		return nil, os.ErrInvalid
+	}
+	defer func() {
+		if err != nil {
+			_ = f.Close()
+		}
+	}()
+	flags, err := unix.FcntlInt(fd, unix.F_GETFL, 0)
+	if err != nil {
+		return nil, err
+	}
+	if flags&unix.O_ACCMODE == unix.O_RDONLY {
+		return nil, errors.New("descriptor is not writable")
+	}
+	info, err := f.Stat()
+	if err != nil || info.Mode()&os.ModeNamedPipe == 0 {
+		return nil, errors.New("descriptor is not a pipe")
+	}
+	return f, nil
+}
+
+func supervisorSignals() (start func(*os.Process), stop func()) {
+	ch := make(chan os.Signal, 256)
+	var signals []os.Signal
+	// Ignored panics outside the runtime signal table on Darwin.
+	// os/signal accepts at most 64. The BSD runtime tables are smaller.
+	maxSignal := syscall.Signal(64)
+	switch runtime.GOOS {
+	case "darwin":
+		maxSignal = 31
+	case "freebsd", "netbsd", "openbsd", "dragonfly":
+		maxSignal = 32
+	}
+	for n := syscall.Signal(1); n <= maxSignal; n++ {
+		switch n {
+		case syscall.SIGKILL, syscall.SIGSTOP,
+			syscall.SIGCHLD, syscall.SIGURG, syscall.SIGPROF, syscall.SIGPIPE,
+			syscall.SIGTTIN, syscall.SIGTTOU,
+			syscall.SIGSEGV, syscall.SIGBUS, syscall.SIGFPE, syscall.SIGILL,
+			syscall.SIGTRAP, syscall.SIGSYS, syscall.SIGABRT:
+			continue
+		}
+		if !signal.Ignored(n) {
+			signals = append(signals, n)
+		}
+	}
+	if len(signals) != 0 {
+		signal.Notify(ch, signals...)
+	}
+	return func(child *os.Process) {
+			go func() {
+				for sig := range ch {
+					// The child has its own group. Forward only to its PID so
+					// terminal and group-directed signals do not arrive twice.
+					_ = child.Signal(sig)
+				}
+			}()
+		}, func() {
+			signal.Stop(ch)
+			close(ch)
+		}
+}
+
+func exitWithChildStatus(state *os.ProcessState) {
+	if status, ok := state.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+		sig := status.Signal()
+		// runtime/sigtab_linux_generic.go and runtime/signal_darwin.go give
+		// only HUP, INT, and TERM _SigKill. Other Unix sigtabs use the same set.
+		// ALRM has only _SigNotify. Re-raising other signals can dump this
+		// supervisor or leave it alive. KILL bypasses the runtime entirely.
+		switch sig {
+		case syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL:
+			signal.Reset(sig)
+			_ = syscall.Kill(os.Getpid(), sig)
+			// Another OS thread can receive the signal after Kill returns.
+			time.Sleep(100 * time.Millisecond)
+		}
+		os.Exit(128 + int(sig))
+	}
+	os.Exit(state.ExitCode())
 }
