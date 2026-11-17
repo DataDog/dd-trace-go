@@ -8,9 +8,12 @@ package slog
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log"
 	"log/slog"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -72,6 +75,48 @@ func (*TestCaseLogBridge) Run(_ context.Context, t *testing.T) {
 func (*TestCaseLogBridge) ExpectedSpanCount() int { return 0 }
 
 func (*TestCaseLogBridge) ExpectedTraces() trace.Traces { return trace.Traces{} }
+
+// TestCaseDefaultHandler checks that a logger around the default handler of
+// log/slog can become the default logger. That handler writes through the log
+// package, so slog.SetDefault must not send the log package output back to it,
+// or the first log.Print blocks forever.
+type TestCaseDefaultHandler struct{}
+
+func (*TestCaseDefaultHandler) Setup(context.Context, *testing.T) {}
+
+func (*TestCaseDefaultHandler) Run(_ context.Context, t *testing.T) {
+	for name, handler := range map[string]func() slog.Handler{
+		"default":    func() slog.Handler { return slog.Default().Handler() },
+		"with attrs": func() slog.Handler { return slog.Default().Handler().WithAttrs([]slog.Attr{slog.String("k", "v")}) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			var logs bytes.Buffer
+			writer := log.Writer()
+			log.SetOutput(&logs)
+
+			done := make(chan struct{})
+			go withDefault(t, slog.New(handler()), func() {
+				defer close(done)
+				log.Print("log-package")
+			})
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				// The blocked goroutine holds the mutex of the log package, so any
+				// later log call blocks too, deferred and cleanup functions
+				// included. Only exiting stops the test binary.
+				fmt.Fprintln(os.Stderr, "log.Print blocked: the log package output went back to the default handler")
+				os.Exit(1)
+			}
+			log.SetOutput(writer)
+			require.Contains(t, logs.String(), "log-package")
+		})
+	}
+}
+
+func (*TestCaseDefaultHandler) ExpectedSpanCount() int { return 0 }
+
+func (*TestCaseDefaultHandler) ExpectedTraces() trace.Traces { return trace.Traces{} }
 
 // withDefault runs f with l as the default logger, then restores the default
 // logger and the output of the log package, which SetDefault changes.

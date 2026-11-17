@@ -25,6 +25,10 @@ func TestContribHandler(t *testing.T) {
 	harness.Run(t, new(TestCaseContribHandler))
 }
 
+func TestDefaultHandler(t *testing.T) {
+	harness.Run(t, new(TestCaseDefaultHandler))
+}
+
 func TestDependency(t *testing.T) {
 	harness.Run(t, new(TestCaseDependency))
 }

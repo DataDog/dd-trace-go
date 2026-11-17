@@ -9,7 +9,10 @@
 #
 # The template keeps the original call, so slog.New still panics on a nil
 # handler, and builds a second Logger around the wrapped handler. A handler that
-# is already ours is kept as is.
+# is already ours is kept as is, and so is the default handler of log/slog: it
+# writes through the log package, and slog.SetDefault only skips sending the log
+# package output back to it when it is not wrapped. A wrapped one makes the
+# first log.Print block forever.
 #
 # ddtrace/tracer calls slog.New and the contrib imports the tracer, so wrapping
 # it would make an import cycle. The build then fails at link time with
@@ -30,11 +33,13 @@ new:
     - wrap_call:
         replace: |-
           (func(l *slog.Logger) *slog.Logger {
-            if slogtrace.IsAlreadyWrapped(l.Handler()) {
+            h := l.Handler()
+            if slogtrace.IsAlreadyWrapped(h) || __dd_reflect.TypeOf(h).String() == "*slog.defaultHandler" {
               return l
             }
-            return slog.New(slogtrace.WrapHandler(l.Handler()))
+            return slog.New(slogtrace.WrapHandler(h))
           })({{ . }})
   imports:
+    __dd_reflect: reflect
     slog: log/slog
     slogtrace: github.com/DataDog/dd-trace-go/contrib/log/slog/v2
