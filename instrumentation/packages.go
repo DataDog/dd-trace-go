@@ -64,6 +64,7 @@ const (
 	PackageSegmentioKafkaGo                Package = "segmentio/kafka-go"
 	PackageTwmbFranzGo                     Package = "twmb/franz-go"
 	PackageRedisGoRedisV9                  Package = "redis/go-redis.v9"
+	PackageRiverqueueRiver                 Package = "riverqueue/river"
 	PackageOlivereElasticV5                Package = "olivere/elastic.v5"
 	PackageOpenSearchProjectOpenSearchGoV4 Package = "opensearch-project/opensearch-go.v4"
 	PackageMiekgDNS                        Package = "miekg/dns"
@@ -729,6 +730,10 @@ var packages = map[Package]PackageInfo{
 				buildOpNameV1:      staticName("redis.command"),
 			},
 		},
+	},
+	PackageRiverqueueRiver: {
+		TracedPackage: "github.com/riverqueue/river",
+		EnvVarPrefix:  "RIVER",
 	},
 	PackageRedisRueidis: {
 		TracedPackage: "github.com/redis/rueidis",
