@@ -14,6 +14,24 @@ import (
 	"time"
 )
 
+// manyGoroutinesDumpSize is just under maxCrashDumpSize (32 MiB).
+const manyGoroutinesDumpSize = 31 * 1024 * 1024
+
+// manyGoroutinesDump builds a SIGQUIT-style dump of at least targetSize bytes
+// made of many shallow goroutines, and returns it with the goroutine count.
+func manyGoroutinesDump(targetSize int) (dump []byte, goroutines int) {
+	var buf bytes.Buffer
+	buf.WriteString("SIGQUIT: quit\n\n")
+	goroutineNum := 1
+	for buf.Len() < targetSize {
+		fmt.Fprintf(&buf, "goroutine %d [chan receive]:\n", goroutineNum)
+		fmt.Fprintf(&buf, "main.worker()\n\t/tmp/crashdemo/main.go:%d +0x1c\n", goroutineNum)
+		fmt.Fprintf(&buf, "created by main.main in goroutine 1\n\t/tmp/crashdemo/main.go:5 +0x24\n\n")
+		goroutineNum++
+	}
+	return buf.Bytes(), goroutineNum - 1
+}
+
 // TestParseCrashDumpManyGoroutinesStaysWithinSupervisorMemoryBudget answers a
 // resource-validation question raised in review (not a demonstrated bug):
 // whether a near-32MiB dump containing many shallow goroutines -- as opposed
@@ -24,18 +42,8 @@ import (
 // above a baseline that already holds the ~31MiB dump) is ~124MiB. The real
 // supervisor peak adds its own init heap and the raw dump to that figure.
 func TestParseCrashDumpManyGoroutinesStaysWithinSupervisorMemoryBudget(t *testing.T) {
-	const targetSize = 31 * 1024 * 1024 // just under maxCrashDumpSize (32 MiB)
-	var buf bytes.Buffer
-	buf.WriteString("SIGQUIT: quit\n\n")
-	goroutineNum := 1
-	for buf.Len() < targetSize {
-		fmt.Fprintf(&buf, "goroutine %d [chan receive]:\n", goroutineNum)
-		fmt.Fprintf(&buf, "main.worker()\n\t/tmp/crashdemo/main.go:%d +0x1c\n", goroutineNum)
-		fmt.Fprintf(&buf, "created by main.main in goroutine 1\n\t/tmp/crashdemo/main.go:5 +0x24\n\n")
-		goroutineNum++
-	}
-	dump := buf.Bytes()
-	t.Logf("synthetic dump: %d bytes, %d goroutines", len(dump), goroutineNum-1)
+	dump, goroutines := manyGoroutinesDump(manyGoroutinesDumpSize)
+	t.Logf("synthetic dump: %d bytes, %d goroutines", len(dump), goroutines)
 
 	var peakHeapAlloc uint64
 	stop := make(chan struct{})
@@ -71,7 +79,7 @@ func TestParseCrashDumpManyGoroutinesStaysWithinSupervisorMemoryBudget(t *testin
 	<-done
 
 	peakAboveBaseline := peakHeapAlloc - baseline.HeapAlloc
-	t.Logf("threads parsed (pre-cap would have been %d, capThreads reduced to): %d", goroutineNum-1, len(report.Error.Threads))
+	t.Logf("threads parsed (pre-cap would have been %d, capThreads reduced to): %d", goroutines, len(report.Error.Threads))
 	t.Logf("peak HeapAlloc above baseline during parseCrashDump: %d bytes (%.1f MiB)", peakAboveBaseline, float64(peakAboveBaseline)/(1024*1024))
 
 	if peakAboveBaseline > supervisorMemoryLimit {

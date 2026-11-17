@@ -1,0 +1,24 @@
+runtime: goroutine stack exceeds 1000000000-byte limit
+runtime: sp=0x14020160390 stack=[0x14020160000, 0x14040160000]
+fatal error: stack overflow
+
+runtime stack:
+runtime.throw({0x1006a1c5e?, 0x14020160390?})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/panic.go:1229 +0x38 fp=0x16f2aaa10 sp=0x16f2aa9e0 pc=0x1004b6f38
+
+goroutine 1 gp=0x14000002380 m=0 mp=0x1006e5580 [running]:
+main.recurse(0x0?)
+	/tmp/crashdemo/elided/main.go:10 +0x34 fp=0x14020160390 sp=0x14020160390 pc=0x1006a1b44
+main.recurse(0x1?)
+	/tmp/crashdemo/elided/main.go:11 +0x24 fp=0x140201603a0 sp=0x14020160390 pc=0x1006a1b54
+main.recurse(0x2?)
+	/tmp/crashdemo/elided/main.go:11 +0x24 fp=0x140201603b0 sp=0x140201603a0 pc=0x1006a1b54
+...16777082 frames elided...
+main.recurse(0xfffffa?)
+	/tmp/crashdemo/elided/main.go:11 +0x24 fp=0x14040160360 sp=0x14040160350 pc=0x1006a1b54
+main.main()
+	/tmp/crashdemo/elided/main.go:15 +0x1c fp=0x14040160370 sp=0x14040160360 pc=0x1006a1b6c
+runtime.main()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:302 +0x380 fp=0x140401603c0 sp=0x14040160370 pc=0x1004871e0
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0x140401603c0 sp=0x140401603c0 pc=0x1004bae04

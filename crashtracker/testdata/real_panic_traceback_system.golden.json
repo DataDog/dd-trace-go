@@ -1,0 +1,401 @@
+{
+  "timestamp": 0,
+  "ddsource": "crashtracker",
+  "ddtags": "",
+  "error": {
+    "type": "SIGSEGV",
+    "message": "signal SIGSEGV: segmentation violation code=0x2 addr=0x0 pc=0x104d6ec44",
+    "stack": {
+      "format": "Datadog Crashtracker 1.0",
+      "frames": [
+        {
+          "function": "panic",
+          "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/panic.go",
+          "line": 878
+        },
+        {
+          "function": "runtime.panicmem",
+          "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/panic.go",
+          "line": 336
+        },
+        {
+          "function": "runtime.sigpanic",
+          "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/signal_unix.go",
+          "line": 931
+        },
+        {
+          "function": "main.(*server).Serve",
+          "file": "/tmp/crashdemo/nilptr/main.go",
+          "line": 10
+        },
+        {
+          "function": "main.main",
+          "file": "/tmp/crashdemo/nilptr/main.go",
+          "line": 24
+        },
+        {
+          "function": "runtime.main",
+          "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+          "line": 302
+        },
+        {
+          "function": "runtime.goexit",
+          "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s",
+          "line": 1039
+        }
+      ]
+    },
+    "threads": [
+      {
+        "crashed": true,
+        "name": "goroutine 1",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "panic",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/panic.go",
+              "line": 878
+            },
+            {
+              "function": "runtime.panicmem",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/panic.go",
+              "line": 336
+            },
+            {
+              "function": "runtime.sigpanic",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/signal_unix.go",
+              "line": 931
+            },
+            {
+              "function": "main.(*server).Serve",
+              "file": "/tmp/crashdemo/nilptr/main.go",
+              "line": 10
+            },
+            {
+              "function": "main.main",
+              "file": "/tmp/crashdemo/nilptr/main.go",
+              "line": 24
+            },
+            {
+              "function": "runtime.main",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+              "line": 302
+            },
+            {
+              "function": "runtime.goexit",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s",
+              "line": 1039
+            }
+          ]
+        },
+        "state": "running"
+      },
+      {
+        "crashed": false,
+        "name": "goroutine 2",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "runtime.gopark",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+              "line": 474
+            },
+            {
+              "function": "runtime.goparkunlock",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+              "line": 480
+            },
+            {
+              "function": "runtime.forcegchelper",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+              "line": 387
+            },
+            {
+              "function": "runtime.goexit",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s",
+              "line": 1039
+            }
+          ]
+        },
+        "state": "force gc (idle)"
+      },
+      {
+        "crashed": false,
+        "name": "goroutine 3",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "runtime.gopark",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+              "line": 474
+            },
+            {
+              "function": "runtime.goparkunlock",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+              "line": 480
+            },
+            {
+              "function": "runtime.bgsweep",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mgcsweep.go",
+              "line": 279
+            },
+            {
+              "function": "runtime.gcenable.gowrap1",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mgc.go",
+              "line": 214
+            },
+            {
+              "function": "runtime.goexit",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s",
+              "line": 1039
+            }
+          ]
+        },
+        "state": "GC sweep wait"
+      },
+      {
+        "crashed": false,
+        "name": "goroutine 4",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "runtime.gopark",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+              "line": 474
+            },
+            {
+              "function": "runtime.goparkunlock",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+              "line": 480
+            },
+            {
+              "function": "runtime.(*scavengerState).park",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mgcscavenge.go",
+              "line": 425
+            },
+            {
+              "function": "runtime.bgscavenge",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mgcscavenge.go",
+              "line": 653
+            },
+            {
+              "function": "runtime.gcenable.gowrap2",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mgc.go",
+              "line": 215
+            },
+            {
+              "function": "runtime.goexit",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s",
+              "line": 1039
+            }
+          ]
+        },
+        "state": "GC scavenge wait"
+      },
+      {
+        "crashed": false,
+        "name": "goroutine 17",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "runtime.gopark",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+              "line": 474
+            },
+            {
+              "function": "runtime.goparkunlock",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+              "line": 480
+            },
+            {
+              "function": "runtime.updateMaxProcsGoroutine",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+              "line": 7146
+            },
+            {
+              "function": "runtime.goexit",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s",
+              "line": 1039
+            }
+          ]
+        },
+        "state": "GOMAXPROCS updater (idle)"
+      },
+      {
+        "crashed": false,
+        "name": "goroutine 18",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "runtime.gopark",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+              "line": 474
+            },
+            {
+              "function": "runtime.chanrecv",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/chan.go",
+              "line": 667
+            },
+            {
+              "function": "runtime.chanrecv1",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/chan.go",
+              "line": 509
+            },
+            {
+              "function": "main.work",
+              "file": "/tmp/crashdemo/nilptr/main.go",
+              "line": 12
+            },
+            {
+              "function": "main.main.gowrap1",
+              "file": "/tmp/crashdemo/nilptr/main.go",
+              "line": 18
+            },
+            {
+              "function": "runtime.goexit",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s",
+              "line": 1039
+            }
+          ]
+        },
+        "state": "chan receive"
+      },
+      {
+        "crashed": false,
+        "name": "goroutine 19",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "runtime.gopark",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+              "line": 474
+            },
+            {
+              "function": "runtime.block",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/select.go",
+              "line": 104
+            },
+            {
+              "function": "main.main.func1",
+              "file": "/tmp/crashdemo/nilptr/main.go",
+              "line": 19
+            },
+            {
+              "function": "runtime.goexit",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s",
+              "line": 1039
+            }
+          ]
+        },
+        "state": "select (no cases)"
+      },
+      {
+        "crashed": false,
+        "name": "goroutine 20",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "runtime.gopark",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+              "line": 474
+            },
+            {
+              "function": "time.Sleep",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/time.go",
+              "line": 368
+            },
+            {
+              "function": "main.main.func2",
+              "file": "/tmp/crashdemo/nilptr/main.go",
+              "line": 20
+            },
+            {
+              "function": "runtime.goexit",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s",
+              "line": 1039
+            }
+          ]
+        },
+        "state": "sleep"
+      },
+      {
+        "crashed": false,
+        "name": "goroutine 21",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "runtime.gopark",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+              "line": 474
+            },
+            {
+              "function": "runtime.goparkunlock",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+              "line": 480
+            },
+            {
+              "function": "runtime.semacquire1",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/sema.go",
+              "line": 192
+            },
+            {
+              "function": "internal/sync.runtime_SemacquireMutex",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/sema.go",
+              "line": 95
+            },
+            {
+              "function": "internal/sync.(*Mutex).lockSlow",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/internal/sync/mutex.go",
+              "line": 149
+            },
+            {
+              "function": "internal/sync.(*Mutex).Lock",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/internal/sync/mutex.go",
+              "line": 70
+            },
+            {
+              "function": "sync.(*Mutex).Lock",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/sync/mutex.go",
+              "line": 46
+            },
+            {
+              "function": "main.main.func3",
+              "file": "/tmp/crashdemo/nilptr/main.go",
+              "line": 21
+            },
+            {
+              "function": "runtime.goexit",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s",
+              "line": 1039
+            }
+          ]
+        },
+        "state": "sync.Mutex.Lock"
+      }
+    ],
+    "thread_name": "goroutine 1",
+    "is_crash": true,
+    "source_type": "Crashtracking"
+  },
+  "os_info": {
+    "architecture": "",
+    "bitness": "",
+    "os_type": "",
+    "version": ""
+  },
+  "sig_info": {
+    "si_addr": "0x0",
+    "si_code": 2,
+    "si_signo": 11,
+    "si_signo_human_readable": "SIGSEGV"
+  }
+}
