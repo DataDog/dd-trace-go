@@ -626,21 +626,17 @@ func TestSpanContextStableAfterEndWithReuse(t *testing.T) {
 	assert.Equal(t, want.TraceID(), got.TraceID())
 	assert.Equal(t, want.SpanID(), got.SpanID())
 	assert.Equal(t, want.TraceFlags(), got.TraceFlags())
-	assertSameTraceState(t, want.TraceState(), got.TraceState())
-}
-
-// assertSameTraceState compares trace states by member, ignoring the order of the
-// ";"-separated fields in each value, which the Datadog propagator does not fix.
-func assertSameTraceState(t *testing.T, want, got oteltrace.TraceState) {
-	t.Helper()
-	require.Equal(t, want.Len(), got.Len())
+	// Compare trace states by member, ignoring the order of the ";"-separated
+	// fields in each value, which the Datadog propagator does not fix.
+	wantTS, gotTS := want.TraceState(), got.TraceState()
+	require.Equal(t, wantTS.Len(), gotTS.Len())
 	fields := func(v string) []string {
 		f := strings.Split(v, ";")
 		sort.Strings(f)
 		return f
 	}
-	want.Walk(func(k, v string) bool {
-		assert.Equal(t, fields(v), fields(got.Get(k)), "tracestate key %q", k)
+	wantTS.Walk(func(k, v string) bool {
+		assert.Equal(t, fields(v), fields(gotTS.Get(k)), "tracestate key %q", k)
 		return true
 	})
 }
