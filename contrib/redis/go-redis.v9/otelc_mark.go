@@ -33,6 +33,10 @@ func (m *traceMark) has(cmd redis.Cmder) bool {
 	return m.cmd == cmd || slices.Contains(m.cmds, cmd)
 }
 
+func (m *traceMark) hasAny(cmds []redis.Cmder) bool {
+	return slices.ContainsFunc(cmds, m.has)
+}
+
 // markOrSkip, in an otelc build, reports whether h must not trace cmd. If h
 // traces it, it returns ctx marked with h. Plain builds skip all of it.
 //
@@ -43,23 +47,24 @@ func markOrSkip(ctx context.Context, h *datadogHook, cmd redis.Cmder) (context.C
 	if !otelcEnabled() {
 		return ctx, false
 	}
-	return mark(ctx, &traceMark{hook: h, cmd: cmd}, cmd)
+	return mark(ctx, &traceMark{hook: h, cmd: cmd}, []redis.Cmder{cmd})
 }
 
 // markOrSkipPipeline is markOrSkip for a pipeline. A Ring or Cluster sends
-// each node a part of its pipeline, so the first command identifies it.
+// each node a part of its pipeline. For a transaction, it puts a new MULTI and
+// EXEC around that part, so any command of the part identifies the pipeline.
 func markOrSkipPipeline(ctx context.Context, h *datadogHook, cmds []redis.Cmder) (context.Context, bool) {
 	if !otelcEnabled() || len(cmds) == 0 {
 		return ctx, false
 	}
-	return mark(ctx, &traceMark{hook: h, cmds: cmds}, cmds[0])
+	return mark(ctx, &traceMark{hook: h, cmds: cmds}, cmds)
 }
 
-func mark(ctx context.Context, m *traceMark, first redis.Cmder) (context.Context, bool) {
+func mark(ctx context.Context, m *traceMark, cmds []redis.Cmder) (context.Context, bool) {
 	if m.hook.replaced.Load() {
 		return ctx, true
 	}
-	if prev, ok := ctx.Value(traceMarkKey{}).(*traceMark); ok && prev.hook != m.hook && prev.has(first) {
+	if prev, ok := ctx.Value(traceMarkKey{}).(*traceMark); ok && prev.hook != m.hook && prev.hasAny(cmds) {
 		return ctx, true
 	}
 	return context.WithValue(ctx, traceMarkKey{}, m), false
