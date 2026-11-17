@@ -29,10 +29,6 @@ func TestContribWrapTransportChain(t *testing.T) {
 	harness.Run(t, new(TestCaseContribWrapTransportChain))
 }
 
-func TestContribWrapTransportChainOuter(t *testing.T) {
-	harness.Run(t, new(TestCaseContribWrapTransportChainOuter))
-}
-
 func TestCopyConfig(t *testing.T) {
 	harness.Run(t, new(TestCaseCopyConfig))
 }

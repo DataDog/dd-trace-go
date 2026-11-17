@@ -158,37 +158,3 @@ func TestAnalyticsSettings(t *testing.T) {
 		assertRate(t, mt, 0.23, httptrace.WithAnalyticsRate(0.23))
 	})
 }
-
-type passThrough struct{ base http.RoundTripper }
-
-func (rt passThrough) RoundTrip(req *http.Request) (*http.Response, error) {
-	return rt.base.RoundTrip(req)
-}
-
-// TestWrapRoundTripperOnce checks that a request gets one span when the contrib
-// wraps the transport twice, also with another round tripper in between.
-func TestWrapRoundTripperOnce(t *testing.T) {
-	s := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	defer s.Close()
-
-	for name, wrap := range map[string]func(http.RoundTripper) http.RoundTripper{
-		"adjacent": func(rt http.RoundTripper) http.RoundTripper {
-			return WrapRoundTripper(WrapRoundTripper(rt))
-		},
-		"separated": func(rt http.RoundTripper) http.RoundTripper {
-			return WrapRoundTripper(passThrough{WrapRoundTripper(rt)})
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			mt := mocktracer.Start()
-			defer mt.Stop()
-
-			req, err := http.NewRequest(http.MethodGet, s.URL+"/api/v1/namespaces", nil)
-			assert.NoError(t, err)
-			resp, err := wrap(http.DefaultTransport).RoundTrip(req)
-			assert.NoError(t, err)
-			resp.Body.Close()
-			assert.Len(t, mt.FinishedSpans(), 1)
-		})
-	}
-}

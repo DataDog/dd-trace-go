@@ -10,9 +10,9 @@
 # k8s.io/client-go/rest are unqualified and never match, so rest.CopyConfig does
 # not wrap a config again, and a config from rest.InClusterConfig is not traced.
 #
-# The contrib wrapper goes innermost. The contrib traces each request only in
-# the outermost of its round trippers, so a WrapTransport that also uses the
-# contrib keeps one span, with its own options.
+# The contrib wrapper goes innermost. httptrace.WrapRoundTripper replaces a
+# round tripper it already traced, so a WrapTransport that also uses the contrib
+# keeps one span, with its own options.
 rest_config:
   target:
     - "**"
