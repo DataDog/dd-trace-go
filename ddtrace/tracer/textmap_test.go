@@ -3123,6 +3123,27 @@ func TestParseTraceparentCaseInsensitive(t *testing.T) {
 	assert.Equal(t, "4bf92f3577b34da6a3ce929d0e0e4736", upperCtx.TraceID())
 }
 
+func TestParseTraceparentHighFlagBits(t *testing.T) {
+	// Only the lowest flag bit is defined, the rest must be ignored by the
+	// parser instead of failing the whole header.
+	for flags, want := range map[string]int{
+		"80": 0,
+		"81": 1,
+		"ff": 1,
+		"fe": 0,
+	} {
+		t.Run(flags, func(t *testing.T) {
+			ctx := new(SpanContext)
+			ctx.trace = newTrace()
+			header := "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-" + flags
+			require.NoError(t, parseTraceparent(ctx, header))
+			p, ok := ctx.SamplingPriority()
+			require.True(t, ok)
+			assert.Equal(t, want, p)
+		})
+	}
+}
+
 func FuzzParseTraceparent(f *testing.F) {
 	testCases := []struct {
 		version, traceID, spanID, flags string
@@ -3152,7 +3173,7 @@ func FuzzParseTraceparent(f *testing.F) {
 		if err != nil {
 			t.Skipf("Error parsing span ID")
 		}
-		expectedFlag, err := strconv.ParseInt(flags, 16, 8)
+		expectedFlag, err := strconv.ParseUint(flags, 16, 8)
 		if err != nil {
 			t.Skipf("Error parsing flag")
 		}
