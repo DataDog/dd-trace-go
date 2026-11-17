@@ -71,6 +71,28 @@ func TestServiceSource(t *testing.T) {
 		assert.Equal(t, serviceSourceManual, kss)
 	})
 
+	t.Run("ExplicitServiceTakesPrecedence", func(t *testing.T) {
+		tracer, err := newTracer()
+		require.NoError(t, err)
+		defer tracer.Stop()
+
+		parent := tracer.StartSpan("parent", ServiceName("checkout"))
+		defer parent.Finish()
+		integration := Tag(ext.KeyServiceSource, sharedinternal.ServiceOverride{Name: "database", Source: "test.integration"})
+		const requests = 128
+		var sameService int
+		for range requests {
+			child := tracer.StartSpan("query", ChildOf(parent.Context()), ServiceName("checkout"), integration)
+			child.mu.RLock()
+			if child.service == "checkout" && child.serviceSource == serviceSourceManual && child.metrics[keyTopLevel] == 0 {
+				sameService++
+			}
+			child.mu.RUnlock()
+			child.Finish()
+		}
+		assert.Equal(t, requests, sameService, "every child must stay in its parent's service")
+	})
+
 	t.Run("ChildInheritsSrvSrcFromParent", func(t *testing.T) {
 		// A child span inherits _dd.svc_src from its parent.
 		tracer, err := newTracer()
