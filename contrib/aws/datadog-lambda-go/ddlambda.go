@@ -13,11 +13,13 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/env"
 
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
@@ -106,8 +108,11 @@ const (
 	// FIPSModeEnvVar is the environment variable that determines whether to enable FIPS mode.
 	// Defaults to true in GovCloud regions and false otherwise.
 	FIPSModeEnvVar = "DD_LAMBDA_FIPS_MODE"
-	// StripInjectedContextEnvVar enables stripping of injected _datadog propagation
+	// StripContextEnabledEnvVar enables stripping of injected _datadog propagation
 	// carriers from the Lambda payload before the user handler is invoked.
+	StripContextEnabledEnvVar = "DD_TRACE_AWS_LAMBDA_STRIP_CONTEXT_ENABLED"
+	// StripInjectedContextEnvVar is the legacy name of StripContextEnabledEnvVar.
+	// It is still honored for backward compatibility.
 	StripInjectedContextEnvVar = "DD_LAMBDA_STRIP_INJECTED_CONTEXT"
 
 	// DefaultSite to send API messages to.
@@ -131,9 +136,15 @@ const (
 	awsLambdaServerPortEnvVar = "_LAMBDA_SERVER_PORT"
 )
 
+// manuallyWrapped records that the application wrapped its handler with
+// WrapFunction or WrapLambdaHandlerInterface. Both run before aws-lambda-go's
+// start, so wrapOrchestrion can check it to avoid wrapping the handler twice.
+var manuallyWrapped atomic.Bool
+
 // WrapLambdaHandlerInterface is used to instrument your lambda functions.
 // It returns a modified handler that can be passed directly to the lambda.StartHandler function from aws-lambda-go.
 func WrapLambdaHandlerInterface(handler lambda.Handler, cfg *Config) lambda.Handler {
+	manuallyWrapped.Store(true)
 	setupAppSec()
 	listeners := initializeListeners(cfg)
 	return wrapper.WrapHandlerInterfaceWithListeners(handler, listeners...)
@@ -142,6 +153,7 @@ func WrapLambdaHandlerInterface(handler lambda.Handler, cfg *Config) lambda.Hand
 // WrapFunction is used to instrument your lambda functions.
 // It returns a modified handler that can be passed directly to the lambda.Start function from aws-lambda-go.
 func WrapFunction(handler interface{}, cfg *Config) interface{} {
+	manuallyWrapped.Store(true)
 	setupAppSec()
 	listeners := initializeListeners(cfg)
 	return wrapper.WrapHandlerWithListeners(handler, listeners...)
@@ -264,7 +276,11 @@ func (cfg *Config) toPayloadConfig() payload.Config {
 		pc.StripInjectedContext = cfg.StripInjectedContext
 	}
 	if !pc.StripInjectedContext {
-		pc.StripInjectedContext, _ = strconv.ParseBool(os.Getenv(StripInjectedContextEnvVar))
+		enabled, err := strconv.ParseBool(env.Get(StripContextEnabledEnvVar))
+		if err != nil {
+			enabled, _ = strconv.ParseBool(env.Get(StripInjectedContextEnvVar))
+		}
+		pc.StripInjectedContext = enabled
 	}
 	return pc
 }

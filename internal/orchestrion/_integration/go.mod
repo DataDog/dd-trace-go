@@ -6,7 +6,9 @@ require (
 	cloud.google.com/go/pubsub v1.50.1
 	cloud.google.com/go/pubsub/v2 v2.0.0
 	connectrpc.com/connect v1.21.1
+	example.com/pgxdep v0.0.0-00010101000000-000000000000
 	github.com/99designs/gqlgen v0.17.97
+	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.13.0-dev.1
@@ -17,6 +19,7 @@ require (
 	github.com/IBM/sarama v1.44.0
 	github.com/Shopify/sarama v1.38.1
 	github.com/aerospike/aerospike-client-go/v7 v7.10.2
+	github.com/aws/aws-lambda-go v1.46.0
 	github.com/aws/aws-sdk-go v1.55.6
 	github.com/aws/aws-sdk-go-v2 v1.43.2
 	github.com/aws/aws-sdk-go-v2/config v1.32.33
@@ -46,8 +49,8 @@ require (
 	github.com/hashicorp/vault/api v1.23.0
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/julienschmidt/httprouter v1.3.0
-	github.com/labstack/echo/v4 v4.15.3
-	github.com/labstack/echo/v5 v5.2.0
+	github.com/labstack/echo/v4 v4.16.1
+	github.com/labstack/echo/v5 v5.4.1
 	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/opensearch-project/opensearch-go/v4 v4.7.3
 	github.com/redis/go-redis/v9 v9.7.3
@@ -89,11 +92,14 @@ require github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 v
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/otelc/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/otelc/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 v2.13.0-dev.1 // indirect
@@ -107,12 +113,14 @@ require (
 	cloud.google.com/go/iam v1.5.3 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	example.com/awsv1dep v0.0.0-00010101000000-000000000000
+	example.com/awsv2dep v0.0.0-00010101000000-000000000000
 	example.com/chidep v0.0.0-00010101000000-000000000000
 	example.com/echodep v0.0.0-00010101000000-000000000000
 	example.com/fasthttpdep v0.0.0-00010101000000-000000000000
 	example.com/fiberdep v0.0.0-00010101000000-000000000000
 	example.com/gindep v0.0.0-00010101000000-000000000000
 	example.com/gorillamuxdep v0.0.0-00010101000000-000000000000
+	example.com/gormdep v0.0.0-00010101000000-000000000000
 	example.com/gqlgendep v0.0.0-00010101000000-000000000000
 	example.com/grpcdep v0.0.0-00010101000000-000000000000
 	example.com/httpdep v0.0.0-00010101000000-000000000000
@@ -132,7 +140,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2 v2.13.0-dev.1 // indirect
-	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2 v2.13.0-dev.1 // indirect
@@ -160,11 +168,11 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.13.0-dev.1
-	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.13.0-dev.1 // indirect
-	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.13.0-dev.1 // indirect
@@ -175,8 +183,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.13.0-dev.1 // indirect
-	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.13.0-dev.1 // indirect
-	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.13.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2 v2.13.0-dev.1 // indirect
@@ -208,7 +216,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.33.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.38.2 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.45.2 // indirect
-	github.com/aws/smithy-go v1.27.5 // indirect
+	github.com/aws/smithy-go v1.27.5
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/blakesmith/ar v0.0.0-20190502131153-809d4375e1fb // indirect
 	github.com/bytedance/sonic v1.12.6 // indirect
@@ -400,7 +408,7 @@ require (
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/arch v0.8.0 // indirect
-	golang.org/x/crypto v0.58.0 // indirect
+	golang.org/x/crypto v0.58.1-0.20261009181718-2f1f834330b2 // indirect
 	golang.org/x/exp v0.0.0-20260813180055-c1d0aacb2297 // indirect
 	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
@@ -438,6 +446,8 @@ replace github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 => ../../../contrib
 replace github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 => ../../../contrib/Shopify/sarama
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 => ../../../contrib/aws/aws-sdk-go-v2
+
+replace github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 => ../../../contrib/aws/datadog-lambda-go
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 => ../../../contrib/aws/aws-sdk-go
 
@@ -541,6 +551,8 @@ replace github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 => ../../../con
 
 replace github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2 => ../../../contrib/database/sql/otelc
 
+replace example.com/awsv2dep => ./internal/awsv2dep
+
 replace example.com/chidep => ./internal/chidep
 
 replace example.com/fiberdep => ./internal/fiberdep
@@ -561,6 +573,16 @@ replace example.com/gqlgendep => ./internal/gqlgendep
 
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../../../contrib/99designs/gqlgen/otelc
 
+replace github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/otelc/v2 => ../../../contrib/gorm.io/gorm.v1/otelc
+
+replace example.com/gormdep => ./internal/gormdep
+
+replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/otelc/v2 => ../../../contrib/aws/aws-sdk-go-v2/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/otelc/v2 => ../../../contrib/jackc/pgx.v5/otelc
+
+replace example.com/pgxdep => ./internal/pgxdep
+
 replace example.com/mongodep => ./internal/mongodep
 
 replace github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/otelc/v2 => ../../../contrib/go.mongodb.org/mongo-driver/otelc
@@ -571,11 +593,21 @@ require github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2
 
 replace github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2 => ../../../contrib/julienschmidt/httprouter/otelc
 
-require example.com/httprouterdep v0.0.0-00010101000000-000000000000
+require (
+	example.com/httprouterdep v0.0.0-00010101000000-000000000000
+	example.com/zerologdep v0.0.0-00010101000000-000000000000
+)
 
 replace example.com/httprouterdep => ./internal/httprouterdep
 
-require github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev.1 // indirect
+require (
+	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.13.0-dev // indirect
+	github.com/aws/aws-sdk-go-v2/service/kms v1.30.1 // indirect
+	github.com/aws/aws-xray-sdk-go/v2 v2.0.0 // indirect
+	github.com/sony/gobreaker v0.5.0 // indirect
+)
 
 replace github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 => ../../../contrib/gorilla/mux/otelc
 
@@ -596,6 +628,12 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../../../contrib/labstack/echo.v5/otelc
 
 replace example.com/echodep => ./internal/echodep
+
+replace github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 => ../../../contrib/segmentio/kafka-go/otelc
+
+replace example.com/zerologdep => ./internal/zerologdep
+
+replace github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 => ../../../contrib/rs/zerolog/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../../contrib/aws/aws-sdk-go/otelc
 

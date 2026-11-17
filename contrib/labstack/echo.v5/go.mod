@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
-	github.com/labstack/echo/v5 v5.2.0
+	github.com/labstack/echo/v5 v5.4.1
 	github.com/stretchr/testify v1.11.1
 )
 

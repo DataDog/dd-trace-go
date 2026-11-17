@@ -185,7 +185,7 @@ func TestSuiteSelection(t *testing.T) {
 		},
 		{
 			name:        "a change inside a suite names that suite",
-			files:       []string{"internal/orchestrion/_integration/gin/main_test.go"},
+			files:       []string{"internal/orchestrion/_integration/gin/base.go"},
 			otelc:       SuiteVerdict{Suites: []string{"gin"}},
 			orchestrion: SuiteVerdict{Suites: []string{"gin"}},
 			wantOtelc:   true,
@@ -193,7 +193,7 @@ func TestSuiteSelection(t *testing.T) {
 		},
 		{
 			name:        "a change inside a suite names that suite, aws edition",
-			files:       []string{"internal/orchestrion/_integration/aws.v1/main_test.go"},
+			files:       []string{"internal/orchestrion/_integration/aws.v1/aws.go"},
 			otelc:       SuiteVerdict{Suites: []string{"aws.v1"}},
 			orchestrion: SuiteVerdict{Suites: []string{"aws.v1"}},
 			wantOtelc:   true,
@@ -341,12 +341,12 @@ func TestSuiteSelection(t *testing.T) {
 		},
 		{
 			// database/sql is required by gorm.v1 and sqlx, so the require
-			// closure pulls the gorm suite in next to sql.
+			// closure pulls the gorm suite in next to sql, in both lanes.
 			name:         "a required module's closure widens the selection",
 			files:        []string{"contrib/database/sql/sql.go"},
 			orchestrion:  SuiteVerdict{},
 			orchContains: []string{"gorm", "sql"},
-			otelc:        SuiteVerdict{Suites: []string{"sql"}},
+			otelc:        SuiteVerdict{Suites: []string{"gorm", "sql"}},
 			wantOtelc:    true,
 			wantOrch:     true,
 		},

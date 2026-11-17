@@ -196,6 +196,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_AGENT_URL":                                                      {},
 	"DD_TRACE_ANALYTICS_ENABLED":                                              {},
 	"DD_TRACE_AWS_ANALYTICS_ENABLED":                                          {},
+	"DD_TRACE_AWS_LAMBDA_STRIP_CONTEXT_ENABLED":                               {},
 	"DD_TRACE_BAGGAGE_TAG_KEYS":                                               {},
 	"DD_TRACE_BUNTDB_ANALYTICS_ENABLED":                                       {},
 	"DD_TRACE_CHI_ANALYTICS_ENABLED":                                          {},

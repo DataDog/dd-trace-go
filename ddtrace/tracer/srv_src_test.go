@@ -71,6 +71,28 @@ func TestServiceSource(t *testing.T) {
 		assert.Equal(t, serviceSourceManual, kss)
 	})
 
+	t.Run("ExplicitServiceTakesPrecedence", func(t *testing.T) {
+		tracer, err := newTracer()
+		require.NoError(t, err)
+		defer tracer.Stop()
+
+		parent := tracer.StartSpan("parent", ServiceName("checkout"))
+		defer parent.Finish()
+		integration := Tag(ext.KeyServiceSource, sharedinternal.ServiceOverride{Name: "database", Source: "test.integration"})
+		const requests = 128
+		var sameService int
+		for range requests {
+			child := tracer.StartSpan("query", ChildOf(parent.Context()), ServiceName("checkout"), integration)
+			child.mu.RLock()
+			if child.service == "checkout" && child.serviceSource == serviceSourceManual && child.metrics[keyTopLevel] == 0 {
+				sameService++
+			}
+			child.mu.RUnlock()
+			child.Finish()
+		}
+		assert.Equal(t, requests, sameService, "every child must stay in its parent's service")
+	})
+
 	t.Run("ChildInheritsSrvSrcFromParent", func(t *testing.T) {
 		// A child span inherits _dd.svc_src from its parent.
 		tracer, err := newTracer()
@@ -154,4 +176,24 @@ func TestServiceSource(t *testing.T) {
 		assert.Equal(t, "from-meta-init", span.service)
 		assert.Equal(t, serviceSourceManual, kss)
 	})
+}
+
+// TestServiceSourceDeterministicWithServiceOverride checks that a span started
+// with both ext.ServiceName and a ServiceOverride always gets the same service.
+func TestServiceSourceDeterministicWithServiceOverride(t *testing.T) {
+	t.Skip("reproduces #5807; remove when fixed")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	seen := map[string]int{}
+	for range 200 {
+		span := tracer.StartSpan("test.op",
+			Tag(ext.ServiceName, "user-service"),
+			Tag(ext.KeyServiceSource, sharedinternal.ServiceOverride{Name: "integration-service", Source: "opt.integration"}),
+		)
+		seen[span.service+"|"+span.serviceSource]++
+		span.Finish()
+	}
+	assert.Len(t, seen, 1, "span service must be deterministic, got %v", seen)
 }
