@@ -51,12 +51,9 @@
               "function": "main.worker",
               "file": "/tmp/crashdemo/trunc/main.go",
               "line": 30
-            },
-            {
-              "function": "runtime.goexit",
-              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_ar"
             }
-          ]
+          ],
+          "incomplete": true
         },
         "state": "chan receive"
       }

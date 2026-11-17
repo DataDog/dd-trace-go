@@ -52,7 +52,8 @@
               "file": "/tmp/crashdemo/main.go",
               "line": 9
             }
-          ]
+          ],
+          "incomplete": true
         },
         "state": "running"
       }
