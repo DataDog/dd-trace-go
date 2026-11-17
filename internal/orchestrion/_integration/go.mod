@@ -182,7 +182,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.13.0-dev.1
-	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2 v2.13.0-dev.1 // indirect
@@ -599,6 +599,7 @@ replace example.com/httprouterdep => ./internal/httprouterdep
 require (
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.13.0-dev // indirect
 )
 
 replace github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 => ../../../contrib/gorilla/mux/otelc
@@ -620,6 +621,8 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../../../contrib/labstack/echo.v5/otelc
 
 replace example.com/echodep => ./internal/echodep
+
+replace github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 => ../../../contrib/segmentio/kafka-go/otelc
 
 replace example.com/zerologdep => ./internal/zerologdep
 

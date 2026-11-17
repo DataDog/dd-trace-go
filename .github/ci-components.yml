@@ -175,6 +175,7 @@ integration-suites:
     contrib/rs/zerolog: [ zerolog ]
     contrib/rs/zerolog/otelc: [ zerolog ]
     contrib/segmentio/kafka-go: [ segmentio_kafka.v0 ]
+    contrib/segmentio/kafka-go/otelc: [ segmentio_kafka.v0 ]
     contrib/Shopify/sarama: [ shopify_sarama ]
     contrib/sirupsen/logrus: [ logrus ]
     contrib/syndtr/goleveldb: []
@@ -502,6 +503,7 @@ components:
       - contrib/labstack/echo.v4/**
       - contrib/labstack/echo.v5/**
       - contrib/net/http/**
+      - contrib/segmentio/kafka-go/**
       - contrib/rs/zerolog/**
       - contrib/valyala/fasthttp/**
     module-scoped: true
