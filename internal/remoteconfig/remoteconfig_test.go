@@ -501,6 +501,10 @@ func TestConcurrentStartStopCapabilities(t *testing.T) {
 
 // TestAsync starts many goroutines that use the exported client API to make sure no deadlocks occur
 func TestAsync(t *testing.T) {
+	// The client is a package-level singleton. An earlier test can leave a
+	// client in it. Reset removes that client, so this test starts from a
+	// clean state (issue #5133).
+	Reset()
 	require.NoError(t, Start(DefaultClientConfig()))
 	defer Stop()
 	const iterations = 10000
@@ -919,5 +923,38 @@ func TestStopCallbackAccessorNoStall(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("Stop did not return within 10s")
+	}
+}
+
+// TestPollCallbackRegisterDuringStopWait holds clientMux and checks that
+// RegisterProduct returns within 2 seconds. Start, Stop, and Reset take
+// clientMux. The package-level helpers read the client singleton atomically.
+// They never wait on clientMux. So a product callback that runs on the poll
+// goroutine and re-enters the package API cannot block behind Start, Stop,
+// or Reset.
+func TestPollCallbackRegisterDuringStopWait(t *testing.T) {
+	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "true")
+	Reset()
+	defer Stop()
+
+	requests := make(chan struct{}, 1)
+	require.NoError(t, Start(recordingClientConfig(t, requests)))
+
+	// Hold clientMux while RegisterProduct runs.
+	clientMux.Lock()
+	defer clientMux.Unlock()
+
+	errCh := make(chan error, 1)
+	go func() {
+		// The poll callback re-enters the package API.
+		errCh <- RegisterProduct("TEST_PRODUCT")
+	}()
+	select {
+	case err := <-errCh:
+		// RegisterProduct read the client singleton without waiting for
+		// clientMux.
+		require.NoError(t, err)
+	case <-time.After(2 * time.Second):
+		t.Fatal("RegisterProduct blocked on clientMux")
 	}
 }

@@ -341,12 +341,12 @@ func TestSuiteSelection(t *testing.T) {
 		},
 		{
 			// database/sql is required by gorm.v1 and sqlx, so the require
-			// closure pulls the gorm suite in next to sql.
+			// closure pulls the gorm suite in next to sql, in both lanes.
 			name:         "a required module's closure widens the selection",
 			files:        []string{"contrib/database/sql/sql.go"},
 			orchestrion:  SuiteVerdict{},
 			orchContains: []string{"gorm", "sql"},
-			otelc:        SuiteVerdict{Suites: []string{"sql"}},
+			otelc:        SuiteVerdict{Suites: []string{"gorm", "sql"}},
 			wantOtelc:    true,
 			wantOrch:     true,
 		},
