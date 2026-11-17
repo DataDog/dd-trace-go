@@ -696,3 +696,38 @@ func TestSpanContextConcurrentWithEnd(t *testing.T) {
 	sp.(*span).mu.Unlock()
 	wg.Wait()
 }
+
+func TestSpanContextStableAfterRealPoolReuse(t *testing.T) {
+	tp, _, cleanup := mockTracerProvider(t, tracer.WithSpanPool(true))
+	defer cleanup()
+	tr := tp.Tracer("")
+
+	_, sp := tr.Start(context.Background(), "otel.op")
+	want := sp.SpanContext()
+	ended := sp.(*span).DD
+	sp.End()
+
+	// The tracer worker returns the spans of a finished trace to the pool on its
+	// own goroutine, without waiting for an upload. sync.Pool gives no promise about
+	// which item Get returns (and the race detector drops some Puts), so retry a
+	// bounded number of times until a new span reuses the ended span's *tracer.Span.
+	const maxTries = 1000
+	reused := false
+	for range maxTries {
+		time.Sleep(time.Millisecond)
+		_, next := tr.Start(context.Background(), "otel.next")
+		reused = next.(*span).DD == ended
+		next.End()
+		if reused {
+			break
+		}
+	}
+	if !reused {
+		t.Skipf("span pool did not reuse the ended span after %d tries", maxTries)
+	}
+
+	got := sp.SpanContext()
+	assert.Equal(t, want.TraceID(), got.TraceID())
+	assert.Equal(t, want.SpanID(), got.SpanID())
+	assert.Equal(t, want.TraceFlags(), got.TraceFlags())
+}
