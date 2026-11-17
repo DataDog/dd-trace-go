@@ -1912,8 +1912,6 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 	}
 	cmd.Args = append([]string{executable}, filteredArgs...)
 
-	stdoutCapture.StartCopy()
-	stderrCapture.StartCopy()
 	waitCh, startErr := startProcessRetryChild(ctx, attemptTimer.C(), hooks, cmd)
 	if control != nil {
 		attempt.Err = errors.Join(attempt.Err, control.CloseChildEndpoints())
@@ -1924,6 +1922,8 @@ func runProcessRetryAttemptWithBaselineAndShutdown(
 		return finishSetupFailure(errors.Join(startErr, releaseTree()), timedOut)
 	}
 	attempt.StartTime = hooks.now()
+	stdoutCapture.StartCopy()
+	stderrCapture.StartCopy()
 	_ = stdoutCapture.CloseParentWriter()
 	_ = stderrCapture.CloseParentWriter()
 	teardownPhase := &processRetryReapPhase{}

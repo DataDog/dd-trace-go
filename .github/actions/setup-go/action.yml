@@ -46,10 +46,14 @@
 #   2. Align GOROOT with the selected toolchain BEFORE any step asks `go env`
 #      for cache paths, so stale GOROOT values exported by earlier tools
 #      cannot redirect GOCACHE/GOMODCACHE.
-#   3. With caching enabled, hand the RESOLVED, exact Go version to the
-#      isolated-cache provider (cloudx-io/setup-go, pinned). Its nested
-#      installer must find that exact version already on disk; if it ever
-#      downloads one, that is a bug to investigate, not normal behaviour.
+#   3. With caching enabled, hand the go-version ALIAS (e.g., "1.27")
+#      to the isolated-cache provider (cloudx-io/setup-go, pinned). The
+#      alias keeps the cache key stable across Go patch releases: the
+#      provider keys on the literal input string, so "1.27" survives
+#      1.27.3 → 1.27.4. The provider's nested installer resolves the alias
+#      and finds the exact binary the select-go step already installed
+#      on disk; if it ever downloads one, that is a bug to investigate,
+#      not normal behaviour.
 #   4. With caching disabled, or with cache-provider github-cache, the cloudx
 #      provider is never invoked: no restore, no trimming, no save.
 #
@@ -265,7 +269,12 @@ runs:
       # Dependabot ignores cloudx-io/setup-go versions <= 1.0.0.
       uses: cloudx-io/setup-go@0bbd76c0381c065220668df9b6694845b937aaa0 # main (includes cloudx-io/setup-go#8)
       with:
-        go-version: ${{ steps.select-go.outputs.go-version }}
+        # The alias (e.g., "1.27"), not the resolved patch: the provider
+        # keys on the literal input string, so the alias keeps the cache
+        # key stable across Go patch releases. The provider's nested
+        # installer resolves the alias and finds the exact binary the
+        # select-go step above just installed on disk.
+        go-version: ${{ inputs.go-version }}
         cache-key-prefix: ${{ steps.cache-key.outputs.prefix }}
         max-staleness-hours: "2"
         # Verified to expand to go.mod, go.sum and go.work files only in this
@@ -296,10 +305,13 @@ runs:
         # The branch this run is on (the PR source branch for pull
         # requests), to tell a same-branch restore from a fallback.
         CURRENT_BRANCH: ${{ github.head_ref || github.ref_name }}
-        # The resolved toolchain and this job's cache-key prefix: both are
-        # embedded verbatim in every key the provider can match, so the
-        # branch is what follows them and no regex guessing is needed.
-        GO_VERSION: ${{ steps.select-go.outputs.go-version }}
+        # The go-version alias (as passed to the cloudx provider) and
+        # this job's cache-key prefix: both are embedded verbatim in
+        # every key the provider can match, so the branch is what
+        # follows them and no regex guessing is needed. Reverting this
+        # to the resolved output reintroduces the misclassification
+        # this PR fixes.
+        GO_VERSION: ${{ inputs.go-version }}
         CACHE_KEY_PREFIX: ${{ steps.cache-key.outputs.prefix }}
       run: |
         set -euo pipefail
@@ -308,7 +320,7 @@ runs:
         dep_match="false"
         # Save-key layout, verified against the pinned provider revision:
         # go-cache-<os>-<arch>-<CACHE_KEY_PREFIX>-<GO_VERSION>-<branch>-
-        # <dep-hash>-<run_id>. The prefix and the resolved Go version are
+        # <dep-hash>-<run_id>. The prefix and the go-version alias are
         # known here and appear verbatim (every restore-key tier pins
         # both), so the branch is parsed by stripping them literally. A
         # generic regex cannot split the version from a hyphenated branch:
