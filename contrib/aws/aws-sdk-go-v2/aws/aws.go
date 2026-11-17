@@ -67,7 +67,7 @@ func prepConfig(opts ...Option) *config {
 func newTraceMiddleware(cfg *config, autoInstrumented bool) traceMiddleware {
 	return traceMiddleware{
 		cfg:              cfg,
-		sqs:              sqsTracer.NewEnricher(cfg.injectSQS),
+		sqs:              sqsTracer.NewEnricher(cfg.injectSQS, cfg.dataStreamsEnabled),
 		sns:              snsTracer.NewEnricher(cfg.injectSNS),
 		kinesis:          kinesisTracer.NewEnricher(cfg.injectKinesis),
 		eventBridge:      eventBridgeTracer.NewEnricher(cfg.injectEventBridge),
@@ -228,6 +228,9 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		out, metadata, err = next.HandleInitialize(spanctx, in)
 		if err != nil && (mw.cfg.errCheck == nil || mw.cfg.errCheck(err)) {
 			span.SetTag(ext.Error, err)
+		}
+		if err == nil && serviceID == "SQS" {
+			mw.sqs.EnrichResponse(in, out, operation)
 		}
 		span.Finish()
 

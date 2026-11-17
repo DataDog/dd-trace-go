@@ -22,6 +22,8 @@ type config struct {
 	injectSQS         bool
 	injectSNS         bool
 	injectSFN         bool
+
+	dataStreamsEnabled bool
 }
 
 // Option describes options for the AWS integration.
@@ -45,6 +47,7 @@ func defaults(cfg *config) {
 	cfg.injectSQS = instr.SQSInjectDatadogAttributeEnabled()
 	cfg.injectSNS = instr.SNSInjectDatadogAttributeEnabled()
 	cfg.injectSFN = instr.SFNInjectDatadogAttributeEnabled()
+	cfg.dataStreamsEnabled = instr.DataStreamsEnabled()
 }
 
 // WithService sets the given service name for the dialled connection.
@@ -77,6 +80,18 @@ func WithAnalyticsRate(rate float64) OptionFn {
 		} else {
 			cfg.analyticsRate = math.NaN()
 		}
+	}
+}
+
+// WithDataStreams enables Data Streams Monitoring for SQS, even when DD_DATA_STREAMS_ENABLED is not set:
+// https://www.datadoghq.com/product/data-streams-monitoring/
+// SendMessage and SendMessageBatch set a produce checkpoint and add the pathway to each message's
+// _datadog attribute. ReceiveMessage asks for the _datadog attribute, sets a consume checkpoint for each
+// message, and writes the new pathway back into the message's _datadog attribute, where
+// datastreams.ExtractFromBase64Carrier can read it.
+func WithDataStreams() OptionFn {
+	return func(cfg *config) {
+		cfg.dataStreamsEnabled = true
 	}
 }
 

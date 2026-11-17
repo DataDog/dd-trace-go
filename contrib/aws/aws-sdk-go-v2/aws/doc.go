@@ -23,6 +23,15 @@
 // Streams checkpoint (where the service has one) remain. Consumers relying on those writes lose
 // fresh trace and pathway context.
 //
+// # Data Streams Monitoring
+//
+// With DD_DATA_STREAMS_ENABLED=true, or WithDataStreams, SQS SendMessage and SendMessageBatch set
+// produce checkpoints and ReceiveMessage sets one consume checkpoint per message. ReceiveMessage
+// reads the pathway from the message's "_datadog" attribute, or from the SNS notification in the
+// body when SNS raw message delivery is off, and writes the new pathway back into the message's
+// "_datadog" attribute. To link a message that the consumer sends on, extract that pathway with
+// datastreams.ExtractFromBase64Carrier and pass the context to the next SendMessage.
+//
 // Usage Example:
 //
 //	import (
