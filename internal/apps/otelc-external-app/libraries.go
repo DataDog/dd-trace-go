@@ -6,10 +6,13 @@
 package main
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"net/http/httptest"
 
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -18,11 +21,14 @@ import (
 	redisv7 "github.com/go-redis/redis/v7"
 	redisv8 "github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/julienschmidt/httprouter"
 	redisv9 "github.com/redis/go-redis/v9"
 	"github.com/valyala/fasthttp"
 	mongooptions "go.mongodb.org/mongo-driver/mongo/options"
 	mongov2options "go.mongodb.org/mongo-driver/v2/mongo/options"
+	"gorm.io/gorm"
+	gormtests "gorm.io/gorm/utils/tests"
 )
 
 // useLibraries calls libraries whose otelc rules bring their contrib into the
@@ -41,10 +47,16 @@ func useLibraries() {
 		Credentials: credentials.AnonymousCredentials,
 		Region:      new("us-east-1"),
 	}))
+	_ = dynamodb.NewFromConfig(awsv2.Config{Region: "us-east-1"})
 	_ = mongooptions.Client()
 	_ = mongov2options.Client()
 	_ = redisv6.NewClient(&redisv6.Options{}).Close()
 	_ = redisv7.NewClient(&redisv7.Options{}).Close()
 	_ = redisv8.NewClient(&redisv8.Options{}).Close()
 	_ = redisv9.NewClient(&redisv9.Options{}).Close()
+	_, _ = gorm.Open(gormtests.DummyDialector{})
+	// The pool opens no connection until first used.
+	if pool, err := pgxpool.New(context.Background(), "postgres://localhost/db"); err == nil {
+		pool.Close()
+	}
 }
