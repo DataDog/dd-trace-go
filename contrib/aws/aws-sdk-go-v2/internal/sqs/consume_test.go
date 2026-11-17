@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"strconv"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -310,4 +311,32 @@ func BenchmarkEnrichResponse(b *testing.B) {
 			}
 		})
 	}
+}
+
+func TestReceiveMessageAttributeLimit(t *testing.T) {
+	const queue = "consume-queue"
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	full := make(map[string]types.MessageAttributeValue, maxMessageAttributes)
+	for i := range maxMessageAttributes {
+		full["attr"+strconv.Itoa(i)] = types.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String("v")}
+	}
+	producerCtx, carrier := producerCarrier(t, queue)
+	raw, err := json.Marshal(carrier)
+	require.NoError(t, err)
+	withTrace := make(map[string]types.MessageAttributeValue, maxMessageAttributes)
+	for i := range maxMessageAttributes - 1 {
+		withTrace["attr"+strconv.Itoa(i)] = types.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String("v")}
+	}
+	withTrace[datadogKey] = types.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String(string(raw))}
+
+	got := receive(t, true,
+		types.Message{Body: aws.String(snsBody(t, "String", string(raw))), MessageAttributes: full},
+		types.Message{Body: aws.String("hello"), MessageAttributes: withTrace},
+	)
+
+	assert.Len(t, got[0].MessageAttributes, maxMessageAttributes)
+	assert.NotContains(t, got[0].MessageAttributes, datadogKey)
+	assert.Len(t, got[1].MessageAttributes, maxMessageAttributes)
+	assert.Equal(t, consumeHash(t, producerCtx, queue), pathwayHash(t, carrierFromAttribute(t, got[1].MessageAttributes[datadogKey])))
 }

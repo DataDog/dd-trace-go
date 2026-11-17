@@ -238,6 +238,9 @@ func setConsumeCheckpoint(msg *types.Message, queue string) {
 	if binary {
 		attr = types.MessageAttributeValue{DataType: aws.String("Binary"), BinaryValue: jsonBytes}
 	}
+	if _, exists := msg.MessageAttributes[datadogKey]; !exists && len(msg.MessageAttributes) >= maxMessageAttributes {
+		return
+	}
 	if msg.MessageAttributes == nil {
 		msg.MessageAttributes = make(map[string]types.MessageAttributeValue, 1)
 	}

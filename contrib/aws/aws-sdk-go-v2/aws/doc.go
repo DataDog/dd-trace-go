@@ -25,7 +25,7 @@
 //
 // # Data Streams Monitoring
 //
-// With DD_DATA_STREAMS_ENABLED=true, or WithDataStreams, SQS SendMessage and SendMessageBatch set
+// With DD_DATA_STREAMS_ENABLED=true, SQS SendMessage and SendMessageBatch set
 // produce checkpoints and ReceiveMessage sets one consume checkpoint per message. ReceiveMessage
 // reads the pathway from the message's "_datadog" attribute, or from the SNS notification in the
 // body when SNS raw message delivery is off, and writes the new pathway back into the message's
