@@ -49,16 +49,14 @@ func WithAgentURL(rawURL string) Option {
 	return func(c *config) { c.agentURL = rawURL }
 }
 
-// WithHTTPClient sets a custom HTTP client for report upload.
+// WithHTTPClient sets the supervisor's HTTP client for report upload.
+// The client's transport must honor request contexts to enforce the upload deadline.
 func WithHTTPClient(c *http.Client) Option {
 	return func(cfg *config) { cfg.httpClient = c }
 }
 
-// WithAPIKey sets the Datadog API key for agentless upload. The key reaches
-// the monitor child process through its environment (like every other option;
-// see buildChildEnv), so choosing WithAPIKey over DD_API_KEY does not keep the
-// key out of a process environment — it only keeps it out of the
-// application's own.
+// WithAPIKey sets the Datadog API key for agentless upload.
+// The supervisor keeps this option in memory. It does not add it to the child's environment.
 func WithAPIKey(apiKey string) Option {
 	return func(c *config) { c.apiKey = apiKey }
 }
@@ -69,8 +67,8 @@ func WithSite(site string) Option {
 }
 
 // WithEnabled explicitly enables or disables the crashtracker, overriding the
-// DD_CRASHTRACKING_ENABLED environment gate. When disabled, Start does not spawn
-// the monitor process and returns nil.
+// DD_CRASHTRACKING_ENABLED environment gate. When disabled, Start returns nil
+// without starting a child process.
 func WithEnabled(enabled bool) Option {
 	return func(c *config) { c.enabled = enabled }
 }

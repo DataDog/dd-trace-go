@@ -8,8 +8,39 @@ package crashtracker
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 )
+
+func TestStartRejectsInvalidInheritedPipe(t *testing.T) {
+	for _, value := range []string{"", "not-a-number", "-1", "0", "1", "2", "999999999"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(supervisedFDEnv, value)
+			err := start(func(*config) { t.Fatal("child applied options") })
+			if err == nil {
+				t.Fatal("Start accepted an invalid crash descriptor")
+			}
+			if _, ok := os.LookupEnv(supervisedFDEnv); ok {
+				t.Fatal("Start retained the invalid marker")
+			}
+		})
+	}
+}
+
+func TestStartClosesInvalidInheritedPipe(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "not-a-pipe")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	t.Setenv(supervisedFDEnv, strconv.FormatUint(uint64(f.Fd()), 10))
+	if err := start(); err == nil {
+		t.Fatal("Start accepted a regular file as the crash pipe")
+	}
+	if _, err := f.Stat(); err == nil {
+		t.Fatal("Start left the invalid inherited descriptor open")
+	}
+}
 
 func TestResolveServiceFallsBackToExecutableName(t *testing.T) {
 	// Neither globalconfig.SetServiceName (the tracer's job, not this

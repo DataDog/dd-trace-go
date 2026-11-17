@@ -6,82 +6,47 @@
 package crashtracker
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"runtime/debug"
-	"strings"
+	"strconv"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 const (
-	// monitorEnvVar is the environment variable set on the monitor child process.
-	monitorEnvVar = "DD_CRASHTRACKING_IS_MONITOR_PROCESS"
+	// Unix passes fd 3 through ExtraFiles. Windows passes an inherited handle.
+	// The marker holds its decimal value and exists only until the child's Start.
+	// The leading underscore marks it as internal, like _DD_ROOT_GO_SESSION_ID,
+	// so it stays out of the supported configuration registry.
+	supervisedFDEnv = "_DD_CRASHTRACKING_SUPERVISED_FD"
 
-	// The following internal-only env vars forward the application process's
-	// resolved config (env defaults plus any Start options) to the monitor
-	// child, which is a separate process and cannot see Go-level Option values
-	// directly. Like monitorEnvVar, they are read via raw os.Getenv rather than
-	// the env validation layer, are never documented as user-facing
-	// configuration, and exist purely to cross the process boundary.
-	monitorServiceEnvVar  = "DD_CRASHTRACKING_MONITOR_SERVICE"
-	monitorEnvEnvVar      = "DD_CRASHTRACKING_MONITOR_ENV"
-	monitorVersionEnvVar  = "DD_CRASHTRACKING_MONITOR_VERSION"
-	monitorAPIKeyEnvVar   = "DD_CRASHTRACKING_MONITOR_API_KEY"
-	monitorSiteEnvVar     = "DD_CRASHTRACKING_MONITOR_SITE"
-	monitorAgentURLEnvVar = "DD_CRASHTRACKING_MONITOR_AGENT_URL"
-
-	// maxCrashDumpSize is the maximum number of bytes read from the crash pipe. It
-	// bounds memory usage in the monitor for very large crash dumps.
-	maxCrashDumpSize = 32 * 1024 * 1024 // 32 MiB
-
-	// monitorGOMEMLIMIT is an explicit soft memory ceiling for the monitor child.
-	// The monitor drops the app's inherited GOMEMLIMIT (see buildChildEnv) but
-	// still needs its own bound: it holds the crash dump, the parsed frames, and
-	// the marshalled report body concurrently, and an unbounded monitor can
-	// itself contribute to the OOM condition it exists to report on.
-	monitorGOMEMLIMIT = "256MiB"
+	maxCrashDumpSize      = 32 * 1024 * 1024 // 32 MiB
+	supervisorMemoryLimit = 256 * 1024 * 1024
 )
 
-// isMonitorProcess reports whether the current process is the monitor child.
-//
-// It reads the marker with os.Getenv directly rather than through the env
-// validation layer because this check runs before the tracer's configuration
-// machinery is initialised.
-func isMonitorProcess() bool {
-	return os.Getenv(monitorEnvVar) == "1" //nolint:forbidigo
-}
-
-// monitorConfigFromEnv reconstructs the config forwarded by buildChildEnv. It
-// is the monitor-side counterpart to Start's opts: since the app process
-// already resolved env defaults and applied any WithX options into a single
-// config before spawning, the monitor only needs to read back that resolution
-// rather than repeat it. WithHTTPClient cannot cross the process boundary and
-// is never forwarded; the monitor always builds its own HTTP client.
-func monitorConfigFromEnv() *config {
-	return &config{
-		service:  os.Getenv(monitorServiceEnvVar),  //nolint:forbidigo
-		env:      os.Getenv(monitorEnvEnvVar),      //nolint:forbidigo
-		version:  os.Getenv(monitorVersionEnvVar),  //nolint:forbidigo
-		apiKey:   os.Getenv(monitorAPIKeyEnvVar),   //nolint:forbidigo
-		site:     os.Getenv(monitorSiteEnvVar),     //nolint:forbidigo
-		agentURL: os.Getenv(monitorAgentURLEnvVar), //nolint:forbidigo
+func registerCrashOutput(value string) error {
+	fd, err := strconv.ParseUint(value, 10, strconv.IntSize)
+	if err != nil || fd < 3 {
+		return fmt.Errorf("crashtracker: invalid inherited crash descriptor %q", value)
 	}
+	f, err := inheritedCrashPipe(uintptr(fd))
+	if err != nil {
+		return fmt.Errorf("crashtracker: validate inherited crash pipe: %w", err)
+	}
+	defer f.Close()
+	if err := debug.SetCrashOutput(f, debug.CrashOptions{}); err != nil {
+		return fmt.Errorf("crashtracker: set crash output: %w", err)
+	}
+	return nil
 }
 
-// readCrashDump reads up to maxCrashDumpSize bytes of crash dump from r and
-// reports whether the true input was larger and got cut off.
-//
-// It reads one byte past the cap: getting exactly maxCrashDumpSize+1 bytes
-// back proves the source had more to give, since io.LimitReader alone can't
-// tell that apart from the source having exactly maxCrashDumpSize bytes and
-// hitting a genuine EOF. Without this lookahead byte, a cut landing right
-// after a syntactically valid frame produces a report that parses cleanly
-// and looks complete when it silently is not -- regardless of whether the
-// cut happens to fall between frames or in the middle of one, since this
-// check is purely a byte count, not aware of frame boundaries at all.
+// readCrashDump looks one byte past the cap to distinguish truncation from EOF.
 func readCrashDump(r io.Reader) (data []byte, truncated bool, err error) {
 	data, err = io.ReadAll(io.LimitReader(r, maxCrashDumpSize+1))
 	if err != nil {
@@ -94,162 +59,82 @@ func readCrashDump(r io.Reader) (data []byte, truncated bool, err error) {
 	return data, truncated, nil
 }
 
-// runMonitor is the monitor-child entry point. It reads crash output from stdin,
-// parses it, and uploads a report. It never returns.
-func runMonitor(cfg *config) {
-	// A signal delivered to the whole process group (a supervisor forwarding
-	// Ctrl-\, or dumb-init without --single-child) would otherwise kill this
-	// process at the same moment the app dumps, before it can upload. The
-	// monitor is also detached into its own process group in spawnMonitor;
-	// ignoring these here covers the window between fork and that detach, and
-	// any signal that still reaches the group despite it.
-	ignoreTerminalSignals()
-
-	data, truncated, err := readCrashDump(os.Stdin)
-	// Drain any remaining crash-dump bytes after the cap so the crashing
-	// application is not blocked writing into the pipe while we upload.
-	go io.Copy(io.Discard, os.Stdin) //nolint:errcheck
-	if err != nil || len(data) == 0 {
-		// A read error or an empty buffer means the application exited cleanly
-		// without writing a crash dump; there is nothing to report.
-		os.Exit(0)
-	}
-
-	report := parseCrashDump(data)
-	if truncated && report.Error.Stack != nil {
-		// The crashing goroutine's own frames may have parsed without error --
-		// the cut can land cleanly between goroutines, not just mid-frame --
-		// but the dump as a whole is known incomplete, so say so even though
-		// parseCrashDump itself found nothing wrong.
-		report.Error.Stack.Incomplete = true
-	}
-	report.DDTags = buildDDTags(cfg, report)
-	if err := uploadReport(cfg, report); err != nil {
-		// Emit one line so operators know a crash report was attempted but
-		// failed — without this, the failure is invisible. Routed through the
-		// shared logger (see spawnMonitor) rather than a raw os.Stderr write.
-		log.Warn("crashtracker: upload failed: %v", err.Error()) //errtrack:ignore remote upload failure
-	} else {
-		// Logged at Warn, matching the failure case above: this package sets no
-		// log level, so Warn is what actually reaches stderr at the default
-		// threshold. Without a positive marker, nothing distinguishes "upload
-		// succeeded" from "upload was never attempted" in captured output.
-		log.Warn("crashtracker: upload succeeded")
-	}
-	os.Exit(0)
-}
-
-// buildChildEnv builds the environment for the monitor child process. It copies
-// the parent env, drops runtime-tuning variables that would misconfigure the
-// lightweight monitor (see golang/go#73490), sets an explicit memory ceiling,
-// sets the monitor marker, and forwards cfg's resolved fields so the monitor's
-// upload destination and tags match what the application process resolved.
-func buildChildEnv(cfg *config) []string {
-	parentEnv := os.Environ()
-	childEnv := make([]string, 0, len(parentEnv)+8)
-	for _, kv := range parentEnv {
-		// GOMEMLIMIT and GOGC are tuned for the application's workload; applying
-		// them to the monitor can starve it or trigger GC pathologies.
-		if strings.HasPrefix(kv, "GOMEMLIMIT=") || strings.HasPrefix(kv, "GOGC=") {
-			continue
-		}
-		childEnv = append(childEnv, kv)
-	}
-	childEnv = append(childEnv,
-		"GOMEMLIMIT="+monitorGOMEMLIMIT,
-		monitorEnvVar+"=1",
-	)
-	forward := func(key, value string) {
-		if value != "" {
-			childEnv = append(childEnv, key+"="+value)
-		}
-	}
-	forward(monitorServiceEnvVar, cfg.service)
-	forward(monitorEnvEnvVar, cfg.env)
-	forward(monitorVersionEnvVar, cfg.version)
-	forward(monitorAPIKeyEnvVar, cfg.apiKey)
-	forward(monitorSiteEnvVar, cfg.site)
-	forward(monitorAgentURLEnvVar, cfg.agentURL)
-	return childEnv
-}
-
-// spawnMonitor re-execs the current binary as a monitor child, sets up a pipe,
-// and registers the pipe write end with runtime/debug.SetCrashOutput.
-func spawnMonitor(cfg *config) error {
+func supervise(cfg *config) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("crashtracker: get executable path: %w", err)
 	}
-
-	cmd := exec.Command(exe) //nolint:gosec // re-execing our own binary is intentional
-	cmd.Env = buildChildEnv(cfg)
-
-	// Detach the monitor into its own process group so terminal signals and
-	// group-directed signals (Ctrl-\, a supervisor's SIGTERM broadcast) do not
-	// reach it independently of the app; ignoreTerminalSignals (in runMonitor)
-	// covers the remaining window before this takes effect.
-	detachProcessGroup(cmd)
-
-	// Give the monitor this process's own stderr, as Go's canonical
-	// SetCrashOutput monitor example does. A pipe back into this process would
-	// die with it: the monitor only writes after its io.ReadAll returns, and
-	// that only happens once this process's death closes the crash pipe, so a
-	// parent-owned reader is always already gone by then. That fd is normally a
-	// terminal or container log stream held by the runtime, so it outlives the
-	// app; the dump itself also goes to stderr independently (SetCrashOutput
-	// writes "in addition to standard error"), and since the monitor never
-	// writes until this process has finished dying, the only overlap window is
-	// the >32 MiB cap case where ReadAll returns early.
-	cmd.Stdout = os.Stderr
-	cmd.Stderr = os.Stderr
-
-	// StdinPipe wires the child's stdin; do not set cmd.Stdin separately.
-	pipe, err := cmd.StdinPipe()
+	r, w, err := os.Pipe()
 	if err != nil {
-		return fmt.Errorf("crashtracker: create stdin pipe: %w", err)
+		return fmt.Errorf("crashtracker: create crash pipe: %w", err)
 	}
+	defer r.Close()
+	defer w.Close()
 
-	// exec.Cmd.StdinPipe returns an *os.File backed by os.Pipe. SetCrashOutput
-	// requires an *os.File, so assert the concrete type rather than panicking.
-	pipeFile, ok := pipe.(*os.File)
-	if !ok {
-		_ = pipe.Close()
-		return fmt.Errorf("crashtracker: stdin pipe is not *os.File (type %T)", pipe)
+	cmd := exec.Command(exe, os.Args[1:]...) //nolint:gosec // The application re-executes its own binary.
+	cmd.Args[0] = os.Args[0]
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	marker, err := configureChild(cmd, w)
+	if err != nil {
+		return fmt.Errorf("crashtracker: configure application process: %w", err)
 	}
-
-	// Start the monitor before registering the crash output fd, not after: the
-	// read end only becomes a live, open fd once the child process exists, and
-	// SetCrashOutput must never be the registered destination for a write with
-	// no possible reader. A dump larger than the kernel pipe buffer would
-	// otherwise make the runtime's crash writer block on a reader that may
-	// never come — worse than the pre-crashtracker behavior of dying outright.
-	// Starting first closes that window: once cmd.Start returns, the read end
-	// is open in the child regardless of whether its own ReadAll call has run
-	// yet, so a write of any size can proceed.
+	cmd.Env = append(os.Environ(), supervisedFDEnv+"="+marker)
+	startForwarding, stopForwarding := supervisorSignals()
+	releaseThread := retainSupervisorThread(cmd)
 	if err := cmd.Start(); err != nil {
-		_ = pipeFile.Close()
-		return fmt.Errorf("crashtracker: start monitor process: %w", err)
+		releaseThread()
+		stopForwarding()
+		return fmt.Errorf("crashtracker: start application process: %w", err)
 	}
+	startForwarding(cmd.Process)
+	_ = w.Close()
+	debug.SetMemoryLimit(supervisorMemoryLimit)
 
-	if err := debug.SetCrashOutput(pipeFile, debug.CrashOptions{}); err != nil {
-		_ = pipeFile.Close()
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait() // reap: the child is already started, so Kill alone would leave a zombie
-		return fmt.Errorf("crashtracker: set crash output: %w", err)
+	type crashDump struct {
+		data      []byte
+		truncated bool
+		err       error
 	}
-
-	// SetCrashOutput duplicated the fd internally, so this write end can be
-	// released; the monitor keeps running with its own duplicate.
-	_ = pipeFile.Close()
-
-	// Reap the child when it exits to release OS resources (fds, zombie on Linux).
-	// Log non-zero exits: the monitor always calls os.Exit(0), so a non-zero
-	// status indicates the monitor itself panicked during parse or upload.
+	dumps := make(chan crashDump, 1)
 	go func() {
-		if err := cmd.Wait(); err != nil {
-			log.Warn("crashtracker: monitor process exited unexpectedly: %v", err.Error())
-		}
+		data, truncated, err := readCrashDump(r)
+		// Keep reading past the cap so a large runtime dump cannot block exit.
+		_, _ = io.Copy(io.Discard, r)
+		dumps <- crashDump{data, truncated, err}
 	}()
-
+	waitErr := cmd.Wait()
+	_, exited := errors.AsType[*exec.ExitError](waitErr)
+	if cmd.ProcessState == nil || (waitErr != nil && !exited) {
+		reason := "missing process state"
+		if waitErr != nil {
+			reason = waitErr.Error()
+		}
+		log.Warn("crashtracker: wait for application process failed: %s", reason)
+		stopForwarding()
+		os.Exit(1)
+	}
+	var dump crashDump
+	select {
+	case dump = <-dumps:
+	case <-time.After(2 * time.Second):
+		log.Warn("crashtracker: timed out waiting for crash pipe EOF")
+	}
+	_ = r.Close()
+	if dump.err == nil && len(dump.data) != 0 {
+		ctx, cancel := context.WithTimeout(context.Background(), uploadTimeout)
+		report := parseCrashDump(dump.data)
+		if dump.truncated && report.Error.Stack != nil {
+			report.Error.Stack.Incomplete = true
+		}
+		report.DDTags = buildDDTags(cfg, report)
+		if err := uploadReport(ctx, cfg, report); err != nil {
+			log.Warn("crashtracker: upload failed: %v", err.Error()) //errtrack:ignore remote upload failure
+		} else {
+			log.Warn("crashtracker: upload succeeded")
+		}
+		cancel()
+	}
+	stopForwarding()
+	exitWithChildStatus(cmd.ProcessState)
 	return nil
 }

@@ -3,24 +3,12 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016-present Datadog, Inc.
 
-// Package crashtracker_test contains end-to-end tests for the crashtracker
-// package. The tests exercise the full chain: crash victim process →
-// monitor child → mock Error Tracking intake.
-//
-// Subprocess roles are driven by the _CRASHTRACKER_E2E env var:
-//
-//   - "panic": calls Start() via DD_* env config, then panics — the monitor
-//     uploads the report using the env-resolved config.
-//   - "panic-with-options": calls Start(opts...) with only programmatic
-//     options (no DD_TRACE_AGENT_URL etc. in the environment), then panics —
-//     proves options cross the process boundary to the monitor.
-//   - "clean": calls Start() and exits cleanly — no report expected. There is
-//     no Stop to call: process exit alone closes the crash pipe.
-//
-// TestMain intercepts these roles before any test function runs.
+// Package crashtracker_test exercises supervisor, application, and intake
+// processes through the public API. TestMain selects application helper roles.
 package crashtracker_test
 
 import (
+	"bytes"
 	"compress/gzip"
 	"encoding/json"
 	"io"
@@ -51,18 +39,19 @@ func ddTagValue(ddtags, key string) (string, bool) {
 	return "", false
 }
 
+type optionsTransport struct{}
+
+func (optionsTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	r.Header.Set("X-Crashtracker-Options", "custom-client")
+	return http.DefaultTransport.RoundTrip(r)
+}
+
 const e2eRoleEnv = "_CRASHTRACKER_E2E"
 
-// TestMain intercepts re-executions of the test binary that serve as crash
-// victim subprocesses. The crashtracker package's own init() already handles
-// the monitor-grandchild role (DD_CRASHTRACKING_IS_MONITOR_PROCESS=1), so
-// TestMain only needs to handle the crash-victim roles.
+// TestMain selects the same application role in both re-executed processes.
 func TestMain(m *testing.M) {
 	switch os.Getenv(e2eRoleEnv) {
 	case "panic":
-		// Crash victim: start the crashtracker (spawns monitor grandchild) then panic.
-		// DD_TRACE_AGENT_URL in the env tells both spawnMonitor and the monitor
-		// grandchild where to send the report.
 		if err := crashtracker.Start(); err != nil {
 			os.Stderr.WriteString("crashtracker.Start: " + err.Error() + "\n")
 			os.Exit(1)
@@ -70,15 +59,12 @@ func TestMain(m *testing.M) {
 		panic("e2e test crash")
 
 	case "panic-with-options":
-		// Crash victim: start with only programmatic options, no DD_TRACE_AGENT_URL
-		// in the environment. If options are not forwarded to the monitor, the
-		// monitor falls back to the default agent URL and the mock server never
-		// receives a report, timing out the test.
 		if err := crashtracker.Start(
 			crashtracker.WithService("e2e-options-svc"),
 			crashtracker.WithEnv("e2e-options-env"),
 			crashtracker.WithVersion("9.9.9"),
 			crashtracker.WithAgentURL(os.Getenv("_CRASHTRACKER_E2E_AGENT_URL")),
+			crashtracker.WithHTTPClient(&http.Client{Transport: optionsTransport{}}),
 		); err != nil {
 			os.Stderr.WriteString("crashtracker.Start: " + err.Error() + "\n")
 			os.Exit(1)
@@ -86,26 +72,21 @@ func TestMain(m *testing.M) {
 		panic("e2e options crash")
 
 	case "clean":
-		// Clean exit: start, then exit without a crash. The monitor should see
-		// EOF on the pipe with no data and exit without uploading. Process exit
-		// closes the pipe; there is no Stop to call.
 		if err := crashtracker.Start(); err != nil {
 			os.Exit(1)
 		}
 		os.Exit(0)
 
-	case "panic-many-goroutines":
-		// Crash victim with more live goroutines than maxReportThreads, run
-		// with GOTRACEBACK=all (set by the test in this subprocess's env) so
-		// the crash dump actually records all of them, not just the crashing
-		// one. Exercises the real spawnMonitor/SIGPIPE-prone diagnostics path
-		// end to end at the goroutine count that previously lost the report
-		// entirely, not just capThreads in isolation.
+	case "panic-many-goroutines", "panic-large-dump":
+		// GOTRACEBACK=all includes enough goroutines to exercise truncation.
 		if err := crashtracker.Start(); err != nil {
 			os.Stderr.WriteString("crashtracker.Start: " + err.Error() + "\n")
 			os.Exit(1)
 		}
-		const manyGoroutines = 150
+		manyGoroutines := 150
+		if os.Getenv(e2eRoleEnv) == "panic-large-dump" {
+			manyGoroutines = 2000
+		}
 		block := make(chan struct{})
 		for range manyGoroutines {
 			go func() { <-block }()
@@ -116,9 +97,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// TestE2ECrashReport_Panic verifies the full crash → monitor → intake chain.
-// It spawns a crash-victim subprocess that panics, then waits for the monitor
-// grandchild to POST a valid errorsintake report to the mock server.
+// TestE2ECrashReport_Panic verifies the supervisor-to-intake path.
 func TestE2ECrashReport_Panic(t *testing.T) {
 	t.Parallel()
 
@@ -135,9 +114,6 @@ func TestE2ECrashReport_Panic(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// Spawn the crash-victim subprocess. It inherits DD_TRACE_AGENT_URL so
-	// both its own buildRequestAndClient and the monitor grandchild's
-	// AgentURLFromEnv() resolve to the mock server.
 	cmd := exec.Command(os.Args[0], "-test.run=^$", "-test.v=false")
 	cmd.Env = append(filterE2EEnv(os.Environ()),
 		e2eRoleEnv+"=panic",
@@ -152,26 +128,18 @@ func TestE2ECrashReport_Panic(t *testing.T) {
 	// The victim panics, so non-zero exit is expected.
 	_ = waitForVictim(t, cmd, 15*time.Second)
 
-	// Wait for the monitor grandchild to deliver the crash report.
+	// The supervisor must deliver the report before it exits.
 	select {
 	case body := <-received:
 		assertCrashReport(t, body, "panic", "e2e test crash")
 
 	case <-time.After(15 * time.Second):
-		t.Fatal("timeout waiting for crash report from monitor")
+		t.Fatal("timeout waiting for crash report from supervisor")
 	}
 }
 
-// TestE2ECrashReport_ManyGoroutines proves a crash with more goroutines than
-// maxReportThreads still delivers a report end to end. This exercises the
-// real monitor process (spawnMonitor's diagnostics wiring included), not
-// just capThreads in isolation: it is the case that previously lost the
-// report entirely once the goroutine count crossed maxReportThreads, because
-// the monitor's own truncation-warning log line killed it with SIGPIPE
-// before it could upload (see the monitor.go stdout/stderr fix). GOTRACEBACK
-// must be set to "all" here, in the victim's environment before it starts,
-// since the default "single" only records the crashing goroutine — none of
-// the other e2e tests exercise multi-goroutine reports at all.
+// TestE2ECrashReport_ManyGoroutines exercises the real diagnostics and
+// upload path with more goroutines than the report cap.
 func TestE2ECrashReport_ManyGoroutines(t *testing.T) {
 	t.Parallel()
 
@@ -215,19 +183,50 @@ func TestE2ECrashReport_ManyGoroutines(t *testing.T) {
 		}
 
 	case <-time.After(15 * time.Second):
-		t.Fatal("timeout waiting for crash report from monitor")
+		t.Fatal("timeout waiting for crash report from supervisor")
 	}
 }
 
-// TestE2ECrashReport_PanicWithOptions verifies that options passed to Start
-// (not DD_* env vars) reach the monitor process and control its upload
-// destination and tags. This is the end-to-end proof that config forwarding
-// across the process boundary works.
+func TestSupervisorLargeCrashDump(t *testing.T) {
+	received := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertCanonicalAgentRequest(t, r)
+		assertCrashReport(t, decompressGzipBody(t, r), "panic", "e2e many-goroutines crash")
+		received <- struct{}{}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	cmd.Env = append(filterE2EEnv(os.Environ()), e2eRoleEnv+"=panic-large-dump",
+		"DD_TRACE_AGENT_URL="+srv.URL, "DD_CRASHTRACKING_ENABLED=true",
+		"GOTRACEBACK=all", "GORACE=atexit_sleep_ms=0")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	_ = waitForVictim(t, cmd, 15*time.Second)
+	if stderr.Len() <= 64*1024 {
+		t.Fatalf("crash output = %d bytes, want more than 64 KiB", stderr.Len())
+	}
+	select {
+	case <-received:
+		t.Logf("supervisor delivered a report from %d bytes of crash output", stderr.Len())
+	default:
+		t.Fatal("large crash dump did not reach the intake")
+	}
+}
+
+// TestE2ECrashReport_PanicWithOptions verifies programmatic configuration,
+// including the HTTP client, through the public Start path.
 func TestE2ECrashReport_PanicWithOptions(t *testing.T) {
 	t.Parallel()
 
 	received := make(chan []byte, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Crashtracker-Options") != "custom-client" {
+			t.Error("supervisor did not use WithHTTPClient")
+		}
 		assertCanonicalAgentRequest(t, r)
 		body := decompressGzipBody(t, r)
 		select {
@@ -269,12 +268,12 @@ func TestE2ECrashReport_PanicWithOptions(t *testing.T) {
 		}
 
 	case <-time.After(15 * time.Second):
-		t.Fatal("timeout waiting for crash report; options may not be forwarded to the monitor")
+		t.Fatal("timeout waiting for crash report; supervisor may not have applied options")
 	}
 }
 
 // TestE2ECrashReport_CleanExit verifies that a clean process exit does NOT
-// produce a crash report: the monitor sees EOF with no data and exits quietly.
+// produce a crash report.
 func TestE2ECrashReport_CleanExit(t *testing.T) {
 	t.Parallel()
 
@@ -304,10 +303,6 @@ func TestE2ECrashReport_CleanExit(t *testing.T) {
 		t.Fatalf("crash victim exited non-zero: %v", err)
 	}
 
-	// Give the monitor a generous window to (incorrectly) post a report: the
-	// assertion is that none ever arrives, so a window short enough for a
-	// merely-slow monitor to pass (CI under load, or the other e2e tests'
-	// subprocesses contending) would prove nothing.
 	select {
 	case <-posted:
 		t.Error("crash report was posted on clean exit; want none")

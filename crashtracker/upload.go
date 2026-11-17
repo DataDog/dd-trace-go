@@ -8,6 +8,7 @@ package crashtracker
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -31,7 +32,7 @@ const (
 
 	// uploadAttempts bounds how many times uploadReport tries to deliver a
 	// report before giving up. A crash report is a strictly one-shot payload:
-	// the monitor calls os.Exit(0) immediately after, with no later flush and
+	// the supervisor exits immediately after, with no later flush and
 	// no buffer to fall back on, so a single transient failure (the Agent
 	// restarting, a 503, a reset connection) would otherwise lose the report
 	// permanently.
@@ -44,7 +45,7 @@ const (
 
 // uploadReport sends a crash report to the Error Tracking intake, retrying
 // transient failures.
-func uploadReport(cfg *config, r *Report) error {
+func uploadReport(ctx context.Context, cfg *config, r *Report) error {
 	body, err := json.Marshal(r)
 	if err != nil {
 		return fmt.Errorf("crashtracker: marshal report: %w", err)
@@ -61,9 +62,15 @@ func uploadReport(cfg *config, r *Report) error {
 	var lastErr error
 	for attempt := range uploadAttempts {
 		if attempt > 0 {
-			time.Sleep(uploadRetryBackoff * time.Duration(attempt))
+			timer := time.NewTimer(uploadRetryBackoff * time.Duration(attempt))
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return fmt.Errorf("crashtracker: upload deadline: %w", ctx.Err())
+			case <-timer.C:
+			}
 		}
-		retryable, err := attemptUpload(cfg, compressed)
+		retryable, err := attemptUpload(ctx, cfg, compressed)
 		if err == nil {
 			return nil
 		}
@@ -80,13 +87,13 @@ func uploadReport(cfg *config, r *Report) error {
 // (rather than reusing one *http.Request) specifically so the request body
 // is rebuilt each time: an http.Request's body reader is consumed after use
 // and cannot simply be replayed on a retry.
-func attemptUpload(cfg *config, compressed []byte) (retryable bool, err error) {
+func attemptUpload(ctx context.Context, cfg *config, compressed []byte) (retryable bool, err error) {
 	req, client, err := buildRequestAndClient(cfg, compressed)
 	if err != nil {
 		return false, fmt.Errorf("crashtracker: build request: %w", err)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req.WithContext(ctx))
 	if err != nil {
 		// A transport-level failure (connection reset, DNS hiccup, the Agent
 		// mid-restart) might succeed on a later attempt.
