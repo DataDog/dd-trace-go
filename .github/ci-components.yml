@@ -97,6 +97,7 @@ integration-suites:
     contrib/aerospike/aerospike-client-go.v7: [ aerospike.v7 ]
     contrib/aws/aws-sdk-go: [ aws.v1 ]
     contrib/aws/aws-sdk-go-v2: [ aws.v2 ]
+    contrib/aws/aws-sdk-go-v2/otelc: [ aws.v2 ]
     contrib/aws/aws-sdk-go/otelc: [aws.v1]
     contrib/aws/datadog-lambda-go: []
     contrib/aws/datadog-lambda-go/test/integration_tests/error: []
@@ -145,6 +146,7 @@ integration-suites:
     contrib/gorilla/mux: [ gorilla_mux ]
     contrib/gorilla/mux/otelc: [ gorilla_mux ]
     contrib/gorm.io/gorm.v1: [ gorm ]
+    contrib/gorm.io/gorm.v1/otelc: [ gorm ]
     contrib/graph-gophers/graphql-go: [ graph-gophers ]
     contrib/graphql-go/graphql: [ graphql-go ]
     contrib/haproxy/stream-processing-offload: []
@@ -152,6 +154,7 @@ integration-suites:
     contrib/hashicorp/vault: [ vault ]
     contrib/IBM/sarama: [ ibm_sarama ]
     contrib/jackc/pgx.v5: [ pgx ]
+    contrib/jackc/pgx.v5/otelc: [ pgx ]
     contrib/jmoiron/sqlx: []
     contrib/julienschmidt/httprouter: [ julienschmidt_httprouter ]
     contrib/julienschmidt/httprouter/otelc: [ julienschmidt_httprouter ]
@@ -482,6 +485,7 @@ components:
       contrib entry claims them without the gate.
     paths:
       - contrib/99designs/gqlgen/**
+      - contrib/aws/aws-sdk-go-v2/**
       - contrib/aws/aws-sdk-go/**
       - contrib/cloud.google.com/go/pubsub.v1/**
       - contrib/cloud.google.com/go/pubsub.v2/**
@@ -495,6 +499,8 @@ components:
       - contrib/gomodule/redigo/**
       - contrib/google.golang.org/grpc/**
       - contrib/gorilla/mux/**
+      - contrib/gorm.io/gorm.v1/**
+      - contrib/jackc/pgx.v5/**
       - contrib/julienschmidt/httprouter/**
       - contrib/labstack/echo.v4/**
       - contrib/labstack/echo.v5/**

@@ -51,6 +51,7 @@ jobs:
         id: check_remaining
         env:
           GITHUB_TOKEN: "${{ steps.generate-token.outputs.token }}"
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           REPO="${{ github.repository }}"
 
@@ -69,7 +70,7 @@ jobs:
             echo "$REMAINING"
 
             # For manual dispatch, warn but allow unfreezing all PRs
-            if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
               echo "🔓 Manual dispatch - unfreezing all PRs despite active freeze milestones"
               echo "should_unfreeze=true" >> "$GITHUB_OUTPUT"
             else
