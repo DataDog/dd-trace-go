@@ -22,6 +22,7 @@ func TestSetProviderAndWait_EmitsProviderReadyExactlyOnce(t *testing.T) {
 	t.Cleanup(openfeature.Shutdown)
 
 	p := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, p)
 	p.updateConfiguration(createTestConfig())
 
 	var ready atomic.Int32
@@ -53,6 +54,7 @@ func drainEvent(t *testing.T, ch <-chan openfeature.Event) openfeature.Event {
 
 func TestEventChannel_ReturnsSameChannelEveryCall(t *testing.T) {
 	p := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, p)
 	first := p.EventChannel()
 	second := p.EventChannel()
 	if first != second {
@@ -66,6 +68,7 @@ func TestEventChannel_ReturnsSameChannelEveryCall(t *testing.T) {
 // every registered handler twice.
 func TestUpdateConfiguration_FirstReadyIsLeftToInit(t *testing.T) {
 	p := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, p)
 	config := createTestConfig()
 
 	p.updateConfiguration(config)
@@ -84,6 +87,7 @@ func TestUpdateConfiguration_FirstReadyIsLeftToInit(t *testing.T) {
 
 func TestUpdateConfiguration_NilEmitsProviderStale(t *testing.T) {
 	p := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, p)
 	p.updateConfiguration(createTestConfig()) // first ready: left to Init, emits nothing
 
 	p.updateConfiguration(nil)
@@ -110,6 +114,7 @@ func TestUpdateConfiguration_NilEmitsProviderStale(t *testing.T) {
 
 func TestUpdateConfiguration_ProviderReadySurvivesFullBuffer(t *testing.T) {
 	p := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, p)
 	config := createTestConfig()
 
 	// Reach ready, drop to stale, then recover: that recovery is the first
@@ -148,6 +153,7 @@ done:
 
 func TestUpdateConfiguration_ProviderStaleSurvivesFullBuffer(t *testing.T) {
 	p := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, p)
 	config := createTestConfig()
 
 	p.updateConfiguration(config) // first ready: left to Init, emits nothing
@@ -183,6 +189,7 @@ done:
 
 func TestUpdateConfiguration_NeverEmitsUntypedEvent(t *testing.T) {
 	p := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, p)
 	p.updateConfiguration(createTestConfig())
 	p.updateConfiguration(createTestConfig())
 	event := drainEvent(t, p.EventChannel())
