@@ -22,14 +22,22 @@ func CreateTracedSession(cluster *gocql.ClusterConfig, opts ...WrapOption) (*goc
 
 	if cfg.traceQuery {
 		cluster.QueryObserver = obs
+	} else if automatic(cluster.QueryObserver) {
+		cluster.QueryObserver = nil
 	}
 	if cfg.traceBatch {
 		cluster.BatchObserver = obs
+	} else if automatic(cluster.BatchObserver) {
+		cluster.BatchObserver = nil
 	}
 	if cfg.traceConnect {
 		cluster.ConnectObserver = obs
+	} else if automatic(cluster.ConnectObserver) {
+		cluster.ConnectObserver = nil
 	}
-	return cluster.CreateSession()
+	// gocql.NewSession, not cluster.CreateSession: in an otelc build, a hook on
+	// CreateSession sets the observers this function left nil.
+	return gocql.NewSession(*cluster)
 }
 
 // NewObserver creates a new Observer to trace gocql.
@@ -46,6 +54,25 @@ func NewObserver(cluster *gocql.ClusterConfig, opts ...WrapOption) *Observer {
 	}
 }
 
+// NewAutomaticObserver is [NewObserver] for an observer that the otelc rules
+// set on a cluster. [CreateTracedSession] removes it for an operation its
+// options leave untraced.
+func NewAutomaticObserver(cluster *gocql.ClusterConfig) *Observer {
+	o := NewObserver(cluster)
+	o.automatic = true
+	return o
+}
+
+// Automatic reports whether o was built by [NewAutomaticObserver].
+func (o *Observer) Automatic() bool {
+	return o != nil && o.automatic
+}
+
+func automatic(o any) bool {
+	obs, ok := o.(*Observer)
+	return ok && obs.Automatic()
+}
+
 var (
 	_ gocql.QueryObserver   = (*Observer)(nil)
 	_ gocql.BatchObserver   = (*Observer)(nil)
@@ -56,6 +83,7 @@ var (
 type Observer struct {
 	cfg                  *config
 	clusterContactPoints string
+	automatic            bool
 }
 
 // ObserveQuery implements gocql.QueryObserver.
