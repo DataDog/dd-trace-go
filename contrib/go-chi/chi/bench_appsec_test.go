@@ -66,7 +66,9 @@ func BenchmarkMiddlewareAppSec(b *testing.B) {
 	})
 
 	// 4 routers in 3 levels of mounts, each with the tracer (what Orchestrion
-	// does), and a long path: every tracer searches the route from the root.
+	// does): each tracer wraps the writer in a commit tracker and, after the handler,
+	// reads the route that chi selected and reports it when it is not its start
+	// route. This shows the cost of nested tracers and of their route reports.
 	nested := chi.NewRouter()
 	nested.Use(Middleware())
 	level := nested

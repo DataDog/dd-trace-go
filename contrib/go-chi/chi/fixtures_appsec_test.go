@@ -210,19 +210,6 @@ func fixtureParentRewrite() routerFixture {
 	}}
 }
 
-// fixtureWrappedEndpoint is setup 14: root Use, a wrapped mount, and a tracer on
-// the endpoint of the child router.
-func fixtureWrappedEndpoint() routerFixture {
-	return routerFixture{"14 wrapped mount, tracer on the endpoint", "GET", "/api/users/ATTACK", func(first func(http.Handler) http.Handler, h http.HandlerFunc) http.Handler {
-		r := chi.NewRouter()
-		r.Use(first, Middleware())
-		sub := chi.NewRouter()
-		sub.With(Middleware()).Get("/users/{id}", h)
-		r.Mount("/api", opaqueHandler(sub))
-		return r
-	}}
-}
-
 // rewriteToNamedMount rewrites the route path of "/old/<x>" to
 // "/api/<x>/items/clean": the parent routes it to a mount with a parameter.
 func rewriteToNamedMount(next http.Handler) http.Handler {

@@ -536,42 +536,30 @@ func TestAppSecWireSpecial(t *testing.T) {
 		t.Run("route", func(t *testing.T) { assert.Equal(t, []string{"/items/{id}"}, res.routes) })
 	})
 
-	// A chain that can hijack only through Unwrap() and a chi writer that cannot:
-	// the response of the application is not changed (the WAF gets no path parameter
-	// with Use before routing).
-	hijackThroughUnwrap := wireServer{wrap: wrapWriter(func(w http.ResponseWriter) http.ResponseWriter { return unwrapOnly{w} })}
-	for _, c := range []struct {
-		name  string
-		rules []string
-		event []string
-	}{
-		{"complete-hijack", []string{ruleMixedBlock}, nil},
-		{"complete-hijack-L", []string{rulePathBlock}, nil},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			res := wireOnce(t, c.rules, func(cap *opCapture, ran *bool) (wireServer, string) {
-				r, target := simpleRouter(cap.middleware, false, readyHandler(ran, func(w http.ResponseWriter) {
-					conn, _, err := http.NewResponseController(w).Hijack()
-					require.NoError(t, err)
-					_, _ = io.WriteString(conn, rawAnswer)
-					_ = conn.Close()
-				}))
-				s := hijackThroughUnwrap
-				s.router = r
-				return s, target
-			})
-			t.Run("wire", func(t *testing.T) {
-				assert.True(t, res.ran, "no block before the handler")
-				assert.Equal(t, 200, res.status)
-				assert.Equal(t, appBody, res.body)
-				assert.Empty(t, res.log)
-				assert.Zero(t, res.requestBlocked())
-				assert.Zero(t, res.blockFailure())
-			})
-			t.Run("events", func(t *testing.T) { assert.Equal(t, c.event, res.events) })
-			t.Run("route", func(t *testing.T) { assert.Equal(t, []string{"/items/{id}"}, res.routes, "the route is set") })
-		})
-	}
+	// A chain that can hijack only through Unwrap() and a chi writer that cannot: a
+	// controller hijack bypasses the tracker, so Committed() stays false (a limit that
+	// main has too). A rule on a response header then tries a late block on the
+	// hijacked connection.
+	t.Run("hijack-through-unwrap-header-rule", func(t *testing.T) {
+		rec := startAppSecRules(t, ruleHeaderBlock)
+		capture := newOpCapture()
+		var ran bool
+		r, target := simpleRouter(capture.middleware, false, readyHandler(&ran, func(w http.ResponseWriter) {
+			conn, _, err := http.NewResponseController(w).Hijack()
+			require.NoError(t, err)
+			_, _ = io.WriteString(conn, rawAnswer)
+			_ = conn.Close()
+		}))
+		s := wireServer{router: r, wrap: wrapWriter(func(w http.ResponseWriter) http.ResponseWriter { return unwrapOnly{w} })}
+		res := s.do(t, rec, capture, http.MethodGet, target)
+		assert.True(t, ran)
+		assert.Equal(t, 200, res.status)
+		assert.Equal(t, appBody, res.body, "the client gets the hijacked answer only")
+		assert.Contains(t, res.log, "on hijacked connection", "the late block writes to the hijacked connection")
+		assert.Equal(t, []string{"header-block"}, res.events)
+		assert.EqualValues(t, 1, res.requestBlocked(), "a false report")
+		assert.Zero(t, res.blockFailure())
+	})
 
 	t.Run("cycle", func(t *testing.T) {
 		res := wireOnce(t, []string{rulePathBlock}, func(c *opCapture, ran *bool) (wireServer, string) {
@@ -1010,9 +998,10 @@ func TestAppSecWireCompress(t *testing.T) {
 		return wireServer{router: r}, target
 	}
 
-	// The inner tracer cannot share the baseline input with the root (no Unwrap()
-	// in Compress), so the root reports only its route: no rule on "id" matches,
-	// as before this change.
+	// No newly discovered path parameter reaches the WAF (the root has none when it
+	// starts, and it reports only its route), so the rule on "id" cannot match, as
+	// before this change. The writer without Unwrap() (Compress) hides the root
+	// tracker from the inner one.
 	t.Run("hidden-parent", func(t *testing.T) {
 		res := wireOnce(t, []string{ruleMixedBlock}, func(c *opCapture, ran *bool) (wireServer, string) {
 			return mounted(c, ran, true)

@@ -535,6 +535,20 @@ func TestCommitTrackerState(t *testing.T) {
 		assert.False(t, ct.Committed())
 	})
 
+	t.Run("hijack only through Unwrap", func(t *testing.T) {
+		// The chi writer over a plain wrapper of hijackOnly is not a Hijacker: the
+		// controller hijack reaches the writer without the tracker (a limit that main
+		// has too), so the response is not recorded as sent.
+		f := newFakeRaw()
+		tw, ct, _ := track(t, plain{hijackOnly{f}}, 1)
+		_, isHijacker := tw.(http.Hijacker)
+		require.False(t, isHijacker)
+		_, _, err := http.NewResponseController(tw).Hijack()
+		require.NoError(t, err)
+		assert.Equal(t, 1, f.hijacks)
+		assert.False(t, ct.Committed())
+	})
+
 	t.Run("Discard", func(t *testing.T) {
 		tw, ct, ww, f := full()
 		ww.Discard()

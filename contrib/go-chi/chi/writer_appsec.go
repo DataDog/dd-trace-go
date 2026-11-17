@@ -40,6 +40,12 @@ const maxUnwrapWalk = 16
 // response through the writer that they get and return it from Unwrap(), and a
 // middleware that writes or flushes before Middleware is not visible.
 //
+// A hijack is recorded only if the chi writer is a Hijacker. If the connection can be
+// hijacked only through Unwrap() (a writer with only http.ResponseWriter and
+// Unwrap() under chi), http.ResponseController.Hijack reaches it without the tracker,
+// so Committed() stays false and a late block writes to the hijacked connection (as
+// before this change).
+//
 // A commitTracker is not safe for concurrent use, like the writer that it wraps.
 type commitTracker struct {
 	middleware.WrapResponseWriter // chi's Status, BytesWritten, Tee, Header, Write, WriteHeader, Unwrap
