@@ -37,6 +37,7 @@ func BenchmarkBooleanEvaluationExclusion(b *testing.B) {
 				name := policy.name + "/allocations=" + strconv.Itoa(allocationCount) + "/extra_fields=" + strconv.Itoa(extraFields)
 				b.Run(name, func(b *testing.B) {
 					provider := newDatadogProvider(ProviderConfig{ExperimentationOptOutMode: policy.mode})
+					cleanupProvider(b, provider)
 					b.Cleanup(provider.Shutdown)
 					config := createTestConfig()
 					f := config.Flags["bool-flag"]
