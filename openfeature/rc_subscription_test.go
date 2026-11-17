@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -186,6 +187,51 @@ func TestRemoteConfigSlowPathShutdownRemovesEvaluatorCapabilities(t *testing.T) 
 	}
 }
 
+func TestRemoteConfigSlowPathShutdownAfterRCRestart(t *testing.T) {
+	internalffe.ResetForTest()
+	remoteconfig.Reset()
+	t.Cleanup(func() {
+		internalffe.ResetForTest()
+		remoteconfig.Reset()
+	})
+
+	provider, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+
+	remoteconfig.Stop()
+	require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+	_, err = remoteconfig.Subscribe(
+		"APM_TRACING",
+		func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus { return nil },
+		remoteconfig.APMTracingSampleRate,
+	)
+	require.NoError(t, err)
+	require.NoError(t, internalffe.SubscribeRC())
+
+	require.NoError(t, provider.ShutdownWithContext(context.Background()))
+	has, err := remoteconfig.HasProduct("APM_TRACING")
+	require.NoError(t, err)
+	assert.True(t, has, "a stale FFE token must not remove another product")
+	has, err = remoteconfig.HasProduct(internalffe.FFEProductName)
+	require.NoError(t, err)
+	assert.True(t, has, "the tracer-owned FFE_FLAGS subscription must remain")
+}
+
+func TestRemoteConfigSlowPathShutdownAfterRCStop(t *testing.T) {
+	internalffe.ResetForTest()
+	remoteconfig.Reset()
+	t.Cleanup(func() {
+		internalffe.ResetForTest()
+		remoteconfig.Reset()
+	})
+
+	provider, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+	remoteconfig.Stop()
+
+	assert.NoError(t, provider.ShutdownWithContext(context.Background()))
+}
+
 func TestRemoteConfigFastPathShutdownKeepsTracerCapabilities(t *testing.T) {
 	internalffe.ResetForTest()
 	remoteconfig.Reset()
@@ -239,6 +285,32 @@ func TestRemoteConfigFastPathShutdownKeepsTracerCapabilities(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, has, "provider shutdown must keep tracer capability %d", capability)
 	}
+}
+
+func TestRemoteConfigFastPathReplacementWithoutNewUpdate(t *testing.T) {
+	internalffe.ResetForTest()
+	remoteconfig.Reset()
+	t.Cleanup(func() {
+		internalffe.ResetForTest()
+		remoteconfig.Reset()
+	})
+	require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+	require.NoError(t, internalffe.SubscribeRC())
+
+	first, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+	internalffe.ForwardForTest(remoteconfig.ProductUpdate{
+		"path/ffe": remoteConfigTestPayload(t, "live-flag"),
+	})
+	require.NotNil(t, first.getConfiguration())
+	require.NoError(t, first.ShutdownWithContext(context.Background()))
+
+	replacement, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+	t.Cleanup(replacement.Shutdown)
+	config := replacement.getConfiguration()
+	require.NotNil(t, config, "replacement must be seeded with the last delivered state")
+	assert.Contains(t, config.Flags, "live-flag")
 }
 
 func remoteConfigTestPayload(t *testing.T, flagKey string) []byte {

@@ -19,6 +19,7 @@ func ResetForTest() {
 	rcState.callback = nil
 	rcState.callbackToken = 0
 	rcState.buffered = nil
+	rcState.delivered = nil
 	rcState.providerSubscription = 0
 	rcState.providerToken = 0
 	rcState.providerCapabilities = nil

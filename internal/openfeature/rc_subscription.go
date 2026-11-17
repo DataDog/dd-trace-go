@@ -12,6 +12,7 @@ package openfeature
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -42,6 +43,7 @@ var rcState struct {
 	callback             Callback
 	callbackToken        ProviderToken
 	buffered             remoteconfig.ProductUpdate // latest snapshot; RC sends full state each time
+	delivered            remoteconfig.ProductUpdate // last delivered state, retained for replacement providers
 	providerSubscription remoteconfig.SubscriptionToken
 	providerToken        ProviderToken
 	providerCapabilities []remoteconfig.Capability
@@ -65,6 +67,7 @@ func SubscribeRC() error {
 		rcState.subscribed = false
 		rcState.callback = nil
 		rcState.callbackToken = 0
+		rcState.delivered = nil
 	}
 
 	if has, _ := remoteconfig.HasProduct(FFEProductName); has {
@@ -87,6 +90,17 @@ func SubscribeRC() error {
 func forwardingCallback(update remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
 	rcState.Lock()
 	defer rcState.Unlock()
+
+	if rcState.delivered == nil {
+		rcState.delivered = make(remoteconfig.ProductUpdate, len(update))
+	}
+	for path, data := range update {
+		if data == nil {
+			delete(rcState.delivered, path)
+		} else {
+			rcState.delivered[path] = bytes.Clone(data)
+		}
+	}
 
 	if rcState.callback != nil {
 		return rcState.callback(update)
@@ -136,6 +150,9 @@ func AttachCallback(cb Callback) (ProviderToken, bool) {
 		// This call only initializes the provider's in-memory state.
 		cb(rcState.buffered)
 		rcState.buffered = nil
+	} else if len(rcState.delivered) > 0 {
+		log.Debug("openfeature: replaying last delivered RC config to replacement provider")
+		cb(rcState.delivered)
 	}
 
 	return token, true
@@ -210,7 +227,16 @@ func UnsubscribeProvider(token ProviderToken) error {
 	rcState.providerToken = 0
 	rcState.providerCapabilities = nil
 
+	if rcState.subscribed {
+		// A tracer restart replaced the RC client and its subscription ID namespace.
+		// This provider-owned subscription died with the old client; its stale ID may
+		// now identify an unrelated product on the new client.
+		return nil
+	}
 	if err := remoteconfig.Unsubscribe(subscription); err != nil {
+		if errors.Is(err, remoteconfig.ErrClientNotStarted) {
+			return nil
+		}
 		return err
 	}
 	for _, capability := range capabilities {
