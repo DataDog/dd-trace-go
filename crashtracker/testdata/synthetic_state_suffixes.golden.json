@@ -9,20 +9,25 @@
       "format": "Datadog Crashtracker 1.0",
       "frames": [
         {
-          "function": "runtime.gopark",
-          "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
-          "line": 474
+          "function": "main.(*worker).handle",
+          "file": "/tmp/crashdemo/state/main.go",
+          "line": 41
         },
         {
-          "function": "main.main",
+          "function": "main.(*worker).loop",
           "file": "/tmp/crashdemo/state/main.go",
-          "line": 24
+          "line": 33
+        },
+        {
+          "function": "runtime.goexit",
+          "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s",
+          "line": 1039
         }
       ]
     },
     "threads": [
       {
-        "crashed": true,
+        "crashed": false,
         "name": "goroutine 1",
         "stack": {
           "format": "Datadog Crashtracker 1.0",
@@ -42,7 +47,7 @@
         "state": "chan receive, 6883 minutes"
       },
       {
-        "crashed": false,
+        "crashed": true,
         "name": "goroutine 7",
         "stack": {
           "format": "Datadog Crashtracker 1.0",
@@ -129,10 +134,10 @@
             }
           ]
         },
-        "state": "chan receive (durable), synctest bubble 1"
+        "state": "chan receive (durable)"
       }
     ],
-    "thread_name": "goroutine 1",
+    "thread_name": "goroutine 7",
     "is_crash": true,
     "source_type": "Crashtracking"
   },

@@ -36,10 +36,10 @@ func manyGoroutinesDump(targetSize int) (dump []byte, goroutines int) {
 // resource-validation question raised in review (not a demonstrated bug):
 // whether a near-32MiB dump containing many shallow goroutines -- as opposed
 // to one deeply recursive goroutine, a different allocation pattern -- pushes
-// peak parsing memory past the supervisor's 256MiB GOMEMLIMIT, since capThreads
-// runs after parseThreads has already allocated every goroutine's frames.
+// peak parsing memory past the supervisor's 256MiB GOMEMLIMIT, since the parser
+// allocates every goroutine before the cap keeps maxReportThreads of them.
 // Measured directly rather than assumed: the parse increment (peak HeapAlloc
-// above a baseline that already holds the ~31MiB dump) is ~124MiB. The real
+// above a baseline that already holds the ~31MiB dump) is ~76MiB. The real
 // supervisor peak adds its own init heap and the raw dump to that figure.
 func TestParseCrashDumpManyGoroutinesStaysWithinSupervisorMemoryBudget(t *testing.T) {
 	dump, goroutines := manyGoroutinesDump(manyGoroutinesDumpSize)
@@ -79,7 +79,7 @@ func TestParseCrashDumpManyGoroutinesStaysWithinSupervisorMemoryBudget(t *testin
 	<-done
 
 	peakAboveBaseline := peakHeapAlloc - baseline.HeapAlloc
-	t.Logf("threads parsed (pre-cap would have been %d, capThreads reduced to): %d", goroutines, len(report.Error.Threads))
+	t.Logf("threads parsed (pre-cap would have been %d, the cap reduced to): %d", goroutines, len(report.Error.Threads))
 	t.Logf("peak HeapAlloc above baseline during parseCrashDump: %d bytes (%.1f MiB)", peakAboveBaseline, float64(peakAboveBaseline)/(1024*1024))
 
 	if peakAboveBaseline > supervisorMemoryLimit {

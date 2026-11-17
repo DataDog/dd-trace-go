@@ -15,8 +15,8 @@ import (
 )
 
 // The tests in this file characterize the current behavior of parseCrashDump
-// through its public result only. They deliberately avoid parseFrames,
-// splitDump and the other parser internals so that they keep working when the
+// through its public result only. They deliberately avoid splitDump and the
+// other parser internals so that they keep working when the
 // goroutine and frame parser is replaced. They cover what the golden files in
 // testdata cannot express: caps, degenerate input and oversized input. Where
 // the behavior looks like a bug or a gap, the test still pins it and the case
@@ -285,15 +285,18 @@ func TestParseCrashDumpDegenerateInput(t *testing.T) {
 func TestParseCrashDumpHeaderWithoutFramesBeforeNextHeader(t *testing.T) {
 	r := parseCrashDump([]byte("panic: boom\n\ngoroutine 1 [running]:\ngoroutine 2 [chan receive]:\nmain.f()\n\t/a.go:1 +0x2\n"))
 
-	if len(r.Error.Threads) != 2 {
-		t.Fatalf("len(Threads) = %d, want 2", len(r.Error.Threads))
+	// KNOWN GAP: when a goroutine header follows any line of the previous
+	// block without a blank line (another header, a frame or a "created by"
+	// line), gostackparse consumes it while it aborts the previous goroutine,
+	// so that goroutine is lost. The runtime prints "\n" before each
+	// goroutine header (tracebacksomeothers in runtime/traceback.go), so this
+	// cannot come from runtime output.
+	if len(r.Error.Threads) != 1 {
+		t.Fatalf("len(Threads) = %d, want 1", len(r.Error.Threads))
 	}
-	first, second := r.Error.Threads[0], r.Error.Threads[1]
+	first := r.Error.Threads[0]
 	if first.Name != "goroutine 1" || len(first.Stack.Frames) != 0 || !first.Stack.Incomplete {
 		t.Errorf("first = %q, %d frames, Incomplete=%t; want goroutine 1, 0 frames, Incomplete", first.Name, len(first.Stack.Frames), first.Stack.Incomplete)
-	}
-	if second.Name != "goroutine 2" || len(second.Stack.Frames) != 1 || second.Stack.Incomplete {
-		t.Errorf("second = %q, %d frames, Incomplete=%t; want goroutine 2, 1 frame, complete", second.Name, len(second.Stack.Frames), second.Stack.Incomplete)
 	}
 }
 
@@ -323,5 +326,51 @@ func TestParseCrashDumpOversizedLine(t *testing.T) {
 	// The line scanned before the oversized one survives as the preamble.
 	if r.Error.Type != "panic" || r.Error.Message != "boom" {
 		t.Errorf("Type = %q, Message = %q, want panic and boom", r.Error.Type, r.Error.Message)
+	}
+}
+
+// TestParseCrashDumpOversizedLineEndingInCarriageReturn checks that a line of
+// exactly maxCrashDumpSize bytes counts as oversized even though its trailing
+// "\r" is not part of the text.
+func TestParseCrashDumpOversizedLineEndingInCarriageReturn(t *testing.T) {
+	dump := append(bytes.Repeat([]byte("x"), maxCrashDumpSize-1), '\r')
+
+	r := parseCrashDump(dump)
+
+	if len(r.Error.Threads) != 1 {
+		t.Fatalf("len(Threads) = %d, want 1", len(r.Error.Threads))
+	}
+	th := r.Error.Threads[0]
+	if !th.Crashed || th.Name != "goroutine unknown" || !th.Stack.Incomplete || len(th.Stack.Frames) != 0 {
+		t.Errorf("thread = %+v, want the synthesized crashed Incomplete \"goroutine unknown\" thread", th)
+	}
+}
+
+// TestParseCrashDumpLongLocationLine checks that a location line longer than
+// the default 64 KiB line limit of the parser does not hide the crash frame
+// or the goroutines after it. The dump has the shape of a real crash: it comes
+// from a program with a "//line" directive that sets a 70000-byte file name,
+// run with GOTRACEBACK=all. The dump here is synthetic to keep the test fast.
+func TestParseCrashDumpLongLocationLine(t *testing.T) {
+	longFile := "/tmp/" + strings.Repeat("a", 70000) + ".go"
+	dump := []byte("panic: boom\n\n" +
+		"goroutine 1 [running]:\nmain.main()\n\t" + longFile + ":10 +0x1c\n\n" +
+		"goroutine 5 [sleep]:\nmain.sleeper()\n\t/tmp/main.go:6 +0x2\n")
+
+	r := parseCrashDump(dump)
+
+	if len(r.Error.Threads) != 2 {
+		t.Fatalf("len(Threads) = %d, want 2", len(r.Error.Threads))
+	}
+	crashed, later := r.Error.Threads[0], r.Error.Threads[1]
+	if !crashed.Crashed || crashed.Name != "goroutine 1" || crashed.Stack.Incomplete || len(crashed.Stack.Frames) != 1 {
+		t.Fatalf("crashed = %q (crashed=%t, incomplete=%t, %d frames), want goroutine 1, complete, 1 frame",
+			crashed.Name, crashed.Crashed, crashed.Stack.Incomplete, len(crashed.Stack.Frames))
+	}
+	if got, want := crashed.Stack.Frames[0], (Frame{Function: "main.main", File: longFile, Line: 10}); got != want {
+		t.Errorf("crash frame = {%s %d bytes %d}, want {%s %d bytes %d}", got.Function, len(got.File), got.Line, want.Function, len(want.File), want.Line)
+	}
+	if later.Name != "goroutine 5" || later.Stack.Incomplete || len(later.Stack.Frames) != 1 {
+		t.Errorf("later = %q (incomplete=%t, %d frames), want goroutine 5, complete, 1 frame", later.Name, later.Stack.Incomplete, len(later.Stack.Frames))
 	}
 }

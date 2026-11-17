@@ -35,7 +35,7 @@ const (
 
 	maxCrashDumpSize = 32 * 1024 * 1024 // 32 MiB
 	// supervisorMemoryLimit is the supervisor's GOMEMLIMIT. Parsing a dump at
-	// maxCrashDumpSize peaks at about 124 MiB above a baseline that already
+	// maxCrashDumpSize peaks at about 76 MiB above a baseline that already
 	// holds the dump (see manygoroutines_measure_test.go).
 	supervisorMemoryLimit = 256 * 1024 * 1024
 	// defaultGCPercent is the supervisor's GOGC, which is the Go default.
