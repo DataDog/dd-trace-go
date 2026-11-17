@@ -1,0 +1,134 @@
+panic: runtime error: invalid memory address or nil pointer dereference
+[signal SIGSEGV: segmentation violation code=0x2 addr=0x0 pc=0x104d6ec44]
+
+goroutine 1 gp=0x227538ca21e0 m=0 mp=0x104e18580 [running]:
+panic({0x104e04d78?, 0x104e13970?})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/panic.go:878 +0x150 fp=0x227538d3cde0 sp=0x227538d3cd30 pc=0x104d65670
+runtime.panicmem(...)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/panic.go:336
+runtime.sigpanic()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/signal_unix.go:931 +0x2dc fp=0x227538d3ce40 sp=0x227538d3cde0 pc=0x104d66a4c
+main.(*server).Serve(...)
+	/tmp/crashdemo/nilptr/main.go:10
+main.main()
+	/tmp/crashdemo/nilptr/main.go:24 +0x144 fp=0x227538d3cea0 sp=0x227538d3ce50 pc=0x104d6ec44
+runtime.main()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:302 +0x380 fp=0x227538d3cfd0 sp=0x227538d3cea0 pc=0x104d361e0
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0x227538d3cfd0 sp=0x227538d3cfd0 pc=0x104d6ae04
+
+goroutine 2 gp=0x227538ca2780 m=nil [force gc (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:474 +0xb8 fp=0x227538d1ef90 sp=0x227538d1ef70 pc=0x104d659b8
+runtime.goparkunlock(...)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:480
+runtime.forcegchelper()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:387 +0xb4 fp=0x227538d1efd0 sp=0x227538d1ef90 pc=0x104d364c4
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0x227538d1efd0 sp=0x227538d1efd0 pc=0x104d6ae04
+created by runtime.init.7 in goroutine 1
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:375 +0x24
+
+goroutine 3 gp=0x227538ca2d20 m=nil [GC sweep wait]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:474 +0xb8 fp=0x227538d1f770 sp=0x227538d1f750 pc=0x104d659b8
+runtime.goparkunlock(...)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:480
+runtime.bgsweep(0x227538cc6400)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mgcsweep.go:279 +0x9c fp=0x227538d1f7b0 sp=0x227538d1f770 pc=0x104d2397c
+runtime.gcenable.gowrap1()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mgc.go:214 +0x20 fp=0x227538d1f7d0 sp=0x227538d1f7b0 pc=0x104d5faa0
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0x227538d1f7d0 sp=0x227538d1f7d0 pc=0x104d6ae04
+created by runtime.gcenable in goroutine 1
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mgc.go:214 +0x6c
+
+goroutine 4 gp=0x227538ca2f00 m=nil [GC scavenge wait]:
+runtime.gopark(0x227538cc6400?, 0x104d770e8?, 0x1?, 0x0?, 0x227538ca2f00?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:474 +0xb8 fp=0x227538d1ff60 sp=0x227538d1ff40 pc=0x104d659b8
+runtime.goparkunlock(...)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:480
+runtime.(*scavengerState).park(0x104e17a80)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mgcscavenge.go:425 +0x5c fp=0x227538d1ff90 sp=0x227538d1ff60 pc=0x104d215dc
+runtime.bgscavenge(0x227538cc6400)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mgcscavenge.go:653 +0x44 fp=0x227538d1ffb0 sp=0x227538d1ff90 pc=0x104d21b04
+runtime.gcenable.gowrap2()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mgc.go:215 +0x20 fp=0x227538d1ffd0 sp=0x227538d1ffb0 pc=0x104d5fa60
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0x227538d1ffd0 sp=0x227538d1ffd0 pc=0x104d6ae04
+created by runtime.gcenable in goroutine 1
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mgc.go:215 +0xac
+
+goroutine 17 gp=0x227538d843c0 m=nil [GOMAXPROCS updater (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:474 +0xb8 fp=0x227538d1a770 sp=0x227538d1a750 pc=0x104d659b8
+runtime.goparkunlock(...)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:480
+runtime.updateMaxProcsGoroutine()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:7146 +0xf4 fp=0x227538d1a7d0 sp=0x227538d1a770 pc=0x104d43bb4
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0x227538d1a7d0 sp=0x227538d1a7d0 pc=0x104d6ae04
+created by runtime.defaultGOMAXPROCSUpdateEnable in goroutine 1
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:7134 +0x48
+
+goroutine 18 gp=0x227538d845a0 m=nil [chan receive]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:474 +0xb8 fp=0x227538d1af00 sp=0x227538d1aee0 pc=0x104d659b8
+runtime.chanrecv(0x227538d92070, 0x0, 0x1)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/chan.go:667 +0x470 fp=0x227538d1af80 sp=0x227538d1af00 pc=0x104d05af0
+runtime.chanrecv1(0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/chan.go:509 +0x14 fp=0x227538d1afb0 sp=0x227538d1af80 pc=0x104d05674
+main.work(...)
+	/tmp/crashdemo/nilptr/main.go:12
+main.main.gowrap1()
+	/tmp/crashdemo/nilptr/main.go:18 +0x24 fp=0x227538d1afd0 sp=0x227538d1afb0 pc=0x104d6ed14
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0x227538d1afd0 sp=0x227538d1afd0 pc=0x104d6ae04
+created by main.main in goroutine 1
+	/tmp/crashdemo/nilptr/main.go:18 +0xd4
+
+goroutine 19 gp=0x227538d84780 m=nil [select (no cases)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:474 +0xb8 fp=0x227538d1b790 sp=0x227538d1b770 pc=0x104d659b8
+runtime.block()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/select.go:104 +0x30 fp=0x227538d1b7c0 sp=0x227538d1b790 pc=0x104d47b80
+main.main.func1()
+	/tmp/crashdemo/nilptr/main.go:19 +0x1c fp=0x227538d1b7d0 sp=0x227538d1b7c0 pc=0x104d6ed4c
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0x227538d1b7d0 sp=0x227538d1b7d0 pc=0x104d6ae04
+created by main.main in goroutine 1
+	/tmp/crashdemo/nilptr/main.go:19 +0xe0
+
+goroutine 20 gp=0x227538d84960 m=nil [sleep]:
+runtime.gopark(0x2f9fd808f6219?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:474 +0xb8 fp=0x227538d1bf50 sp=0x227538d1bf30 pc=0x104d659b8
+time.Sleep(0x34630b8a000)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/time.go:368 +0x150 fp=0x227538d1bfb0 sp=0x227538d1bf50 pc=0x104d67df0
+main.main.func2()
+	/tmp/crashdemo/nilptr/main.go:20 +0x28 fp=0x227538d1bfd0 sp=0x227538d1bfb0 pc=0x104d6ed88
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0x227538d1bfd0 sp=0x227538d1bfd0 pc=0x104d6ae04
+created by main.main in goroutine 1
+	/tmp/crashdemo/nilptr/main.go:20 +0xec
+
+goroutine 21 gp=0x227538d84b40 m=nil [sync.Mutex.Lock]:
+runtime.gopark(0x104e1d1c0?, 0x104d51004?, 0x0?, 0x0?, 0x227538d1c728?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:474 +0xb8 fp=0x227538d1c6d0 sp=0x227538d1c6b0 pc=0x104d659b8
+runtime.goparkunlock(...)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:480
+runtime.semacquire1(0x227538d9c014, 0x0, 0x3, 0x2, 0x16)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/sema.go:192 +0x244 fp=0x227538d1c720 sp=0x227538d1c6d0 pc=0x104d47e74
+internal/sync.runtime_SemacquireMutex(0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/sema.go:95 +0x28 fp=0x227538d1c760 sp=0x227538d1c720 pc=0x104d66608
+internal/sync.(*Mutex).lockSlow(0x227538d9c010)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/internal/sync/mutex.go:149 +0x174 fp=0x227538d1c7b0 sp=0x227538d1c760 pc=0x104d6d104
+internal/sync.(*Mutex).Lock(...)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/internal/sync/mutex.go:70
+sync.(*Mutex).Lock(...)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/sync/mutex.go:46
+main.main.func3()
+	/tmp/crashdemo/nilptr/main.go:21 +0x68 fp=0x227538d1c7d0 sp=0x227538d1c7b0 pc=0x104d6ecd8
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0x227538d1c7d0 sp=0x227538d1c7d0 pc=0x104d6ae04
+created by main.main in goroutine 1
+	/tmp/crashdemo/nilptr/main.go:21 +0x134

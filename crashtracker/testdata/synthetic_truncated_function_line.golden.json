@@ -1,0 +1,67 @@
+{
+  "timestamp": 0,
+  "ddsource": "crashtracker",
+  "ddtags": "",
+  "error": {
+    "type": "panic",
+    "message": "boom",
+    "stack": {
+      "format": "Datadog Crashtracker 1.0",
+      "frames": [
+        {
+          "function": "panic",
+          "file": "/tmp/crashdemo/trunc/main.go",
+          "line": 7
+        },
+        {
+          "function": "main.inner",
+          "file": "/tmp/crashdemo/trunc/main.go",
+          "line": 12
+        },
+        {
+          "function": "main.middle",
+          "file": "/tmp/crashdemo/trunc/main.go",
+          "line": 16
+        }
+      ],
+      "incomplete": true
+    },
+    "threads": [
+      {
+        "crashed": true,
+        "name": "goroutine 1",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "panic",
+              "file": "/tmp/crashdemo/trunc/main.go",
+              "line": 7
+            },
+            {
+              "function": "main.inner",
+              "file": "/tmp/crashdemo/trunc/main.go",
+              "line": 12
+            },
+            {
+              "function": "main.middle",
+              "file": "/tmp/crashdemo/trunc/main.go",
+              "line": 16
+            }
+          ],
+          "incomplete": true
+        },
+        "state": "running"
+      }
+    ],
+    "thread_name": "goroutine 1",
+    "is_crash": true,
+    "source_type": "Crashtracking"
+  },
+  "os_info": {
+    "architecture": "",
+    "bitness": "",
+    "os_type": "",
+    "version": ""
+  }
+}

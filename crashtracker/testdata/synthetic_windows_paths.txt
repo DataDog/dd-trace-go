@@ -1,0 +1,18 @@
+panic: runtime error: invalid memory address or nil pointer dereference
+[signal 0xc0000005 code=0x0 addr=0x18 pc=0x7ff6a2345678]
+
+goroutine 1 [running]:
+main.(*Server).Serve(...)
+	C:/Users/x/main.go:12
+main.main()
+	C:/Users/x/main.go:21 +0x1d
+runtime.main()
+	C:/Program Files/Go/src/runtime/proc.go:290 +0x2b4
+runtime.goexit({})
+	C:/Program Files/Go/src/runtime/asm_amd64.s:1700 +0x1
+
+goroutine 6 [chan receive]:
+main.worker()
+	C:/Users/x/main.go:30 +0x1c
+created by main.main in goroutine 1
+	C:/Users/x/main.go:19 +0x6c

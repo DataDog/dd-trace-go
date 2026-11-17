@@ -1,0 +1,399 @@
+SIGABRT: abort
+PC=0x18cc85008 m=0 sigcode=0
+
+goroutine 0 gp=0x1002f4440 m=0 mp=0x1002f4c40 [idle]:
+syscall.syscalln(0x100229730, {0x692edc740e10, 0x3, 0x3})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/sys_darwin.go:27 +0x20 fp=0x692edc740de0 sp=0x692edc740d90 pc=0x100220cb0
+syscall.syscall(0x10021a5a0?, 0x1002e9968?, 0x692edc800180?, 0x692edc6a61e0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/syscall/syscall_darwin.go:384 +0x24 fp=0x692edc740e30 sp=0x692edc740de0 pc=0x100229064
+syscall.kill(0x2faf080?, 0x1002e0468?, 0x692edc740e98?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/syscall/zsyscall_darwin_arm64.go:403 +0x34 fp=0x692edc740e60 sp=0x692edc740e30 pc=0x100228044
+syscall.Kill(...)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/syscall/syscall_darwin.go:133
+main.main()
+	/tmp/crashdemo/fatalsig/main.go:16 +0xa4 fp=0x692edc740ea0 sp=0x692edc740e60 pc=0x100236214
+runtime.main()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:302 +0x380 fp=0x692edc740fd0 sp=0x692edc740ea0 pc=0x1001ee9f0
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0x692edc740fd0 sp=0x692edc740fd0 pc=0x100224064
+
+goroutine 1 gp=0x692edc6a61e0 m=0 mp=0x1002f4c40 [syscall]:
+syscall.syscalln(0x100229730, {0x692edc740e10, 0x3, 0x3})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/sys_darwin.go:27 +0x20 fp=0x692edc740de0 sp=0x692edc740d90 pc=0x100220cb0
+syscall.syscall(0x10021a5a0?, 0x1002e9968?, 0x692edc800180?, 0x692edc6a61e0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/syscall/syscall_darwin.go:384 +0x24 fp=0x692edc740e30 sp=0x692edc740de0 pc=0x100229064
+syscall.kill(0x2faf080?, 0x1002e0468?, 0x692edc740e98?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/syscall/zsyscall_darwin_arm64.go:403 +0x34 fp=0x692edc740e60 sp=0x692edc740e30 pc=0x100228044
+syscall.Kill(...)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/syscall/syscall_darwin.go:133
+main.main()
+	/tmp/crashdemo/fatalsig/main.go:16 +0xa4 fp=0x692edc740ea0 sp=0x692edc740e60 pc=0x100236214
+runtime.main()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:302 +0x380 fp=0x692edc740fd0 sp=0x692edc740ea0 pc=0x1001ee9f0
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0x692edc740fd0 sp=0x692edc740fd0 pc=0x100224064
+
+goroutine 2 gp=0x692edc6a6780 m=nil [force gc (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:474 +0xb8 fp=0x692edc722f90 sp=0x692edc722f70 pc=0x10021e978
+runtime.goparkunlock(...)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:480
+runtime.forcegchelper()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:387 +0xb4 fp=0x692edc722fd0 sp=0x692edc722f90 pc=0x1001eecd4
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0x692edc722fd0 sp=0x692edc722fd0 pc=0x100224064
+created by runtime.init.7 in goroutine 1
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:375 +0x24
+
+goroutine 3 gp=0x692edc6a6d20 m=nil [GC sweep wait]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:474 +0xb8 fp=0x692edc723770 sp=0x692edc723750 pc=0x10021e978
+runtime.goparkunlock(...)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:480
+runtime.bgsweep(0x692edc6ca400)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mgcsweep.go:279 +0x9c fp=0x692edc7237b0 sp=0x692edc723770 pc=0x1001dbddc
+runtime.gcenable.gowrap1()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mgc.go:214 +0x20 fp=0x692edc7237d0 sp=0x692edc7237b0 pc=0x100218490
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0x692edc7237d0 sp=0x692edc7237d0 pc=0x100224064
+created by runtime.gcenable in goroutine 1
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mgc.go:214 +0x6c
+
+goroutine 4 gp=0x692edc6a6f00 m=nil [GC scavenge wait]:
+runtime.gopark(0x692edc6ca400?, 0x10023eb30?, 0x1?, 0x0?, 0x692edc6a6f00?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:474 +0xb8 fp=0x692edc723f60 sp=0x692edc723f40 pc=0x10021e978
+runtime.goparkunlock(...)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:480
+runtime.(*scavengerState).park(0x1002f4140)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mgcscavenge.go:425 +0x5c fp=0x692edc723f90 sp=0x692edc723f60 pc=0x1001d9a3c
+runtime.bgscavenge(0x692edc6ca400)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mgcscavenge.go:653 +0x44 fp=0x692edc723fb0 sp=0x692edc723f90 pc=0x1001d9f64
+runtime.gcenable.gowrap2()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mgc.go:215 +0x20 fp=0x692edc723fd0 sp=0x692edc723fb0 pc=0x100218450
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0x692edc723fd0 sp=0x692edc723fd0 pc=0x100224064
+created by runtime.gcenable in goroutine 1
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mgc.go:215 +0xac
+
+goroutine 17 gp=0x692edc802000 m=nil [GOMAXPROCS updater (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:474 +0xb8 fp=0x692edc71e770 sp=0x692edc71e750 pc=0x10021e978
+runtime.goparkunlock(...)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:480
+runtime.updateMaxProcsGoroutine()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:7146 +0xf4 fp=0x692edc71e7d0 sp=0x692edc71e770 pc=0x1001fc3c4
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0x692edc71e7d0 sp=0x692edc71e7d0 pc=0x100224064
+created by runtime.defaultGOMAXPROCSUpdateEnable in goroutine 1
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:7134 +0x48
+
+goroutine 18 gp=0x692edc8021e0 m=nil [finalizer wait]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:474 +0xb8 fp=0x692edc71ed80 sp=0x692edc71ed60 pc=0x10021e978
+runtime.runFinalizers()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mfinal.go:210 +0x100 fp=0x692edc71efd0 sp=0x692edc71ed80 pc=0x1001cd2f0
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0x692edc71efd0 sp=0x692edc71efd0 pc=0x100224064
+created by runtime.createfing in goroutine 1
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/mfinal.go:172 +0x78
+
+goroutine 19 gp=0x692edc8023c0 m=nil [chan receive]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:474 +0xb8 fp=0x692edc71f700 sp=0x692edc71f6e0 pc=0x10021e978
+runtime.chanrecv(0x692edc806070, 0x0, 0x1)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/chan.go:667 +0x470 fp=0x692edc71f780 sp=0x692edc71f700 pc=0x1001bdb00
+runtime.chanrecv1(0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/chan.go:509 +0x14 fp=0x692edc71f7b0 sp=0x692edc71f780 pc=0x1001bd684
+main.work(...)
+	/tmp/crashdemo/fatalsig/main.go:9
+main.main.gowrap1()
+	/tmp/crashdemo/fatalsig/main.go:13 +0x24 fp=0x692edc71f7d0 sp=0x692edc71f7b0 pc=0x100236264
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0x692edc71f7d0 sp=0x692edc71f7d0 pc=0x100224064
+created by main.main in goroutine 1
+	/tmp/crashdemo/fatalsig/main.go:13 +0x74
+
+goroutine 20 gp=0x692edc8025a0 m=nil [sleep]:
+runtime.gopark(0x2f9fd9d55916d?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:474 +0xb8 fp=0x692edc71ff50 sp=0x692edc71ff30 pc=0x10021e978
+time.Sleep(0x34630b8a000)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/time.go:368 +0x150 fp=0x692edc71ffb0 sp=0x692edc71ff50 pc=0x100221050
+main.main.func1()
+	/tmp/crashdemo/fatalsig/main.go:14 +0x28 fp=0x692edc71ffd0 sp=0x692edc71ffb0 pc=0x1002362a8
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0x692edc71ffd0 sp=0x692edc71ffd0 pc=0x100224064
+created by main.main in goroutine 1
+	/tmp/crashdemo/fatalsig/main.go:14 +0x80
+
+r0      0x0
+r1      0x0
+r2      0x1
+r3      0x1002f4440
+r4      0x300
+r5      0x1
+r6      0x0
+r7      0x0
+r8      0x1002f4c40
+r9      0x692edc740d60
+r10     0x0
+r11     0x2
+r12     0x100229730
+r13     0x16fc4cab0
+r14     0x100
+r15     0x0
+r16     0x25
+r17     0x18cc84ff8
+r18     0x0
+r19     0x692edc740d60
+r20     0x16fc4ca90
+r21     0x3
+r22     0x10031a774
+r23     0x1f9733b20
+r24     0x0
+r25     0x0
+r26     0x1002e9ac0
+r27     0x810
+r28     0x1002f4440
+r29     0x16fc4ca88
+lr      0x1002252c8
+sp      0x16fc4ca80
+pc      0x18cc85008
+fault   0x18cc85008
+
+-----
+
+SIGQUIT: quit
+PC=0x18cc8050c m=1 sigcode=0
+
+goroutine 0 gp=0x692edc6a65a0 m=1 mp=0x692edc726008 [idle]:
+runtime.pthread_cond_timedwait_relative_np(0x692edc726570, 0x692edc726530, 0x16fcd6d88)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/sys_darwin.go:480 +0x20 fp=0x16fcd6d60 sp=0x16fcd6d30 pc=0x100209d60
+runtime.semasleep(0xdf8475800)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/os_darwin.go:66 +0x10c fp=0x16fcd6dc0 sp=0x16fcd6d60 pc=0x1001e9a5c
+runtime.notetsleep_internal(0x1002f5ec0, 0xdf8475800, 0x692edc6a65a0?, 0x692edc6a65a0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/lock_sema.go:113 +0x124 fp=0x16fcd6e00 sp=0x16fcd6dc0 pc=0x1001c23a4
+runtime.notetsleep(0x1002f5ec0, 0xdf8475800)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/lock_sema.go:164 +0x4c fp=0x16fcd6e30 sp=0x16fcd6e00 pc=0x1001c255c
+runtime.sysmon()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:6593 +0x228 fp=0x16fcd6eb0 sp=0x16fcd6e30 pc=0x1001faf78
+runtime.mstart1()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:1948 +0xa8 fp=0x16fcd6ee0 sp=0x16fcd6eb0 pc=0x1001f1a38
+runtime.mstart0()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:1901 +0x5c fp=0x16fcd6f10 sp=0x16fcd6ee0 pc=0x1001f197c
+runtime.mstart()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:246 +0x14 fp=0x16fcd6f20 sp=0x16fcd6f10 pc=0x100222024
+r0      0x104
+r1      0x0
+r2      0x100
+r3      0x0
+r4      0x0
+r5      0xa0
+r6      0x3b
+r7      0x3b9ac959
+r8      0x101
+r9      0x0
+r10     0x0
+r11     0x2
+r12     0x2
+r13     0x0
+r14     0x0
+r15     0x0
+r16     0x131
+r17     0x1fad73328
+r18     0x0
+r19     0x692edc726530
+r20     0x692edc726570
+r21     0x1
+r22     0x3b9ac959
+r23     0x3b
+r24     0x100
+r25     0x101
+r26     0x200
+r27     0x10031a000
+r28     0x692edc6a65a0
+r29     0x16fcd6cc0
+lr      0x18ccc1154
+sp      0x16fcd6c30
+pc      0x18cc8050c
+fault   0x18cc8050c
+
+-----
+
+SIGQUIT: quit
+PC=0x18cc8050c m=2 sigcode=0
+
+goroutine 0 gp=0x692edc6a6b40 m=2 mp=0x692edc726808 [idle]:
+runtime.pthread_cond_wait(0x692edc726d70, 0x692edc726d30)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/sys_darwin.go:470 +0x20 fp=0x16fd62b70 sp=0x16fd62b40 pc=0x100209d20
+runtime.semasleep(0xffffffffffffffff)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/os_darwin.go:72 +0x9c fp=0x16fd62bd0 sp=0x16fd62b70 pc=0x1001e99ec
+runtime.notesleep(0x692edc726960)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/lock_sema.go:62 +0xac fp=0x16fd62c00 sp=0x16fd62bd0 pc=0x1001c21dc
+runtime.mPark(...)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:1985
+runtime.stopm()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:3023 +0x84 fp=0x16fd62c30 sp=0x16fd62c00 pc=0x1001f3424
+runtime.gcstopm()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:3334 +0xf4 fp=0x16fd62c60 sp=0x16fd62c30 pc=0x1001f3f34
+runtime.findRunnable()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:3419 +0x344 fp=0x16fd62e30 sp=0x16fd62c60 pc=0x1001f44e4
+runtime.schedule()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:4179 +0x90 fp=0x16fd62e70 sp=0x16fd62e30 pc=0x1001f64f0
+runtime.park_m(0x692edc802000)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:4319 +0x23c fp=0x16fd62ed0 sp=0x16fd62e70 pc=0x1001f696c
+runtime.mcall()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:319 +0x54 fp=0x16fd62ee0 sp=0x16fd62ed0 pc=0x100222094
+r0      0x104
+r1      0x0
+r2      0x300
+r3      0x0
+r4      0x0
+r5      0xa0
+r6      0x0
+r7      0x0
+r8      0x16fd62a58
+r9      0x0
+r10     0x0
+r11     0x2
+r12     0x2
+r13     0x0
+r14     0x0
+r15     0x0
+r16     0x131
+r17     0x1fad73328
+r18     0x0
+r19     0x692edc726d30
+r20     0x692edc726d70
+r21     0x16fd630e0
+r22     0x0
+r23     0x0
+r24     0x300
+r25     0x301
+r26     0x400
+r27     0x1002ef000
+r28     0x692edc6a6b40
+r29     0x16fd62ad0
+lr      0x18ccc1128
+sp      0x16fd62a40
+pc      0x18cc8050c
+fault   0x18cc8050c
+
+-----
+
+SIGQUIT: quit
+PC=0x18cc8050c m=3 sigcode=0
+
+goroutine 0 gp=0x692edc7841e0 m=3 mp=0x692edc780008 [idle]:
+runtime.pthread_cond_wait(0x692edc780570, 0x692edc780530)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/sys_darwin.go:470 +0x20 fp=0x16fdeeba0 sp=0x16fdeeb70 pc=0x100209d20
+runtime.semasleep(0xffffffffffffffff)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/os_darwin.go:72 +0x9c fp=0x16fdeec00 sp=0x16fdeeba0 pc=0x1001e99ec
+runtime.notesleep(0x692edc780160)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/lock_sema.go:62 +0xac fp=0x16fdeec30 sp=0x16fdeec00 pc=0x1001c21dc
+runtime.mPark(...)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:1985
+runtime.stopm()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:3023 +0x84 fp=0x16fdeec60 sp=0x16fdeec30 pc=0x1001f3424
+runtime.findRunnable()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:3811 +0xff0 fp=0x16fdeee30 sp=0x16fdeec60 pc=0x1001f5190
+runtime.schedule()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:4179 +0x90 fp=0x16fdeee70 sp=0x16fdeee30 pc=0x1001f64f0
+runtime.park_m(0x692edc6a6f00)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:4319 +0x23c fp=0x16fdeeed0 sp=0x16fdeee70 pc=0x1001f696c
+runtime.mcall()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:319 +0x54 fp=0x16fdeeee0 sp=0x16fdeeed0 pc=0x100222094
+r0      0x104
+r1      0x0
+r2      0x100
+r3      0x0
+r4      0x0
+r5      0xa0
+r6      0x0
+r7      0x0
+r8      0x16fdeea88
+r9      0x0
+r10     0x0
+r11     0x2
+r12     0x2
+r13     0x0
+r14     0x0
+r15     0x0
+r16     0x131
+r17     0x1fad73328
+r18     0x0
+r19     0x692edc780530
+r20     0x692edc780570
+r21     0x16fdef0e0
+r22     0x0
+r23     0x0
+r24     0x100
+r25     0x101
+r26     0x200
+r27     0x1002ef000
+r28     0x692edc7841e0
+r29     0x16fdeeb00
+lr      0x18ccc1128
+sp      0x16fdeea70
+pc      0x18cc8050c
+fault   0x18cc8050c
+
+-----
+
+SIGQUIT: quit
+PC=0x18cc8050c m=4 sigcode=0
+
+goroutine 0 gp=0x692edc6a72c0 m=4 mp=0x692edc727008 [idle]:
+runtime.pthread_cond_wait(0x692edc727570, 0x692edc727530)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/sys_darwin.go:470 +0x20 fp=0x16fe7abe0 sp=0x16fe7abb0 pc=0x100209d20
+runtime.semasleep(0xffffffffffffffff)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/os_darwin.go:72 +0x9c fp=0x16fe7ac40 sp=0x16fe7abe0 pc=0x1001e99ec
+runtime.notesleep(0x692edc727160)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/lock_sema.go:62 +0xac fp=0x16fe7ac70 sp=0x16fe7ac40 pc=0x1001c21dc
+runtime.mPark(...)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:1985
+runtime.stopm()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:3023 +0x84 fp=0x16fe7aca0 sp=0x16fe7ac70 pc=0x1001f3424
+runtime.findRunnable()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:3811 +0xff0 fp=0x16fe7ae70 sp=0x16fe7aca0 pc=0x1001f5190
+runtime.schedule()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:4179 +0x90 fp=0x16fe7aeb0 sp=0x16fe7ae70 pc=0x1001f64f0
+runtime.mstart1()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:1955 +0xd8 fp=0x16fe7aee0 sp=0x16fe7aeb0 pc=0x1001f1a68
+runtime.mstart0()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:1901 +0x5c fp=0x16fe7af10 sp=0x16fe7aee0 pc=0x1001f197c
+runtime.mstart()
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:246 +0x14 fp=0x16fe7af20 sp=0x16fe7af10 pc=0x100222024
+r0      0x104
+r1      0x0
+r2      0x0
+r3      0x0
+r4      0x0
+r5      0xa0
+r6      0x0
+r7      0x0
+r8      0x16fe7aac8
+r9      0x0
+r10     0x0
+r11     0x2
+r12     0x2
+r13     0x0
+r14     0x0
+r15     0x0
+r16     0x131
+r17     0x1fad73328
+r18     0x0
+r19     0x692edc727530
+r20     0x692edc727570
+r21     0x16fe7b0e0
+r22     0x0
+r23     0x0
+r24     0x0
+r25     0x1
+r26     0x100
+r27     0x1002ef000
+r28     0x692edc6a72c0
+r29     0x16fe7ab40
+lr      0x18ccc1128
+sp      0x16fe7aab0
+pc      0x18cc8050c
+fault   0x18cc8050c

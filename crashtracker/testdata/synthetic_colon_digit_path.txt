@@ -1,0 +1,5 @@
+panic: boom
+
+goroutine 1 [running]:
+main.main()
+	/tmp/dir:123/main.go:2 +0x2c

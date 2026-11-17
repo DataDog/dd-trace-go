@@ -1,0 +1,70 @@
+{
+  "timestamp": 0,
+  "ddsource": "crashtracker",
+  "ddtags": "",
+  "error": {
+    "type": "runtime.plainError",
+    "message": "concurrent map writes",
+    "stack": {
+      "format": "Datadog Crashtracker 1.0",
+      "frames": [
+        {
+          "function": "internal/runtime/maps.fatal",
+          "file": "/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/panic.go",
+          "line": 1181
+        },
+        {
+          "function": "main.main.func2",
+          "file": "/tmp/crashdemo/main.go",
+          "line": 14
+        }
+      ]
+    },
+    "threads": [
+      {
+        "crashed": true,
+        "name": "goroutine 35",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "internal/runtime/maps.fatal",
+              "file": "/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/panic.go",
+              "line": 1181
+            },
+            {
+              "function": "main.main.func2",
+              "file": "/tmp/crashdemo/main.go",
+              "line": 14
+            }
+          ]
+        },
+        "state": "running"
+      },
+      {
+        "crashed": false,
+        "name": "goroutine 34",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "main.main.func1",
+              "file": "/tmp/crashdemo/main.go",
+              "line": 9
+            }
+          ]
+        },
+        "state": "running"
+      }
+    ],
+    "thread_name": "goroutine 35",
+    "is_crash": true,
+    "source_type": "Crashtracking"
+  },
+  "os_info": {
+    "architecture": "",
+    "bitness": "",
+    "os_type": "",
+    "version": ""
+  }
+}

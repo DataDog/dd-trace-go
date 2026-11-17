@@ -1,0 +1,44 @@
+panic: runtime error: invalid memory address or nil pointer dereference
+[signal SIGSEGV: segmentation violation code=0x1 addr=0x18 pc=0x4a1b2c]
+
+goroutine 1 gp=0xc0000061c0 m=nil [chan receive, 6883 minutes]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:474 +0xb8 fp=0xc00004fdc0 sp=0xc00004fda0 pc=0x4429d8
+main.main()
+	/tmp/crashdemo/state/main.go:24 +0xe4 fp=0xc00004ff50 sp=0xc00004fdc0 pc=0x4a1844
+
+goroutine 7 gp=0xc000007180 m=3 mp=0xc000081008 [running, locked to thread]:
+main.(*worker).handle(...)
+	/tmp/crashdemo/state/main.go:41
+main.(*worker).loop(0xc0000a4000)
+	/tmp/crashdemo/state/main.go:33 +0x8c fp=0xc00006ff50 sp=0xc00006ff10 pc=0x4a1b2c
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s:1039 +0x4 fp=0xc00006ffd0 sp=0xc00006ffd0 pc=0x47a3e4
+created by main.main in goroutine 1
+	/tmp/crashdemo/state/main.go:20 +0x6c
+
+goroutine 9 gp=0xc000007340 m=nil [select, 12 minutes, locked to thread]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:474 +0xb8 fp=0xc000070e00 sp=0xc000070de0 pc=0x4429d8
+main.(*worker).wait(0xc0000a4000)
+	/tmp/crashdemo/state/main.go:52 +0x70 fp=0xc000070f50 sp=0xc000070e00 pc=0x4a1c10
+created by main.main in goroutine 1
+	/tmp/crashdemo/state/main.go:21 +0x80
+
+goroutine 11 gp=0xc000007500 m=nil [chan receive (leaked)]:
+main.leak()
+	/tmp/crashdemo/state/main.go:60 +0x24
+created by main.main in goroutine 1
+	/tmp/crashdemo/state/main.go:22 +0x94
+
+goroutine 12 gp=0xc0000076c0 m=nil [syscall, 3 minutes]:
+syscall.syscall(0x4?, 0x5?, 0x6?, 0x7?)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/syscall/syscall_darwin.go:384 +0x24 fp=0xc000071e30 sp=0xc000071de0 pc=0x49d064
+created by main.main in goroutine 1
+	/tmp/crashdemo/state/main.go:23 +0xa8
+
+goroutine 13 gp=0xc000007880 m=nil [chan receive (durable), synctest bubble 1]:
+main.inBubble()
+	/tmp/crashdemo/state/main.go:70 +0x30
+created by main.main in goroutine 1
+	/tmp/crashdemo/state/main.go:25 +0xbc

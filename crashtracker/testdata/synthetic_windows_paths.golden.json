@@ -1,0 +1,90 @@
+{
+  "timestamp": 0,
+  "ddsource": "crashtracker",
+  "ddtags": "",
+  "error": {
+    "type": "panic",
+    "message": "runtime error: invalid memory address or nil pointer dereference\n[signal 0xc0000005 code=0x0 addr=0x18 pc=0x7ff6a2345678]",
+    "stack": {
+      "format": "Datadog Crashtracker 1.0",
+      "frames": [
+        {
+          "function": "main.(*Server).Serve",
+          "file": "C:/Users/x/main.go",
+          "line": 12
+        },
+        {
+          "function": "main.main",
+          "file": "C:/Users/x/main.go",
+          "line": 21
+        },
+        {
+          "function": "runtime.main",
+          "file": "C:/Program Files/Go/src/runtime/proc.go",
+          "line": 290
+        },
+        {
+          "function": "runtime.goexit",
+          "file": "C:/Program Files/Go/src/runtime/asm_amd64.s",
+          "line": 1700
+        }
+      ]
+    },
+    "threads": [
+      {
+        "crashed": true,
+        "name": "goroutine 1",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "main.(*Server).Serve",
+              "file": "C:/Users/x/main.go",
+              "line": 12
+            },
+            {
+              "function": "main.main",
+              "file": "C:/Users/x/main.go",
+              "line": 21
+            },
+            {
+              "function": "runtime.main",
+              "file": "C:/Program Files/Go/src/runtime/proc.go",
+              "line": 290
+            },
+            {
+              "function": "runtime.goexit",
+              "file": "C:/Program Files/Go/src/runtime/asm_amd64.s",
+              "line": 1700
+            }
+          ]
+        },
+        "state": "running"
+      },
+      {
+        "crashed": false,
+        "name": "goroutine 6",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "main.worker",
+              "file": "C:/Users/x/main.go",
+              "line": 30
+            }
+          ]
+        },
+        "state": "chan receive"
+      }
+    ],
+    "thread_name": "goroutine 1",
+    "is_crash": true,
+    "source_type": "Crashtracking"
+  },
+  "os_info": {
+    "architecture": "",
+    "bitness": "",
+    "os_type": "",
+    "version": ""
+  }
+}

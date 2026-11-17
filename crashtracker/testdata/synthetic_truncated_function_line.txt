@@ -1,0 +1,10 @@
+panic: boom
+
+goroutine 1 [running]:
+panic({0x4a1b20?, 0x4d2f40?})
+	/tmp/crashdemo/trunc/main.go:7 +0x1c
+main.inner(...)
+	/tmp/crashdemo/trunc/main.go:12
+main.middle()
+	/tmp/crashdemo/trunc/main.go:16 +0x20
+main.main(

@@ -1,0 +1,15 @@
+panic: assignment to entry in nil map
+
+goroutine 1 [running]:
+main.main()
+	/tmp/crashdemo/labels/main.go:18 +0x108
+
+goroutine 5 [sleep] {handler: checkout, tenant: "acme corp"}:
+time.Sleep(0x34630b8a000)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/time.go:368 +0x150
+main.serve({0x100562150?, 0x7187916bc210?})
+	/tmp/crashdemo/labels/main.go:10 +0x28
+runtime/pprof.Do({0x100562118?, 0x100594260?}, {{0x7187916ba040?, 0x0?, 0x0?}}, 0x100562500)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/pprof/runtime.go:57 +0x78
+created by main.main in goroutine 1
+	/tmp/crashdemo/labels/main.go:15 +0xe0

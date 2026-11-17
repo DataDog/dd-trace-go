@@ -1,0 +1,45 @@
+{
+  "timestamp": 0,
+  "ddsource": "crashtracker",
+  "ddtags": "",
+  "error": {
+    "type": "panic",
+    "message": "close of closed channel",
+    "stack": {
+      "format": "Datadog Crashtracker 1.0",
+      "frames": [
+        {
+          "function": "main.main",
+          "file": "/tmp/crashtracker-fixtures/close_closed_channel.go",
+          "line": 6
+        }
+      ]
+    },
+    "threads": [
+      {
+        "crashed": true,
+        "name": "goroutine 1",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "main.main",
+              "file": "/tmp/crashtracker-fixtures/close_closed_channel.go",
+              "line": 6
+            }
+          ]
+        },
+        "state": "running"
+      }
+    ],
+    "thread_name": "goroutine 1",
+    "is_crash": true,
+    "source_type": "Crashtracking"
+  },
+  "os_info": {
+    "architecture": "",
+    "bitness": "",
+    "os_type": "",
+    "version": ""
+  }
+}
