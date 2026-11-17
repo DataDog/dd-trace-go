@@ -271,3 +271,5 @@ else
 fi
 
 message "Done."
+
+[[ "$failures" -lt "$REPEATS" ]] || exit 1
