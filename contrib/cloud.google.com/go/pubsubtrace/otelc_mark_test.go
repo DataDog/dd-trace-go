@@ -34,7 +34,7 @@ func TestReceiveHandlerTraced(t *testing.T) {
 	t.Run("same call site", func(t *testing.T) {
 		// Inlining can copy a function literal once per call site, so the
 		// handlers come from one call site.
-		var hs []func()
+		hs := make([]func(), 0, 2)
 		for range 2 {
 			hs = append(hs, wrap(func() {}))
 		}
