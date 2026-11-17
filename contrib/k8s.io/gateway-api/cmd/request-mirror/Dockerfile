@@ -1,12 +1,12 @@
 # Build stage
-FROM golang:1.27.3-alpine@sha256:b8c9b82affbbb82a020bbcf998dad2ba9516944ac7e883524642a481a9505e9c AS builder
+FROM golang:1.27.3-alpine@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18 AS builder
 ENV CGO_ENABLED=1
 
 RUN apk add --no-cache --update git build-base
 RUN --mount=type=bind,src=.,dst=/build go -C /build build -tags=appsec -o /request-mirror /build/contrib/k8s.io/gateway-api/cmd/request-mirror
 
 # Runtime stage
-FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
+FROM alpine:3.24.4@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 
 # Set opencontainers labels for Github container registry
 LABEL org.opencontainers.image.source=https://github.com/DataDog/dd-trace-go/tree/main/contrib/k8s.io/gateway-api/

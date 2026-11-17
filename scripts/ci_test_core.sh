@@ -47,18 +47,29 @@ else
   echo "Running standard tests for core packages"
 fi
 
+# Same opt-in pattern as RERUN_ARGS: only the dynamic-analysis lanes set
+# GO_TEST_TIMEOUT. A degraded runner can slow -race debug/deadlock
+# instrumented binaries several-fold, exhausting Go's default 10m per-binary
+# budget; --rerun-fails can't rescue a whole-binary timeout, so the lane raises
+# it (30m). Unset keeps the default for every other caller.
+TIMEOUT_ARGS=()
+if [[ -n "${GO_TEST_TIMEOUT:-}" ]]; then
+  TIMEOUT_ARGS=(-timeout="$GO_TEST_TIMEOUT")
+  echo "Raising per-binary test timeout to ${GO_TEST_TIMEOUT}"
+fi
+
 # Run tests with shuffle for packages that support it
-gotestsum --raw-command ${RERUN_ARGS[@]+"${RERUN_ARGS[@]}"} --junitfile "${TEST_RESULTS}/gotestsum-report.xml" -- "$GO_CMD" test -json -v -race "$TAGS_ARG" -shuffle=on -coverprofile=coverage.txt -covermode=atomic "${SHUFFLE_PACKAGES[@]}"
+gotestsum --raw-command ${RERUN_ARGS[@]+"${RERUN_ARGS[@]}"} --junitfile "${TEST_RESULTS}/gotestsum-report.xml" -- "$GO_CMD" test -json -v -race "$TAGS_ARG" -shuffle=on -coverprofile=coverage.txt -covermode=atomic ${TIMEOUT_ARGS[@]+"${TIMEOUT_ARGS[@]}"} "${SHUFFLE_PACKAGES[@]}"
 test_exit=$?
 [[ $test_exit -ne 0 ]] && report_error=1
 
 # Run tests without shuffle for packages that don't support it yet
-gotestsum --raw-command ${RERUN_ARGS[@]+"${RERUN_ARGS[@]}"} --junitfile "${TEST_RESULTS}/gotestsum-report-noshuffle.xml" -- "$GO_CMD" test -json -v -race "$TAGS_ARG" -coverprofile=coverage-noshuffle.txt -covermode=atomic "${NO_SHUFFLE_PACKAGES[@]}"
+gotestsum --raw-command ${RERUN_ARGS[@]+"${RERUN_ARGS[@]}"} --junitfile "${TEST_RESULTS}/gotestsum-report-noshuffle.xml" -- "$GO_CMD" test -json -v -race "$TAGS_ARG" -coverprofile=coverage-noshuffle.txt -covermode=atomic ${TIMEOUT_ARGS[@]+"${TIMEOUT_ARGS[@]}"} "${NO_SHUFFLE_PACKAGES[@]}"
 test_exit=$?
 [[ $test_exit -ne 0 ]] && report_error=1
 
 cd ./internal/exectracetest
-gotestsum --raw-command ${RERUN_ARGS[@]+"${RERUN_ARGS[@]}"} --junitfile "${TEST_RESULTS}/gotestsum-report-exectrace.xml" -- "$GO_CMD" test -json -v -race "$TAGS_ARG" -coverprofile=coverage.txt -covermode=atomic ./...
+gotestsum --raw-command ${RERUN_ARGS[@]+"${RERUN_ARGS[@]}"} --junitfile "${TEST_RESULTS}/gotestsum-report-exectrace.xml" -- "$GO_CMD" test -json -v -race "$TAGS_ARG" -coverprofile=coverage.txt -covermode=atomic ${TIMEOUT_ARGS[@]+"${TIMEOUT_ARGS[@]}"} ./...
 test_exit=$?
 [[ $test_exit -ne 0 ]] && report_error=1
 

@@ -69,6 +69,28 @@ func TestUpdateState_MalformedJSON_ReportsWellFormedError(t *testing.T) {
 // TestUpdateState_MalformedJSON_DedupCount mirrors the tracer-side dedup
 // test: repeated failures with the same constant message dedup into a
 // single log entry with an incremented count.
+func TestApplyUpdate_InvalidTargetPath_ReportsWellFormedError(t *testing.T) {
+	rcClient, err := newClient(ClientConfig{AgentURL: "http://localhost"})
+	require.NoError(t, err)
+
+	client, rt := telemetrytest.NewCapturingClient(t)
+	defer telemetry.MockClient(client)()
+
+	_ = rcClient.applyUpdate(&clientGetConfigsResponse{
+		TargetFiles: []*file{{Path: "customer-secret"}},
+	})
+	client.Flush()
+
+	logs := rt.LogMessages()
+	require.Len(t, logs, 1)
+	msg := logs[0]
+	assert.Equal(t, "remoteconfig: invalid target file path", msg.Message)
+	assert.Equal(t, telemetry.LogError, msg.Level)
+	assert.EqualValues(t, 1, msg.Count)
+	assert.Contains(t, msg.StackTrace, "applyUpdate")
+	assert.NotContains(t, msg.Message, "customer-secret")
+}
+
 func TestUpdateState_MalformedJSON_DedupCount(t *testing.T) {
 	server := malformedConfigServer()
 	defer server.Close()

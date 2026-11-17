@@ -13,6 +13,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/harness"
 )
 
+func TestAliasedImport(t *testing.T) {
+	harness.Run(t, new(TestCaseAliasedImport))
+}
+
 func TestAppSec(t *testing.T) {
 	harness.Run(t, new(TestCaseAppSec))
 }

@@ -1325,6 +1325,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_AWS_LAMBDA_STRIP_CONTEXT_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_BAGGAGE_TAG_KEYS": [
       {
         "implementation": "A",
@@ -1746,6 +1753,13 @@
       }
     ],
     "DD_TRACE_OPENSEARCH_ANALYTICS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
+    "DD_TRACE_OTEL_ENABLED": [
       {
         "implementation": "A",
         "type": "boolean",

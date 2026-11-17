@@ -95,6 +95,7 @@ type startupInfo struct {
 	MetricsOTelEnabled        bool `json:"DD_METRICS_OTEL_ENABLED"`         // Resolved OTel metrics feature flag
 	LogsOTelEnabled           bool `json:"DD_LOGS_OTEL_ENABLED"`            // Resolved OTel logs feature flag
 	TraceOTelSemanticsEnabled bool `json:"DD_TRACE_OTEL_SEMANTICS_ENABLED"` // Resolved OTel semantics feature flag
+	TraceOTelEnabled          bool `json:"DD_TRACE_OTEL_ENABLED"`           // Resolved OTel API bridge feature flag
 
 	OTelTracesExporter  string            `json:"OTEL_TRACES_EXPORTER,omitempty"`                // "otlp" when traces are exported over OTLP
 	OTLPTracesEndpoint  string            `json:"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,omitempty"`  // Sanitized OTLP traces URL
@@ -276,6 +277,7 @@ func (t *tracer) addOTelStartupInfo(info *startupInfo) {
 	info.MetricsOTelEnabled = cfg.RuntimeMetricsOtelEnabled()
 	info.LogsOTelEnabled = cfg.LogsOTelEnabled()
 	info.TraceOTelSemanticsEnabled = cfg.OTelSemanticsEnabled()
+	info.TraceOTelEnabled = cfg.TraceOTelEnabled()
 
 	tracesOTLP := t.otlpTracesPipelineEnabled()
 	metricsOTLP := t.config.otelRuntimeMetricsShouldBeEnabled
@@ -283,11 +285,13 @@ func (t *tracer) addOTelStartupInfo(info *startupInfo) {
 	// started exports runtime metrics with settings the tracer cannot read.
 	ownMeterProvider := metricsOTLP && t.config.otelMeterProviderInstalled
 	semantics := cfg.OTelSemanticsEnabled() && cfg.TracingEnabled()
+	// The bridge links the OpenTelemetry trace API to the tracer only in Orchestrion builds.
+	bridge := cfg.TraceOTelEnabled() && orchestrion.Enabled()
 	// DD_LOGS_OTEL_ENABLED alone does not count: the tracer never starts the
 	// OTel logs pipeline and cannot tell whether ddtrace/opentelemetry/log is
 	// linked or started.
 	spanMetricsOTLP := t.otlpSpanMetricsEnabled()
-	info.OTelEnabled = tracesOTLP || metricsOTLP || semantics || spanMetricsOTLP
+	info.OTelEnabled = tracesOTLP || metricsOTLP || semantics || spanMetricsOTLP || bridge
 
 	if tracesOTLP {
 		info.OTLPTracesEndpoint = sanitizeOTLPEndpoint(cfg.OTLPTraceURL())

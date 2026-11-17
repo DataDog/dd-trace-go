@@ -589,6 +589,7 @@ func runEvaluateFlagJSONFixtures(t *testing.T, suite fixtureSuite, revision stri
 	}
 
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	provider.updateConfiguration(&cfg)
 	if err := of.SetProviderAndWait(provider); err != nil {
 		t.Fatalf("set provider: %v", err)
@@ -596,12 +597,14 @@ func runEvaluateFlagJSONFixtures(t *testing.T, suite fixtureSuite, revision stri
 	immediateProvider := newDatadogProvider(ProviderConfig{
 		ExperimentationOptOutMode: ExperimentationOptOutImmediate,
 	})
+	cleanupProvider(t, immediateProvider)
 	t.Cleanup(immediateProvider.Shutdown)
 	// Reuse the configuration without starting telemetry workers for capability checks.
 	immediateProvider.configuration = &cfg
 	futureProvider := newDatadogProvider(ProviderConfig{
 		ExperimentationOptOutMode: ExperimentationOptOutFutureExperimentsOnly,
 	})
+	cleanupProvider(t, futureProvider)
 	t.Cleanup(futureProvider.Shutdown)
 	futureProvider.configuration = &cfg
 	capabilityProviders := map[string]*DatadogProvider{

@@ -1,0 +1,14 @@
+# Independent sections combine their owners in declaration order.
+[Platform] @platform
+*
+!generated/**
+
+[Go packages] @go-team
+*.go
+/pkg/api/ @api-team
+
+^[Documentation][0] @docs-team
+/docs/
+
+[Security]
+/pkg/api/internal/ @security-team @@maintainers

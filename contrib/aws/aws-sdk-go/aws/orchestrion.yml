@@ -9,9 +9,16 @@ meta:
   description: The official AWS SDK for Go
 
 aspects:
+  # The session package calls these constructors itself and the contrib imports
+  # it, so it is excluded.
   - id: session.NewSession
     join-point:
-      function-call: github.com/aws/aws-sdk-go/aws/session.NewSession
+      all-of:
+        - not:
+            import-path: github.com/aws/aws-sdk-go/aws/session
+        - one-of:
+            - function-call: github.com/aws/aws-sdk-go/aws/session.NewSession
+            - function-call: github.com/aws/aws-sdk-go/aws/session.NewSessionWithOptions
     advice:
       - wrap-expression:
           imports:
@@ -25,3 +32,21 @@ aspects:
               return sess, err
             }({{ . }})
 
+  - id: session.New
+    join-point:
+      all-of:
+        - not:
+            import-path: github.com/aws/aws-sdk-go/aws/session
+        - function-call: github.com/aws/aws-sdk-go/aws/session.New
+    advice:
+      - wrap-expression:
+          imports:
+            awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws
+            session: github.com/aws/aws-sdk-go/aws/session
+          template: |-
+            func(sess *session.Session) *session.Session {
+              if sess != nil {
+                sess = awstrace.WrapSession(sess)
+              }
+              return sess
+            }({{ . }})

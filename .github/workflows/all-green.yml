@@ -20,9 +20,11 @@ jobs:
         with:
           # The action evaluates only the checks that exist when it polls.
           # The delay must outlast the GitHub fan-out of the trigger event.
-          # max-retries holds the ceiling near 70 minutes.
+          # max-retries holds the ceiling near 3 hours: the OTelc
+          # integration matrix runs about 2.5 hours, so a 70-minute
+          # ceiling failed the check while those jobs were still running.
           initial-delay-seconds: "300"
-          max-retries: "65"
+          max-retries: "180"
           # A fork PR and its shadow PR share the head commit, so both report
           # check runs with equal names. The action keeps one run per name and
           # can keep the fork run, which fails on permission-gated steps

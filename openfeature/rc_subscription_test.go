@@ -24,6 +24,7 @@ func TestAttachProviderNotSubscribed(t *testing.T) {
 	defer internalffe.ResetForTest()
 
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	got := attachProvider(provider)
 	assert.False(t, got, "attachProvider should return false when not subscribed")
 }
@@ -35,6 +36,7 @@ func TestAttachProviderSubscribed(t *testing.T) {
 	internalffe.SetSubscribedForTest(true)
 
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	got := attachProvider(provider)
 	assert.True(t, got, "attachProvider should return true when subscribed")
 }
@@ -59,7 +61,7 @@ func TestAttachProviderReplaysBufferedConfig(t *testing.T) {
 			},
 		},
 	}
-	data, err := json.Marshal(config)
+	data, err := json.Marshal(&config)
 	require.NoError(t, err)
 
 	// Simulate SubscribeRC + a buffered update arriving before provider exists.
@@ -67,6 +69,7 @@ func TestAttachProviderReplaysBufferedConfig(t *testing.T) {
 	internalffe.SetBufferedForTest(remoteconfig.ProductUpdate{"path/config": data})
 
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	got := attachProvider(provider)
 	assert.True(t, got)
 
@@ -86,6 +89,7 @@ func TestAttachProviderNoBuffer(t *testing.T) {
 	internalffe.SetSubscribedForTest(true)
 
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	got := attachProvider(provider)
 	assert.True(t, got)
 
@@ -109,7 +113,7 @@ func TestStartWithRemoteConfigFastPath(t *testing.T) {
 			},
 		},
 	}
-	data, err := json.Marshal(config)
+	data, err := json.Marshal(&config)
 	require.NoError(t, err)
 
 	internalffe.SetSubscribedForTest(true)
@@ -118,6 +122,7 @@ func TestStartWithRemoteConfigFastPath(t *testing.T) {
 	// Verify SubscribeProvider returns fast path (tracer subscribed)
 	// without touching global remoteconfig state.
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	tracerOwnsSubscription, token, err := internalffe.SubscribeProvider(provider.rcCallback)
 	require.NoError(t, err)
 	require.True(t, tracerOwnsSubscription, "SubscribeProvider should report tracer subscribed")

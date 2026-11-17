@@ -112,13 +112,12 @@ func TestOTLPMetricsProtocolWarning(t *testing.T) {
 			},
 		},
 		{
-			name: "generic grpc, span metrics auto-enabled",
+			name: "generic grpc, general metrics do not enable span metrics",
 			env: map[string]string{
 				"OTEL_TRACES_EXPORTER":        "otlp",
 				"DD_METRICS_OTEL_ENABLED":     "true",
 				"OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
 			},
-			wantWarn: true,
 		},
 		{
 			name: "metrics grpc, span metrics explicitly enabled",

@@ -29,6 +29,7 @@ func TestLogsSerializationErrorsReportAtFlushBoundary(t *testing.T) {
 	require.Empty(t, rt.LogMessages(), "Error Tracking must wait for a writer boundary")
 
 	writer.flush()
+	writer.stop()
 	client.Flush()
 
 	logs := rt.LogMessages()

@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -34,6 +35,20 @@ type universalFlagsConfiguration struct {
 	Flags map[string]*flag `json:"flags"`
 	// invalidFlags contains errors for flags that could not be parsed or validated.
 	invalidFlags map[string]error
+
+	// Configurations are immutable after publication. Cache boxed environment strings
+	// on each configuration so evaluations can reuse them in their metadata maps.
+	environmentMetadataOnce sync.Once
+	environmentIDMetadata   any
+	environmentNameMetadata any
+}
+
+func (config *universalFlagsConfiguration) environmentMetadata() (id, name any) {
+	config.environmentMetadataOnce.Do(func() {
+		config.environmentIDMetadata = config.Environment.ID
+		config.environmentNameMetadata = config.Environment.Name
+	})
+	return config.environmentIDMetadata, config.environmentNameMetadata
 }
 
 // UnmarshalJSON parses flags independently so one invalid flag does not reject
@@ -61,6 +76,8 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 	config.CreatedAt = raw.CreatedAt
 	config.Format = raw.Format
 	config.Environment = raw.Environment
+	// Decoding into a reused object must also discard its previous metadata cache.
+	config.environmentMetadataOnce = sync.Once{}
 	config.ObserveFullEvaluationData = parseLenientBool(raw.ObserveFullEvaluationData)
 	config.EvaluatorParams = raw.EvaluatorParams
 	config.Flags = make(map[string]*flag, len(raw.Flags))
@@ -237,6 +254,7 @@ func parseMaxDependencyDepth(raw []byte) (int, bool) {
 
 // environment represents environment information for the configuration.
 type environment struct {
+	ID string `json:"id,omitempty"`
 	// Name is the environment name (e.g., "production", "staging")
 	Name string `json:"name"`
 }

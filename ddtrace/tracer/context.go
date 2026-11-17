@@ -195,6 +195,17 @@ func SpanFromContext(ctx context.Context) (*Span, bool) {
 	return nil, false
 }
 
+// spanContextSnapshot returns the span context that ContextWithSpan stored with the active span
+// in ctx. It returns nil when ctx has no snapshot. The Orchestrion goroutine-local stack never
+// stores the snapshot, so the lookup reads only ctx. The OpenTelemetry bridge uses it.
+func spanContextSnapshot(ctx context.Context) *SpanContext {
+	if ctx == nil {
+		return nil
+	}
+	sc, _ := ctx.Value(activeSpanContextKey{}).(*SpanContext)
+	return sc
+}
+
 // StartSpanFromContext returns a new span with the given operation name and options. If a span
 // was placed in ctx by [ContextWithSpan], it is used as the parent of the resulting span even if
 // the ChildOf option is passed. An active span discovered any other way — notably through

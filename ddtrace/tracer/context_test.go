@@ -57,6 +57,20 @@ func TestSpanFromContext(t *testing.T) {
 	})
 }
 
+func TestSpanContextSnapshot(t *testing.T) {
+	assert.Nil(t, spanContextSnapshot(nil))
+	assert.Nil(t, spanContextSnapshot(context.Background()))
+
+	_, _, _, stop, err := startTestTracer(t)
+	assert.NoError(t, err)
+	defer stop()
+
+	s := StartSpan("op")
+	ctx := ContextWithSpan(context.Background(), s)
+	assert.Same(t, s.Context(), spanContextSnapshot(ctx))
+	assert.Nil(t, spanContextSnapshot(ContextWithSpan(ctx, nil)))
+}
+
 func TestStartSpanFromContext(t *testing.T) {
 	_, _, _, stop, err := startTestTracer(t)
 	assert.Nil(t, err)

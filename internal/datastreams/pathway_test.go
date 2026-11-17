@@ -102,7 +102,7 @@ func TestPathway(t *testing.T) {
 		assert.Equal(t, hash2, statsPointWith1EdgeTag.hash)
 		assert.Equal(t, []string{"type:internal"}, statsPointWith1EdgeTag.edgeTags)
 		assert.Equal(t, hash3, statsPointWith2EdgeTags.hash)
-		assert.Equal(t, []string{"some_other_key:some_other_val", "type:internal"}, statsPointWith2EdgeTags.edgeTags)
+		assert.Equal(t, []string{"type:internal", "some_other_key:some_other_val"}, statsPointWith2EdgeTags.edgeTags)
 	})
 
 	t.Run("test nodeHash", func(t *testing.T) {
