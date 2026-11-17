@@ -214,7 +214,7 @@ jobs:
           if [[ -n "$CUSTOM_VERSION" ]]; then
             version="$(git -C orchestrion rev-parse HEAD)"
           else
-            version="$(awk '$1 == "github.com/DataDog/orchestrion" && $2 != "=>" { print $2; exit }' dd-trace-go/internal/orchestrion/_integration/go.mod)"
+            version="$(awk '!/=>/ { if ($1 == "require") $0 = substr($0, index($0, $2)) } !/=>/ && $1 == "github.com/DataDog/orchestrion" { print $2; exit }' dd-trace-go/internal/orchestrion/_integration/go.mod)"
           fi
           test -n "$version"
           printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"

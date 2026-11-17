@@ -424,6 +424,7 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 	assert.Equal(t, "key2", string(msg1.Key))
 	assert.Equal(t, "value2", string(msg1.Value))
 
+	t.Logf("spans before close: %d, events len %d", len(mt.FinishedSpans()), len(p.Events()))
 	p.Close()
 
 	// next attempt to consume the message
@@ -499,3 +500,47 @@ to run the integration test locally:
         -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
         confluentinc/cp-kafka:5.0.0
 */
+
+// TestProduceNilDeliveryChannelClose checks that closing a producer while
+// delivery reports for messages produced with a nil delivery channel are in
+// flight does not panic with "send on closed channel".
+func TestProduceNilDeliveryChannelClose(t *testing.T) {
+	t.Skip("reproduces #5806; remove when fixed")
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	// A one-slot Events() channel that is no longer read makes a delivery
+	// forwarder block on its send, so Producer.Close closes the channel
+	// under it.
+	p, err := NewProducer(&kafka.ConfigMap{
+		"bootstrap.servers":      "127.0.0.1:1",
+		"message.timeout.ms":     1,
+		"go.events.channel.size": 1,
+	})
+	require.NoError(t, err)
+	topic := "gotest"
+	for range 5 {
+		require.NoError(t, p.Produce(&kafka.Message{
+			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
+			Value:          []byte("x"),
+		}, nil))
+	}
+	// Read Events() until the first delivery report, then stop reading.
+	gotReport := make(chan struct{})
+	go func() {
+		for e := range p.Events() {
+			if _, ok := e.(*kafka.Message); ok {
+				close(gotReport)
+				return
+			}
+		}
+	}()
+	select {
+	case <-gotReport:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no delivery report received")
+	}
+	time.Sleep(100 * time.Millisecond)
+	p.Close()
+	time.Sleep(100 * time.Millisecond)
+}

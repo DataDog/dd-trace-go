@@ -6,6 +6,10 @@
 // Package maintest builds a package main of this module, runs it, and collects
 // the spans it reports. Rules that only apply to package main take effect
 // there, and go test never builds one.
+//
+// Each otelc build here recompiles most of the dependency closure, which takes
+// minutes in CI. Only otelc-autostart uses it, for the rule with target: main.
+// Check a rule that applies to every package with a harness test case instead.
 package maintest
 
 import (
@@ -96,9 +100,9 @@ func RequireOtelc(t *testing.T) {
 	t.Skip(msg)
 }
 
-// Build builds pkg, a path relative to the module root such as "./chi/mainapp",
-// with otelc when withOtelc is true and with go otherwise, and returns the
-// binary. An otelc build calls RequireOtelc first.
+// Build builds pkg, a path relative to the module root such as
+// "./otelc-autostart", with otelc when withOtelc is true and with go otherwise,
+// and returns the binary. An otelc build calls RequireOtelc first.
 func Build(t *testing.T, pkg string, withOtelc bool) string {
 	t.Helper()
 	if withOtelc {
@@ -130,13 +134,4 @@ func Build(t *testing.T, pkg string, withOtelc bool) string {
 	out, err := build.CombinedOutput()
 	require.NoErrorf(t, err, "build failed:\n%s", out)
 	return bin
-}
-
-// Run builds pkg with otelc, runs it, and returns the agent it reported to.
-func Run(t *testing.T, pkg string) *Agent {
-	t.Helper()
-	bin := Build(t, pkg, true)
-	agent := NewAgent(t)
-	agent.Exec(t, bin)
-	return agent
 }
