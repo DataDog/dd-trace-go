@@ -30,8 +30,10 @@ func PublishTraced(ctx context.Context) bool {
 }
 
 // receiveHandlers holds the code pointers of the handlers the pubsub contrib's
-// WrapReceiveHandler returns. Every handler it returns comes from one function
-// literal, so they all share one code pointer.
+// WrapReceiveHandler returns. Handlers from one function literal share a code
+// pointer, so the map holds one entry per literal, not one per handler. When
+// the compiler inlines the function that holds the literal, each call site gets
+// its own copy, so there is one entry per call site.
 var receiveHandlers sync.Map // uintptr -> struct{}
 
 // MarkReceiveHandler records h as a handler that the pubsub contrib already

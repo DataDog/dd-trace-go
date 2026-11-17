@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/DataDog/dd-trace-go/v2/contrib/cloud.google.com/go/pubsubtrace"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -110,6 +111,13 @@ func TestPropagation(t *testing.T) {
 		ext.SpanName:               "pubsub.receive",
 	}, spans[2].Tags())
 	assert.Equal("cloud.google.com/go/pubsub.v2", spans[2].Integration())
+}
+
+func TestWrapReceiveHandlerMarksHandler(t *testing.T) {
+	_, _, _, _, sub := setup(t)
+	f := func(context.Context, *pubsub.Message) {}
+	assert.True(t, pubsubtrace.ReceiveHandlerTraced(WrapReceiveHandler(sub, f)))
+	assert.False(t, pubsubtrace.ReceiveHandlerTraced(f))
 }
 
 func TestPropagationWithServiceName(t *testing.T) {

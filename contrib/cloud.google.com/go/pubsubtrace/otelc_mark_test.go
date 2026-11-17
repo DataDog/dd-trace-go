@@ -25,12 +25,25 @@ func TestPublishTraced(t *testing.T) {
 
 func TestReceiveHandlerTraced(t *testing.T) {
 	wrap := func(f func()) func() { return func() { f() } }
-	marked := wrap(func() {})
-	MarkReceiveHandler(marked)
-	assert.True(t, ReceiveHandlerTraced(marked))
-	assert.True(t, ReceiveHandlerTraced(wrap(func() {})), "handlers from the same literal share the mark")
-	assert.False(t, ReceiveHandlerTraced(func() {}))
-	assert.False(t, ReceiveHandlerTraced(nil))
-	assert.False(t, ReceiveHandlerTraced((func())(nil)))
-	assert.False(t, ReceiveHandlerTraced(42))
+
+	t.Run("marked", func(t *testing.T) {
+		h := wrap(func() {})
+		MarkReceiveHandler(h)
+		assert.True(t, ReceiveHandlerTraced(h))
+	})
+	t.Run("same call site", func(t *testing.T) {
+		// Inlining can copy a function literal once per call site, so the
+		// handlers come from one call site.
+		var hs []func()
+		for range 2 {
+			hs = append(hs, wrap(func() {}))
+		}
+		MarkReceiveHandler(hs[0])
+		assert.True(t, ReceiveHandlerTraced(hs[1]))
+	})
+	t.Run("not marked", func(t *testing.T) {
+		for _, h := range []any{func() {}, nil, (func())(nil), 42} {
+			assert.False(t, ReceiveHandlerTraced(h))
+		}
+	})
 }
