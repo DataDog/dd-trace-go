@@ -45,6 +45,8 @@ env:
     contrib/IBM/sarama/otelc
     contrib/Shopify/sarama
     contrib/Shopify/sarama/otelc
+    contrib/aws/aws-sdk-go-v2
+    contrib/aws/aws-sdk-go-v2/otelc
     contrib/aws/aws-sdk-go
     contrib/aws/aws-sdk-go/otelc
     contrib/net/http
@@ -65,6 +67,10 @@ env:
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
     contrib/google.golang.org/grpc/otelc
+    contrib/gorm.io/gorm.v1
+    contrib/gorm.io/gorm.v1/otelc
+    contrib/jackc/pgx.v5
+    contrib/jackc/pgx.v5/otelc
     contrib/go.mongodb.org/mongo-driver
     contrib/go.mongodb.org/mongo-driver/otelc
     contrib/go.mongodb.org/mongo-driver.v2
@@ -97,6 +103,9 @@ env:
     99designs.gqlgen
     ibm_sarama
     shopify_sarama
+    gorm
+    aws.v2
+    pgx
     mongo
     mongo.v2
     echo.v4
@@ -227,6 +236,14 @@ jobs:
           for dir in internal/orchestrion/_integration ${OTELC_MODULES}; do
             retry_on_corruption go -C "${dir}" mod tidy
           done
+
+      # Pull every image of the shared Testcontainers catalog ahead of time, so the pulls don't have
+      # to fit within the test timeout. The catalog pins the images the integration suites use.
+      - name: Pull container images
+        # Docker is only supported on Linux runners at the moment
+        if: runner.os == 'Linux'
+        run: |-
+          docker compose -f "${{ github.workspace }}/instrumentation/testutils/containers/images/docker-compose.yaml" pull
 
       - name: Run Tests
         shell: bash

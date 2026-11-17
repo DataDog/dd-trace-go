@@ -6,21 +6,27 @@
 package main
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"net/http/httptest"
 
 	ibmsarama "github.com/IBM/sarama"
 	shopifysarama "github.com/Shopify/sarama"
+	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/mux"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/julienschmidt/httprouter"
 	"github.com/valyala/fasthttp"
 	mongooptions "go.mongodb.org/mongo-driver/mongo/options"
 	mongov2options "go.mongodb.org/mongo-driver/v2/mongo/options"
+	"gorm.io/gorm"
+	gormtests "gorm.io/gorm/utils/tests"
 )
 
 // useLibraries calls libraries whose otelc rules bring their contrib into the
@@ -39,9 +45,15 @@ func useLibraries() {
 		Credentials: credentials.AnonymousCredentials,
 		Region:      new("us-east-1"),
 	}))
+	_ = dynamodb.NewFromConfig(awsv2.Config{Region: "us-east-1"})
 	_ = mongooptions.Client()
 	_ = mongov2options.Client()
 	// With no broker addresses, these fail before any network call.
 	_, _ = ibmsarama.NewSyncProducer(nil, nil)
 	_, _ = shopifysarama.NewSyncProducer(nil, nil)
+	_, _ = gorm.Open(gormtests.DummyDialector{})
+	// The pool opens no connection until first used.
+	if pool, err := pgxpool.New(context.Background(), "postgres://localhost/db"); err == nil {
+		pool.Close()
+	}
 }
