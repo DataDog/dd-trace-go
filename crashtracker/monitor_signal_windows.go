@@ -14,7 +14,11 @@ import (
 	"syscall"
 )
 
-func configureChild(cmd *exec.Cmd, pipe *os.File) (string, error) {
+func supervisorTerminalMode() bool {
+	return false
+}
+
+func configureChild(cmd *exec.Cmd, pipe *os.File, _ bool) (string, error) {
 	h := syscall.Handle(pipe.Fd())
 	if err := syscall.SetHandleInformation(h, syscall.HANDLE_FLAG_INHERIT, syscall.HANDLE_FLAG_INHERIT); err != nil {
 		return "", err
@@ -22,6 +26,8 @@ func configureChild(cmd *exec.Cmd, pipe *os.File) (string, error) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{AdditionalInheritedHandles: []syscall.Handle{h}}
 	return strconv.FormatUint(uint64(h), 10), nil
 }
+
+func closeInheritedDescriptors(_ *exec.Cmd, _ *os.File) {}
 
 func inheritedCrashPipe(fd uintptr) (_ *os.File, err error) {
 	f := os.NewFile(fd, "crashtracker-pipe")
@@ -47,7 +53,7 @@ func inheritedCrashPipe(fd uintptr) (_ *os.File, err error) {
 	return f, nil
 }
 
-func supervisorSignals() (start func(*os.Process), stop func()) {
+func supervisorSignals(_ bool) (start func(*os.Process), stop func()) {
 	// Console Ctrl events reach both processes without forwarding.
 	signal.Ignore(os.Interrupt)
 	return func(*os.Process) {}, func() { signal.Reset(os.Interrupt) }

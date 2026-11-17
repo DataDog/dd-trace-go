@@ -8,6 +8,7 @@ package crashtracker_test
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -55,6 +56,69 @@ func TestSupervisorWaitFailure(t *testing.T) {
 	}
 	if !strings.Contains(string(output), "crashtracker: wait for application process failed:") {
 		t.Fatalf("missing wait failure warning: %s", output)
+	}
+}
+
+func TestSupervisorClosesInheritedListener(t *testing.T) {
+	listener, err := net.ListenTCP("tcp4", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	file, err := listener.File()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	identity, err := os.Readlink(fmt.Sprintf("/proc/self/fd/%d", file.Fd()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := file.Stat()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stat := info.Sys().(*syscall.Stat_t)
+	cmd, dir := supervisorRegressionCommand(t, "listener")
+	cmd.ExtraFiles = []*os.File{file}
+	cmd.Env = append(cmd.Env, fmt.Sprintf("_CRASHTRACKER_FD_3=%v:%v", stat.Dev, stat.Ino))
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	_ = file.Close()
+	_ = listener.Close()
+	child := string(waitForFile(t, filepath.Join(dir, "ready")))
+	childIdentity, err := os.Readlink("/proc/" + child + "/fd/3")
+	if err != nil || childIdentity != identity {
+		t.Fatalf("child fd 3 = %q, error = %v, want %q", childIdentity, err, identity)
+	}
+	probe, err := net.ListenTCP("tcp4", listener.Addr().(*net.TCPAddr))
+	if err == nil {
+		_ = probe.Close()
+		t.Fatal("inherited listener is no longer bound")
+	}
+	if !errors.Is(err, syscall.EADDRINUSE) {
+		t.Fatalf("probe inherited listener: %v", err)
+	}
+	fdDir := fmt.Sprintf("/proc/%d/fd", cmd.Process.Pid)
+	entries, err := os.ReadDir(fdDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		link, err := os.Readlink(filepath.Join(fdDir, entry.Name()))
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			t.Fatal(err)
+		}
+		if link == identity {
+			t.Fatalf("supervisor still holds inherited listener at fd %s", entry.Name())
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "exit"), []byte("exit"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := waitForVictim(t, cmd, 5*time.Second); err != nil {
+		t.Fatalf("listener helper: %v: %s", err, regressionOutput(t, dir))
 	}
 }
 
