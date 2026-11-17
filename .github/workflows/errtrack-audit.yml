@@ -73,8 +73,13 @@ jobs:
         shell: bash
         run: |
           mkdir -p out
-          (cd scripts/errtrackaudit && GOWORK=off go run . -root ../.. -format json) > out/audit.json
-          (cd scripts/errtrackaudit && GOWORK=off go run . -root ../.. -format table) | tee out/audit.txt
+          # go run downloads modules on a cold cache; retry transient proxy
+          # failures and cache corruption, as .github/AGENTS.md requires.
+          source ./.github/workflows/apps/go-retry.sh
+          out="${GITHUB_WORKSPACE}/out"
+          (cd scripts/errtrackaudit && retry_on_corruption_to_file "${out}/audit.json" env GOWORK=off go run . -root ../.. -format json)
+          (cd scripts/errtrackaudit && retry_on_corruption_to_file "${out}/audit.txt" env GOWORK=off go run . -root ../.. -format table)
+          cat out/audit.txt
       - name: Upload audit artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
