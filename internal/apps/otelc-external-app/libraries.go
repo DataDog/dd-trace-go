@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 
+	ibmsarama "github.com/IBM/sarama"
+	shopifysarama "github.com/Shopify/sarama"
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go/aws"
@@ -46,6 +48,9 @@ func useLibraries() {
 	_ = dynamodb.NewFromConfig(awsv2.Config{Region: "us-east-1"})
 	_ = mongooptions.Client()
 	_ = mongov2options.Client()
+	// With no broker addresses, these fail before any network call.
+	_, _ = ibmsarama.NewSyncProducer(nil, nil)
+	_, _ = shopifysarama.NewSyncProducer(nil, nil)
 	_, _ = gorm.Open(gormtests.DummyDialector{})
 	// The pool opens no connection until first used.
 	if pool, err := pgxpool.New(context.Background(), "postgres://localhost/db"); err == nil {
