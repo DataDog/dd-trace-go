@@ -20,6 +20,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/julienschmidt/httprouter"
+	"github.com/segmentio/kafka-go"
 	"github.com/valyala/fasthttp"
 	mongooptions "go.mongodb.org/mongo-driver/mongo/options"
 	mongov2options "go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -51,4 +52,6 @@ func useLibraries() {
 	if pool, err := pgxpool.New(context.Background(), "postgres://localhost/db"); err == nil {
 		pool.Close()
 	}
+	// Writing no messages returns before any network call.
+	_ = (&kafka.Writer{Addr: kafka.TCP("localhost:9092")}).WriteMessages(context.Background())
 }
