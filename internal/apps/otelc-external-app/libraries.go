@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -20,6 +21,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/julienschmidt/httprouter"
+	"github.com/rs/zerolog"
 	"github.com/segmentio/kafka-go"
 	"github.com/valyala/fasthttp"
 	mongooptions "go.mongodb.org/mongo-driver/mongo/options"
@@ -47,6 +49,7 @@ func useLibraries() {
 	_ = dynamodb.NewFromConfig(awsv2.Config{Region: "us-east-1"})
 	_ = mongooptions.Client()
 	_ = mongov2options.Client()
+	_ = zerolog.New(io.Discard)
 	_, _ = gorm.Open(gormtests.DummyDialector{})
 	// The pool opens no connection until first used.
 	if pool, err := pgxpool.New(context.Background(), "postgres://localhost/db"); err == nil {

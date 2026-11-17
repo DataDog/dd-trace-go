@@ -9,6 +9,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
 	github.com/aws/aws-sdk-go-v2 v1.43.2
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.44.0
+	github.com/rs/zerolog v1.34.0
 	github.com/segmentio/kafka-go v0.4.42
 )
 
@@ -245,6 +246,8 @@ replace github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 => ../../../c
 require (
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 v2.13.0-dev.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.15 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.33 // indirect
@@ -294,6 +297,10 @@ replace github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 => ../../..
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../../contrib/aws/aws-sdk-go/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 => ../../../contrib/aws/aws-sdk-go
+
+replace github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 => ../../../contrib/rs/zerolog/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 => ../../../contrib/rs/zerolog
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/otelc/v2 => ../../../contrib/aws/aws-sdk-go-v2/otelc
 

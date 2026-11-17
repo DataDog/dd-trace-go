@@ -23,6 +23,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 v2.13.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.13.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
 )
 
@@ -42,6 +43,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.13.0-dev.1 // indirect
 	github.com/aws/aws-sdk-go v1.55.5 // indirect
@@ -95,6 +97,7 @@ require (
 	github.com/molecule-man/go-brrr v1.1.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
+	github.com/rs/zerolog v1.34.0 // indirect
 	github.com/segmentio/kafka-go v0.4.42 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
@@ -280,6 +283,10 @@ require github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.13
 replace github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 => ../../contrib/segmentio/kafka-go/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 => ../../contrib/segmentio/kafka-go
+
+replace github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 => ../../contrib/rs/zerolog/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 => ../../contrib/rs/zerolog
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../contrib/aws/aws-sdk-go/otelc
 

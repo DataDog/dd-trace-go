@@ -47,6 +47,8 @@ env:
     contrib/aws/aws-sdk-go/otelc
     contrib/net/http
     contrib/net/http/otelc
+    contrib/rs/zerolog
+    contrib/rs/zerolog/otelc
     contrib/database/sql
     contrib/database/sql/otelc
     contrib/gin-gonic/gin
@@ -109,6 +111,7 @@ env:
     aws.v1
     valyala_fasthttp
     segmentio_kafka.v0
+    zerolog
 
 jobs:
   # Classifies the PR diff against .github/ci-components.yml. Fails open: every

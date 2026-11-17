@@ -83,6 +83,7 @@ use (
 	./contrib/opensearch-project/opensearch-go.v4
 	./contrib/redis/rueidis
 	./contrib/rs/zerolog
+	./contrib/rs/zerolog/otelc
 	./contrib/segmentio/kafka-go
 	./contrib/segmentio/kafka-go/otelc
 	./contrib/sirupsen/logrus
