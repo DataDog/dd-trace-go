@@ -55,6 +55,8 @@ func WrapHandler(h slog.Handler) slog.Handler {
 type handler struct {
 	wrapped slog.Handler
 	groups  []group
+	// outerIDs is set in otelc builds only. See markCorrelated.
+	outerIDs bool
 }
 
 // Enabled calls the wrapped handler Enabled method.
@@ -71,7 +73,7 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 	// In case the user has created group loggers, we ignore those and
 	// set them at the root level.
 	span, ok := tracer.SpanFromContext(ctx)
-	if ok && span.Context().TraceID() != tracer.TraceIDZero {
+	if ok && span.Context().TraceID() != tracer.TraceIDZero && !h.correlatedByOuter(ctx) {
 		var traceID string
 		if cfg.log128bits {
 			traceID = span.Context().TraceID()
@@ -86,6 +88,7 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 			slog.String(ext.LogKeySpanID, spanID),
 		}
 		reqHandler = reqHandler.WithAttrs(attrs)
+		ctx = markCorrelated(ctx)
 	}
 	for _, g := range h.groups {
 		reqHandler = reqHandler.WithGroup(g.name)
@@ -101,8 +104,9 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	if len(h.groups) == 0 {
 		return &handler{
-			wrapped: h.wrapped.WithAttrs(attrs),
-			groups:  h.groups,
+			wrapped:  h.wrapped.WithAttrs(attrs),
+			groups:   h.groups,
+			outerIDs: h.outerIDs || hasTraceID(attrs),
 		}
 	}
 	groups := append([]group{}, h.groups...)
@@ -111,16 +115,18 @@ func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	groups[len(groups)-1] = curGroup
 
 	return &handler{
-		wrapped: h.wrapped,
-		groups:  groups,
+		wrapped:  h.wrapped,
+		groups:   groups,
+		outerIDs: h.outerIDs,
 	}
 }
 
 // WithGroup saves the provided group to be used later in the Handle method.
 func (h *handler) WithGroup(name string) slog.Handler {
 	return &handler{
-		wrapped: h.wrapped,
-		groups:  append(h.groups, group{name: name}),
+		wrapped:  h.wrapped,
+		groups:   append(h.groups, group{name: name}),
+		outerIDs: h.outerIDs,
 	}
 }
 
