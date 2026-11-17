@@ -83,22 +83,6 @@ func WithAnalyticsRate(rate float64) OptionFn {
 	}
 }
 
-// WithDataStreams enables Data Streams Monitoring for SQS in this integration, as the Kafka integrations'
-// WithDataStreams does: https://www.datadoghq.com/product/data-streams-monitoring/
-// The tracer records checkpoints only when its Data Streams processor runs, which requires
-// DD_DATA_STREAMS_ENABLED=true at tracer start. That setting also turns this option on, so the option
-// has no effect on its own.
-// SendMessage and SendMessageBatch set a produce checkpoint and add the pathway to each message's
-// _datadog attribute. ReceiveMessage asks for the _datadog attribute, sets a consume checkpoint for each
-// message, and writes the new pathway back into the message's _datadog attribute, where
-// datastreams.ExtractFromBase64Carrier can read it. The pathway is not written back to a message that
-// already has the SQS maximum of 10 attributes.
-func WithDataStreams() OptionFn {
-	return func(cfg *config) {
-		cfg.dataStreamsEnabled = true
-	}
-}
-
 // WithErrorCheck specifies a function fn which determines whether the passed
 // error should be marked as an error. The fn is called whenever an aws operation
 // finishes with an error.

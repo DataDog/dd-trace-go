@@ -49,13 +49,13 @@ func sqsServer(calls *[]sqsCall, response string) aws.HTTPClient {
 	})
 }
 
-func dsmClient(calls *[]sqsCall, response string, opts ...Option) *sqs.Client {
+func dsmClient(calls *[]sqsCall, response string) *sqs.Client {
 	awsCfg := aws.Config{
 		Region:      "eu-west-1",
 		Credentials: aws.AnonymousCredentials{},
 		HTTPClient:  sqsServer(calls, response),
 	}
-	AppendMiddleware(&awsCfg, opts...)
+	AppendMiddleware(&awsCfg)
 	return sqs.NewFromConfig(awsCfg)
 }
 
@@ -109,13 +109,11 @@ func TestSQSDataStreamsProduce(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		env         string
-		opts        []Option
 		wantPathway bool
 	}{
-		{"env var", "true", nil, true},
-		{"WithDataStreams", "", []Option{WithDataStreams()}, true},
-		{"off", "", nil, false},
-		{"env var false", "false", nil, false},
+		{"env var", "true", true},
+		{"off", "", false},
+		{"env var false", "false", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("DD_DATA_STREAMS_ENABLED", tc.env)
@@ -123,7 +121,7 @@ func TestSQSDataStreamsProduce(t *testing.T) {
 			defer mt.Stop()
 			var calls []sqsCall
 
-			produce(t, dsmClient(&calls, `{}`, tc.opts...))
+			produce(t, dsmClient(&calls, `{}`))
 
 			carriers := sentCarriers(t, calls)
 			require.Len(t, carriers, 3)
@@ -167,17 +165,15 @@ func TestSQSDataStreamsConsume(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		env         string
-		opts        []Option
 		names       []string
 		wantNames   []string
 		wantPathway bool
 	}{
-		{"env var", "true", nil, nil, []string{"_datadog"}, true},
-		{"env var with other names", "true", nil, []string{"foo"}, []string{"foo", "_datadog"}, true},
-		{"env var with All", "true", nil, []string{"All"}, []string{"All"}, true},
-		{"WithDataStreams", "", []Option{WithDataStreams()}, nil, []string{"_datadog"}, true},
-		{"off", "", nil, nil, nil, false},
-		{"off with names", "", nil, []string{"foo"}, []string{"foo"}, false},
+		{"env var", "true", nil, []string{"_datadog"}, true},
+		{"env var with other names", "true", []string{"foo"}, []string{"foo", "_datadog"}, true},
+		{"env var with All", "true", []string{"All"}, []string{"All"}, true},
+		{"off", "", nil, nil, false},
+		{"off with names", "", []string{"foo"}, []string{"foo"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("DD_DATA_STREAMS_ENABLED", tc.env)
@@ -190,7 +186,7 @@ func TestSQSDataStreamsConsume(t *testing.T) {
 			var calls []sqsCall
 			input := &sqs.ReceiveMessageInput{QueueUrl: aws.String(dsmQueueURL), MessageAttributeNames: tc.names}
 
-			out, err := dsmClient(&calls, receiveResponse(t, producer), tc.opts...).ReceiveMessage(context.Background(), input)
+			out, err := dsmClient(&calls, receiveResponse(t, producer)).ReceiveMessage(context.Background(), input)
 			require.NoError(t, err)
 
 			require.Len(t, calls, 1)
