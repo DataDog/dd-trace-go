@@ -58,6 +58,11 @@ func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	}, resp)
 }
 
+// ExpectedSpanCount is the whole query tree, once per server.
+func (*TestCase) ExpectedSpanCount() int {
+	return 6
+}
+
 func (*TestCase) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		{

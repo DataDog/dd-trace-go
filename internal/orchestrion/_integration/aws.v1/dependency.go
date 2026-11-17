@@ -37,3 +37,43 @@ func (*TestCaseDependency) ExpectedTraces() trace.Traces {
 func (*TestCaseDependency) ExpectedSpanCount() int {
 	return 3
 }
+
+// TestCaseDependencyWithOptions is TestCaseDependency for a session the
+// dependency builds with session.NewSessionWithOptions.
+type TestCaseDependencyWithOptions struct {
+	counted
+}
+
+func (tc *TestCaseDependencyWithOptions) Setup(_ context.Context, t *testing.T) {
+	sess, err := awsv1dep.NewSessionWithOptions(tc.cfg)
+	require.NoError(t, err)
+	tc.sess = sess
+}
+
+func (*TestCaseDependencyWithOptions) ExpectedTraces() trace.Traces {
+	return expectedRootTraces("aws.dynamodb")
+}
+
+// ExpectedSpanCount is test.root, the AWS span and its HTTP child.
+func (*TestCaseDependencyWithOptions) ExpectedSpanCount() int {
+	return 3
+}
+
+// TestCaseDependencyNew is TestCaseDependency for a session the dependency
+// builds with the deprecated session.New.
+type TestCaseDependencyNew struct {
+	counted
+}
+
+func (tc *TestCaseDependencyNew) Setup(context.Context, *testing.T) {
+	tc.sess = awsv1dep.New(tc.cfg)
+}
+
+func (*TestCaseDependencyNew) ExpectedTraces() trace.Traces {
+	return expectedRootTraces("aws.dynamodb")
+}
+
+// ExpectedSpanCount is test.root, the AWS span and its HTTP child.
+func (*TestCaseDependencyNew) ExpectedSpanCount() int {
+	return 3
+}

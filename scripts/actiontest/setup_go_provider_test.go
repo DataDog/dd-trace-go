@@ -20,9 +20,10 @@ import (
 const setupGoAction = "../../.github/actions/setup-go/action.yml"
 
 type actionStep struct {
-	Name string `yaml:"name"`
-	If   string `yaml:"if"`
-	Run  string `yaml:"run"`
+	Name string            `yaml:"name"`
+	If   string            `yaml:"if"`
+	Run  string            `yaml:"run"`
+	Env  map[string]string `yaml:"env"`
 }
 
 func setupGoStep(t *testing.T, name string) actionStep {
