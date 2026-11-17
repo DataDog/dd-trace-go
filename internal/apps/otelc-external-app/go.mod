@@ -330,6 +330,7 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 => ../../../c
 require (
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.13.0-dev // indirect
+	github.com/aws/aws-sdk-go-v2/service/lambda v1.101.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 )
 
