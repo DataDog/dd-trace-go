@@ -673,15 +673,26 @@ func TestSpanContextConcurrentWithEnd(t *testing.T) {
 	defer cleanup()
 
 	_, sp := tp.Tracer("").Start(context.Background(), "otel.op")
-	want := sp.SpanContext().SpanID()
+	want := sp.SpanContext()
+	other, _ := tracer.StartSpanFromContext(context.Background(), "dd.other")
+	defer other.Finish()
+	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for range 4 {
 		wg.Go(func() {
-			for range 100 {
-				assert.Equal(t, want, sp.SpanContext().SpanID())
+			<-start
+			for range 200 {
+				got := sp.SpanContext()
+				assert.Equal(t, want.TraceID(), got.TraceID())
+				assert.Equal(t, want.SpanID(), got.SpanID())
 			}
 		})
 	}
+	close(start)
 	sp.End()
+	// Simulate the span pool reusing the Datadog span while readers still run.
+	sp.(*span).mu.Lock()
+	sp.(*span).DD = other
+	sp.(*span).mu.Unlock()
 	wg.Wait()
 }

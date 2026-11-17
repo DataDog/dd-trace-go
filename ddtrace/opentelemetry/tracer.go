@@ -118,6 +118,7 @@ func (t *oteltracer) Start(ctx context.Context, spanName string, opts ...oteltra
 
 	os := oteltrace.Span(&span{
 		DD:                   s,
+		ddCtx:                s.Context(),
 		oteltracer:           t,
 		spanKind:             ssConfig.SpanKind(),
 		attributes:           cfg.Tags,
