@@ -35,8 +35,13 @@
 # releases, pushes — restores only, which also removes the trim and the
 # cache-save post steps from those jobs. The seed set is sized against
 # the raised cache quota and covers the nightly default-branch workloads
-# (multi-OS, unit-integration, smoke); the pool gauges (ci.cache.pool.*)
-# watch the fill.
+# (multi-OS, unit-integration, smoke, orchestrion and otelc integration,
+# AppSec macOS); the pool gauges (ci.cache.pool.*) watch the fill.
+#
+# Windows skips the Go caches entirely (cache: "false"): extracting a
+# 1.4 GiB cache with tar.exe costs 2.6-3.3m while saving about 2m of
+# build time (APMLP-2248), so no Windows stratum seeds or restores.
+# Revisit this only with APMLP-2248's faster-setup results.
 #
 # Contract (mirrors the semantics the tools wrapper had before the migration):
 #   1. Select the Go toolchain with the repository's pinned official

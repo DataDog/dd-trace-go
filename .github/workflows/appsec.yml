@@ -127,21 +127,25 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
 
-      - name: Restore Go modules cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ needs.go-mod-caching.outputs.path }}
-          key: ${{ needs.go-mod-caching.outputs.key }}
-          restore-keys: go-pkg-mod-
-          enableCrossOsArchive: true
-          # Transient cache-service miss/timeout: fall back to a cold rebuild
-          # (modules re-fetched per go.sum) instead of hard-failing the job.
-          fail-on-cache-miss: false
-
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      # The isolated Go caches replace this job's module-only restore: the
+      # job recompiles the same packages in every loop iteration, so a warm
+      # build cache is what cuts its 13-16m runtime on a 3 vCPU runner
+      # (APMLP-2249). The other jobs keep the shared go-mod-caching
+      # restore below.
+      - name: Setup Go
+        id: setup-go
+        uses: ./.github/actions/setup-go
         with:
           go-version: ${{ matrix.go-version }}
-          cache: false # we manage the caching ourselves
+          workload: appsec-macos
+          variant: |-
+            {"runner":"${{ matrix.runs-on }}",
+             "coverage":"atomic"}
+          # Default-branch seed set: the nightly schedule and a
+          # workflow_dispatch on the default branch save these four
+          # strata (both Go versions on macos-15 and macos-latest); every
+          # pull request run restores only.
+          seed: "true"
 
       - name: Setup testing environment
         run: |-
@@ -154,8 +158,6 @@ jobs:
       # reruns under different settings.
       - name: go test
         shell: bash
-        env:
-          GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
           set -euxo pipefail
           # Go experiments to test with. Add/remove entries here when experiments change.

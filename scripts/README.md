@@ -25,7 +25,6 @@ This directory contains scripts and small Go tool programs used for development,
 
 The Makefile provides convenient targets that automatically handle tool dependencies:
 
-
 ```txt
 Usage: make [target]
 
@@ -82,7 +81,6 @@ PATH="$(pwd)/bin:$PATH" ./scripts/script-name.sh
 #### Test Script Options
 
 The test script provides many options for different testing scenarios:
-
 
 ```txt
 test.sh - Run the tests for dd-trace-go
@@ -232,10 +230,13 @@ by position.
 
 Only seeding runs save Go build/module caches: a seed-set key (the
 setup-go action's `seed` input) on the nightly schedule or a
-default-branch `workflow_dispatch`. Four dispatch doors reach that
+default-branch `workflow_dispatch`. Seven dispatch doors reach that
 state on `main`: `main-branch-tests`, the `multios-unit-tests`
-free-form dispatch, the bare `smoke-tests` dispatch, and
-`dynamic-checks`. Every other event restores only. Revert a cloudx
+free-form dispatch, the bare `smoke-tests` dispatch, `dynamic-checks`,
+`orchestrion`, `otelc`, and `appsec`. Every other event restores only.
+Windows strata skip the Go caches entirely — neither seeding nor
+restoring — because a Windows cache restore costs more time than it
+saves (APMLP-2248). Revert a cloudx
 seed by setting that job's `seed` back to `"false"`. The pool gauges
 (`citiming pool`, run hourly by the `cache-pool-metrics` workflow)
 watch whether the seed entries stay present in the pool. Jobs running

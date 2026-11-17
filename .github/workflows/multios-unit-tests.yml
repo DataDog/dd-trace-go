@@ -68,22 +68,27 @@ jobs:
           variant: |-
             {"runner":${{ toJSON(inputs.runs-on) }},
              "modules":["core","contrib"]}
-          # Seed set: all six multi-OS strata (both Go versions on
-          # Linux, macOS and Windows), about 2.5 GiB compressed each —
-          # roughly 15 GiB — against the 100 GiB cache quota (2026-10-28).
-          # The nightly default-branch seeds total well under half that
-          # quota: these six, the unit-integration keys (the standard
-          # variant on both nightly Go versions, and the debug and
-          # deadlock families on Go 1.27 through the nightly
-          # dynamic-checks runs), and the four smoke keys. The
-          # `ci.cache.pool.*`
-          # gauges watch the fill. Nightly schedules and default-branch
-          # dispatches save these keys; every other run of them,
-          # including all PR and merge-queue runs, restores only. To
-          # drop a stratum that does not pay for its restore cost,
-          # replace the literal with a contains() list of the
-          # runs-on/go-version pairs to keep.
-          seed: "true"
+          # Seed set: the four non-Windows multi-OS strata (both Go
+          # versions on Linux and macOS), about 2.5 GiB compressed each —
+          # roughly 10 GiB — against the 100 GiB cache quota (2026-10-28).
+          # Windows skips the Go cache entirely: restoring it on Windows
+          # costs more time than it saves (APMLP-2248 — the 1.4 GiB restore
+          # extracts for 2m38s with tar.exe while saving about 2m of
+          # build time), so that stratum neither seeds nor restores, and
+          # the freed quota pays for the newly seeded orchestrion,
+          # otelc and AppSec macOS strata. The nightly default-branch
+          # seeds total well under half that quota: these four, the
+          # unit-integration keys (the standard variant on both nightly
+          # Go versions, and the debug and deadlock families on Go 1.27
+          # through the nightly dynamic-checks runs), and the four smoke
+          # keys. The `ci.cache.pool.*` gauges watch the fill. Nightly
+          # schedules and default-branch dispatches save these keys;
+          # every other run of them, including all PR and merge-queue
+          # runs, restores only. To drop a stratum that does not pay for
+          # its restore cost, replace the literal with a contains() list
+          # of the runs-on/go-version pairs to keep.
+          cache: ${{ runner.os != 'Windows' }}
+          seed: ${{ runner.os != 'Windows' }}
 
       - name: Restore and install development tools
         id: tools

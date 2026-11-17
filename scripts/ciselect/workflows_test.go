@@ -98,9 +98,12 @@ func TestEveryWorkflowIsRegistered(t *testing.T) {
 func TestCacheSeedAndDisableLiterals(t *testing.T) {
 	root, _ := workflowPaths(t)
 	seedLiterals := map[string]int{
+		"appsec.yml":                 1, // The macOS matrix job; the other jobs keep the module-only cache.
 		"multios-unit-tests.yml":     1,
 		"smoke-tests.yml":            4,
 		"unit-integration-tests.yml": 3,
+		"orchestrion.yml":            1, // The integration-test job; gated on a non-Windows runner.
+		"otelc.yml":                  1, // The integration-test job; gated on a non-Windows runner.
 	}
 	for name, want := range seedLiterals {
 		body := readText(t, filepath.Join(root, workflowDir), name)
@@ -125,6 +128,87 @@ func TestCacheSeedAndDisableLiterals(t *testing.T) {
 	_, on := parseWorkflow(t, filepath.Join(root, workflowDir, "main-branch-tests.yml"))
 	if _, ok := on["workflow_dispatch"]; !ok {
 		t.Error("main-branch-tests.yml lacks the workflow_dispatch trigger")
+	}
+}
+
+// setupGoStep returns the `with` mapping of the job's Setup Go step, the
+// step that uses the repository's setup-go composite action.
+func setupGoStep(t *testing.T, path, jobID string) map[string]any {
+	t.Helper()
+	doc, _ := parseWorkflow(t, path)
+	jobs, _ := doc["jobs"].(map[string]any)
+	job, _ := jobs[jobID].(map[string]any)
+	if job == nil {
+		t.Fatalf("%s has no job %q", path, jobID)
+	}
+	steps, _ := job["steps"].([]any)
+	for _, s := range steps {
+		step, _ := s.(map[string]any)
+		uses, _ := step["uses"].(string)
+		if strings.HasSuffix(uses, "actions/setup-go") {
+			with, _ := step["with"].(map[string]any)
+			if with == nil {
+				t.Fatalf("%s job %q: the setup-go step has no with block", path, jobID)
+			}
+			return with
+		}
+	}
+	t.Fatalf("%s job %q has no step using the setup-go action", path, jobID)
+	return nil
+}
+
+// TestGoCachePolicyPerOS pins the per-OS cache policy of APMLP-2249:
+// every Windows stratum skips the Go caches — a restore there costs
+// more time than it saves (APMLP-2248) — and the lanes whose Windows
+// strata skip cache therefore gate both `cache` and `seed` on a
+// non-Windows runner. A silently dropped condition reverts a Windows
+// stratum to a pointless restore (or a seed nothing restores), and
+// actionlint cannot catch that.
+func TestGoCachePolicyPerOS(t *testing.T) {
+	root, _ := workflowPaths(t)
+	join := func(name string) string {
+		return filepath.Join(root, workflowDir, name)
+	}
+
+	// Lanes whose Windows matrix strata skip the Go caches: both inputs
+	// exclude the same runner key the matrix defines.
+	for name, jobID := range map[string]string{
+		"orchestrion.yml":        "integration-test",
+		"otelc.yml":              "integration-test",
+		"multios-unit-tests.yml": "test-multi-os",
+	} {
+		with := setupGoStep(t, join(name), jobID)
+		for _, input := range []string{"cache", "seed"} {
+			got, _ := with[input].(string)
+			switch name {
+			case "multios-unit-tests.yml":
+				// The caller names the runner, so the skip keys on runner.os.
+				if want := "${{ runner.os != 'Windows' }}"; got != want {
+					t.Errorf("%s job %q: setup-go %s = %q, want %q", name, jobID, input, got, want)
+				}
+			default:
+				if want := "${{ matrix.runs-on != 'windows' }}"; got != want {
+					t.Errorf("%s job %q: setup-go %s = %q, want %q", name, jobID, input, got, want)
+				}
+			}
+		}
+	}
+
+	// The AppSec macOS matrix job seeds the isolated caches: the setup-go
+	// step must keep the default (cloudx) provider and an unconditional
+	// seed literal, or the strata silently stop saving on the nightly run.
+	with := setupGoStep(t, join("appsec.yml"), "macos")
+	if got, _ := with["seed"].(string); got != "true" {
+		t.Errorf("appsec.yml job macos: setup-go seed = %q, want the literal true", got)
+	}
+	if got, ok := with["cache"].(string); ok && got == "false" {
+		t.Error("appsec.yml job macos: setup-go cache is disabled, but the job needs the isolated caches")
+	}
+	if got, _ := with["cache-provider"].(string); got != "" {
+		t.Errorf("appsec.yml job macos: setup-go cache-provider = %q, want the default cloudx provider", got)
+	}
+	if got, _ := with["workload"].(string); got == "" {
+		t.Error("appsec.yml job macos: setup-go workload is empty, so the cache key family falls back to the job name")
 	}
 }
 
