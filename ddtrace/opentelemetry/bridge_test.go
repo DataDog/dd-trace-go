@@ -698,7 +698,26 @@ func TestSpanContextConcurrentWithEnd(t *testing.T) {
 }
 
 func TestSpanContextStableAfterRealPoolReuse(t *testing.T) {
-	tp, _, cleanup := mockTracerProvider(t, tracer.WithSpanPool(true))
+	tp, payloads, cleanup := mockTracerProvider(t, tracer.WithSpanPool(true))
+	// The test agent sends each payload on the unbuffered payloads channel. If the
+	// loop below crosses a flush tick, that send would block forever, so drain the
+	// channel until the provider has shut down. t.Cleanup runs after the deferred
+	// cleanup, so the drainer stops only once no more payloads can arrive.
+	stop := make(chan struct{})
+	var drained sync.WaitGroup
+	drained.Go(func() {
+		for {
+			select {
+			case <-payloads:
+			case <-stop:
+				return
+			}
+		}
+	})
+	t.Cleanup(func() {
+		close(stop)
+		drained.Wait()
+	})
 	defer cleanup()
 	tr := tp.Tracer("")
 
