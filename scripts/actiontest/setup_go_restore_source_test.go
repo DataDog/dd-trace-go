@@ -300,6 +300,19 @@ func resolveSavePolicy(t *testing.T, env map[string]string) string {
 	return value
 }
 
+// TestRestoreSourcePinsGoVersionAlias pins the GO_VERSION env of the
+// Derive-restore-source step: it must carry the go-version alias (the
+// same string the cloudx provider embeds in its cache keys), not the
+// resolved output from select-go. Reverting to the resolved output
+// reintroduces the restore-source misclassification this wiring fixes,
+// and the step's run block cannot detect the mistake on its own.
+func TestRestoreSourcePinsGoVersionAlias(t *testing.T) {
+	step := setupGoStep(t, "Derive restore source")
+	if got := step.Env["GO_VERSION"]; got != "${{ inputs.go-version }}" {
+		t.Fatalf("GO_VERSION = %q, want the alias ${{ inputs.go-version }} (the same string the cloudx provider keys on)", got)
+	}
+}
+
 // TestSetupGoSavePolicyTruthTable covers every event x ref x seed
 // combination that decides whether a run may save a seed entry.
 func TestSetupGoSavePolicyTruthTable(t *testing.T) {

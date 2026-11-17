@@ -140,9 +140,12 @@ func recoverDebugLogging() {
 	_ = recover()
 }
 
-// containLoggerPanic runs a log call on a goroutine the provider owns, where a
-// panicking application logger would otherwise terminate the process. The
-// caller passes a closure so log.Warn and log.Error keep constant messages.
+// containLoggerPanic runs a log call so that a panicking application logger
+// cannot terminate a goroutine the provider owns or escape NewDatadogProvider.
+// The caller passes a closure so log.Warn and log.Error keep constant messages.
+// Each call is wrapped instead of containing panics centrally: central
+// recovery in printMsg was rejected — it would also swallow panics on
+// goroutines the application owns.
 func containLoggerPanic(logf func()) {
 	defer recoverDebugLogging()
 	logf()
