@@ -1,0 +1,34 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# A call-site rule, not a hook on gorm.Open: the rewritten package imports the
+# contrib, so it is initialized before a gorm.Open in a package-level var or
+# init. gorm is excluded because rewriting it would create an import cycle,
+# and the contrib because its own Open registers the callbacks.
+open:
+  target:
+    - "**"
+    - not: "gorm.io/gorm/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/gorm.io/**"
+  where:
+    function_call: gorm.io/gorm.Open
+  do:
+    - wrap_call:
+        replace: |-
+          (func(db *gorm.DB, err error) (*gorm.DB, error) {
+            if err != nil {
+              return db, err
+            }
+            if _, ok := db.Plugins["DDTracePlugin"]; ok {
+              return db, nil
+            }
+            if err := db.Use(gormtrace.NewTracePlugin()); err != nil {
+              return nil, err
+            }
+            return db, nil
+          })({{ . }})
+  imports:
+    gorm: gorm.io/gorm
+    gormtrace: github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2

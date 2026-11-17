@@ -311,6 +311,7 @@ func TestRecordUnknownReasonFallback(t *testing.T) {
 func TestIntegrationEvaluate(t *testing.T) {
 	t.Run("targeting match records metric via hook", func(t *testing.T) {
 		provider := newDatadogProvider(ProviderConfig{})
+		cleanupProvider(t, provider)
 		provider.updateConfiguration(createTestConfig())
 
 		m, reader := setupTestMetrics(t)
@@ -361,6 +362,7 @@ func TestIntegrationEvaluate(t *testing.T) {
 
 	t.Run("flag not found records error metric via hook", func(t *testing.T) {
 		provider := newDatadogProvider(ProviderConfig{})
+		cleanupProvider(t, provider)
 		provider.updateConfiguration(createTestConfig())
 
 		m, reader := setupTestMetrics(t)
@@ -408,6 +410,7 @@ func TestIntegrationEvaluate(t *testing.T) {
 	// AFTER evaluate() returns.
 	t.Run("type conversion error records type_mismatch metric via hook", func(t *testing.T) {
 		provider := newDatadogProvider(ProviderConfig{})
+		cleanupProvider(t, provider)
 		provider.updateConfiguration(createTestConfig())
 
 		m, reader := setupTestMetrics(t)
