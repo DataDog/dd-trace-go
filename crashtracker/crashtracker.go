@@ -6,8 +6,10 @@
 package crashtracker
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -27,8 +29,13 @@ var (
 // It runs the application in a child process with the same arguments and standard
 // streams. All package initialization and any code before Start run twice.
 // The application's PID differs from the container main PID. Its parent PID is
-// the supervisor's PID. On Unix, the supervisor forwards signals to the child.
-// It uploads any crash report before it exits with the child's exit status.
+// the supervisor's PID. On Unix, the supervisor forwards external signals to the
+// child, except runtime, synchronous fault, and selected job-control signals.
+// In terminal mode, terminal signals reach the shared process group directly.
+// Terminal mode requires a controlling terminal and supervisor and parent PIDs
+// above 1. Other Unix processes use detached mode with a separate child group.
+// See the package documentation for signal exclusions and group-signal limits.
+// The supervisor uploads any crash report before it exits with the child's status.
 // The upload phase has an overall deadline of 10 seconds.
 //
 // In the child, Start registers the inherited crash pipe and returns nil.
@@ -46,7 +53,15 @@ func Start(opts ...Option) error {
 func start(opts ...Option) error {
 	if fd, ok := env.Lookup(supervisedFDEnv); ok {
 		_ = os.Unsetenv(supervisedFDEnv)
-		return registerCrashOutput(fd)
+		if err := registerCrashOutput(fd); err != nil {
+			return err
+		}
+		if pid, ok := os.LookupEnv("LISTEN_PID"); ok && pid == strconv.Itoa(os.Getppid()) { //nolint:forbidigo // systemd process handoff, not tracer configuration.
+			if err := os.Setenv("LISTEN_PID", strconv.Itoa(os.Getpid())); err != nil {
+				return fmt.Errorf("crashtracker: transfer socket activation: %w", err)
+			}
+		}
+		return nil
 	}
 
 	cfg := defaultConfig()

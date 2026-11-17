@@ -20,7 +20,8 @@ import (
 )
 
 const (
-	// Unix passes fd 3 through ExtraFiles. Windows passes an inherited handle.
+	// Unix appends the crash fd after inherited descriptors in ExtraFiles.
+	// Windows passes an inherited handle.
 	// The marker holds its decimal value and exists only until the child's Start.
 	// The leading underscore marks it as internal, like _DD_ROOT_GO_SESSION_ID,
 	// so it stays out of the supported configuration registry.
@@ -74,18 +75,26 @@ func supervise(cfg *config) error {
 	cmd := exec.Command(exe, os.Args[1:]...) //nolint:gosec // The application re-executes its own binary.
 	cmd.Args[0] = os.Args[0]
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	marker, err := configureChild(cmd, w)
+	terminalMode := supervisorTerminalMode()
+	marker, err := configureChild(cmd, w, terminalMode)
 	if err != nil {
 		return fmt.Errorf("crashtracker: configure application process: %w", err)
 	}
 	cmd.Env = append(os.Environ(), supervisedFDEnv+"="+marker)
-	startForwarding, stopForwarding := supervisorSignals()
+	startForwarding, stopForwarding := supervisorSignals(terminalMode)
 	releaseThread := retainSupervisorThread(cmd)
-	if err := cmd.Start(); err != nil {
+	err = cmd.Start()
+	for _, f := range cmd.ExtraFiles {
+		if f != nil && f != w {
+			_ = f.Close()
+		}
+	}
+	if err != nil {
 		releaseThread()
 		stopForwarding()
 		return fmt.Errorf("crashtracker: start application process: %w", err)
 	}
+	closeInheritedDescriptors(cmd, w)
 	startForwarding(cmd.Process)
 	_ = w.Close()
 	debug.SetMemoryLimit(supervisorMemoryLimit)

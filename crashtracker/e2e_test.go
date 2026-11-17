@@ -115,6 +115,7 @@ func TestE2ECrashReport_Panic(t *testing.T) {
 	defer srv.Close()
 
 	cmd := exec.Command(os.Args[0], "-test.run=^$", "-test.v=false")
+	detachSupervisor(cmd)
 	cmd.Env = append(filterE2EEnv(os.Environ()),
 		e2eRoleEnv+"=panic",
 		"DD_TRACE_AGENT_URL="+srv.URL,
@@ -156,6 +157,7 @@ func TestE2ECrashReport_ManyGoroutines(t *testing.T) {
 	defer srv.Close()
 
 	cmd := exec.Command(os.Args[0], "-test.run=^$", "-test.v=false")
+	detachSupervisor(cmd)
 	cmd.Env = append(filterE2EEnv(os.Environ()),
 		e2eRoleEnv+"=panic-many-goroutines",
 		"DD_TRACE_AGENT_URL="+srv.URL,
@@ -197,6 +199,7 @@ func TestSupervisorLargeCrashDump(t *testing.T) {
 	}))
 	defer srv.Close()
 	cmd := exec.Command(os.Args[0], "-test.run=^$")
+	detachSupervisor(cmd)
 	cmd.Env = append(filterE2EEnv(os.Environ()), e2eRoleEnv+"=panic-large-dump",
 		"DD_TRACE_AGENT_URL="+srv.URL, "DD_CRASHTRACKING_ENABLED=true",
 		"GOTRACEBACK=all", "GORACE=atexit_sleep_ms=0")
@@ -241,6 +244,7 @@ func TestE2ECrashReport_PanicWithOptions(t *testing.T) {
 	// the mock server URL via WithAgentURL instead, through a side-channel env
 	// var the test controls (not a crashtracker-recognised variable).
 	cmd := exec.Command(os.Args[0], "-test.run=^$", "-test.v=false")
+	detachSupervisor(cmd)
 	cmd.Env = append(filterE2EEnv(os.Environ()),
 		e2eRoleEnv+"=panic-with-options",
 		"_CRASHTRACKER_E2E_AGENT_URL="+srv.URL,
@@ -288,6 +292,7 @@ func TestE2ECrashReport_CleanExit(t *testing.T) {
 	defer srv.Close()
 
 	cmd := exec.Command(os.Args[0], "-test.run=^$", "-test.v=false")
+	detachSupervisor(cmd)
 	cmd.Env = append(filterE2EEnv(os.Environ()),
 		e2eRoleEnv+"=clean",
 		"DD_TRACE_AGENT_URL="+srv.URL,

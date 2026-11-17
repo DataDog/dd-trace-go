@@ -68,14 +68,14 @@ func TestSupervisorTeardownInvariant(t *testing.T) {
 	}
 	defer null.Close()
 	cmd.Stdout, cmd.Stderr = null, null
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	detachSupervisor(cmd)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = cmd.Process.Kill() })
 	waitForFile(t, filepath.Join(dir, "ready"))
-	// Each topology gives its child a separate process group. Record every
-	// descendant before the crash so teardown does not depend on reparenting.
+	// Record every descendant before the crash so teardown does not depend
+	// on reparenting or on which process group each descendant uses.
 	descendants := processDescendants(t, cmd.Process.Pid)
 	if len(descendants) == 0 {
 		t.Fatal("helper has no descendant")

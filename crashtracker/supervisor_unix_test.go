@@ -163,10 +163,15 @@ func TestSupervisorHelper(t *testing.T) {
 	}
 }
 
+func detachSupervisor(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+}
+
 func startSupervisorHelper(t *testing.T, mode string, env ...string) (*exec.Cmd, string) {
 	t.Helper()
 	dir := t.TempDir()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestSupervisorHelper$")
+	detachSupervisor(cmd)
 	cmd.Env = append(filterE2EEnv(os.Environ()), helperModeEnv+"="+mode,
 		"_CRASHTRACKER_HELPER_DIR="+dir, "DD_CRASHTRACKING_ENABLED=true", "GORACE=atexit_sleep_ms=0")
 	cmd.Env = append(cmd.Env, env...)
@@ -322,6 +327,7 @@ func TestSupervisorReexecFailure(t *testing.T) {
 		t.Fatalf("copy executable: %v, close: %v", copyErr, closeErr)
 	}
 	cmd := exec.Command(path, "-test.run=^TestSupervisorHelper$")
+	detachSupervisor(cmd)
 	cmd.Env = append(filterE2EEnv(os.Environ()), helperModeEnv+"=reexec-failure", "DD_CRASHTRACKING_ENABLED=true", "GORACE=atexit_sleep_ms=0")
 	output, err := cmd.CombinedOutput()
 	if err != nil || !strings.Contains(string(output), "application continued after re-exec failure") {

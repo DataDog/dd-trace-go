@@ -43,13 +43,29 @@
 // supervisor stays alive until the upload finishes or its deadline expires.
 // This keeps container teardown from interrupting the upload after a crash.
 //
-// On Unix, the child has its own process group. If stdin is a terminal and the
-// supervisor is in its foreground group, the child's group takes the foreground.
-// The supervisor forwards external signals to the child's PID.
-// It excludes runtime signals, job-control input
-// and output signals, and synchronous fault signals. On Windows, console Ctrl
-// events reach both processes, so the supervisor ignores os.Interrupt and does
-// not forward signals. The supervisor propagates the child's exit code. On Unix,
+// On Unix, terminal mode requires a controlling terminal, a supervisor PID other
+// than 1, and a parent PID above 1. The child shares the supervisor's process group
+// in terminal mode. Otherwise, detached mode gives the child its own process group.
+//
+// Detached mode forwards external signals to the child's PID. Both modes exclude
+// runtime signals, SIGPIPE, SIGTTIN, SIGTTOU, and synchronous fault signals.
+// Terminal mode also excludes SIGINT, SIGQUIT, SIGHUP, SIGWINCH, SIGTSTP, and SIGCONT.
+// It excludes SIGINFO on Darwin and BSDs. The terminal and shell deliver these
+// terminal signals to the job group. If you send one only to the supervisor PID,
+// the application does not receive it. Other forwarded signals sent to the whole
+// job group, such as with kill %1, can reach the application twice.
+//
+// On Windows, console Ctrl events reach both processes. The supervisor ignores
+// os.Interrupt and does not forward signals.
+//
+// On Unix, inherited descriptors keep their numbers. This requires /dev/fd.
+// Without /dev/fd, Start returns an error and the application continues without
+// supervision. After the child starts, the supervisor closes its inherited copies.
+//
+// For systemd socket activation, the child updates LISTEN_PID to its own PID if
+// the value names the supervisor. It preserves LISTEN_FDS and LISTEN_FDNAMES.
+//
+// The supervisor propagates the child's exit code. On Unix,
 // it re-raises SIGHUP, SIGINT, SIGTERM, or SIGKILL if that signal killed the child.
 // For other signals, it exits with code 128 plus the signal number. It does not
 // re-raise signals that could produce a second crash dump from the supervisor.

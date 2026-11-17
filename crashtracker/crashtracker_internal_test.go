@@ -13,6 +13,8 @@ import (
 )
 
 func TestStartRejectsInvalidInheritedPipe(t *testing.T) {
+	parent := strconv.Itoa(os.Getppid())
+	t.Setenv("LISTEN_PID", parent)
 	for _, value := range []string{"", "not-a-number", "-1", "0", "1", "2", "999999999"} {
 		t.Run(value, func(t *testing.T) {
 			t.Setenv(supervisedFDEnv, value)
@@ -22,6 +24,9 @@ func TestStartRejectsInvalidInheritedPipe(t *testing.T) {
 			}
 			if _, ok := os.LookupEnv(supervisedFDEnv); ok {
 				t.Fatal("Start retained the invalid marker")
+			}
+			if got := os.Getenv("LISTEN_PID"); got != parent {
+				t.Fatalf("invalid crash pipe changed LISTEN_PID to %q, want %q", got, parent)
 			}
 		})
 	}
