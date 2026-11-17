@@ -1176,6 +1176,7 @@ func TestBuildFlagEvalPayloads(t *testing.T) {
 		big := strings.Repeat("y", payloadSizeLimitBytes) // ~5 MiB context value
 		events := []flagEvalLoggingEvent{{
 			Flag:            flagEvalFlag{Key: "big-flag"},
+			Environment:     &environment{ID: testEnvironmentID, Name: "Production"},
 			EvaluationCount: 7,
 			TargetingKey:    "user-oversized",
 			Context:         &flagEvalEventContext{Evaluation: map[string]any{"blob": big}},
@@ -1196,6 +1197,9 @@ func TestBuildFlagEvalPayloads(t *testing.T) {
 		var p flagEvalLoggingPayload
 		if err := json.Unmarshal(payloads[0], &p); err != nil {
 			t.Fatalf("payload is not valid JSON: %v", err)
+		}
+		if len(p.FlagEvaluations) == 1 && (p.FlagEvaluations[0].Environment == nil || *p.FlagEvaluations[0].Environment != *events[0].Environment) {
+			t.Error("payload degradation lost environment identity")
 		}
 		if len(p.FlagEvaluations) != 1 || p.FlagEvaluations[0].TargetingKey != "" || p.FlagEvaluations[0].Context != nil {
 			t.Errorf("degraded event must have no targeting_key/context, got %+v", p.FlagEvaluations)

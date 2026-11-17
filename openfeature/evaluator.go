@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"maps"
+	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -49,7 +50,9 @@ const (
 	// DatadogProvider.evaluate at evaluation entry so EVP first/last bounds use eval-time. The
 	// __dd_ prefix marks it as internal-only (never serialized to the wire); matches Java's
 	// DDEvaluator.METADATA_EVAL_TIMESTAMP_MS.
-	metadataEvalTimeKey = "__dd_eval_timestamp_ms"
+	metadataEvalTimeKey        = "__dd_eval_timestamp_ms"
+	metadataEnvironmentIDKey   = "__dd_environment_id"
+	metadataEnvironmentNameKey = "__dd_environment_name"
 	// metadataObserveFullEvaluationDataKey carries the environment's consent snapshot, stamped
 	// in DatadogProvider.evaluate. Travels with the evaluation so a later Remote Config update
 	// cannot retroactively change the policy at flush time. Unprefixed snake_case — this is the
@@ -109,10 +112,17 @@ func evaluateFlag(flag *flag, defaultValue any, context map[string]any, now time
 				}
 			}
 
-			// Reserve the split's HOOK keys and scalar event-feature snapshots, plus
-			// allocation/serial/doLog, two provider stamps and the exposure decision.
+			// Reserve allocation/doLog, four provider stamps, feature metadata, and the optional serial ID.
 			features := split.featureMetadata()
-			metadata := make(map[string]any, 6+len(features))
+			fixedEntries := 6
+			if split.SerialID != nil {
+				fixedEntries++
+			}
+			capacity := len(features)
+			if capacity <= math.MaxInt-fixedEntries {
+				capacity += fixedEntries
+			}
+			metadata := make(map[string]any, capacity)
 			metadata[metadataAllocationKey] = allocation.Key
 
 			// Get doLog value (defaults to true if not specified)
