@@ -1093,7 +1093,9 @@ func (p *DatadogProvider) reportDependencyPublisherPanics(dropped int64) {
 	if dropped > 0 {
 		countMetric(metricFlagEvalDropped, dropped, "publisher_panic")
 		if p.dependencyPublisherPanicWarned.CompareAndSwap(false, true) {
-			log.Warn("openfeature: dependency evaluation publisher panicked; dropped %d evaluation(s) (best-effort telemetry)", dropped) //errtrack:ignore recovered telemetry publisher panic
+			containLoggerPanic(func() {
+				log.Warn("openfeature: dependency evaluation publisher panicked; dropped %d evaluation(s) (best-effort telemetry)", dropped) //errtrack:ignore recovered telemetry publisher panic
+			})
 		}
 	}
 }

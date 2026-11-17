@@ -754,6 +754,25 @@ func TestDependentFlags_PublisherPanicsAreCountedAndDoNotStopBatch(t *testing.T)
 	require.Equal(t, []string{"dependency-1", "dependency-3"}, published)
 }
 
+// DD_LOGGING_RATE is initialized once by the log package, so use a subprocess
+// to exercise the immediate Warn path with an application logger that panics.
+func TestDependentFlags_PublisherPanicWarningContainsLoggerPanic(t *testing.T) {
+	if os.Getenv("DD_DEPENDENCY_PUBLISHER_PANIC_SUBPROCESS") != "1" {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestDependentFlags_PublisherPanicWarningContainsLoggerPanic$", "-test.count=1")
+		cmd.Env = append(os.Environ(), "DD_DEPENDENCY_PUBLISHER_PANIC_SUBPROCESS=1", "DD_LOGGING_RATE=0")
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		return
+	}
+
+	withPanickingLogger(t, log.LevelWarn)
+	provider := new(DatadogProvider)
+	require.NotPanics(t, func() {
+		provider.reportDependencyPublisherPanics(1)
+	})
+	require.True(t, provider.dependencyPublisherPanicWarned.Load())
+}
+
 func TestDependentFlags_PublisherPanicWarningIsSanitizedAndDeduplicated(t *testing.T) {
 	logger := withLogLevel(t, log.LevelWarn)
 	provider := &DatadogProvider{}
