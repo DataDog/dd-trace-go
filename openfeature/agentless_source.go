@@ -398,15 +398,12 @@ func (s *agentlessSource) requestedEnv() string {
 func (s *agentlessSource) usageService() string {
 	service := internalconfig.Get().ServiceName()
 	s.mu.Lock()
-	header, cached := s.serviceHeader, s.rawService == service
-	s.mu.Unlock()
-	if cached {
-		return header
+	defer s.mu.Unlock()
+	if s.rawService == service {
+		return s.serviceHeader
 	}
-	header = normalizeUsageService(service)
-	s.mu.Lock()
+	header := normalizeUsageService(service)
 	s.rawService, s.serviceHeader = service, header
-	s.mu.Unlock()
 	return header
 }
 

@@ -658,7 +658,7 @@ func TestAgentlessSource_ServiceHeaderNormalization(t *testing.T) {
 		return "openfeature: service " + strconv.Quote(service) + " has no APM name; DD-Service header not sent"
 	}
 
-	// The Agent's NormalizeService (datadog-agent v0.82.3) gave each apm value.
+	// The Agent's NormalizeService gave each apm value.
 	// The header is apm, unless the Agent returns its fallback name.
 	for _, tc := range []struct {
 		name    string
