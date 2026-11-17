@@ -41,6 +41,8 @@ env:
     otelc/all
     contrib/99designs/gqlgen
     contrib/99designs/gqlgen/otelc
+    contrib/aws/aws-sdk-go-v2
+    contrib/aws/aws-sdk-go-v2/otelc
     contrib/aws/aws-sdk-go
     contrib/aws/aws-sdk-go/otelc
     contrib/net/http
@@ -61,6 +63,10 @@ env:
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
     contrib/google.golang.org/grpc/otelc
+    contrib/gorm.io/gorm.v1
+    contrib/gorm.io/gorm.v1/otelc
+    contrib/jackc/pgx.v5
+    contrib/jackc/pgx.v5/otelc
     contrib/go.mongodb.org/mongo-driver
     contrib/go.mongodb.org/mongo-driver/otelc
     contrib/go.mongodb.org/mongo-driver.v2
@@ -71,6 +77,8 @@ env:
     contrib/labstack/echo.v4/otelc
     contrib/labstack/echo.v5
     contrib/labstack/echo.v5/otelc
+    contrib/segmentio/kafka-go
+    contrib/segmentio/kafka-go/otelc
     contrib/valyala/fasthttp
     contrib/valyala/fasthttp/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
@@ -91,12 +99,16 @@ env:
     grpc
     gorilla_mux
     99designs.gqlgen
+    gorm
+    aws.v2
+    pgx
     mongo
     mongo.v2
     echo.v4
     echo.v5
     aws.v1
     valyala_fasthttp
+    segmentio_kafka.v0
 
 jobs:
   # Classifies the PR diff against .github/ci-components.yml. Fails open: every
@@ -221,6 +233,14 @@ jobs:
           for dir in internal/orchestrion/_integration ${OTELC_MODULES}; do
             retry_on_corruption go -C "${dir}" mod tidy
           done
+
+      # Pull every image of the shared Testcontainers catalog ahead of time, so the pulls don't have
+      # to fit within the test timeout. The catalog pins the images the integration suites use.
+      - name: Pull container images
+        # Docker is only supported on Linux runners at the moment
+        if: runner.os == 'Linux'
+        run: |-
+          docker compose -f "${{ github.workspace }}/instrumentation/testutils/containers/images/docker-compose.yaml" pull
 
       - name: Run Tests
         shell: bash

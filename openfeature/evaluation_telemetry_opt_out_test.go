@@ -79,6 +79,7 @@ func newOptOutHarness(t *testing.T, config ProviderConfig) *optOutHarness {
 	evp := newEVPClient()
 	evp.httpClient = &http.Client{Transport: sink}
 	p := newDatadogProviderWithSourceAndEVP(config, internalffe.SourceAgentless, evp)
+	cleanupProvider(t, p)
 	t.Cleanup(p.Shutdown)
 	m, reader := setupTestMetrics(t)
 	p.flagEvalMetricsHook.metrics = m
@@ -330,6 +331,7 @@ func TestEvaluationTelemetryOptOutProviderNotReady(t *testing.T) {
 	h := newOptOutHarness(t, ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)})
 	p := newDatadogProviderWithSourceAndEVP(ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(true)},
 		internalffe.SourceAgentless, h.provider.exposureWriter.evp)
+	cleanupProvider(t, p)
 	// Shutdown also releases initialization while it waits for configuration.
 	t.Cleanup(p.Shutdown)
 	p.flagEvalMetricsHook.metrics = h.provider.flagEvalMetricsHook.metrics
@@ -696,6 +698,7 @@ func TestEvaluationTelemetryOptOutIndependentProviders(t *testing.T) {
 	t.Setenv("DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED", "true")
 	h := newOptOutHarness(t, ProviderConfig{})
 	second := newDatadogProviderWithSourceAndEVP(ProviderConfig{EnableEvaluationTelemetryOptOutParameter: new(false)}, internalffe.SourceAgentless, h.provider.exposureWriter.evp)
+	cleanupProvider(t, second)
 	t.Cleanup(second.Shutdown)
 	second.configuration = h.provider.configuration
 	second.flagEvalMetricsHook.metrics = h.provider.flagEvalMetricsHook.metrics
