@@ -167,7 +167,6 @@ func TestInstrumentation_AnalyticsRate(t *testing.T) {
 // ServiceNameWithSource option allocates no more than a tracer.Tag option
 // with the same payload built once.
 func TestServiceNameWithSourceAllocs(t *testing.T) {
-	t.Skip("reproduces #5811; remove when fixed")
 	cfg := &tracer.StartSpanConfig{Tags: map[string]any{}}
 	opt := ServiceNameWithSource("svc", "opt.integration")
 	control := tracer.Tag(ext.KeyServiceSource, ServiceOverride{Name: "svc", Source: "opt.integration"})
