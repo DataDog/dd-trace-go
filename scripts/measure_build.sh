@@ -237,7 +237,7 @@ if [[ "$MODE" == "standard" ]] && command -v gsa &> /dev/null; then
     message "  gsa analysis failed; continuing without dependency_sizes"
   fi
 else
-  message "Skipping dependency attribution (gsa not found or mode is orchestrion)"
+  message "Skipping dependency attribution (gsa not found or mode is not standard)"
 fi
 
 # Build JSON output — durations as array, size as single value
