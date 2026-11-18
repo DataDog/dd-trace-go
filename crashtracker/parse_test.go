@@ -542,7 +542,8 @@ func TestParseCrashDumpCrashOutputFixtures(t *testing.T) {
 						if r.SigInfo == nil || r.SigInfo.SiSignoHuman != "SIGSEGV" || r.SigInfo.SiSigno != 11 || r.SigInfo.SiCode != 2 || r.SigInfo.SiAddr != "0x0" {
 							t.Fatalf("SigInfo = %+v, want SIGSEGV with code 2 and address 0x0", r.SigInfo)
 						}
-						wantMessage = strings.Trim(strings.SplitN(string(dump), "\n", 3)[1], "[]")
+						// TrimSpace drops the \r a CRLF checkout leaves on Windows.
+						wantMessage = strings.Trim(strings.TrimSpace(strings.SplitN(string(dump), "\n", 3)[1]), "[]")
 					} else if r.SigInfo != nil {
 						t.Errorf("SigInfo = %+v, want nil", r.SigInfo)
 					}
