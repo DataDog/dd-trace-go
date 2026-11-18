@@ -114,8 +114,9 @@ jobs:
   macos:
     name: ${{ matrix.runs-on }} go${{ matrix.go-version }}
     runs-on: ${{ matrix.runs-on }}
-    needs: 
-      - go-mod-caching
+    # No needs: this job no longer consumes the go-mod-caching outputs
+    # (the isolated caches replace that restore), so a module-prep
+    # failure must not skip it and it starts in parallel.
     strategy:
       matrix:
         runs-on: [ macos-15, macos-latest ] # oldest and newest macos runners available
@@ -145,6 +146,14 @@ jobs:
           # strata (both Go versions on macos-15 and macos-latest); every
           # pull request run restores only.
           seed: "true"
+
+      # A restored GOCACHE also restores Go's cached test results (Go
+      # caches -v output and coverage profiles there), so a package
+      # unchanged since the nightly seed could pass without executing
+      # on this runner. Drop only the test-result entries — the compiled
+      # packages stay — so every package runs its tests, like the
+      # module-only cache this job used before.
+      - run: go clean -testcache
 
       - name: Setup testing environment
         run: |-

@@ -234,10 +234,15 @@ default-branch `workflow_dispatch`. Seven dispatch doors reach that
 state on `main`: `main-branch-tests`, the `multios-unit-tests`
 free-form dispatch, the bare `smoke-tests` dispatch, `dynamic-checks`,
 `orchestrion`, `otelc`, and `appsec`. Every other event restores only.
-Windows strata skip the Go caches entirely — neither seeding nor
-restoring — because a Windows cache restore costs more time than it
-saves (APMLP-2248). Revert a cloudx
-seed by setting that job's `seed` back to `"false"`. The pool gauges
+Windows strata skip the isolated Go build/module caches — neither
+seeding nor restoring — based on the multios measurements in APMLP-2248
+(a 1.4 GiB restore costs 2.6-3.3m in tar.exe extraction and saves about
+2m); the integration lanes' 8-core shared runners are unmeasured, so
+their skip is the conservative default rather than a measured
+conclusion. Revert a cloudx seed by setting that job's `seed` back to
+`"false"`; a dispatch that overrides the pinned tool version (the
+`otelc-version` input) stays restore-only, because it would seed a
+variant no ordinary pull request can restore. The pool gauges
 (`citiming pool`, run hourly by the `cache-pool-metrics` workflow)
 watch whether the seed entries stay present in the pool. Jobs running
 with `cache: "false"` emit no online series; their observation records
@@ -365,11 +370,15 @@ for the default branch, `pr`, `mq`, `release`, `other`).
   skipped.
 - `ci.cache.pool.oldest_access_age_seconds`, the eviction horizon.
 - `ci.cache.pool.default_entry_age_seconds`, the age of the newest
-  default-branch entry per kind, workload and platform: the seed
-  presence signal. A missing series means no seed of that cell exists.
-  Until a monitor exists for this, treat a missing series on a seeded
-  cell as an evicted seed and re-seed by dispatching `main-branch-tests`
-  on `main`.
+  default-branch entry per kind, workload, platform and variant digest:
+  the seed presence signal, one cell per seeded stratum so one
+  surviving variant cannot hide the eviction of a sibling. A missing
+  series means no seed of that cell exists. Until a monitor exists for
+  this, treat a missing series on a seeded cell as an evicted seed and
+  re-seed through the workflow that owns the family: `main-branch-tests`
+  on `main` for unit-integration, multi-OS and smoke, and the bare
+  `orchestrion`, `otelc` or `appsec` dispatch on `main` for those
+  lanes.
 
 Every series is tagged with the repository. The text format prints the
 same data as a snapshot summary, and the workflow keeps that summary in

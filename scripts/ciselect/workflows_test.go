@@ -158,44 +158,82 @@ func setupGoStep(t *testing.T, path, jobID string) map[string]any {
 }
 
 // TestGoCachePolicyPerOS pins the per-OS cache policy of APMLP-2249:
-// every Windows stratum skips the Go caches — a restore there costs
-// more time than it saves (APMLP-2248) — and the lanes whose Windows
-// strata skip cache therefore gate both `cache` and `seed` on a
-// non-Windows runner. A silently dropped condition reverts a Windows
-// stratum to a pointless restore (or a seed nothing restores), and
-// actionlint cannot catch that.
+// every Windows stratum skips the isolated Go caches — the multios
+// measurements in APMLP-2248 put a 1.4 GiB restore at 2.6-3.3m of
+// tar.exe extraction for about 2m of saved build time — and the lanes
+// whose Windows strata skip cache therefore gate both `cache` and
+// `seed` on a non-Windows runner. The integration lanes additionally
+// seed only their stable-alias strata, because the shared pool sat at
+// its 100 GiB eviction boundary when this was decided, and a dispatch
+// that overrides the pinned otelc version must stay restore-only
+// because no ordinary pull request can restore that variant. A
+// silently dropped condition reverts a stratum to a pointless restore
+// or an unbounded seed, and actionlint cannot catch that.
 func TestGoCachePolicyPerOS(t *testing.T) {
 	root, _ := workflowPaths(t)
 	join := func(name string) string {
 		return filepath.Join(root, workflowDir, name)
 	}
 
-	// Lanes whose Windows matrix strata skip the Go caches: both inputs
-	// exclude the same runner key the matrix defines. The caller names the
-	// runner in multios, so that lane keys on runner.os instead.
-	lanes := []struct{ name, jobID, want string }{
-		{"orchestrion.yml", "integration-test", "${{ matrix.runs-on != 'windows' }}"},
-		{"otelc.yml", "integration-test", "${{ matrix.runs-on != 'windows' }}"},
-		{"multios-unit-tests.yml", "test-multi-os", "${{ runner.os != 'Windows' }}"},
+	// Lanes whose Windows matrix strata skip the Go caches. The runner
+	// exclusion keys on what the matrix defines: matrix.runs-on for the
+	// integration lanes, runner.os for the multios caller. The seed
+	// gates carry each lane's extra bounds (stable alias, DRIVER mode,
+	// pinned tool version).
+	lanes := []struct{ name, jobID, cacheWant, seedWant string }{
+		{
+			name: "orchestrion.yml", jobID: "integration-test",
+			cacheWant: "${{ matrix.runs-on != 'windows' }}",
+			seedWant:  "${{ matrix.runs-on != 'windows' && matrix.go-version == 'stable' && matrix.mode == 'DRIVER' }}",
+		},
+		{
+			name: "otelc.yml", jobID: "integration-test",
+			cacheWant: "${{ matrix.runs-on != 'windows' }}",
+			seedWant:  "${{ matrix.runs-on != 'windows' && matrix.go-version == 'stable' && inputs.otelc-version == '' }}",
+		},
+		{
+			name: "multios-unit-tests.yml", jobID: "test-multi-os",
+			cacheWant: "${{ runner.os != 'Windows' }}",
+			seedWant:  "${{ runner.os != 'Windows' }}",
+		},
 	}
 	for _, lane := range lanes {
 		with := setupGoStep(t, join(lane.name), lane.jobID)
-		for _, input := range []string{"cache", "seed"} {
-			got, _ := with[input].(string)
-			if got != lane.want {
-				t.Errorf("%s job %q: setup-go %s = %q, want %q", lane.name, lane.jobID, input, got, lane.want)
+		for _, input := range []struct{ key, want string }{
+			{"cache", lane.cacheWant},
+			{"seed", lane.seedWant},
+		} {
+			got, _ := with[input.key].(string)
+			if got != input.want {
+				t.Errorf("%s job %q: setup-go %s = %q, want %q", lane.name, lane.jobID, input.key, got, input.want)
 			}
 		}
 	}
 
+	// cache: false without quotes decodes as a boolean, so a string-only
+	// check can be silently bypassed.
+	cacheDisabled := func(v any) bool {
+		switch c := v.(type) {
+		case bool:
+			return !c
+		case string:
+			return c == "false"
+		}
+		return false
+	}
+
 	// The AppSec macOS matrix job seeds the isolated caches: the setup-go
 	// step must keep the default (cloudx) provider and an unconditional
-	// seed literal, or the strata silently stop saving on the nightly run.
+	// seed literal, or the strata silently stop saving on the nightly
+	// run. It must also drop the restored test-result entries (go clean
+	// -testcache): Go caches -v output and coverage profiles in GOCACHE,
+	// so without the clean a package unchanged since the nightly seed
+	// can pass without executing on the pull request's runner.
 	with := setupGoStep(t, join("appsec.yml"), "macos")
 	if got, _ := with["seed"].(string); got != "true" {
 		t.Errorf("appsec.yml job macos: setup-go seed = %q, want the literal true", got)
 	}
-	if got, ok := with["cache"].(string); ok && got == "false" {
+	if cacheDisabled(with["cache"]) {
 		t.Error("appsec.yml job macos: setup-go cache is disabled, but the job needs the isolated caches")
 	}
 	if got, _ := with["cache-provider"].(string); got != "" {
@@ -204,6 +242,30 @@ func TestGoCachePolicyPerOS(t *testing.T) {
 	if got, _ := with["workload"].(string); got == "" {
 		t.Error("appsec.yml job macos: setup-go workload is empty, so the cache key family falls back to the job name")
 	}
+	if !jobRunsTestCacheClean(t, join("appsec.yml"), "macos") {
+		t.Error("appsec.yml job macos: no go clean -testcache step, so a restored GOCACHE can replay cached test results")
+	}
+}
+
+// jobRunsTestCacheClean reports whether the job runs go clean -testcache
+// on its restored build cache.
+func jobRunsTestCacheClean(t *testing.T, path, jobID string) bool {
+	t.Helper()
+	doc, _ := parseWorkflow(t, path)
+	jobs, _ := doc["jobs"].(map[string]any)
+	job, _ := jobs[jobID].(map[string]any)
+	if job == nil {
+		t.Fatalf("%s has no job %q", path, jobID)
+	}
+	steps, _ := job["steps"].([]any)
+	for _, s := range steps {
+		step, _ := s.(map[string]any)
+		run, _ := step["run"].(string)
+		if strings.Contains(run, "go clean -testcache") {
+			return true
+		}
+	}
+	return false
 }
 
 // TestSeedGatesAndTraceCheckPairing pins the literals that decide whether
