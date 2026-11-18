@@ -213,12 +213,12 @@ func WithUntracedMethods(ms ...string) OptionFn {
 // grpc.UnknownServiceHandler when grpc passes it a nil server and a bidi
 // stream. Such a call gets the "_OTHER" resource. A registered bidi method
 // whose service implementation is nil, as in RegisterService(desc, nil), gets
-// the same arguments from grpc. So if the server also has an
-// UnknownServiceHandler, that method gets "_OTHER" too. With WithServiceInfo,
-// the interceptor looks up the method in the registered services, and only
+// the same arguments from grpc, so it gets "_OTHER" too. This happens whether
+// or not the server has an UnknownServiceHandler. With WithServiceInfo, the
+// interceptor looks up the method in the registered services, and only
 // methods that are not registered get "_OTHER". You need this option only
-// when a server has both an UnknownServiceHandler and a service registered
-// with a nil implementation.
+// when a server registers a service with a nil implementation that has bidi
+// stream methods.
 //
 // The function is called on each such call, after the server is built, so it
 // can read the server through a closure:
@@ -230,7 +230,6 @@ func WithUntracedMethods(ms ...string) OptionFn {
 //				return srv.GetServiceInfo()
 //			}),
 //		)),
-//		grpc.UnknownServiceHandler(catchAll),
 //	)
 //	srv.RegisterService(&desc, nil)
 func WithServiceInfo(fn func() map[string]grpc.ServiceInfo) OptionFn {

@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1811,6 +1812,103 @@ func TestUnknownServiceHandlerMessageSpans(t *testing.T) {
 				assert.Equal(t, 1, calls)
 			} else {
 				assert.Zero(t, calls)
+			}
+		})
+	}
+}
+
+// startResourceSampler records the resource of each root span when the
+// tracer samples it, at span start.
+type startResourceSampler struct {
+	mu        sync.Mutex
+	resources map[string][]string // operation name -> resources
+}
+
+func (s *startResourceSampler) Sample(span *tracer.Span) bool {
+	m := span.AsMap()
+	op, _ := m[ext.SpanName].(string)
+	res, _ := m[ext.ResourceName].(string)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.resources[op] = append(s.resources[op], res)
+	return true
+}
+
+func (s *startResourceSampler) get(op string) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string(nil), s.resources[op]...)
+}
+
+// TestUnknownServiceResourceAtSpanStart checks that the resource is set when
+// the span starts, not changed after. The tracer reads it at start for
+// profiler endpoint counts.
+func TestUnknownServiceResourceAtSpanStart(t *testing.T) {
+	const registered = "/test.Echo/Chat"
+	echo := func(_ any, stream grpc.ServerStream) error {
+		var req fixturepb.FixtureRequest
+		if err := stream.RecvMsg(&req); err != nil {
+			return err
+		}
+		return stream.SendMsg(&fixturepb.FixtureReply{})
+	}
+	for _, tc := range []struct {
+		name   string
+		calls  bool
+		method string
+		op     string
+		want   string
+	}{
+		{"unknown call root", true, "/junk.A/One", "grpc.server", resourceUnknownMethod},
+		{"unknown message-only roots", false, "/junk.A/One", "grpc.message", resourceUnknownMethod},
+		{"registered call root", true, registered, "grpc.server", registered},
+		{"registered message-only roots", false, registered, "grpc.message", registered},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &startResourceSampler{resources: map[string][]string{}}
+			require.NoError(t, tracer.Start(
+				tracer.WithSampler(s),
+				tracer.WithAgentAddr("127.0.0.1:1"),
+				tracer.WithLogStartup(false),
+			))
+			defer tracer.Stop()
+
+			var server *grpc.Server
+			server = grpc.NewServer(
+				grpc.StreamInterceptor(StreamServerInterceptor(
+					WithStreamCalls(tc.calls),
+					WithStreamMessages(true),
+					WithServiceInfo(func() map[string]grpc.ServiceInfo { return server.GetServiceInfo() }),
+				)),
+				grpc.UnknownServiceHandler(echo),
+			)
+			server.RegisterService(&grpc.ServiceDesc{
+				ServiceName: "test.Echo",
+				HandlerType: (*any)(nil),
+				Streams: []grpc.StreamDesc{{
+					StreamName:    "Chat",
+					ServerStreams: true,
+					ClientStreams: true,
+					Handler:       echo,
+				}},
+			}, nil)
+			li, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			go server.Serve(li)
+			defer server.Stop()
+
+			conn, err := grpc.NewClient(li.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+			require.NoError(t, err)
+			defer conn.Close()
+			require.NoError(t, conn.Invoke(context.Background(), tc.method, &fixturepb.FixtureRequest{}, &fixturepb.FixtureReply{}))
+
+			want := 1
+			if !tc.calls {
+				want = 2
+			}
+			require.Eventually(t, func() bool { return len(s.get(tc.op)) >= want }, 5*time.Second, 10*time.Millisecond)
+			for _, r := range s.get(tc.op) {
+				assert.Equal(t, tc.want, r)
 			}
 		})
 	}
