@@ -7,23 +7,25 @@
 meta:
   name: github.com/DataDog/dd-trace-go/v2/crashtracker
   description: |-
-    Starts the Datadog crashtracker as the first statement of main(), so crashes
-    after main() starts are captured. Crashes during init() are not. The injected
-    start uses DD_* environment configuration; a later programmatic Start call
-    in main returns the first call's result, including any error. Start
-    re-executes the application, so the injected init() functions of the tracer
-    and profiler run in both the supervisor and the application process.
+    Starts the Datadog crashtracker as the first statement of main(). The
+    package documentation of github.com/DataDog/dd-trace-go/v2/crashtracker is
+    the contract for the lifecycle, the process model, the exit behavior, and
+    the configuration. The injected start uses DD_* environment configuration.
+    With this integration, the supervisor does not start the tracer or the
+    profiler, and the application starts both.
 
     This integration is opt-in. It is not part of orchestrion/all, so a project
     enables it by importing this package in its orchestrion.tool.go file.
 
     Ordering with respect to the tracer and profiler: the tracer and profiler
     aspects use inject-declarations to emit func init() calls, which run before
-    main() starts. This aspect uses prepend-statements inside main(), so
-    crashtracker.Start() always runs after the tracer starts, and
-    resolveService reads the tracer-attributed service name from globalconfig.
-    The call site also matches crashtracker/doc.go, which says to call Start
-    as early as possible in main.
+    main() starts. This aspect uses prepend-statements inside main(), so the
+    tracer starts before crashtracker.Start() in the application. This aspect
+    also injects a package variable into package main. Package variables
+    initialize before init functions
+    (https://go.dev/ref/spec#Package_initialization), so the variable marks the
+    process as a pending supervisor before the injected tracer and profiler
+    start calls run, and those calls then wait for crashtracker.Start().
 
     The tracer and profiler also each prepend a `defer ...Stop()` into main(),
     and neither sets an explicit order, so without one here the three
@@ -40,9 +42,6 @@ meta:
     guarantees this block applies last, and therefore lands first in the
     generated code, regardless of what else targets this join point.
 
-    Note: crashes that occur during init() functions (before main() is reached)
-    are not captured because SetCrashOutput is wired inside crashtracker.Start().
-
 aspects:
   - id: func main()
     join-point:
@@ -54,6 +53,14 @@ aspects:
               - name: main
               - signature: {}
     advice:
+      # Marks this process as a pending supervisor before the tracer and profiler
+      # init functions of package main run. A package variable initializes before
+      # any init function of its package, and the imported crashtracker package
+      # has initialized before both. See internal/crashtrackerstate.
+      - inject-declarations:
+          imports:
+            crashtrackerstate: github.com/DataDog/dd-trace-go/v2/internal/crashtrackerstate
+          template: var _ = crashtrackerstate.MarkSupervisorPending()
       - prepend-statements:
           # prepend-statements always inserts at the front of whatever is
           # already in the block, so the advice applied LAST ends up FIRST in

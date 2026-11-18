@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -35,7 +36,7 @@ func decompressBody(t *testing.T, body []byte) []byte {
 	return decompressed
 }
 
-// newTestReport builds a Report exercising uploadReport/buildRequestAndClient
+// newTestReport builds a Report exercising uploadReport and its request builder
 // in isolation from a real crash dump. DDTags and OSInfo are derived from the
 // real buildDDTags/osInfo rather than hand-typed, so this fixture's shape
 // tracks the actual wire contract instead of silently drifting from it.
@@ -218,9 +219,9 @@ func TestUploadReportAgentURLIgnoredInAgentlessMode(t *testing.T) {
 		agentURL: "http://agent-host:8126", // must be ignored: this is an agent base, not an agentless target
 	}
 
-	req, _, err := buildRequestAndClient(cfg, []byte("{}"))
+	req, err := resolveUploadTarget(cfg).newRequest(cfg, []byte("{}"))
 	if err != nil {
-		t.Fatalf("buildRequestAndClient returned unexpected error: %v", err)
+		t.Fatalf("newRequest returned unexpected error: %v", err)
 	}
 
 	if req.URL.String() == cfg.agentURL {
@@ -304,6 +305,53 @@ func TestUploadReportRetriesTransientFailure(t *testing.T) {
 	}
 	if requestCount != 2 {
 		t.Errorf("requestCount = %d, want 2 (one failure, one success)", requestCount)
+	}
+}
+
+// TestUploadReportReusesConnectionAcrossRetries proves uploadReport builds one
+// client per call and drains each response body, so the three attempts share one
+// TCP connection. A client per attempt, or an undrained body, opens a new one.
+func TestUploadReportReusesConnectionAcrossRetries(t *testing.T) {
+	var (
+		mu          sync.Mutex
+		connections int
+		requests    int
+	)
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requests++
+		n := requests
+		mu.Unlock()
+		if n < uploadAttempts {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("unavailable"))
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	srv.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			mu.Lock()
+			connections++
+			mu.Unlock()
+		}
+	}
+	srv.Start()
+	defer srv.Close()
+
+	// No httpClient: this exercises the default client that uploadReport builds.
+	cfg := &config{agentURL: srv.URL}
+
+	if err := uploadReport(t.Context(), cfg, newTestReport()); err != nil {
+		t.Fatalf("uploadReport returned unexpected error: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if requests != uploadAttempts {
+		t.Fatalf("requests = %d, want %d", requests, uploadAttempts)
+	}
+	if connections != 1 {
+		t.Errorf("connections = %d, want 1 (one client, drained bodies)", connections)
 	}
 }
 
@@ -396,7 +444,7 @@ func TestUploadReportGivesUpAfterAllAttemptsFail(t *testing.T) {
 // redirect target answered 200, uploadReport would have reported success for
 // a request that never actually carried the report. cfg deliberately omits
 // httpClient (unlike every other test in this file) so this exercises
-// buildRequestAndClient's own internal.DefaultHTTPClient branch, the one the
+// uploadTarget.newClient's own internal.DefaultHTTPClient branch, the one the
 // fix lives on and the one supervisor uploads use when no custom client is configured.
 func TestUploadReportRejectsRedirect(t *testing.T) {
 	var redirectRequests int
@@ -426,7 +474,7 @@ func TestUploadReportRejectsRedirect(t *testing.T) {
 }
 
 // TestUploadReportUnixSocket proves the Unix socket agent path (URL scheme
-// "unix://") actually reaches the socket: buildRequestAndClient's UDSClient
+// "unix://") actually reaches the socket: uploadTarget.newClient's UDSClient
 // branch and the request's http://localhost URL rewrite need each other to
 // work, and every other upload test uses a TCP httptest.Server so none of
 // them previously exercised this branch at all.
@@ -495,9 +543,9 @@ func TestBuildRequestToleratesDDSiteAsURL(t *testing.T) {
 		site:   "https://datadoghq.com/",
 	}
 
-	req, _, err := buildRequestAndClient(cfg, []byte("{}"))
+	req, err := resolveUploadTarget(cfg).newRequest(cfg, []byte("{}"))
 	if err != nil {
-		t.Fatalf("buildRequestAndClient returned unexpected error: %v", err)
+		t.Fatalf("newRequest returned unexpected error: %v", err)
 	}
 
 	wantHost := "error-tracking-intake.datadoghq.com"
