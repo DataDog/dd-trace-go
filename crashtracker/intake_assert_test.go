@@ -28,7 +28,7 @@ func ddTagValue(ddtags, key string) (string, bool) {
 // assertCanonicalAgentRequest and assertRFC0013Body are the internal-package
 // counterparts of the identically-named helpers in e2e_test.go (external
 // package crashtracker_test). The duplication is forced by that internal/
-// external split — these tests exercise buildRequestAndClient/uploadReport
+// external split — these tests exercise uploadReport and its request builder
 // directly rather than through a spawned subprocess — but the two copies
 // must assert at least the same things, or the wire contract they're meant
 // to guard silently drifts between them.

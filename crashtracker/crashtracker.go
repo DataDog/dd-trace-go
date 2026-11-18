@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/crashtrackerstate"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
@@ -22,6 +23,9 @@ import (
 var (
 	startOnce sync.Once
 	startErr  error // preserved from the first Start call; returned on subsequent calls
+
+	// superviseApplication is a variable so tests can simulate a supervision failure.
+	superviseApplication = supervise
 )
 
 // Start starts crash tracking. It must be the first statement in main.
@@ -37,8 +41,40 @@ var (
 //
 // Start is idempotent. Later calls return the result of the first call.
 func Start(opts ...Option) error {
-	startOnce.Do(func() { startErr = start(opts...) })
+	startOnce.Do(func() { startErr = startAndRelease(opts...) })
 	return startErr
+}
+
+// startAndRelease runs start, then lets the tracer and profiler start. The
+// supervisor never returns from start. Every return is a process that continues
+// as the application, so the tracer and profiler that init deferred start now.
+func startAndRelease(opts ...Option) error {
+	err := start(opts...)
+	crashtrackerstate.Release()
+	return err
+}
+
+func init() {
+	crashtrackerstate.SetResolver(supervisorWillStart)
+}
+
+// supervisorWillStart reports whether Start, with the configuration that the
+// Orchestrion integration passes, makes this process the supervisor. The
+// Orchestrion integration passes no options, so the environment alone decides.
+// A valid marker names the supervisor of this process, so this process is the
+// application. Start removes the marker later, after the init functions.
+func supervisorWillStart() bool {
+	marker, _ := env.Lookup(supervisedFDEnv)
+	if _, ok := parseSupervisedMarker(marker); ok {
+		return false
+	}
+	return enabledFromEnvironment()
+}
+
+// enabledFromEnvironment resolves DD_CRASHTRACKING_ENABLED, which defaults to true.
+func enabledFromEnvironment() bool {
+	enabled, _, _ := stableconfig.Bool("DD_CRASHTRACKING_ENABLED", true)
+	return enabled
 }
 
 func start(opts ...Option) error {
@@ -64,7 +100,7 @@ func start(opts ...Option) error {
 		return nil
 	}
 
-	return supervise(cfg)
+	return superviseApplication(cfg)
 }
 
 // parseSupervisedMarker returns the crash pipe descriptor in a marker of the
@@ -79,10 +115,9 @@ func parseSupervisedMarker(marker string) (fd string, ok bool) {
 }
 
 func defaultConfig() *config {
-	enabled, _, _ := stableconfig.Bool("DD_CRASHTRACKING_ENABLED", true)
 	tags := internal.ParseTagString(env.Get("DD_TAGS"))
 	return &config{
-		enabled: enabled,
+		enabled: enabledFromEnvironment(),
 		service: resolveService(tags),
 		env:     resolveTag("DD_ENV", "env", tags),
 		version: resolveTag("DD_VERSION", "version", tags),

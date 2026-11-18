@@ -486,7 +486,7 @@ func filterE2EEnv(env []string) []string {
 			// environment that dogfoods its own tracer) would otherwise make
 			// defaultConfig resolve the crash-victim subprocess into agentless
 			// mode, which takes precedence over the test's WithAgentURL/
-			// DD_TRACE_AGENT_URL (see buildRequestAndClient). The subprocess
+			// DD_TRACE_AGENT_URL (see resolveUploadTarget). The subprocess
 			// would then try to upload its synthetic crash to the real
 			// configured site instead of the test's mock server, and the test
 			// would hang waiting on a report that never arrives. DD_SITE

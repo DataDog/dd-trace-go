@@ -36,6 +36,10 @@
 // parent PID. If startup fails, Start returns an error so the application can
 // continue without crash tracking.
 //
+// With a manual Start as the first statement of main, a tracer or profiler that
+// main starts later runs only in the application. A tracer or profiler that a
+// package init function starts still runs in both processes.
+//
 // There is no Stop. Process exit closes the pipe. Do not defer an unregister
 // call. Deferred functions run before the runtime writes a panic dump.
 // Start is idempotent. Later calls return the result of the first call.
@@ -78,6 +82,14 @@
 // On Linux, the kernel kills the child if the supervisor dies. On other
 // platforms the child keeps running without crash reporting.
 //
+// # Cost
+//
+// Supervision adds one process and one fork/exec to every start. Short-lived
+// command-line tools and serverless functions pay most, because the extra init
+// and fork/exec are a large part of their run time. Init-heavy binaries also pay
+// more, because the supervisor keeps its init heap for the lifetime of the
+// application.
+//
 // # Configuration
 //
 // The supervisor resolves environment settings and Start options before it
@@ -97,6 +109,11 @@
 //
 // A later Start call with options is a no-op. Use environment configuration
 // instead of programmatic options with this integration.
+//
+// With this integration, the supervisor does not start the tracer or the
+// profiler. The application starts both. If supervision fails, Start returns
+// an error, and the tracer and profiler start at the Start call site instead
+// of in init.
 //
 // # Goroutine stack completeness
 //

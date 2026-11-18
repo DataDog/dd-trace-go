@@ -31,6 +31,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	appsecConfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/crashtrackerstate"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
@@ -250,7 +251,19 @@ func reportInitTime(start time.Time) {
 // Start starts the tracer with the given set of options. It will stop and replace
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
+//
+// With the crashtracker Orchestrion integration, the crashtracker supervisor
+// process does not start the tracer. The application process does.
 func Start(opts ...StartOption) error {
+	if crashtrackerstate.SupervisorPending() {
+		log.Debug("tracer.Start deferred: this process becomes the crashtracker supervisor.")
+		crashtrackerstate.Defer(func() {
+			if err := Start(opts...); err != nil {
+				log.Error("Deferred tracer start failed: %s", err.Error())
+			}
+		})
+		return nil
+	}
 	return start(false, opts...)
 }
 
