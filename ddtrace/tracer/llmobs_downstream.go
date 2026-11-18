@@ -17,17 +17,22 @@ import (
 )
 
 // llmobsDownstreamOwner returns the LLMObs tool span that a span started from ctx reports its
-// outbound call to, or nil. A span started inside another client span (for example a transport
-// wrapped by a retrying client) is part of that call and gets no owner.
+// outbound call to, or nil. Calls made under a task or workflow span inside a tool go to that
+// tool. A span started inside another client span (for example a transport wrapped by a retrying
+// client) is part of that call and gets no owner.
 func llmobsDownstreamOwner(ctx context.Context) *illmobs.Span {
 	llmSpan, ok := illmobs.ActiveLLMSpanFromContext(ctx)
-	if !ok || llmSpan.Kind() != string(illmobs.SpanKindTool) {
+	if !ok {
+		return nil
+	}
+	owner := llmSpan.DownstreamOwner()
+	if owner == nil {
 		return nil
 	}
 	if parent, ok := SpanFromContext(ctx); ok && parent.isLLMObsDownstreamClient() {
 		return nil
 	}
-	return llmSpan
+	return owner
 }
 
 func (s *Span) isLLMObsDownstreamClient() bool {

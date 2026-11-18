@@ -326,6 +326,33 @@ func TestToolSpanDownstreamCalls(t *testing.T) {
 		assert.Equal(t, 3, got.TotalCount)
 	})
 
+	t.Run("calls-under-task-and-workflow-spans-go-to-the-tool", func(t *testing.T) {
+		tt := testTracer(t)
+		tool, toolCtx := llmobs.StartToolSpan(context.Background(), "execute_code")
+		task, taskCtx := llmobs.StartTaskSpan(toolCtx, "v2.LogsApi.listLogs")
+		httpCall(taskCtx, "POST", "https://api.example.com/api/v2/logs/events/search", "200")
+		task.Finish()
+		wf, wfCtx := llmobs.StartWorkflowSpan(toolCtx, "batch")
+		nested, nestedCtx := llmobs.StartTaskSpan(wfCtx, "v2.SpansApi.aggregateSpans")
+		httpCall(nestedCtx, "POST", "https://api.example.com/api/v2/spans/analytics/aggregate", "500")
+		nested.Finish()
+		wf.Finish()
+		agent, agentCtx := llmobs.StartAgentSpan(toolCtx, "sub-agent")
+		httpCall(agentCtx, "GET", "https://api.example.com/agent-only", "200")
+		agent.Finish()
+		tool.Finish()
+
+		got := requireDownstreamCalls(t, tt, "execute_code")
+		require.NotNil(t, got)
+		assert.ElementsMatch(t, []string{
+			"POST api.example.com/api/v2/logs/events/search",
+			"POST api.example.com/api/v2/spans/analytics/aggregate",
+		}, got.Endpoints, "an agent span inside a tool keeps its own calls")
+		assert.Equal(t, 2, got.TotalCount)
+		assert.Equal(t, 1, got.TotalErrorCount)
+		assert.Nil(t, requireDownstreamCalls(t, tt, "v2.LogsApi.listLogs"), "task spans report no summary")
+	})
+
 	t.Run("concurrent-finish-records-once", func(t *testing.T) {
 		tt := testTracer(t)
 		tool, ctx := llmobs.StartToolSpan(context.Background(), "t")

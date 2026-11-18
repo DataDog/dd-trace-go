@@ -120,6 +120,23 @@ func downstreamEndpoint(c DownstreamCall) string {
 	return strings.TrimSpace(c.Method + " " + hostTarget)
 }
 
+// DownstreamOwner returns the tool span that outbound calls made while s is active are reported to: s itself
+// if it is a tool span, or the nearest tool ancestor through task and workflow spans, which a tool uses to
+// structure its own work. Other kinds, such as an LLM or agent span inside a tool, keep their calls.
+func (s *Span) DownstreamOwner() *Span {
+	for span := s; span != nil; span = span.parent {
+		switch span.spanKind {
+		case SpanKindTool:
+			return span
+		case SpanKindTask, SpanKindWorkflow:
+			continue
+		default:
+			return nil
+		}
+	}
+	return nil
+}
+
 // RecordDownstreamCall adds c to the span's downstream call summary. Only tool spans keep one,
 // and calls that arrive after the span finished are dropped.
 func (s *Span) RecordDownstreamCall(c DownstreamCall) {
