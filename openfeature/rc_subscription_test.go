@@ -317,6 +317,48 @@ func TestRemoteConfigFastPathReplacementWithoutNewUpdate(t *testing.T) {
 	assert.Contains(t, config.Flags, "live-flag")
 }
 
+func TestRemoteConfigFastPathReplacementReplaysOnlyAcknowledgedState(t *testing.T) {
+	internalffe.ResetForTest()
+	remoteconfig.Reset()
+	t.Cleanup(func() {
+		internalffe.ResetForTest()
+		remoteconfig.Reset()
+	})
+	require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+	require.NoError(t, internalffe.SubscribeRC())
+
+	first, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+	statuses := internalffe.ForwardForTest(remoteconfig.ProductUpdate{
+		"path/ffe": remoteConfigTestPayload(t, "last-good-flag"),
+	})
+	require.Equal(t, rc.ApplyStateAcknowledged, statuses["path/ffe"].State)
+	require.Contains(t, first.getConfiguration().Flags, "last-good-flag")
+
+	statuses = internalffe.ForwardForTest(remoteconfig.ProductUpdate{
+		"path/ffe": []byte(`{"flags":`),
+	})
+	require.Equal(t, rc.ApplyStateError, statuses["path/ffe"].State)
+	require.Contains(t, first.getConfiguration().Flags, "last-good-flag",
+		"a rejected update must not replace the active configuration")
+	require.NoError(t, first.ShutdownWithContext(context.Background()))
+
+	replacement, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+	require.Contains(t, replacement.getConfiguration().Flags, "last-good-flag",
+		"replacement must receive the last acknowledged configuration")
+	statuses = internalffe.ForwardForTest(remoteconfig.ProductUpdate{"path/ffe": nil})
+	require.Equal(t, rc.ApplyStateAcknowledged, statuses["path/ffe"].State)
+	require.Nil(t, replacement.getConfiguration())
+	require.NoError(t, replacement.ShutdownWithContext(context.Background()))
+
+	afterRemoval, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+	t.Cleanup(afterRemoval.Shutdown)
+	require.Nil(t, afterRemoval.getConfiguration(),
+		"an acknowledged removal must also remove the replayable configuration")
+}
+
 func remoteConfigTestPayload(t *testing.T, flagKey string) []byte {
 	t.Helper()
 	data, err := json.Marshal(universalFlagsConfiguration{

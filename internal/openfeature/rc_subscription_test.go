@@ -22,6 +22,14 @@ type panickingRCLogger struct{}
 
 func (panickingRCLogger) Log(string) { panic("logger failure") }
 
+func acknowledgedStatuses(update remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+	statuses := make(map[string]rc.ApplyStatus, len(update))
+	for path := range update {
+		statuses[path] = rc.ApplyStatus{State: rc.ApplyStateAcknowledged}
+	}
+	return statuses
+}
+
 func TestForwardingCallbackBuffersWhenNoCallback(t *testing.T) {
 	ResetForTest()
 	defer ResetForTest()
@@ -34,10 +42,11 @@ func TestForwardingCallbackBuffersWhenNoCallback(t *testing.T) {
 	rcState.Lock()
 	require.NotNil(t, rcState.buffered)
 	assert.Contains(t, rcState.buffered, "path/1")
+	assert.Empty(t, rcState.delivered)
 	rcState.Unlock()
 }
 
-func TestForwardingCallbackBuffersOnlyLatest(t *testing.T) {
+func TestForwardingCallbackAccumulatesPendingChanges(t *testing.T) {
 	ResetForTest()
 	defer ResetForTest()
 
@@ -46,7 +55,7 @@ func TestForwardingCallbackBuffersOnlyLatest(t *testing.T) {
 
 	rcState.Lock()
 	require.NotNil(t, rcState.buffered)
-	assert.NotContains(t, rcState.buffered, "path/old")
+	assert.Contains(t, rcState.buffered, "path/old")
 	assert.Contains(t, rcState.buffered, "path/new")
 	rcState.Unlock()
 }
@@ -58,11 +67,7 @@ func TestForwardingCallbackForwardsWhenCallbackAttached(t *testing.T) {
 	var received remoteconfig.ProductUpdate
 	cb := func(update remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
 		received = update
-		statuses := make(map[string]rc.ApplyStatus, len(update))
-		for path := range update {
-			statuses[path] = rc.ApplyStatus{State: rc.ApplyStateAcknowledged}
-		}
-		return statuses
+		return acknowledgedStatuses(update)
 	}
 
 	rcState.Lock()
@@ -78,6 +83,36 @@ func TestForwardingCallbackForwardsWhenCallbackAttached(t *testing.T) {
 
 	rcState.Lock()
 	assert.Nil(t, rcState.buffered)
+	assert.Equal(t, []byte(`live`), rcState.delivered["path/live"])
+	rcState.Unlock()
+}
+
+func TestForwardingCallbackRetainsOnlyAcknowledgedState(t *testing.T) {
+	ResetForTest()
+	defer ResetForTest()
+
+	rcState.Lock()
+	rcState.subscribed = true
+	rcState.delivered = remoteconfig.ProductUpdate{
+		"path/good":    []byte(`good`),
+		"path/removed": []byte(`remove-me`),
+	}
+	rcState.callback = func(update remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+		return map[string]rc.ApplyStatus{
+			"path/good":    {State: rc.ApplyStateError},
+			"path/removed": {State: rc.ApplyStateAcknowledged},
+		}
+	}
+	rcState.Unlock()
+
+	forwardingCallback(remoteconfig.ProductUpdate{
+		"path/good":    []byte(`malformed`),
+		"path/removed": nil,
+	})
+
+	rcState.Lock()
+	assert.Equal(t, []byte(`good`), rcState.delivered["path/good"])
+	assert.NotContains(t, rcState.delivered, "path/removed")
 	rcState.Unlock()
 }
 
@@ -245,7 +280,9 @@ func TestAttachReplacementReplaysDeliveredStateWithPanickingDebugLogger(t *testi
 	rcState.subscribed = true
 	rcState.Unlock()
 
-	firstToken, attached := AttachCallback(func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus { return nil })
+	firstToken, attached := AttachCallback(func(update remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+		return acknowledgedStatuses(update)
+	})
 	require.True(t, attached)
 	forwardingCallback(remoteconfig.ProductUpdate{"delivered/state": []byte("value")})
 	require.NoError(t, UnsubscribeProvider(firstToken))

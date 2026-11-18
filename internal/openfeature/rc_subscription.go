@@ -42,8 +42,8 @@ var rcState struct {
 	subscribed           bool
 	callback             Callback
 	callbackToken        ProviderToken
-	buffered             remoteconfig.ProductUpdate // latest snapshot; RC sends full state each time
-	delivered            remoteconfig.ProductUpdate // last delivered state, retained for replacement providers
+	buffered             remoteconfig.ProductUpdate // pending changes received while no provider is attached
+	delivered            remoteconfig.ProductUpdate // last acknowledged state, retained for replacement providers
 	providerSubscription remoteconfig.SubscriptionToken
 	providerToken        ProviderToken
 	nextProviderToken    ProviderToken
@@ -66,6 +66,7 @@ func SubscribeRC() error {
 		rcState.subscribed = false
 		rcState.callback = nil
 		rcState.callbackToken = 0
+		rcState.buffered = nil
 		rcState.delivered = nil
 	}
 
@@ -84,33 +85,25 @@ func SubscribeRC() error {
 }
 
 // forwardingCallback is the RC callback registered by SubscribeRC. If a
-// provider callback is attached, it forwards directly. Otherwise, it buffers
-// the latest update for replay when the provider attaches.
+// provider callback is attached, it forwards directly and records only the
+// paths the provider acknowledged. Otherwise, it buffers changes for replay
+// when the provider attaches.
 func forwardingCallback(update remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
 	rcState.Lock()
 	defer rcState.Unlock()
 
-	if rcState.delivered == nil {
-		rcState.delivered = make(remoteconfig.ProductUpdate, len(update))
+	if rcState.callback != nil {
+		statuses := rcState.callback(update)
+		applyAcknowledgedUpdateLocked(update, statuses)
+		return statuses
+	}
+
+	if rcState.buffered == nil {
+		rcState.buffered = make(remoteconfig.ProductUpdate, len(update))
 	}
 	for path, data := range update {
-		if data == nil {
-			delete(rcState.delivered, path)
-		} else {
-			rcState.delivered[path] = bytes.Clone(data)
-		}
+		rcState.buffered[path] = bytes.Clone(data)
 	}
-
-	if rcState.callback != nil {
-		return rcState.callback(update)
-	}
-
-	// Buffer the latest update for replay.
-	cpy := make(remoteconfig.ProductUpdate, len(update))
-	for k, v := range update {
-		cpy[k] = bytes.Clone(v)
-	}
-	rcState.buffered = cpy
 
 	// Acknowledge all paths so RC doesn't consider them errored.
 	statuses := make(map[string]rc.ApplyStatus, len(update))
@@ -118,6 +111,24 @@ func forwardingCallback(update remoteconfig.ProductUpdate) map[string]rc.ApplySt
 		statuses[path] = rc.ApplyStatus{State: rc.ApplyStateAcknowledged}
 	}
 	return statuses
+}
+
+// applyAcknowledgedUpdateLocked advances the replayable state only for paths
+// which the provider accepted. The caller holds rcState.
+func applyAcknowledgedUpdateLocked(update remoteconfig.ProductUpdate, statuses map[string]rc.ApplyStatus) {
+	for path, data := range update {
+		if statuses[path].State != rc.ApplyStateAcknowledged {
+			continue
+		}
+		if data == nil {
+			delete(rcState.delivered, path)
+			continue
+		}
+		if rcState.delivered == nil {
+			rcState.delivered = make(remoteconfig.ProductUpdate)
+		}
+		rcState.delivered[path] = bytes.Clone(data)
+	}
 }
 
 // AttachCallback wires the given callback to the global RC subscription.
@@ -142,19 +153,20 @@ func AttachCallback(cb Callback) (ProviderToken, bool) {
 	rcState.callback = cb
 	rcState.callbackToken = token
 
+	if len(rcState.delivered) > 0 {
+		cb(rcState.delivered)
+		containLoggerPanic(func() {
+			log.Debug("openfeature: replayed last acknowledged RC config to replacement provider")
+		})
+	}
 	if rcState.buffered != nil {
-		// Apply statuses are intentionally discarded: the RC client already received
-		// ApplyStateAcknowledged from forwardingCallback when this update was buffered.
-		// This call only initializes the provider's in-memory state.
-		cb(rcState.buffered)
+		// The RC client already received ApplyStateAcknowledged when this update was
+		// buffered. The replay statuses only determine which paths are safe to retain.
+		statuses := cb(rcState.buffered)
+		applyAcknowledgedUpdateLocked(rcState.buffered, statuses)
 		rcState.buffered = nil
 		containLoggerPanic(func() {
 			log.Debug("openfeature: replayed buffered RC config to provider")
-		})
-	} else if len(rcState.delivered) > 0 {
-		cb(rcState.delivered)
-		containLoggerPanic(func() {
-			log.Debug("openfeature: replayed last delivered RC config to replacement provider")
 		})
 	}
 

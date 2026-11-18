@@ -283,7 +283,7 @@ func evaluateConfiguredFlagLookedUpWithState(
 	exclusion experimentationExclusion,
 	evaluatorState *dependencyEvaluatorState,
 ) evaluationResult {
-	if !exists || !flag.Enabled || !flagMayEvaluateDependencies(flag) {
+	if !exists || !flag.Enabled {
 		if exists && !(exclusion.mode == ExperimentationOptOutFutureExperimentsOnly && flag.invalidActivation) {
 			return evaluateFlagWithResolver(flag, defaultValue, context, now, exclusion, nil)
 		}
@@ -309,32 +309,6 @@ func evaluateConfiguredFlagLookedUpWithState(
 		result.Metadata[metadataDependencyExposuresKey] = encodeDependencyExposureCandidates(resolver.session.exposures)
 	}
 	return result
-}
-
-// flagMayEvaluateDependencies reports whether a flag contains any authored
-// prerequisite condition. This preserves the independent-evaluation fast path
-// without adding evaluator state to the parsed UFC model.
-func flagMayEvaluateDependencies(flag *flag) bool {
-	return flagContainsDependencyConditions(flag)
-}
-
-func flagContainsDependencyConditions(flag *flag) bool {
-	for _, allocation := range flag.Allocations {
-		if allocation == nil {
-			continue
-		}
-		for _, rule := range allocation.Rules {
-			if rule == nil {
-				continue
-			}
-			for _, condition := range rule.Conditions {
-				if condition != nil && condition.FlagEvaluation != nil {
-					return true
-				}
-			}
-		}
-	}
-	return false
 }
 
 func evaluateConfiguredFlagOnce(
@@ -372,25 +346,31 @@ func evaluateConfiguredFlagOnce(
 }
 
 func configuredMaxDependencyDepth(config *universalFlagsConfiguration) int {
+	depth, invalid := parseConfiguredMaxDependencyDepth(config)
+	if invalid {
+		logInvalidMaxDependencyDepth()
+	}
+	return depth
+}
+
+func parseConfiguredMaxDependencyDepth(config *universalFlagsConfiguration) (depth int, invalid bool) {
 	if len(config.EvaluatorParams) == 0 {
-		return defaultMaxDependencyDepth
+		return defaultMaxDependencyDepth, false
 	}
 
 	var params map[string]json.RawMessage
 	if err := json.Unmarshal(config.EvaluatorParams, &params); err != nil || params == nil {
-		logInvalidMaxDependencyDepth()
-		return defaultMaxDependencyDepth
+		return defaultMaxDependencyDepth, true
 	}
 	configuredDepth, present := params["maxDependencyDepth"]
 	if !present {
-		return defaultMaxDependencyDepth
+		return defaultMaxDependencyDepth, false
 	}
 	depth, valid := parseMaxDependencyDepth(configuredDepth)
 	if !valid {
-		logInvalidMaxDependencyDepth()
-		return defaultMaxDependencyDepth
+		return defaultMaxDependencyDepth, true
 	}
-	return depth
+	return depth, false
 }
 
 func logInvalidMaxDependencyDepth() {
@@ -412,9 +392,16 @@ func (s *dependencyEvaluatorState) resolveMaxDependencyDepth(config *universalFl
 	if s == nil {
 		return configuredMaxDependencyDepth(config)
 	}
+	initialized, invalid := false, false
 	s.maxDependencyDepthOnce.Do(func() {
-		s.maxDependencyDepth = configuredMaxDependencyDepth(config)
+		initialized = true
+		s.maxDependencyDepth, invalid = parseConfiguredMaxDependencyDepth(config)
 	})
+	if initialized && invalid {
+		// Application loggers may evaluate through this same state. Emit only
+		// after Once is complete so that re-entry observes the cached depth.
+		logInvalidMaxDependencyDepth()
+	}
 	return s.maxDependencyDepth
 }
 

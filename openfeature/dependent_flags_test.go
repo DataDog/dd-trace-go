@@ -585,6 +585,116 @@ func TestDependentFlags_InvalidDepthPanickingLoggerStillUsesDefault(t *testing.T
 	}
 }
 
+type reentrantDependencyDepthLogger struct {
+	once     sync.Once
+	evaluate func()
+}
+
+func (l *reentrantDependencyDepthLogger) Log(string) {
+	l.once.Do(l.evaluate)
+}
+
+func TestDependentFlags_InvalidDepthReentrantLoggerDoesNotDeadlock(t *testing.T) {
+	if os.Getenv("DD_DEPENDENCY_DEPTH_REENTRANT_SUBPROCESS") != "1" {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestDependentFlags_InvalidDepthReentrantLoggerDoesNotDeadlock$", "-test.count=1")
+		cmd.Env = append(os.Environ(), "DD_DEPENDENCY_DEPTH_REENTRANT_SUBPROCESS=1", "DD_LOGGING_RATE=0")
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", out)
+		return
+	}
+
+	config := dependencyTestConfig(
+		dependencyTestFlag("dependency", "on", nil),
+		dependencyTestFlag("root", "on", dependencyCondition("dependency", operatorOneOf, "on")),
+	)
+	config.EvaluatorParams = json.RawMessage(`{"maxDependencyDepth":null}`)
+	state := new(dependencyEvaluatorState)
+	evaluate := func() evaluationResult {
+		root, exists := config.Flags["root"]
+		return evaluateConfiguredFlagLookedUpWithState(config, "root", root, exists, false, nil,
+			time.Now(), experimentationExclusion{}, state)
+	}
+
+	inner := make(chan evaluationResult, 1)
+	logger := &reentrantDependencyDepthLogger{}
+	logger.evaluate = func() { inner <- evaluate() }
+	previousLevel := log.GetLevel()
+	log.SetLevel(log.LevelWarn)
+	undoLogger := log.UseLogger(logger)
+	t.Cleanup(func() {
+		undoLogger()
+		log.SetLevel(previousLevel)
+	})
+
+	outer := make(chan evaluationResult, 1)
+	go func() { outer <- evaluate() }()
+	for _, evaluation := range []struct {
+		name    string
+		results <-chan evaluationResult
+	}{
+		{name: "outer", results: outer},
+		{name: "reentrant", results: inner},
+	} {
+		select {
+		case result := <-evaluation.results:
+			require.NoError(t, result.Error, evaluation.name)
+			require.True(t, result.Value.(bool), evaluation.name)
+			require.Equal(t, []string{"dependency"}, dependencyEvaluationKeys(result), evaluation.name)
+		case <-time.After(2 * time.Second):
+			t.Fatalf("%s evaluation deadlocked", evaluation.name)
+		}
+	}
+}
+
+func TestDependentFlags_UnreachableConditionsRemainLazy(t *testing.T) {
+	config, root := unreachableDependencyConditionsConfig(10_000)
+	state := new(dependencyEvaluatorState)
+	result := evaluateConfiguredFlagLookedUpWithState(config, "root", root, true, false, nil,
+		time.Now(), experimentationExclusion{}, state)
+
+	require.NoError(t, result.Error)
+	require.True(t, result.Value.(bool))
+	require.Equal(t, of.StaticReason, result.Reason)
+	require.Empty(t, result.DependencyEvaluations)
+	require.Zero(t, state.maxDependencyDepth, "unreached dependencies must not resolve evaluator options")
+}
+
+func BenchmarkDependentFlags_UnreachableConditions(b *testing.B) {
+	for _, count := range []int{0, 10_000} {
+		b.Run(fmt.Sprintf("conditions_%d", count), func(b *testing.B) {
+			config, root := unreachableDependencyConditionsConfig(count)
+			state := new(dependencyEvaluatorState)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				result := evaluateConfiguredFlagLookedUpWithState(config, "root", root, true, false, nil,
+					time.Now(), experimentationExclusion{}, state)
+				if result.Error != nil {
+					b.Fatal(result.Error)
+				}
+			}
+		})
+	}
+}
+
+func unreachableDependencyConditionsConfig(count int) (*universalFlagsConfiguration, *flag) {
+	root := dependencyTestFlag("root", "on", nil)
+	conditions := make([]*condition, count)
+	for i := range conditions {
+		conditions[i] = dependencyCondition(fmt.Sprintf("unreachable-%d", i), operatorOneOf, "on")
+	}
+	root.Allocations = append(root.Allocations, &allocation{
+		Key: "unreachable-allocation",
+		Rules: []*rule{{
+			Conditions: conditions,
+		}},
+		Splits: []*split{{VariationKey: "on", Shards: []*shard{}}},
+	})
+	config := dependencyTestConfig(root)
+	config.EvaluatorParams = json.RawMessage(`{"maxDependencyDepth":null}`)
+	return config, root
+}
+
 func TestDependentFlags_ExactIntegerDepthForms(t *testing.T) {
 	for configured, want := range map[string]int{
 		"3.0":    3,
