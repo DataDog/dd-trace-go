@@ -14,6 +14,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -235,6 +236,24 @@ func reportMalformedAgentlessConfiguration(err error) {
 	telemetrylog.ReportError("openfeature: agentless: received malformed configuration", err)
 }
 
+func addEvaluatorCapabilities(req *http.Request, capabilities []string) {
+	if !slices.Contains(capabilities, internalffe.DependentFlagVariantKeyV1) {
+		return
+	}
+	query := req.URL.Query()
+	if slices.Contains(query[internalffe.DependentFlagsVariantKeyQueryParameter], internalffe.DependentFlagsVariantKeyQueryVersion) {
+		return
+	}
+	capability := url.QueryEscape(internalffe.DependentFlagsVariantKeyQueryParameter) + "=" + url.QueryEscape(internalffe.DependentFlagsVariantKeyQueryVersion)
+	if req.URL.RawQuery == "" {
+		req.URL.RawQuery = capability
+		return
+	}
+	// Preserve custom endpoint and flag-selection query bytes. Re-encoding the
+	// whole query here can reorder unrelated parameters owned by those features.
+	req.URL.RawQuery = capability + "&" + req.URL.RawQuery
+}
+
 // attempt is only used to number debug log lines.
 func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.requestTimeout)
@@ -261,6 +280,7 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 		}
 		return pollOutcomeStop, 0
 	}
+	addEvaluatorCapabilities(req, internalffe.EvaluatorCapabilities())
 	req.Header.Set("Accept-Encoding", "gzip")
 	req.Header.Set("DD-Client-Library-Language", "go")
 	req.Header.Set("DD-Client-Library-Version", version.Tag)

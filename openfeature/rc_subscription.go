@@ -14,5 +14,12 @@ import (
 // FFE_FLAGS, it replays any buffered config and returns true. Otherwise
 // returns false, meaning the caller should fall back to its own RC subscription.
 func attachProvider(p *DatadogProvider) bool {
-	return internalffe.AttachCallback(p.rcCallback)
+	token, attached := internalffe.AttachCallback(p.rcCallback)
+	if !attached {
+		return false
+	}
+	p.mu.Lock()
+	p.remoteConfigToken = token
+	p.mu.Unlock()
+	return true
 }

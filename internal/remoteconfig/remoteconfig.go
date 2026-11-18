@@ -141,6 +141,9 @@ const (
 	FFEFlagEvaluation
 )
 
+// FFEFlagDependentFlagVariantKeyV1 is protocol registration, not evaluator support.
+const FFEFlagDependentFlagVariantKeyV1 Capability = 50
+
 // ErrClientNotStarted is returned when the remote config client is not started.
 var ErrClientNotStarted = errors.New("remote config client not started")
 

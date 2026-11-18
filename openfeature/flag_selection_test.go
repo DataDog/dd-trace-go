@@ -490,7 +490,16 @@ func (b *selectionBackend) handle(w http.ResponseWriter, r *http.Request) {
 func (b *selectionBackend) requests() (rawQueries, paths, ifNoneMatch []string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return slices.Clone(b.rawQueries), slices.Clone(b.paths), slices.Clone(b.ifNoneMatch)
+	rawQueries = slices.Clone(b.rawQueries)
+	capability := url.QueryEscape(internalffe.DependentFlagsVariantKeyQueryParameter) + "=" + url.QueryEscape(internalffe.DependentFlagsVariantKeyQueryVersion)
+	for i, rawQuery := range rawQueries {
+		if rawQuery == capability {
+			rawQueries[i] = ""
+			continue
+		}
+		rawQueries[i] = strings.TrimPrefix(rawQuery, capability+"&")
+	}
+	return rawQueries, slices.Clone(b.paths), slices.Clone(b.ifNoneMatch)
 }
 
 func newSelectionSource(t *testing.T, baseURL string, selection *FlagSelection, apply func(*universalFlagsConfiguration)) *agentlessSource {
