@@ -34,7 +34,7 @@ on:
         type: string
         default: '["linux/amd64", "linux/arm64"]'
       version:
-        description: 'DD_VERSION to pass as build argument to Dockerfile'
+        description: 'DD_VERSION to pass as build argument to Dockerfile, and image version label. Pass it only if the image reports DD_VERSION as its version, otherwise the label is the tracer version.Tag'
         required: false
         type: string
         default: ''
