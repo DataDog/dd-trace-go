@@ -171,25 +171,19 @@ func TestGoCachePolicyPerOS(t *testing.T) {
 	}
 
 	// Lanes whose Windows matrix strata skip the Go caches: both inputs
-	// exclude the same runner key the matrix defines.
-	for name, jobID := range map[string]string{
-		"orchestrion.yml":        "integration-test",
-		"otelc.yml":              "integration-test",
-		"multios-unit-tests.yml": "test-multi-os",
-	} {
-		with := setupGoStep(t, join(name), jobID)
+	// exclude the same runner key the matrix defines. The caller names the
+	// runner in multios, so that lane keys on runner.os instead.
+	lanes := []struct{ name, jobID, want string }{
+		{"orchestrion.yml", "integration-test", "${{ matrix.runs-on != 'windows' }}"},
+		{"otelc.yml", "integration-test", "${{ matrix.runs-on != 'windows' }}"},
+		{"multios-unit-tests.yml", "test-multi-os", "${{ runner.os != 'Windows' }}"},
+	}
+	for _, lane := range lanes {
+		with := setupGoStep(t, join(lane.name), lane.jobID)
 		for _, input := range []string{"cache", "seed"} {
 			got, _ := with[input].(string)
-			switch name {
-			case "multios-unit-tests.yml":
-				// The caller names the runner, so the skip keys on runner.os.
-				if want := "${{ runner.os != 'Windows' }}"; got != want {
-					t.Errorf("%s job %q: setup-go %s = %q, want %q", name, jobID, input, got, want)
-				}
-			default:
-				if want := "${{ matrix.runs-on != 'windows' }}"; got != want {
-					t.Errorf("%s job %q: setup-go %s = %q, want %q", name, jobID, input, got, want)
-				}
+			if got != lane.want {
+				t.Errorf("%s job %q: setup-go %s = %q, want %q", lane.name, lane.jobID, input, got, lane.want)
 			}
 		}
 	}

@@ -133,7 +133,6 @@ jobs:
       # (APMLP-2249). The other jobs keep the shared go-mod-caching
       # restore below.
       - name: Setup Go
-        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ matrix.go-version }}

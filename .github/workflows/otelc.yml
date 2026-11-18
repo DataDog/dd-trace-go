@@ -200,11 +200,9 @@ jobs:
           workload: otelc-integration
           # Default-branch seed set: the nightly schedule and a
           # workflow_dispatch on the default branch save these keys; every
-          # pull request run restores only. The lane is almost all compile
-          # time, so a warm build cache cuts the PR lane by minutes. Windows
-          # skips the Go cache entirely: restoring it on Windows costs more
-          # time than it saves (APMLP-2248), so that stratum neither seeds
-          # nor restores.
+          # pull request run restores only. Windows skips the Go cache
+          # entirely: restoring it costs more time than it saves
+          # (APMLP-2248), so that stratum neither seeds nor restores.
           cache: ${{ matrix.runs-on != 'windows' }}
           seed: ${{ matrix.runs-on != 'windows' }}
           variant: |-
