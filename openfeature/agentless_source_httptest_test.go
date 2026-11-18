@@ -752,7 +752,7 @@ func TestAddEvaluatorCapabilitiesUsesQueryParameter(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "https://example.test/ufc?token=preserved", nil)
-			addEvaluatorCapabilities(req, test.capabilities)
+			addEvaluatorCapabilities(req.URL, test.capabilities)
 
 			assert.Equal(t, test.expected, req.URL.String())
 		})

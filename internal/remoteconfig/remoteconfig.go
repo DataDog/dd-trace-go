@@ -441,7 +441,18 @@ func (c *Client) requestPoll() {
 	}
 }
 
-type SubscriptionToken int
+// SubscriptionToken identifies a subscription on the client that created it.
+// Tokens from a stopped client are harmless when a replacement client is
+// running, even if both clients allocated the same numeric subscription ID.
+type SubscriptionToken struct {
+	client *Client
+	id     int
+}
+
+// IsZero reports whether token identifies no subscription.
+func (token SubscriptionToken) IsZero() bool {
+	return token.client == nil
+}
 
 // Subscribe registers a product and its callback to be invoked when the client
 // receives configuration updates for the specified product. The returned token
@@ -449,10 +460,8 @@ type SubscriptionToken int
 //
 // It is legal to call Subscribe multiple times with the same product, and even
 // to call it multiple times with the same product and different capabilities.
-// Note, however, that the capabilities reported to RC are the union of all
-// capabilities passed to Subscribe and RegisterCapability (across all
-// products); in other words, the capabilities are not tied to a specific
-// product or subscription.
+// The capabilities reported to RC are the union of all capabilities passed to
+// active subscriptions and RegisterCapability calls across all products.
 //
 // Subscribe should be preferred over RegisterProduct and RegisterCallback if
 // your callback only handles a single product.
@@ -461,12 +470,12 @@ func Subscribe(product string, callback ProductCallback, capabilities ...Capabil
 	// global) can't cause a nil deref mid-function.
 	c := clientSingleton.Load()
 	if c == nil {
-		return 0, ErrClientNotStarted
+		return SubscriptionToken{}, ErrClientNotStarted
 	}
 	c.productsMu.RLock()
 	defer c.productsMu.RUnlock()
 	if _, found := c.products[product]; found {
-		return 0, fmt.Errorf("product %s already registered via RegisterProduct", product)
+		return SubscriptionToken{}, fmt.Errorf("product %s already registered via RegisterProduct", product)
 	}
 
 	c.subscriptionsMu.Lock()
@@ -481,16 +490,11 @@ func Subscribe(product string, callback ProductCallback, capabilities ...Capabil
 	}
 	c.subscriptionsMu.subs = append(c.subscriptionsMu.subs, sub)
 
-	c.capabilitiesMu.Lock()
-	defer c.capabilitiesMu.Unlock()
-	for _, cap := range capabilities {
-		c.capabilities[cap] = struct{}{}
-	}
 	// Poll now: Subscribe registers product+callback+capabilities atomically, so
 	// the poll can't arrive before the callback. (RegisterProduct/RegisterCapability
 	// don't — they're used before a callback exists; see those.)
 	c.requestPoll()
-	return SubscriptionToken(id), nil
+	return SubscriptionToken{client: c, id: id}, nil
 }
 
 // Unsubscribe removes a subscription previously registered via Subscribe. The
@@ -501,15 +505,20 @@ func Unsubscribe(token SubscriptionToken) error {
 	if client == nil {
 		return ErrClientNotStarted
 	}
+	if token.client != client {
+		// The issuing client was stopped or replaced. Its subscriptions ended
+		// with it, and token.id may identify an unrelated subscription now.
+		return nil
+	}
 	client.subscriptionsMu.Lock()
 	defer client.subscriptionsMu.Unlock()
 	for i, sub := range client.subscriptionsMu.subs {
-		if sub.id == int(token) {
+		if sub.id == token.id {
 			client.subscriptionsMu.subs = append(client.subscriptionsMu.subs[:i], client.subscriptionsMu.subs[i+1:]...)
 			return nil
 		}
 	}
-	return fmt.Errorf("subscription %d not found", token)
+	return fmt.Errorf("subscription %d not found", token.id)
 }
 
 // RegisterCallback allows registering a callback that will be invoked when the client
@@ -636,9 +645,19 @@ func HasCapability(cpb Capability) (bool, error) {
 		return false, ErrClientNotStarted
 	}
 	client.capabilitiesMu.RLock()
-	defer client.capabilitiesMu.RUnlock()
 	_, found := client.capabilities[cpb]
-	return found, nil
+	client.capabilitiesMu.RUnlock()
+	if found {
+		return true, nil
+	}
+	client.subscriptionsMu.RLock()
+	defer client.subscriptionsMu.RUnlock()
+	for _, subscription := range client.subscriptionsMu.subs {
+		if slices.Contains(subscription.capabilities, cpb) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (c *Client) allCapabilities() *big.Int {

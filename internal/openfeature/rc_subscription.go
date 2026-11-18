@@ -46,7 +46,6 @@ var rcState struct {
 	delivered            remoteconfig.ProductUpdate // last delivered state, retained for replacement providers
 	providerSubscription remoteconfig.SubscriptionToken
 	providerToken        ProviderToken
-	providerCapabilities []remoteconfig.Capability
 	nextProviderToken    ProviderToken
 }
 
@@ -198,7 +197,6 @@ func SubscribeProvider(cb remoteconfig.ProductCallback) (tracerOwnsSubscription 
 	token = nextProviderTokenLocked()
 	rcState.providerSubscription = subscription
 	rcState.providerToken = token
-	rcState.providerCapabilities = append(rcState.providerCapabilities[:0], capabilities...)
 
 	log.Debug("openfeature: provider subscribed to RC product %s", FFEProductName)
 	return false, token, nil
@@ -233,27 +231,13 @@ func UnsubscribeProvider(token ProviderToken) error {
 		return nil
 	}
 	subscription := rcState.providerSubscription
-	capabilities := append([]remoteconfig.Capability(nil), rcState.providerCapabilities...)
-	rcState.providerSubscription = 0
+	rcState.providerSubscription = remoteconfig.SubscriptionToken{}
 	rcState.providerToken = 0
-	rcState.providerCapabilities = nil
-
-	if rcState.subscribed {
-		// A tracer restart replaced the RC client and its subscription ID namespace.
-		// This provider-owned subscription died with the old client; its stale ID may
-		// now identify an unrelated product on the new client.
-		return nil
-	}
 	if err := remoteconfig.Unsubscribe(subscription); err != nil {
 		if errors.Is(err, remoteconfig.ErrClientNotStarted) {
 			return nil
 		}
 		return err
-	}
-	for _, capability := range capabilities {
-		if err := remoteconfig.UnregisterCapability(capability); err != nil {
-			return err
-		}
 	}
 	return nil
 }

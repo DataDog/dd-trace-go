@@ -20,9 +20,8 @@ func ResetForTest() {
 	rcState.callbackToken = 0
 	rcState.buffered = nil
 	rcState.delivered = nil
-	rcState.providerSubscription = 0
+	rcState.providerSubscription = remoteconfig.SubscriptionToken{}
 	rcState.providerToken = 0
-	rcState.providerCapabilities = nil
 }
 
 // SetSubscribedForTest sets the subscribed flag without actually calling Subscribe.

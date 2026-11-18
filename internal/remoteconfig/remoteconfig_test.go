@@ -373,6 +373,100 @@ func TestSubscribe(t *testing.T) {
 	require.Len(t, client.callbacks, 1)
 }
 
+func TestSubscriptionTokenCannotUnsubscribeReplacementClient(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+
+	oldClient, err := newClient(DefaultClientConfig())
+	require.NoError(t, err)
+	clientSingleton.Store(oldClient)
+	oldToken, err := Subscribe("FFE_FLAGS", func(ProductUpdate) map[string]state.ApplyStatus { return nil })
+	require.NoError(t, err)
+	require.Equal(t, 1, oldToken.id)
+
+	replacementClient, err := newClient(DefaultClientConfig())
+	require.NoError(t, err)
+	clientSingleton.Store(replacementClient)
+	replacementToken, err := Subscribe("APM_TRACING", func(ProductUpdate) map[string]state.ApplyStatus { return nil })
+	require.NoError(t, err)
+	require.Equal(t, oldToken.id, replacementToken.id, "subscription IDs restart with each client")
+
+	require.NoError(t, Unsubscribe(oldToken))
+	has, err := HasProduct("APM_TRACING")
+	require.NoError(t, err)
+	assert.True(t, has, "an old token must not affect a replacement client")
+}
+
+func TestSubscriptionCapabilitiesFollowSubscriptionLifetime(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+
+	client, err := newClient(DefaultClientConfig())
+	require.NoError(t, err)
+	clientSingleton.Store(client)
+	callback := func(ProductUpdate) map[string]state.ApplyStatus { return nil }
+	first, err := Subscribe("FIRST", callback, FFEFlagEvaluation)
+	require.NoError(t, err)
+	second, err := Subscribe("SECOND", callback, FFEFlagEvaluation)
+	require.NoError(t, err)
+
+	has, err := HasCapability(FFEFlagEvaluation)
+	require.NoError(t, err)
+	require.True(t, has)
+	require.NoError(t, Unsubscribe(first))
+	has, err = HasCapability(FFEFlagEvaluation)
+	require.NoError(t, err)
+	require.True(t, has, "the remaining subscription still owns the capability")
+
+	require.NoError(t, Unsubscribe(second))
+	has, err = HasCapability(FFEFlagEvaluation)
+	require.NoError(t, err)
+	assert.False(t, has, "the capability ends with its final subscription")
+}
+
+func TestSubscriptionTokenSafeDuringClientReplacement(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+
+	for i := range 1000 {
+		oldClient, err := newClient(DefaultClientConfig())
+		require.NoError(t, err)
+		clientSingleton.Store(oldClient)
+		oldToken, err := Subscribe("FFE_FLAGS", func(ProductUpdate) map[string]state.ApplyStatus { return nil })
+		require.NoError(t, err)
+
+		replacementClient, err := newClient(DefaultClientConfig())
+		require.NoError(t, err)
+		clientSingleton.Store(replacementClient)
+		_, err = Subscribe("APM_TRACING", func(ProductUpdate) map[string]state.ApplyStatus { return nil })
+		require.NoError(t, err)
+		clientSingleton.Store(oldClient)
+
+		start := make(chan struct{})
+		unsubscribeErr := make(chan error, 1)
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			unsubscribeErr <- Unsubscribe(oldToken)
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			clientSingleton.Store(replacementClient)
+		}()
+		close(start)
+		wg.Wait()
+		require.NoError(t, <-unsubscribeErr)
+
+		clientSingleton.Store(replacementClient)
+		has, err := HasProduct("APM_TRACING")
+		require.NoError(t, err)
+		require.True(t, has, "iteration %d: replacement subscription removed", i)
+	}
+}
+
 func TestNewUpdateRequest(t *testing.T) {
 	cfg := DefaultClientConfig()
 	cfg.ServiceName = "test-svc"

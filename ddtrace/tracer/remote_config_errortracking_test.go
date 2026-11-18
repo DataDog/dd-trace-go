@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
+
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
@@ -58,6 +60,10 @@ func TestRemoteConfigDisabledOpenFeatureSubscriptionLogsLocallyWithoutReporting(
 }
 
 func TestRemoteConfigSubscriptionErrorsReportedToTelemetry(t *testing.T) {
+	require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+	staleToken, err := remoteconfig.Subscribe("STALE_TEST_PRODUCT", func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus { return nil })
+	require.NoError(t, err)
+	remoteconfig.Stop()
 	t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "false")
 	t.Cleanup(remoteconfig.Reset)
 
@@ -79,7 +85,7 @@ func TestRemoteConfigSubscriptionErrorsReportedToTelemetry(t *testing.T) {
 	// enable path left both real tokens at zero because the subscriptions
 	// never started.
 	tr.dynInstSubscriptions.mu.Lock()
-	tr.dynInstSubscriptions.ldSubscriptionToken = 1
+	tr.dynInstSubscriptions.ldSubscriptionToken = staleToken
 	tr.dynInstSubscriptions.mu.Unlock()
 	disabled := false
 	tr.handleDynamicInstrumentationEnabledRC(&disabled)

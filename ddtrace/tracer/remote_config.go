@@ -371,7 +371,7 @@ func (t *tracer) startDynamicInstrumentationRCSubscriptions() error {
 	t.dynInstSubscriptions.mu.Lock()
 	defer t.dynInstSubscriptions.mu.Unlock()
 
-	if t.dynInstSubscriptions.ldSubscriptionToken != 0 || t.dynInstSubscriptions.symDBSubscriptionToken != 0 {
+	if !t.dynInstSubscriptions.ldSubscriptionToken.IsZero() || !t.dynInstSubscriptions.symDBSubscriptionToken.IsZero() {
 		return errors.New("programming error: dynamic instrumentation RC subscriptions already started")
 	}
 
@@ -400,19 +400,19 @@ func (t *tracer) startDynamicInstrumentationRCSubscriptions() error {
 func (t *tracer) stopDynamicInstrumentationRCSubscriptions() error {
 	t.dynInstSubscriptions.mu.Lock()
 	defer t.dynInstSubscriptions.mu.Unlock()
-	if t.dynInstSubscriptions.ldSubscriptionToken != 0 {
+	if !t.dynInstSubscriptions.ldSubscriptionToken.IsZero() {
 		err := remoteconfig.Unsubscribe(t.dynInstSubscriptions.ldSubscriptionToken)
 		if err != nil {
 			return err
 		}
-		t.dynInstSubscriptions.ldSubscriptionToken = 0
+		t.dynInstSubscriptions.ldSubscriptionToken = remoteconfig.SubscriptionToken{}
 	}
-	if t.dynInstSubscriptions.symDBSubscriptionToken != 0 {
+	if !t.dynInstSubscriptions.symDBSubscriptionToken.IsZero() {
 		err := remoteconfig.Unsubscribe(t.dynInstSubscriptions.symDBSubscriptionToken)
 		if err != nil {
 			return err
 		}
-		t.dynInstSubscriptions.symDBSubscriptionToken = 0
+		t.dynInstSubscriptions.symDBSubscriptionToken = remoteconfig.SubscriptionToken{}
 	}
 	return nil
 }

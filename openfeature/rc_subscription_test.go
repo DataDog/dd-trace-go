@@ -192,7 +192,7 @@ func TestRemoteConfigSlowPathShutdownRemovesEvaluatorCapabilities(t *testing.T) 
 	}
 }
 
-func TestRemoteConfigSlowPathShutdownAfterRCRestart(t *testing.T) {
+func TestRemoteConfigSlowPathShutdownAfterRCRestartWithoutTracerFFESubscription(t *testing.T) {
 	internalffe.ResetForTest()
 	remoteconfig.Reset()
 	t.Cleanup(func() {
@@ -211,7 +211,6 @@ func TestRemoteConfigSlowPathShutdownAfterRCRestart(t *testing.T) {
 		remoteconfig.APMTracingSampleRate,
 	)
 	require.NoError(t, err)
-	require.NoError(t, internalffe.SubscribeRC())
 
 	require.NoError(t, provider.ShutdownWithContext(context.Background()))
 	has, err := remoteconfig.HasProduct("APM_TRACING")
@@ -219,7 +218,7 @@ func TestRemoteConfigSlowPathShutdownAfterRCRestart(t *testing.T) {
 	assert.True(t, has, "a stale FFE token must not remove another product")
 	has, err = remoteconfig.HasProduct(internalffe.FFEProductName)
 	require.NoError(t, err)
-	assert.True(t, has, "the tracer-owned FFE_FLAGS subscription must remain")
+	assert.False(t, has, "the replacement client did not select the FFE source")
 }
 
 func TestRemoteConfigSlowPathShutdownAfterRCStop(t *testing.T) {
