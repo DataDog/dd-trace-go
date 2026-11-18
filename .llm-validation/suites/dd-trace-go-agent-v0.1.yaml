@@ -839,6 +839,54 @@ cases:
       - Invents different/incorrect field names in place of .Key/.Value or .DirectiveArgs
 
 
+# ==== Setup-only skill cases ====
+  - id: dd-trace-go-apm-integrations-new-contrib
+    comparisons: [setup]
+    files:
+      - .claude/skills/apm-integrations/SKILL.md
+    only_warn: true
+    input: |
+      I'm adding a brand-new contrib integration for a Go library. Before I open the PR, where exactly
+      must the integration be registered in the codebase, and which auto-instrumentation artifacts and
+      tests are mandatory? Inspect local files only; do not create or edit files or run any builds.
+    expected_criteria:
+      - Registers the integration in three places -- a call to instrumentation.Load from an init, an
+        entry in instrumentation/packages.go, and the contribIntegrations list -- not a single location.
+      - Points to the authoring guides contrib/INTEGRATIONS.md as the source
+        of the rules. Citing these guides directly is correct; they can be read from the repo.
+      - Keeps to the plan-only, read-only scope and does not edit files or run builds.
+    bad_signals:
+      - Claims the integration is registered in only one place, or invents a single central registry file.
+      - Creates or edits files, or runs builds, despite the plan-only request.
+
+  - id: dd-trace-go-migrate-orchestrion-to-otelc
+    comparisons: [setup]
+    files:
+      - .claude/skills/migrate-orchestrion-to-otelc/SKILL.md
+    only_warn: true
+    input: |
+      I'm porting an integration's compile-time auto-instrumentation from Orchestrion to otelc. What is
+      the success criterion, what must I not do to the integration's existing tests, and how do I verify
+      what otelc actually instrumented rather than trusting a green run? Read local files only; do not
+      edit files, run builds, or run tests.
+    expected_criteria:
+      - States the success criterion is that the integration's existing internal/orchestrion/_integration/<name>/
+        tests pass when built with otelc, producing the same spans.
+      - States the otelc hooks must call the existing contrib entrypoints (such as WrapClient, Middleware,
+        or Open) rather than reimplementing tracing.
+      - States existing tests and assertions must not be edited to make the migration pass; adding new
+        cases or stronger assertions is allowed.
+      - Verifies what otelc rewrote via .otelc-build/matched.json (rules applied per package) and
+        .otelc-build/debug/<pkg>/ (the rewritten files), because a green run alone is not proof -- otelc
+        matches spans by subset and so misses extra spans and double wrapping.
+      - Respects the read-only scope and does not edit files, run builds, or run tests.
+    bad_signals:
+      - Recommends reimplementing tracing inside the otelc hooks instead of calling the existing contrib entrypoints.
+      - Recommends editing existing tests or assertions to make the migration pass.
+      - Claims a passing otelc test run by itself proves the rules are correct.
+      - Edits files, runs builds, or runs tests despite the read-only request.
+
+
 # ==== OTelc Tests ====
 # TODO: OTelc does not currently have any AGENTS.md files. Add some in order to start testing.
 # Will be added after otelc migration is merged.

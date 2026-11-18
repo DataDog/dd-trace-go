@@ -67,5 +67,11 @@ linux-go-go-prof-app-parallel:
     LLMVAL_PLATFORM_REF: "745818b5d65805d5852b07cbdf4d09c29b3da6c9" # v0.1.6
     LLMVAL_BASE_REF: "main"   # must be job-level, not top-level `variables:` — see ci/README.md
 
+# Setup mode: Disabled by default. 
+# Enable on demand or in a schedule with LLMVAL_SETUP_ENABLED=true.
+"llm validation (setup smoke)":
+  variables:
+    LLMVAL_SETUP_PRESET: "setup-calibration"
+
 go-go-prof-app-parallel-check-slo-breaches:
   image: registry.ddbuild.io/images/benchmarking-platform-tools-ubuntu:6845f3c7

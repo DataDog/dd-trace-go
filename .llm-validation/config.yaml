@@ -12,8 +12,35 @@ instruction_files:
   - internal/appsec/AGENTS.md
   - internal/civisibility/AGENTS.md
 
+setup:
+  files:
+    - CLAUDE.md
+    - AGENTS.md
+    - contrib/AGENTS.md
+    - ddtrace/tracer/AGENTS.md
+    - internal/AGENTS.md
+    - profiler/AGENTS.md
+    - orchestrion/AGENTS.md
+    - internal/appsec/AGENTS.md
+    - internal/civisibility/AGENTS.md
+  directories:
+    - .claude/skills
+
 default_level: gate
 presets:
+  setup-calibration:
+    cases:
+      - dd-trace-go-general-code-coverage-flags-cap       # AGENTS.md
+      - dd-trace-go-contrib-structure                     # contrib/AGENTS.md
+      - dd-trace-go-tracer-span-limit                     # ddtrace/tracer/AGENTS.md
+      - dd-trace-go-internal-config-source-precedence     # internal/AGENTS.md
+      - dd-trace-go-profiler-cpu-duration-clamp           # profiler/AGENTS.md
+      - dd-trace-go-appsec-purpose                        # internal/appsec/AGENTS.md
+      - dd-trace-go-orchestrion-build-time-enabled-check  # orchestrion/AGENTS.md
+      - dd-trace-go-apm-integrations-new-contrib          # .claude/skills/apm-integrations (setup-only)
+      - dd-trace-go-migrate-orchestrion-to-otelc          # .claude/skills/migrate-orchestrion-to-otelc (setup-only)
+      - dd-trace-go-control-general-go                    # control / out-of-scope
+    runs: 3
   # One short, low-ambiguity, blocking case per monitored instruction file.
   gate:
     cases:
