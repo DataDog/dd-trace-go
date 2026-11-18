@@ -43,9 +43,10 @@ func (ss *serverStream) Context() context.Context {
 func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 	_, um := ss.cfg.untracedMethods[ss.method]
 	if ss.cfg.traceStreamMessages && !um {
-		span, _ := startSpanFromContext(
+		span, _ := startSpanWithResource(
 			ss.ctx,
 			ss.method,
+			ss.resource,
 			"grpc.message",
 			ss.cfg.serviceName.String(),
 			ss.cfg.serviceSource,
@@ -53,7 +54,6 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 		)
 		span.SetTag(ext.Component, componentName)
 		if ss.resource != ss.method {
-			span.SetTag(ext.ResourceName, ss.resource)
 			span.SetTag(tagMethodOriginal, ss.method)
 		}
 		defer func() {
@@ -69,9 +69,10 @@ func (ss *serverStream) RecvMsg(m interface{}) (err error) {
 func (ss *serverStream) SendMsg(m interface{}) (err error) {
 	_, um := ss.cfg.untracedMethods[ss.method]
 	if ss.cfg.traceStreamMessages && !um {
-		span, _ := startSpanFromContext(
+		span, _ := startSpanWithResource(
 			ss.ctx,
 			ss.method,
+			ss.resource,
 			"grpc.message",
 			ss.cfg.serviceName.String(),
 			ss.cfg.serviceSource,
@@ -79,7 +80,6 @@ func (ss *serverStream) SendMsg(m interface{}) (err error) {
 		)
 		span.SetTag(ext.Component, componentName)
 		if ss.resource != ss.method {
-			span.SetTag(ext.ResourceName, ss.resource)
 			span.SetTag(tagMethodOriginal, ss.method)
 		}
 		defer func() { finishWithError(span, err, ss.method, ss.cfg) }()
@@ -160,9 +160,10 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 		_, um := cfg.untracedMethods[info.FullMethod]
 		if cfg.traceStreamCalls && !um {
 			var span *tracer.Span
-			span, ctx = startSpanFromContext(
+			span, ctx = startSpanWithResource(
 				ctx,
 				info.FullMethod,
+				resource,
 				cfg.spanName,
 				cfg.serviceName.String(),
 				cfg.serviceSource,
@@ -171,7 +172,6 @@ func StreamServerInterceptor(opts ...Option) grpc.StreamServerInterceptor {
 					tracer.Tag(ext.SpanKind, ext.SpanKindServer))...,
 			)
 			if unknown {
-				span.SetTag(ext.ResourceName, resource)
 				span.SetTag(tagMethodOriginal, info.FullMethod)
 			}
 			switch {
