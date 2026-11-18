@@ -118,8 +118,8 @@ if [[ "${#NUMERIC_DURATIONS[@]}" -gt 0 ]]; then
   MEASURE_ARGS+=(--measures "go.build.duration_seconds:${MEAN_DURATION}")
 fi
 
-  for i in "${!DEP_KEYS[@]}"; do
-    [[ "$SIZE" != "null" ]] || break
+for i in "${!DEP_KEYS[@]}"; do
+  [[ "$SIZE" != "null" ]] || break
   MEASURE_ARGS+=(--measures "go.build.dependency_size_bytes.${DEP_KEYS[$i]}:${DEP_SIZES[$i]}")
   # Publish dependency size bytes by rank (0 = single largest dependency in this build)
   MEASURE_ARGS+=(--measures "go.build.top_dependency_size_bytes.${i}:${DEP_SIZES[$i]}")
