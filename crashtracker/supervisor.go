@@ -46,7 +46,8 @@ const (
 	// uploadDeadline after the child exits.
 	uploadDeadline = 10 * time.Second
 	// attemptTimeout bounds one upload request of the default client.
-	attemptTimeout = 10 * time.Second
+	// Three seconds leaves time to retry a hung request within uploadDeadline.
+	attemptTimeout = 3 * time.Second
 
 	// pipeEOFTimeout bounds the wait for the crash pipe to reach EOF. A
 	// descendant of the application can hold the write end open.
