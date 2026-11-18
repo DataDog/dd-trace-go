@@ -70,11 +70,30 @@ jobs:
         # https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry
         run: docker login -u publisher -p ${{ secrets.GITHUB_TOKEN }} ghcr.io
 
+      # The default org.opencontainers.image.version label comes from the git event (`nightly` on a schedule,
+      # `contrib-...-v2.12.0` on a tag), not from the tracer. Set it to the version the image healthcheck reports
+      # (DD_VERSION, or the tracer's version.Tag), so that system-tests knows the tested version before starting it.
+      - name: Read the tracer version
+        id: tracer-version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [ -z "$VERSION" ]; then
+            VERSION=$(sed -nE 's/^var Tag = "([^"]+)"$/\1/p' internal/version/version.go)
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not read the tracer version (var Tag) from internal/version/version.go"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ inputs.image }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.tracer-version.outputs.version }}
 
       - name: Build and push by digest
         id: build
