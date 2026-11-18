@@ -39,7 +39,8 @@ presets:
       - dd-trace-go-orchestrion-build-time-enabled-check  # orchestrion/AGENTS.md
       - dd-trace-go-apm-integrations-new-contrib          # .claude/skills/apm-integrations (setup-only)
       - dd-trace-go-migrate-orchestrion-to-otelc          # .claude/skills/migrate-orchestrion-to-otelc (setup-only)
-      - dd-trace-go-control-general-go                    # control / out-of-scope
+      - dd-trace-go-control-general-go                    # control / out-of-scope (shallow, general Go)
+      - dd-trace-go-control-trace-id-128bit-layout        # control / out-of-scope (deep, repo-internal)
     runs: 3
   # One short, low-ambiguity, blocking case per monitored instruction file.
   gate:

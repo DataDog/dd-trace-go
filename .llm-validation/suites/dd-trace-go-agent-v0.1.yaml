@@ -215,6 +215,29 @@ cases:
       - Fails to demonstrate the standard Go middleware pattern (wrapping http.Handler)
       - Confuses middleware with a tracer integration by importing dd-trace-go packages unnecessarily
 
+  # Selected specifically because no AGENTS.md documents the 128-bit trace-id byte layout, so guidance cannot
+  # help this answer.
+  - id: dd-trace-go-control-trace-id-128bit-layout
+    only_warn: true
+    files:
+      - AGENTS.md
+    input: |
+      When dd-trace-go starts a brand-new local root trace with 128-bit trace IDs enabled, how are the
+      upper 64 bits of the trace ID constructed, and how does that upper half reach a downstream service
+      over the wire? Explain the behaviour from the source. Do not edit anything or run builds.
+    expected_criteria:
+      - States the upper 64 bits are generated only for a brand-new trace (no parent, or a baggage-only parent);
+        a trace continuing from a parent reuses the parent's trace ID rather than regenerating the upper bits.
+      - Describes the upper 64-bit layout as big-endian <32-bit unix start time in seconds><32 zero bits>, so the
+        start time occupies the top 32 bits and the next 32 bits are zero (the low 64 bits of the trace ID are random).
+      - States the upper 64 bits travel to downstream services as the _dd.p.tid propagating tag, lowercase hex-encoded.
+      - States _dd.p.tid is stamped during Inject (propagation), not at span creation.
+    bad_signals:
+      - Claims the full 128 bits are random, or places the start-time component in the low/random half.
+      - Claims the upper bits are regenerated per span or for a child span that continues an existing parent trace.
+      - Invents a different propagation mechanism or key instead of the _dd.p.tid tag, or says the upper half is not propagated.
+      - Says the time component is in milliseconds or nanoseconds, or that it fills the entire upper 64 bits.
+
   - id: dd-trace-go-tracer-doc-update-trigger
     only_warn: true
     files:
