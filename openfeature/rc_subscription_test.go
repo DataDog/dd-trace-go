@@ -59,7 +59,7 @@ func TestAttachProviderReplaysBufferedConfig(t *testing.T) {
 			},
 		},
 	}
-	data, err := json.Marshal(config)
+	data, err := json.Marshal(&config)
 	require.NoError(t, err)
 
 	// Simulate SubscribeRC + a buffered update arriving before provider exists.
@@ -111,7 +111,7 @@ func TestStartWithRemoteConfigFastPath(t *testing.T) {
 			},
 		},
 	}
-	data, err := json.Marshal(config)
+	data, err := json.Marshal(&config)
 	require.NoError(t, err)
 
 	internalffe.SetSubscribedForTest(true)
