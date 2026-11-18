@@ -51,8 +51,10 @@ func WithAgentURL(rawURL string) Option {
 
 // WithHTTPClient sets the supervisor's HTTP client for report upload.
 // The client's transport must honor request contexts to enforce the upload
-// deadline. No per-attempt client timeout is applied to a custom client.
-// The client keeps its own redirect policy: a redirect can drop the report body.
+// deadline. The default client's per-attempt timeout (3 seconds for Agent uploads
+// and 5 seconds for agentless uploads) does not apply to a custom client.
+// Set http.Client.Timeout to leave room for retries on a hung request.
+// The client keeps its own redirect policy. A redirect can drop the report body.
 func WithHTTPClient(c *http.Client) Option {
 	return func(cfg *config) { cfg.httpClient = c }
 }

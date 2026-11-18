@@ -45,8 +45,12 @@ const (
 	// After a crash the supervisor exits up to pipeEOFTimeout plus
 	// uploadDeadline after the child exits.
 	uploadDeadline = 10 * time.Second
-	// attemptTimeout bounds one upload request of the default client.
-	attemptTimeout = 10 * time.Second
+	// attemptTimeout follows libdatadog RFC 0003 for Agent uploads.
+	// Three seconds leaves time to retry within uploadDeadline.
+	attemptTimeout = 3 * time.Second
+	// agentlessAttemptTimeout gives HTTPS uploads more time over a wide area network.
+	// After a 5-second attempt and a 500 ms backoff, uploadDeadline allows up to 4.5 seconds to retry.
+	agentlessAttemptTimeout = 5 * time.Second
 
 	// pipeEOFTimeout bounds the wait for the crash pipe to reach EOF. A
 	// descendant of the application can hold the write end open.
