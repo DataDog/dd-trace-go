@@ -412,7 +412,7 @@ func tracerSpanService(t *testing.T) string {
 	t.Helper()
 	span := tracer.StartSpan("op")
 	defer span.Finish()
-	for _, line := range strings.Split(span.String(), "\n") {
+	for line := range strings.SplitSeq(span.String(), "\n") {
 		if service, ok := strings.CutPrefix(line, "Service: "); ok {
 			return service
 		}
