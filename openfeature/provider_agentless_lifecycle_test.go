@@ -8,6 +8,11 @@ package openfeature
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -16,8 +21,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
 func TestTryRegisterAgentless_AfterShutdownRegistersNothing(t *testing.T) {
@@ -285,4 +293,207 @@ func TestSetProviderAndWait_TimeoutThenLateConfigurationTransitionsToReady(t *te
 		"country":      "US",
 	})
 	assert.True(t, result.Value, "evaluation must succeed after late readiness recovery")
+}
+
+// TestNewDatadogProvider_SendsTracerServiceStartedLater creates the provider
+// before tracer.Start, as an application can do. The next poll sends the
+// service that the tracer sets, as APM shows it. This includes the inferred
+// default service. A name with non-ASCII letters is sent as UTF-8. The
+// tracer's service stays as configured.
+func TestNewDatadogProvider_SendsTracerServiceStartedLater(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		opts    []tracer.StartOption
+		service string // the tracer's service
+		header  string // the DD-Service value; "" when the poll has no header
+	}{
+		{name: "configured", opts: []tracer.StartOption{tracer.WithService("checkout")}, service: "checkout", header: "checkout"},
+		{name: "inferred", service: filepath.Base(os.Args[0]), header: filepath.Base(os.Args[0])},
+		{name: "normalized", opts: []tracer.StartOption{tracer.WithService("My Service")}, service: "My Service", header: "my_service"},
+		{name: "leading underscore", opts: []tracer.StartOption{tracer.WithService("_svc")}, service: "_svc", header: "_svc"},
+		{name: "non-ASCII letter", opts: []tracer.StartOption{tracer.WithService("café-api")}, service: "café-api", header: "café-api"},
+		{name: "non-Latin script", opts: []tracer.StartOption{tracer.WithService("支付")}, service: "支付", header: "支付"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Cleanup(func() { internalconfig.CreateNew() })
+			t.Setenv("DD_SERVICE", "")
+			t.Setenv("DD_API_KEY", "")
+			t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+			t.Setenv("DD_REMOTE_CONFIGURATION_ENABLED", "false")
+			t.Setenv("DD_RUNTIME_METRICS_ENABLED", "false")
+			t.Setenv("DD_METRICS_OTEL_ENABLED", "false")
+			t.Setenv("DD_APPSEC_ENABLED", "false")
+			agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"endpoints":[]}`))
+			}))
+			defer agent.Close()
+			t.Setenv("DD_TRACE_AGENT_URL", agent.URL)
+			backend := newFakeUFCBackend(t)
+			backend.setResponses("valid", "not_modified")
+			t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "agentless")
+			t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL", backend.server.URL)
+			t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS", "3600")
+			internalconfig.CreateNew()
+
+			provider, err := NewDatadogProvider(ProviderConfig{})
+			require.NoError(t, err)
+			p := provider.(*DatadogProvider)
+			defer p.Shutdown()
+			require.Eventually(t, func() bool { return len(backend.headers()) == 1 }, 2*time.Second, time.Millisecond)
+
+			require.NoError(t, tracer.Start(append(tc.opts, tracer.WithLogStartup(false), tracer.WithHTTPClient(agent.Client()))...))
+			defer tracer.Stop()
+
+			// Run the next poll now. Do not wait for the poll interval.
+			p.mu.RLock()
+			src := p.agentless
+			p.mu.RUnlock()
+			outcome, _ := src.pollOnce(1)
+			require.Equal(t, pollOutcomeSuccess, outcome)
+
+			headers := backend.headers()
+			require.Len(t, headers, 2)
+			assert.Empty(t, headers[0].Values("DD-Service"), "no service is resolved before tracer.Start")
+			if tc.header == "" {
+				assert.Empty(t, headers[1].Values("DD-Service"))
+			} else {
+				assert.Equal(t, []string{tc.header}, headers[1].Values("DD-Service"))
+			}
+			assert.Equal(t, tc.service, internalconfig.Get().ServiceName(), "the tracer's service stays as configured")
+		})
+	}
+}
+
+// startTracerAndProvider starts the tracer with opts, then an agentless
+// provider against a fake CDN, and waits for the first poll. env is set before
+// either starts.
+func startTracerAndProvider(t *testing.T, env map[string]string, opts ...tracer.StartOption) (*agentlessSource, *fakeUFCBackend) {
+	t.Helper()
+	t.Cleanup(func() { internalconfig.CreateNew() })
+	for k, v := range map[string]string{
+		"DD_SERVICE":                           "",
+		"DD_SERVICE_MAPPING":                   "",
+		"DD_TAGS":                              "",
+		"DD_API_KEY":                           "",
+		"DD_INSTRUMENTATION_TELEMETRY_ENABLED": "false",
+		"DD_REMOTE_CONFIGURATION_ENABLED":      "false",
+		"DD_RUNTIME_METRICS_ENABLED":           "false",
+		"DD_METRICS_OTEL_ENABLED":              "false",
+		"DD_APPSEC_ENABLED":                    "false",
+	} {
+		t.Setenv(k, v)
+	}
+	for k, v := range env {
+		t.Setenv(k, v)
+	}
+	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"endpoints":[]}`))
+	}))
+	t.Cleanup(agent.Close)
+	t.Setenv("DD_TRACE_AGENT_URL", agent.URL)
+	backend := newFakeUFCBackend(t)
+	backend.setResponses("valid", "not_modified")
+	t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "agentless")
+	t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL", backend.server.URL)
+	t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS", "3600")
+	internalconfig.CreateNew()
+
+	require.NoError(t, tracer.Start(append(opts, tracer.WithLogStartup(false), tracer.WithHTTPClient(agent.Client()))...))
+	t.Cleanup(tracer.Stop)
+	provider, err := NewDatadogProvider(ProviderConfig{})
+	require.NoError(t, err)
+	p := provider.(*DatadogProvider)
+	t.Cleanup(p.Shutdown)
+	require.Eventually(t, func() bool { return len(backend.headers()) == 1 }, 2*time.Second, time.Millisecond)
+	p.mu.RLock()
+	src := p.agentless
+	p.mu.RUnlock()
+	return src, backend
+}
+
+// tracerSpanService returns the service of a new span from the running tracer.
+// It reads Span.String, because AsMap lets a numeric service.name tag replace
+// the service.
+func tracerSpanService(t *testing.T) string {
+	t.Helper()
+	span := tracer.StartSpan("op")
+	defer span.Finish()
+	for line := range strings.SplitSeq(span.String(), "\n") {
+		if service, ok := strings.CutPrefix(line, "Service: "); ok {
+			return service
+		}
+	}
+	require.FailNow(t, "the span has no service line")
+	return ""
+}
+
+// TestNewDatadogProvider_SendsSpanServiceAfterTagAndMapping checks that
+// DD-Service names the service of the tracer's spans. The tracer applies a
+// global service.name tag, then the service mapping. Each case compares the
+// header with a real span.
+func TestNewDatadogProvider_SendsSpanServiceAfterTagAndMapping(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		env    map[string]string
+		opts   []tracer.StartOption
+		span   string // the service of a real span
+		header string // the DD-Service value; "" when the poll has no header
+	}{
+		{name: "unmapped", opts: []tracer.StartOption{tracer.WithService("checkout")}, span: "checkout", header: "checkout"},
+		{name: "DD_SERVICE_MAPPING", env: map[string]string{"DD_SERVICE": "checkout", "DD_SERVICE_MAPPING": "checkout:store"}, span: "store", header: "store"},
+		{name: "WithServiceMapping", opts: []tracer.StartOption{tracer.WithService("checkout"), tracer.WithServiceMapping("checkout", "store")}, span: "store", header: "store"},
+		{name: "mapping for another service", opts: []tracer.StartOption{tracer.WithService("checkout"), tracer.WithServiceMapping("mysql", "checkout-db")}, span: "checkout", header: "checkout"},
+		{name: "mapped name is normalized", opts: []tracer.StartOption{tracer.WithService("checkout"), tracer.WithServiceMapping("checkout", "My Store")}, span: "My Store", header: "my_store"},
+		{name: "DD_TAGS service.name", env: map[string]string{"DD_SERVICE": "checkout", "DD_TAGS": "service.name:store"}, span: "store", header: "store"},
+		{name: "WithGlobalTag service.name", opts: []tracer.StartOption{tracer.WithService("checkout"), tracer.WithGlobalTag(ext.ServiceName, "store")}, span: "store", header: "store"},
+		{name: "global tag then mapping", opts: []tracer.StartOption{tracer.WithService("checkout"), tracer.WithGlobalTag(ext.ServiceName, "store"), tracer.WithServiceMapping("store", "warehouse")}, span: "warehouse", header: "warehouse"},
+		{name: "numeric global tag", opts: []tracer.StartOption{tracer.WithService("checkout"), tracer.WithGlobalTag(ext.ServiceName, 42)}, span: "checkout", header: "checkout"},
+		{name: "boolean global tag", opts: []tracer.StartOption{tracer.WithService("checkout"), tracer.WithGlobalTag(ext.ServiceName, true)}, span: "true", header: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, backend := startTracerAndProvider(t, tc.env, tc.opts...)
+
+			assert.Equal(t, tc.span, tracerSpanService(t), "the tracer's span service")
+			headers := backend.headers()
+			require.Len(t, headers, 1)
+			if tc.header == "" {
+				assert.Empty(t, headers[0].Values("DD-Service"))
+			} else {
+				assert.Equal(t, []string{tc.header}, headers[0].Values("DD-Service"))
+			}
+		})
+	}
+}
+
+// TestNewDatadogProvider_SendsSpanServiceAfterSettingsChange changes the
+// mapping and the global service.name tag while DD_SERVICE stays the same, as
+// Remote Config can. The next poll sends the new span service.
+func TestNewDatadogProvider_SendsSpanServiceAfterSettingsChange(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*internalconfig.Config)
+		span   string
+	}{
+		{name: "mapping", change: func(c *internalconfig.Config) { c.SetServiceMapping("checkout", "store", telemetry.OriginCode) }, span: "store"},
+		{name: "global tag", change: func(c *internalconfig.Config) {
+			c.SetGlobalTag(ext.ServiceName, "store", telemetry.OriginCode, internalconfig.ProductTracer)
+		}, span: "store"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src, backend := startTracerAndProvider(t, map[string]string{"DD_SERVICE": "checkout"})
+			require.Equal(t, []string{"checkout"}, backend.headers()[0].Values("DD-Service"))
+
+			tc.change(internalconfig.Get())
+			outcome, _ := src.pollOnce(1)
+			require.Equal(t, pollOutcomeSuccess, outcome)
+
+			assert.Equal(t, tc.span, tracerSpanService(t), "the tracer's span service")
+			headers := backend.headers()
+			require.Len(t, headers, 2)
+			assert.Equal(t, []string{tc.span}, headers[1].Values("DD-Service"))
+			assert.Equal(t, "checkout", internalconfig.Get().ServiceName(), "DD_SERVICE stays the same")
+		})
+	}
 }
