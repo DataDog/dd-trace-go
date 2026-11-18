@@ -1,0 +1,16 @@
+
+goroutine 7 [running]:
+internal/runtime/maps.fatal({0x1046019a2?, 0x0?})
+	/usr/local/go/src/runtime/panic.go:1181 +0x20
+main.writeMap(...)
+	/app/generate.go:116
+created by main.crash in goroutine 1
+	/app/generate.go:85 +0x1ac
+
+goroutine 1 [runnable]:
+main.writeMap(...)
+	/app/generate.go:116
+main.crash({0x16b8b953b, 0x14}, {0x16b8b9550?, 0x1046dfb20?})
+	/app/generate.go:86 +0x358
+main.main()
+	/app/generate.go:29 +0x94

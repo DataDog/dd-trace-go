@@ -87,6 +87,10 @@ func parseCrashDump(dump []byte) *Report {
 	// crashingThread must run before the cap below: it marks the crashed
 	// goroutine and we need that goroutine to survive truncation.
 	crashed := crashingThread(threads)
+	if inferred := runtimeFatalMessage(preamble, threads, crashed); inferred != "" {
+		errType = fatalErrorType(inferred)
+		message = inferred
+	}
 	var stack *StackTrace
 	var threadName string
 	if crashed != nil {
@@ -402,11 +406,8 @@ func parseSignal(preamble []string) *SigInfo {
 	return nil
 }
 
-// errorType classifies the crash into an error.type value following the
-// Crashtracking model. Anything that is not a signal or a recognised
-// "fatal error:" kind is reported as a panic — this includes both
-// explicit "panic:"/"panic(" preamble lines and the default case, since a
-// panic is the only remaining crash kind Go's runtime produces.
+// errorType classifies the crash from the preamble. Without a recognized
+// preamble, runtimeFatalMessage checks the stacks for a runtime fatal error.
 func errorType(preamble []string, sigInfo *SigInfo) string {
 	// A signal-triggered crash reports the specific signal name (e.g.
 	// "SIGSEGV"), not the generic "UnixSignal" kind label, so Error Tracking
@@ -427,6 +428,69 @@ func errorType(preamble []string, sigInfo *SigInfo) string {
 		}
 	}
 	return "panic"
+}
+
+// runtimeFatalMessage infers a fatal error when the runtime omits its message
+// from the crash output fd (https://github.com/golang/go/issues/76859).
+// A known preamble takes precedence. An unknown preamble also stays unchanged.
+func runtimeFatalMessage(preamble []string, threads []Thread, crashed *Thread) string {
+	var runtimeFrames []Frame
+	hasPreamble := false
+	for i, line := range preamble {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		hasPreamble = true
+		if line != "runtime stack:" {
+			return ""
+		}
+		// Stack overflow can put the fatal frames on the runtime stack,
+		// separate from the user goroutine that exhausted its stack.
+		runtimeFrames, _, _ = parseFrames(preamble[i+1:])
+		break
+	}
+
+	const missingMessage = " (message not in crash output, golang/go#76859)"
+	if hasFatalFrame(runtimeFrames) || (crashed != nil && hasFatalFrame(crashed.Stack.Frames)) {
+		if crashed != nil {
+			for _, frame := range crashed.Stack.Frames {
+				if !isRuntimeFunction(frame.Function) {
+					return "fatal error in " + frame.Function + missingMessage
+				}
+			}
+		}
+		return "fatal error" + missingMessage
+	}
+
+	// Deadlocks can omit both the message and the runtime stack. Parked
+	// goroutines alone do not prove a deadlock, so keep the message tentative.
+	if hasPreamble || len(threads) == 0 {
+		return ""
+	}
+	for _, thread := range threads {
+		if thread.State == "running" || hasFatalFrame(thread.Stack.Frames) {
+			return ""
+		}
+	}
+	return "possible deadlock" + missingMessage
+}
+
+func hasFatalFrame(frames []Frame) bool {
+	for _, frame := range frames {
+		if !isRuntimeFunction(frame.Function) {
+			return false
+		}
+		_, name, _ := strings.Cut(frame.Function, ".")
+		switch name {
+		case "throw", "fatal", "fatalthrow", "fatalpanic":
+			return true
+		}
+	}
+	return false
+}
+
+func isRuntimeFunction(name string) bool {
+	return strings.HasPrefix(name, "runtime.") || strings.HasPrefix(name, "internal/runtime/")
 }
 
 // fatalErrorType maps a "fatal error: <msg>" message to its Go runtime error

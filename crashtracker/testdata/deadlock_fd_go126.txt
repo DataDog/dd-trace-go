@@ -1,0 +1,6 @@
+
+goroutine 1 [select (no cases)]:
+main.crash({0x16ee99553, 0x8}, {0x16ee9955c?, 0x1010ffb20?})
+	/app/generate.go:94 +0x33c
+main.main()
+	/app/generate.go:29 +0x94

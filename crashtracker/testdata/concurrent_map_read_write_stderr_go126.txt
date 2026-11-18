@@ -1,0 +1,23 @@
+fatal error: concurrent map read and map write
+
+goroutine 1 [running]:
+internal/runtime/maps.fatal({0x100220c6c?, 0x1ea9b46f0040?})
+	/usr/local/go/src/runtime/panic.go:1181 +0x20
+main.crash({0x16fc9d533, 0x19}, {0x16fc9d54d?, 0x1002fbb20?})
+	/app/generate.go:91 +0x394
+main.main()
+	/app/generate.go:29 +0x94
+
+goroutine 5 [runnable]:
+internal/runtime/maps.typedmemmove(0x1002f0740?, 0x1ea9b47d53e8?, 0x1ea9b47ce318?)
+	/usr/local/go/src/runtime/mbarrier.go:235 +0x38
+internal/runtime/maps.(*table).uncheckedPutSlot(0x1ea9b47ac140, 0x1002f8b20?, 0x5d8fb9e6615d2c4, 0x10030b200?, 0x1ea9b47ce318?)
+	/usr/local/go/src/internal/runtime/maps/table.go:410 +0x140
+internal/runtime/maps.(*table).grow(0x1ea9b47ac120, 0x1002f8b20, 0x1ea9b47a00f0, 0xa230?)
+	/usr/local/go/src/internal/runtime/maps/table.go:1251 +0x18c
+internal/runtime/maps.(*table).rehash(0x1ea9b47a00f0?, 0x1002f8b20?, 0x0?)
+	/usr/local/go/src/internal/runtime/maps/table.go:1163 +0x30
+main.writeMap(...)
+	/app/generate.go:116
+created by main.crash in goroutine 1
+	/app/generate.go:89 +0x130
