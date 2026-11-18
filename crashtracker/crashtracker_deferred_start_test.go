@@ -83,6 +83,8 @@ func profilerStarted() bool { return traceprof.ProfilerEnabled() }
 // markPendingLikeAspect runs the package variable initializer that the
 // Orchestrion aspect injects into package main.
 func markPendingLikeAspect() bool {
+	restore := crashtrackerstate.IgnoreTestBinaryForTesting()
+	defer restore()
 	return crashtrackerstate.MarkSupervisorPending()
 }
 

@@ -27,7 +27,29 @@
 // of this package is a no-op.
 package crashtrackerstate
 
-import "sync"
+import (
+	"sync"
+	"testing"
+)
+
+// inTestBinary reports whether this binary is a test binary. Tests replace it
+// through IgnoreTestBinaryForTesting to exercise the resolver.
+var inTestBinary = testing.Testing
+
+// IgnoreTestBinaryForTesting makes MarkSupervisorPending behave as in a
+// production binary, and returns a function that restores the check. It exists
+// for tests only.
+func IgnoreTestBinaryForTesting() (restore func()) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	previous := inTestBinary
+	inTestBinary = func() bool { return false }
+	return func() {
+		state.mu.Lock()
+		defer state.mu.Unlock()
+		inTestBinary = previous
+	}
+}
 
 var state struct {
 	mu       sync.Mutex
@@ -56,10 +78,14 @@ func SetResolver(resolve func() bool) {
 // (https://go.dev/ref/spec#Package_initialization). The tracer and profiler
 // aspects inject their start calls into init functions of package main, so the
 // flag is set before they run.
+//
+// A test binary of package main never runs main, so crashtracker.Start never
+// runs and never releases the deferred starts. MarkSupervisorPending therefore
+// reports false in a test binary.
 func MarkSupervisorPending() bool {
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	state.pending = state.resolve != nil && state.resolve()
+	state.pending = !inTestBinary() && state.resolve != nil && state.resolve()
 	return state.pending
 }
 

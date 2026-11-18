@@ -25,7 +25,9 @@ func profilerRunning() bool {
 func setSupervisorPending(t *testing.T, pending bool) {
 	t.Helper()
 	crashtrackerstate.SetResolver(func() bool { return pending })
+	restore := crashtrackerstate.IgnoreTestBinaryForTesting()
 	crashtrackerstate.MarkSupervisorPending()
+	restore()
 	t.Cleanup(func() {
 		crashtrackerstate.Release()
 		crashtrackerstate.SetResolver(nil)
