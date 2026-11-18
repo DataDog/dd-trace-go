@@ -56,6 +56,11 @@ func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
+// ExpectedSpanCount is the net/http client and server spans plus one httprouter span.
+func (*TestCase) ExpectedSpanCount() int {
+	return 3
+}
+
 func (*TestCase) ExpectedTraces() trace.Traces {
 	return trace.Traces{
 		{

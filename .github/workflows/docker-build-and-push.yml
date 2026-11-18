@@ -94,12 +94,15 @@ jobs:
       - name: Generate tags
         if: inputs.push == false
         id: tags
+        env:
+          IMAGE_NAME: ${{ inputs.image }}
+          IMAGE_TAGS: ${{ inputs.tags }}
         run: |
           TAGS=""
           # shellcheck disable=SC2086
-          for tag in ${{ inputs.tags }}; do
+          for tag in $IMAGE_TAGS; do
             if [ -n "$tag" ]; then
-              TAGS="$TAGS,${{ inputs.image }}:$tag"
+              TAGS="$TAGS,${IMAGE_NAME}:$tag"
             fi
           done
           echo "list=${TAGS:1}" >> "$GITHUB_OUTPUT"
@@ -129,7 +132,7 @@ jobs:
 
       - name: Upload digest
         if: inputs.push == true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: digests-${{ inputs.artifact_prefix }}-${{ env.PLATFORM_PAIR }}
           path: /tmp/digests/*
@@ -138,7 +141,7 @@ jobs:
 
       - name: Upload image artifact
         if: inputs.push == false
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ inputs.artifact_prefix }}-${{ env.PLATFORM_PAIR }}
           path: /tmp/${{ inputs.artifact_prefix }}-${{ env.PLATFORM_PAIR }}.tar
@@ -151,7 +154,7 @@ jobs:
     needs: [build-images]
     steps:
       - name: Download digests
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: /tmp/digests
           pattern: digests-${{ inputs.artifact_prefix }}-*
@@ -166,14 +169,17 @@ jobs:
 
       - name: Create manifest list and push
         working-directory: /tmp/digests
+        env:
+          IMAGE_NAME: ${{ inputs.image }}
+          IMAGE_TAGS: ${{ inputs.tags }}
         run: |
           TAG_FLAGS=""
           # shellcheck disable=SC2086
-          for tag in ${{ inputs.tags }}; do
+          for tag in $IMAGE_TAGS; do
             if [ -n "$tag" ]; then
-              TAG_FLAGS="$TAG_FLAGS -t ${{ inputs.image }}:$tag"
+              TAG_FLAGS="$TAG_FLAGS -t ${IMAGE_NAME}:$tag"
             fi
           done
           # shellcheck disable=SC2046,SC2086
           docker buildx imagetools create $TAG_FLAGS \
-            $(printf '${{ inputs.image }}@sha256:%s ' *)
+            $(printf "${IMAGE_NAME}@sha256:%s " *)

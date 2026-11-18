@@ -12,10 +12,13 @@ use (
 	./contrib/aws/aws-sdk-go
 	./contrib/aws/aws-sdk-go/otelc
 	./contrib/aws/aws-sdk-go-v2
+	./contrib/aws/aws-sdk-go-v2/otelc
 	./contrib/aws/datadog-lambda-go
 	./contrib/bradfitz/gomemcache
 	./contrib/cloud.google.com/go/pubsub.v1
+	./contrib/cloud.google.com/go/pubsub.v1/otelc
 	./contrib/cloud.google.com/go/pubsub.v2
+	./contrib/cloud.google.com/go/pubsub.v2/otelc
 	./contrib/cloudevents/sdk-go.v2
 	./contrib/confluentinc/confluent-kafka-go/kafka
 	./contrib/confluentinc/confluent-kafka-go/kafka.v2
@@ -54,16 +57,19 @@ use (
 	./contrib/gorilla/mux
 	./contrib/gorilla/mux/otelc
 	./contrib/gorm.io/gorm.v1
+	./contrib/gorm.io/gorm.v1/otelc
 	./contrib/graph-gophers/graphql-go
 	./contrib/graphql-go/graphql
 	./contrib/haproxy/stream-processing-offload
 	./contrib/hashicorp/consul
 	./contrib/hashicorp/vault
 	./contrib/jackc/pgx.v5
+	./contrib/jackc/pgx.v5/otelc
 	./contrib/jmoiron/sqlx
 	./contrib/julienschmidt/httprouter
 	./contrib/julienschmidt/httprouter/otelc
 	./contrib/k8s.io/client-go
+	./contrib/k8s.io/client-go/otelc
 	./contrib/k8s.io/gateway-api
 	./contrib/labstack/echo.v4
 	./contrib/labstack/echo.v4/otelc
@@ -80,7 +86,9 @@ use (
 	./contrib/opensearch-project/opensearch-go.v4
 	./contrib/redis/rueidis
 	./contrib/rs/zerolog
+	./contrib/rs/zerolog/otelc
 	./contrib/segmentio/kafka-go
+	./contrib/segmentio/kafka-go/otelc
 	./contrib/sirupsen/logrus
 	./contrib/syndtr/goleveldb
 	./contrib/tidwall/buntdb
