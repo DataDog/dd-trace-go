@@ -10,7 +10,9 @@
 // It reads the child's crash dump through a pipe registered with
 // [runtime/debug.SetCrashOutput]. It parses and uploads the report before it
 // exits. The upload phase has an overall deadline of 10 seconds, including
-// retries. A normal exit does not produce a report.
+// retries, after a pipe-EOF wait of at most 2 seconds, so the exit takes about
+// 12 seconds at most after a crash. During that time the supervisor ignores
+// stop signals. A normal exit does not produce a report.
 //
 // # Lifecycle
 //
@@ -28,9 +30,11 @@
 // supervisor and once in the application. Keep externally visible work after
 // Start. Crashes during package initialization or before Start are not captured.
 // The supervisor does not return from Start. The child registers the inherited
-// crash pipe, removes the internal marker, and returns. Application subprocesses
-// do not inherit the crash pipe or the marker. If startup fails, Start returns an
-// error so the application can continue without crash tracking.
+// crash pipe, removes the internal marker, and returns. Subprocesses spawned
+// after Start do not inherit the crash pipe or the marker. The marker names the
+// supervisor's PID, and the child takes the child role only if that PID is its
+// parent PID. If startup fails, Start returns an error so the application can
+// continue without crash tracking.
 //
 // There is no Stop. Process exit closes the pipe. Do not defer an unregister
 // call. Deferred functions run before the runtime writes a panic dump.
@@ -48,7 +52,8 @@
 // in terminal mode. Otherwise, detached mode gives the child its own process group.
 //
 // Detached mode forwards external signals to the child's PID. Both modes exclude
-// runtime signals, SIGPIPE, SIGTTIN, SIGTTOU, and synchronous fault signals.
+// runtime signals (SIGCHLD, SIGURG, SIGPROF), SIGPIPE, SIGABRT, SIGTTIN,
+// SIGTTOU, and synchronous fault signals.
 // Terminal mode also excludes SIGINT, SIGQUIT, SIGHUP, SIGWINCH, SIGTSTP, and SIGCONT.
 // It excludes SIGINFO on Darwin and BSDs. The terminal and shell deliver these
 // terminal signals to the job group. If you send one only to the supervisor PID,
@@ -58,9 +63,10 @@
 // On Windows, console Ctrl events reach both processes. The supervisor ignores
 // os.Interrupt and does not forward signals.
 //
-// On Unix, inherited descriptors keep their numbers. This requires /dev/fd.
-// Without /dev/fd, Start returns an error and the application continues without
-// supervision. After the child starts, the supervisor closes its inherited copies.
+// On Unix, non-close-on-exec inherited descriptors keep their numbers. This
+// requires /dev/fd. Without it, Start returns an error and the application
+// continues without supervision. After the child starts, the supervisor closes
+// its copies of those duplicated descriptors.
 //
 // For systemd socket activation, the child updates LISTEN_PID to its own PID if
 // the value names the supervisor. It preserves LISTEN_FDS and LISTEN_FDNAMES.
@@ -69,7 +75,8 @@
 // it re-raises SIGHUP, SIGINT, SIGTERM, or SIGKILL if that signal killed the child.
 // For other signals, it exits with code 128 plus the signal number. It does not
 // re-raise signals that could produce a second crash dump from the supervisor.
-// On Linux, the kernel kills the child if the supervisor dies.
+// On Linux, the kernel kills the child if the supervisor dies. On other
+// platforms the child keeps running without crash reporting.
 //
 // # Configuration
 //

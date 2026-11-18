@@ -39,7 +39,7 @@ func TestSupervisorTerminalHelper(t *testing.T) {
 	}
 	interrupts := make(chan os.Signal, 8)
 	signal.Notify(interrupts, syscall.SIGINT)
-	writeRegressionPID(t, dir)
+	writeReady(t, dir)
 	<-interrupts
 	count := 1
 	timer := time.NewTimer(150 * time.Millisecond)
@@ -221,6 +221,26 @@ func TestSupervisorTerminalJobControl(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+	t.Run("SIGINTToSupervisorPIDOnly", func(t *testing.T) {
+		// In terminal mode the terminal delivers SIGINT to the job group, so
+		// the supervisor must not forward one that only it received.
+		if err := syscall.Kill(supervisor, syscall.SIGINT); err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(300 * time.Millisecond)
+		for time.Now().Before(deadline) {
+			if _, err := os.Stat(filepath.Join(dir, "interrupts")); err == nil {
+				t.Fatal("the application received a SIGINT sent only to the supervisor PID")
+			}
+			if state := terminalProcessState(t, supervisor); state == 'Z' || state == 'X' {
+				t.Fatal("the supervisor exited on a SIGINT sent to its PID")
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if terminalProcessState(t, child) == 'Z' {
+			t.Fatal("the application exited after a SIGINT sent to the supervisor PID")
+		}
+	})
 	if _, err := master.Write([]byte{'\x03'}); err != nil {
 		t.Fatal(err)
 	}

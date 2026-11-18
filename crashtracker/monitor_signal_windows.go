@@ -55,8 +55,14 @@ func inheritedCrashPipe(fd uintptr) (_ *os.File, err error) {
 
 func supervisorSignals(_ bool) (start func(*os.Process), stop func()) {
 	// Console Ctrl events reach both processes without forwarding.
+	wasIgnored := signal.Ignored(os.Interrupt)
 	signal.Ignore(os.Interrupt)
-	return func(*os.Process) {}, func() { signal.Reset(os.Interrupt) }
+	return func(*os.Process) {}, func() {
+		// Keep an ignore that the application set before Start.
+		if !wasIgnored {
+			signal.Reset(os.Interrupt)
+		}
+	}
 }
 
 func exitWithChildStatus(state *os.ProcessState) {

@@ -40,7 +40,7 @@ func TestSupervisorUploadDeadline(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	_ = waitForVictim(t, cmd, 15*time.Second)
+	_ = waitForVictim(t, cmd, 20*time.Second)
 	elapsed := time.Since(started)
 	if cmd.ProcessState.ExitCode() != 2 {
 		t.Fatalf("panic exit code = %d, want 2", cmd.ProcessState.ExitCode())
@@ -48,7 +48,7 @@ func TestSupervisorUploadDeadline(t *testing.T) {
 	select {
 	case requested := <-received:
 		uploadElapsed := time.Since(requested)
-		if uploadElapsed < 9*time.Second || elapsed > 12*time.Second {
+		if uploadElapsed < 9*time.Second || elapsed > 15*time.Second {
 			t.Fatalf("upload wait = %s, process lifetime = %s, want 10 seconds plus startup margin", uploadElapsed, elapsed)
 		}
 		t.Logf("supervisor exited after %s with an unresponsive intake (upload wait %s)", elapsed, uploadElapsed)

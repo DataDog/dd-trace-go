@@ -7,10 +7,12 @@
 meta:
   name: github.com/DataDog/dd-trace-go/v2/crashtracker
   description: |-
-    Starts the Datadog crashtracker as the first statement of main(), so the
-    supervisor process is established before any goroutine can crash. The injected
+    Starts the Datadog crashtracker as the first statement of main(), so crashes
+    after main() starts are captured. Crashes during init() are not. The injected
     start uses DD_* environment configuration; a later programmatic Start call
-    in main is a no-op because crashtracker keeps the first successful start.
+    in main returns the first call's result, including any error. Start
+    re-executes the application, so the injected init() functions of the tracer
+    and profiler run in both the supervisor and the application process.
 
     This integration is opt-in. It is not part of orchestrion/all, so a project
     enables it by importing this package in its orchestrion.tool.go file.

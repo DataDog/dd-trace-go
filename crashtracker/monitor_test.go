@@ -7,6 +7,7 @@ package crashtracker
 
 import (
 	"bytes"
+	"os"
 	"testing"
 )
 
@@ -66,5 +67,29 @@ func TestReadCrashDumpDetectsTruncationMidFrame(t *testing.T) {
 	}
 	if len(got) != maxCrashDumpSize {
 		t.Errorf("len(data) = %d, want %d", len(got), maxCrashDumpSize)
+	}
+}
+
+// TestBuildCrashReportMarksTruncatedDumpIncomplete pins the wiring from a
+// capped dump to the report's incomplete flag.
+func TestBuildCrashReportMarksTruncatedDumpIncomplete(t *testing.T) {
+	data, err := os.ReadFile("testdata/panic_simple.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, truncated := range []bool{false, true} {
+		report := buildCrashReport(&config{}, crashDump{data: data, truncated: truncated})
+		if report.Error.Stack == nil {
+			t.Fatal("report has no crashed stack")
+		}
+		if got := report.Error.Stack.Incomplete; got != truncated {
+			t.Errorf("truncated = %v: Stack.Incomplete = %v", truncated, got)
+		}
+		if got := reportIncomplete(report); got != truncated {
+			t.Errorf("truncated = %v: reportIncomplete = %v", truncated, got)
+		}
+		if report.DDTags == "" {
+			t.Error("report has no ddtags")
+		}
 	}
 }
