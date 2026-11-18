@@ -99,6 +99,23 @@ func TestUploadReportContextDeadlineInterruptsRequest(t *testing.T) {
 	}
 }
 
+func TestUploadReportDeadlineErrorIncludesLastError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	// The deadline expires during the first retry backoff, after one 503.
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	err := uploadReport(ctx, &config{agentURL: srv.URL}, newTestReport())
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("uploadReport = %v, want context.DeadlineExceeded", err)
+	}
+	if !strings.Contains(err.Error(), "intake returned 503") {
+		t.Fatalf("uploadReport = %q, want the last attempt's error", err)
+	}
+}
+
 func TestUploadReportAgentPath(t *testing.T) {
 	var capturedReq *http.Request
 	var capturedBody []byte

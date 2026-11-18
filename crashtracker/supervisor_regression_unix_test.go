@@ -74,7 +74,7 @@ func TestSupervisorRegressionHelper(t *testing.T) {
 		return
 	case "listener":
 		assertInheritedFile(t, 3)
-		writeRegressionPID(t, dir)
+		writeReady(t, dir)
 		waitForFile(t, filepath.Join(dir, "exit"))
 		return
 	case "inherited-fds":
@@ -88,7 +88,7 @@ func TestSupervisorRegressionHelper(t *testing.T) {
 		for range 150 {
 			go func() { select {} }()
 		}
-		writeRegressionPID(t, dir)
+		writeReady(t, dir)
 		waitForFile(t, filepath.Join(dir, "crash"))
 		panic("broken stderr crash")
 	case "detached":
@@ -104,7 +104,7 @@ func TestSupervisorRegressionHelper(t *testing.T) {
 	t.Fatalf("unknown regression mode %q", mode)
 }
 
-func writeRegressionPID(t *testing.T, dir string) {
+func writeReady(t *testing.T, dir string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, "ready"), []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
 		t.Fatal(err)

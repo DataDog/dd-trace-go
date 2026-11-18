@@ -8,15 +8,16 @@
 package crashtracker_test
 
 import (
+	"bytes"
+	"compress/gzip"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -32,9 +33,7 @@ func TestSupervisorTeardownHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := os.Getenv("_CRASHTRACKER_TEARDOWN_DIR")
-	if err := os.WriteFile(filepath.Join(dir, "ready"), []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
-		t.Fatal(err)
-	}
+	writeReady(t, dir)
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "crash")); err == nil {
 			panic("teardown invariant crash")
@@ -45,13 +44,17 @@ func TestSupervisorTeardownHelper(t *testing.T) {
 
 func TestSupervisorTeardownInvariant(t *testing.T) {
 	t.Parallel()
-	var received atomic.Bool
+	// The handler runs off the test goroutine, so it only hands the body over.
+	bodies := make(chan []byte, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// A slow intake makes an upload that outlives the top process observable.
 		time.Sleep(250 * time.Millisecond)
-		body := decompressGzipBody(t, r)
-		assertCrashReport(t, body, "panic", "teardown invariant crash")
-		received.Store(true)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		bodies <- body
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	defer srv.Close()
@@ -92,11 +95,26 @@ func TestSupervisorTeardownInvariant(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = waitForVictim(t, cmd, 15*time.Second)
-	alreadyReceived := received.Load()
+	var compressed []byte
+	var arrived bool
+	select {
+	case compressed = <-bodies:
+		arrived = true
+	default:
+	}
 	teardown()
-	if !alreadyReceived {
+	if !arrived {
 		t.Fatal("report had not arrived before the top process exited")
 	}
+	gz, err := gzip.NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		t.Fatalf("create gzip reader: %v", err)
+	}
+	body, err := io.ReadAll(gz)
+	if err != nil {
+		t.Fatalf("read gzip stream: %v", err)
+	}
+	assertCrashReport(t, body, "panic", "teardown invariant crash")
 }
 
 func waitForFile(t *testing.T, path string) []byte {

@@ -28,8 +28,6 @@ const (
 	agentlessURLTemplate = "https://error-tracking-intake.%s/api/v2/errorsintake"
 	defaultSite          = "datadoghq.com"
 
-	uploadTimeout = 10 * time.Second
-
 	// uploadAttempts bounds how many times uploadReport tries to deliver a
 	// report before giving up. A crash report is a strictly one-shot payload:
 	// the supervisor exits immediately after, with no later flush and
@@ -66,6 +64,9 @@ func uploadReport(ctx context.Context, cfg *config, r *Report) error {
 			select {
 			case <-ctx.Done():
 				timer.Stop()
+				if lastErr != nil {
+					return fmt.Errorf("crashtracker: upload deadline: %w (last error: %v)", ctx.Err(), lastErr)
+				}
 				return fmt.Errorf("crashtracker: upload deadline: %w", ctx.Err())
 			case <-timer.C:
 			}
@@ -181,10 +182,10 @@ func buildRequestAndClient(cfg *config, body []byte) (*http.Request, *http.Clien
 	case cfg.httpClient != nil:
 		client = cfg.httpClient
 	case socketPath != "":
-		client = internal.UDSClient(socketPath, uploadTimeout)
+		client = internal.UDSClient(socketPath, attemptTimeout)
 		client.CheckRedirect = rejectRedirects
 	default:
-		client = internal.DefaultHTTPClient(uploadTimeout, false)
+		client = internal.DefaultHTTPClient(attemptTimeout, false)
 		client.CheckRedirect = rejectRedirects
 	}
 	return req, client, nil

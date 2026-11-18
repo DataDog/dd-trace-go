@@ -16,6 +16,10 @@ func retainSupervisorThread(cmd *exec.Cmd) func() {
 	// the process exits. Keep this goroutine locked for the supervisor's
 	// lifetime so Go cannot retire that thread while the app still runs.
 	runtime.LockOSThread()
+	// configureChild must run first; it allocates cmd.SysProcAttr.
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
 	cmd.SysProcAttr.Pdeathsig = syscall.SIGKILL
 	return runtime.UnlockOSThread
 }

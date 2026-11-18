@@ -119,7 +119,7 @@ func inheritedCrashPipe(fd uintptr) (_ *os.File, err error) {
 }
 
 func supervisorSignals(terminalMode bool) (start func(*os.Process), stop func()) {
-	ch := make(chan os.Signal, 256)
+	ch := make(chan os.Signal, 256) // headroom so a burst of signals does not fill the channel
 	var signals, terminalSignals []os.Signal
 	var terminalSink chan os.Signal
 	// Ignored panics outside the runtime signal table on Darwin.

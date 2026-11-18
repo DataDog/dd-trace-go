@@ -17,7 +17,7 @@ func TestStartRejectsInvalidInheritedPipe(t *testing.T) {
 	t.Setenv("LISTEN_PID", parent)
 	for _, value := range []string{"", "not-a-number", "-1", "0", "1", "2", "999999999"} {
 		t.Run(value, func(t *testing.T) {
-			t.Setenv(supervisedFDEnv, value)
+			t.Setenv(supervisedFDEnv, parent+":"+value)
 			err := start(func(*config) { t.Fatal("child applied options") })
 			if err == nil {
 				t.Fatal("Start accepted an invalid crash descriptor")
@@ -25,8 +25,9 @@ func TestStartRejectsInvalidInheritedPipe(t *testing.T) {
 			if _, ok := os.LookupEnv(supervisedFDEnv); ok {
 				t.Fatal("Start retained the invalid marker")
 			}
-			if got := os.Getenv("LISTEN_PID"); got != parent {
-				t.Fatalf("invalid crash pipe changed LISTEN_PID to %q, want %q", got, parent)
+			// The socket handoff must not depend on the pipe validation.
+			if got, want := os.Getenv("LISTEN_PID"), strconv.Itoa(os.Getpid()); got != want {
+				t.Fatalf("invalid crash pipe left LISTEN_PID at %q, want %q", got, want)
 			}
 		})
 	}
@@ -38,12 +39,38 @@ func TestStartClosesInvalidInheritedPipe(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	t.Setenv(supervisedFDEnv, strconv.FormatUint(uint64(f.Fd()), 10))
+	t.Setenv(supervisedFDEnv, strconv.Itoa(os.Getppid())+":"+strconv.FormatUint(uint64(f.Fd()), 10))
 	if err := start(); err == nil {
 		t.Fatal("Start accepted a regular file as the crash pipe")
 	}
 	if _, err := f.Stat(); err == nil {
 		t.Fatal("Start left the invalid inherited descriptor open")
+	}
+}
+
+func TestParseSupervisedMarker(t *testing.T) {
+	parent := strconv.Itoa(os.Getppid())
+	foreign := strconv.Itoa(os.Getppid() + 1)
+	for _, test := range []struct {
+		name   string
+		marker string
+		fd     string
+		ok     bool
+	}{
+		{"bound to the parent", parent + ":7", "7", true},
+		{"bad fd still bound", parent + ":x", "x", true},
+		{"empty fd still bound", parent + ":", "", true},
+		{"bare number", "7", "", false},
+		{"foreign pid", foreign + ":7", "", false},
+		{"empty", "", "", false},
+		{"pid prefix only", parent + "0:7", "", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fd, ok := parseSupervisedMarker(test.marker)
+			if fd != test.fd || ok != test.ok {
+				t.Fatalf("parseSupervisedMarker(%q) = %q, %v, want %q, %v", test.marker, fd, ok, test.fd, test.ok)
+			}
+		})
 	}
 }
 
