@@ -21,6 +21,17 @@ func reset(t *testing.T) {
 	}
 	zero()
 	t.Cleanup(zero)
+	t.Cleanup(IgnoreTestBinaryForTesting())
+}
+
+// A test binary of package main never runs main, so nothing would release the
+// deferred starts. The flag must stay false there.
+func TestMarkSupervisorPendingInTestBinary(t *testing.T) {
+	reset(t)
+	inTestBinary = testing.Testing // the real check: this is a test binary
+	SetResolver(func() bool { return true })
+	assert.False(t, MarkSupervisorPending())
+	assert.False(t, SupervisorPending())
 }
 
 func TestMarkSupervisorPending(t *testing.T) {
