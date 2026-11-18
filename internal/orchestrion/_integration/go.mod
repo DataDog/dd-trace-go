@@ -124,6 +124,7 @@ require (
 	example.com/gqlgendep v0.0.0-00010101000000-000000000000
 	example.com/grpcdep v0.0.0-00010101000000-000000000000
 	example.com/httpdep v0.0.0-00010101000000-000000000000
+	example.com/k8sclientgodep v0.0.0-00010101000000-000000000000
 	example.com/mongodep v0.0.0-00010101000000-000000000000
 	example.com/pubsubdep v0.0.0-00010101000000-000000000000
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
@@ -175,12 +176,12 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.13.0-dev.1
-	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 v2.13.0-dev.1 // indirect
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.13.0-dev.1 // indirect
@@ -605,6 +606,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.13.0-dev // indirect
 	github.com/aws/aws-sdk-go-v2/service/kms v1.30.1 // indirect
@@ -645,6 +647,10 @@ replace github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/ote
 replace github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/otelc/v2 => ../../../contrib/cloud.google.com/go/pubsub.v2/otelc
 
 replace example.com/pubsubdep => ./internal/pubsubdep
+
+replace github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 => ../../../contrib/k8s.io/client-go/otelc
+
+replace example.com/k8sclientgodep => ./internal/k8sclientgodep
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../../contrib/aws/aws-sdk-go/otelc
 
