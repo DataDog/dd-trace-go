@@ -184,6 +184,9 @@ type Client struct {
 
 	lastError        error
 	lastConfigStates []*configState
+	// registrationSnapshotHook lets tests hold a request snapshot open while
+	// another goroutine attempts to subscribe. It is nil outside tests.
+	registrationSnapshotHook func()
 }
 
 // subscription represents a callback that was registered to run on updates to a
@@ -660,25 +663,42 @@ func HasCapability(cpb Capability) (bool, error) {
 	return false, nil
 }
 
-func (c *Client) allCapabilities() *big.Int {
-	capa := big.NewInt(0)
-
-	// Read registered capabilities without holding the lock while we also read subscriptions.
-	c.capabilitiesMu.RLock()
-	for i := range c.capabilities {
-		capa.SetBit(capa, int(i), 1)
-	}
-	c.capabilitiesMu.RUnlock()
-
+// requestRegistrations snapshots the products and capabilities reported in one
+// request while holding the registration locks in the Client's documented
+// order. A concurrent Subscribe therefore cannot appear in only one field.
+func (c *Client) requestRegistrations() ([]string, *big.Int) {
+	c.productsMu.RLock()
 	c.subscriptionsMu.RLock()
-	for _, s := range c.subscriptionsMu.subs {
-		for _, cap := range s.capabilities {
-			capa.SetBit(capa, int(cap), 1)
+	c.capabilitiesMu.RLock()
+	defer c.capabilitiesMu.RUnlock()
+	defer c.subscriptionsMu.RUnlock()
+	defer c.productsMu.RUnlock()
+	if c.registrationSnapshotHook != nil {
+		c.registrationSnapshotHook()
+	}
+
+	products := make(map[string]struct{})
+	for product := range c.products {
+		products[product] = struct{}{}
+	}
+
+	capabilities := big.NewInt(0)
+	for capability := range c.capabilities {
+		capabilities.SetBit(capabilities, int(capability), 1)
+	}
+
+	for _, subscription := range c.subscriptionsMu.subs {
+		products[subscription.product] = struct{}{}
+		for _, capability := range subscription.capabilities {
+			capabilities.SetBit(capabilities, int(capability), 1)
 		}
 	}
-	c.subscriptionsMu.RUnlock()
 
-	return capa
+	productList := make([]string, 0, len(products))
+	for product := range products {
+		productList = append(productList, product)
+	}
+	return productList, capabilities
 }
 
 func (c *Client) globalCallbacks() []Callback {
@@ -896,7 +916,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 		c.lastConfigStates = pbConfigState
 	}
 
-	capa := c.allCapabilities()
+	products, capabilities := c.requestRegistrations()
 	var tags []string
 	for k, v := range internal.GetGitMetadataTags() {
 		tags = append(tags, k+":"+v)
@@ -911,7 +931,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				Error:          errMsg,
 			},
 			ID:       c.clientID,
-			Products: c.allProducts(),
+			Products: products,
 			IsTracer: true,
 			ClientTracer: &clientTracer{
 				RuntimeID:     c.RuntimeID,
@@ -923,7 +943,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				ProcessTags:   processtags.GlobalTags().Slice(),
 				Tags:          tags,
 			},
-			Capabilities: capa.Bytes(),
+			Capabilities: capabilities.Bytes(),
 		},
 		CachedTargetFiles: pbCachedFiles,
 	}

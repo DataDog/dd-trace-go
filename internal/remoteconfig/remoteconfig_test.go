@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"math/rand"
 	"net/http"
 	"reflect"
@@ -698,8 +699,8 @@ func TestAsync(t *testing.T) {
 	require.Empty(t, client.callbacks)
 }
 
-// Ensure the lock ordering between capabilities and subscriptions does not deadlock.
-func TestAllCapabilitiesNoDeadlockWithSubscribe(t *testing.T) {
+// Ensure request registration snapshots do not deadlock with subscriptions.
+func TestRequestRegistrationsNoDeadlockWithSubscribe(t *testing.T) {
 	Reset()
 	cfg := DefaultClientConfig()
 	c, err := newClient(cfg)
@@ -731,11 +732,11 @@ func TestAllCapabilitiesNoDeadlockWithSubscribe(t *testing.T) {
 		}
 	}()
 
-	// Read allCapabilities concurrently.
+	// Read request registrations concurrently.
 	go func() {
 		defer wg.Done()
 		for range iterations {
-			c.allCapabilities()
+			c.requestRegistrations()
 		}
 	}()
 
@@ -748,8 +749,67 @@ func TestAllCapabilitiesNoDeadlockWithSubscribe(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("allCapabilities deadlocked with concurrent subscribe")
+		t.Fatal("requestRegistrations deadlocked with concurrent subscribe")
 	}
+}
+
+func TestNewUpdateRequestSnapshotsSubscriptionRegistrationAtomically(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+
+	client, err := newClient(DefaultClientConfig())
+	require.NoError(t, err)
+	clientSingleton.Store(client)
+
+	snapshotEntered := make(chan struct{})
+	releaseSnapshot := make(chan struct{})
+	client.registrationSnapshotHook = func() {
+		close(snapshotEntered)
+		<-releaseSnapshot
+	}
+
+	type requestResult struct {
+		body bytes.Buffer
+		err  error
+	}
+	requestDone := make(chan requestResult, 1)
+	go func() {
+		body, err := client.newUpdateRequest()
+		requestDone <- requestResult{body: body, err: err}
+	}()
+	<-snapshotEntered
+
+	subscribeStarted := make(chan struct{})
+	subscribeDone := make(chan error, 1)
+	go func() {
+		close(subscribeStarted)
+		_, err := Subscribe("ATOMIC_PRODUCT", func(ProductUpdate) map[string]state.ApplyStatus { return nil }, FFEFlagEvaluation)
+		subscribeDone <- err
+	}()
+	<-subscribeStarted
+	select {
+	case err := <-subscribeDone:
+		t.Fatalf("Subscribe completed while the request held its registration snapshot: %v", err)
+	default:
+	}
+
+	close(releaseSnapshot)
+	first := <-requestDone
+	require.NoError(t, first.err)
+	require.NoError(t, <-subscribeDone)
+	client.registrationSnapshotHook = nil
+
+	var before clientGetConfigsRequest
+	require.NoError(t, json.Unmarshal(first.body.Bytes(), &before))
+	assert.NotContains(t, before.Client.Products, "ATOMIC_PRODUCT")
+	assert.Equal(t, uint(0), new(big.Int).SetBytes(before.Client.Capabilities).Bit(int(FFEFlagEvaluation)))
+
+	afterBody, err := client.newUpdateRequest()
+	require.NoError(t, err)
+	var after clientGetConfigsRequest
+	require.NoError(t, json.Unmarshal(afterBody.Bytes(), &after))
+	assert.Contains(t, after.Client.Products, "ATOMIC_PRODUCT")
+	assert.Equal(t, uint(1), new(big.Int).SetBytes(after.Client.Capabilities).Bit(int(FFEFlagEvaluation)))
 }
 
 // roundTripFunc adapts a function to an http.RoundTripper.

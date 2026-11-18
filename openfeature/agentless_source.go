@@ -245,18 +245,28 @@ func addEvaluatorCapabilities(requestURL *url.URL, capabilities []string) {
 	if !slices.Contains(capabilities, internalffe.DependentFlagVariantKeyV1) {
 		return
 	}
-	query := requestURL.Query()
-	if slices.Contains(query[internalffe.DependentFlagsVariantKeyQueryParameter], internalffe.DependentFlagsVariantKeyQueryVersion) {
-		return
-	}
 	capability := url.QueryEscape(internalffe.DependentFlagsVariantKeyQueryParameter) + "=" + url.QueryEscape(internalffe.DependentFlagsVariantKeyQueryVersion)
 	if requestURL.RawQuery == "" {
 		requestURL.RawQuery = capability
 		return
 	}
-	// Preserve custom endpoint and flag-selection query bytes. Re-encoding the
-	// whole query here can reorder unrelated parameters owned by those features.
-	requestURL.RawQuery = capability + "&" + requestURL.RawQuery
+
+	// Remove every existing spelling of this key, including stale and duplicate
+	// values, without re-encoding or reordering unrelated query segments.
+	segments := strings.Split(requestURL.RawQuery, "&")
+	kept := segments[:0]
+	for _, segment := range segments {
+		rawKey, _, _ := strings.Cut(segment, "=")
+		key, err := url.QueryUnescape(rawKey)
+		if err == nil && key == internalffe.DependentFlagsVariantKeyQueryParameter {
+			continue
+		}
+		kept = append(kept, segment)
+	}
+	requestURL.RawQuery = capability
+	if len(kept) > 0 {
+		requestURL.RawQuery += "&" + strings.Join(kept, "&")
+	}
 }
 
 // attempt is only used to number debug log lines.

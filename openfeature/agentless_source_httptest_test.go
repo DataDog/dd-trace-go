@@ -743,18 +743,46 @@ func TestAgentlessSourceRequestsDependentFlagsParameter(t *testing.T) {
 func TestAddEvaluatorCapabilitiesUsesQueryParameter(t *testing.T) {
 	for _, test := range []struct {
 		name         string
+		requestURL   string
 		capabilities []string
 		expected     string
 	}{
-		{"absent", nil, "https://example.test/ufc?token=preserved"},
-		{"unknown", []string{"unknown-v1"}, "https://example.test/ufc?token=preserved"},
-		{"dependent flags", []string{internalffe.DependentFlagVariantKeyV1}, "https://example.test/ufc?cap_dependent-flags-variant-key=v1&token=preserved"},
+		{
+			name:       "absent",
+			requestURL: "https://example.test/ufc?token=preserved",
+			expected:   "https://example.test/ufc?token=preserved",
+		},
+		{
+			name:         "unknown",
+			requestURL:   "https://example.test/ufc?token=preserved",
+			capabilities: []string{"unknown-v1"},
+			expected:     "https://example.test/ufc?token=preserved",
+		},
+		{
+			name:         "dependent flags",
+			requestURL:   "https://example.test/ufc?token=preserved",
+			capabilities: []string{internalffe.DependentFlagVariantKeyV1},
+			expected:     "https://example.test/ufc?cap_dependent-flags-variant-key=v1&token=preserved",
+		},
+		{
+			name:         "duplicate and stale values",
+			requestURL:   "https://example.test/ufc?cap_dependent-flags-variant-key=stale&token=%2f&cap_dependent-flags-variant-key=v1&empty=&cap_dependent-flags-variant-key=older#fragment",
+			capabilities: []string{internalffe.DependentFlagVariantKeyV1},
+			expected:     "https://example.test/ufc?cap_dependent-flags-variant-key=v1&token=%2f&empty=#fragment",
+		},
+		{
+			name:         "encoded stale key",
+			requestURL:   "https://example.test/ufc?token=a+b&cap%5Fdependent-flags-variant-key=stale&token=%2F",
+			capabilities: []string{internalffe.DependentFlagVariantKeyV1},
+			expected:     "https://example.test/ufc?cap_dependent-flags-variant-key=v1&token=a+b&token=%2F",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "https://example.test/ufc?token=preserved", nil)
-			addEvaluatorCapabilities(req.URL, test.capabilities)
+			requestURL, err := url.Parse(test.requestURL)
+			require.NoError(t, err)
+			addEvaluatorCapabilities(requestURL, test.capabilities)
 
-			assert.Equal(t, test.expected, req.URL.String())
+			assert.Equal(t, test.expected, requestURL.String())
 		})
 	}
 }
