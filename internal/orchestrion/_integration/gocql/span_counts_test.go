@@ -33,9 +33,10 @@ const (
 	connectSpan   = "cassandra.connect"
 )
 
-// TestExactSpans checks the exact gocql spans of each way to build a session
-// and of each query, batch and iterator path.
-func TestExactSpans(t *testing.T) {
+// TestSpanCounts checks the number of gocql spans for each way to build a
+// session and for each query, batch and iterator path. The harness test cases
+// only check that a span exists, so they miss duplicate spans.
+func TestSpanCounts(t *testing.T) {
 	require.True(t, built.WithOrchestrion || otelc.Enabled(),
 		"this test must be run with either orchestrion or otelc enabled")
 	var b base
@@ -234,7 +235,9 @@ func TestExactSpans(t *testing.T) {
 		},
 		{
 			// The observer otelc set at gocql.NewCluster is removed too.
-			// Orchestrion sets its own there, which the contrib keeps.
+			// Orchestrion sets its own there, which the contrib keeps. This
+			// also checks that the DDOtelcAutomatic method of the otelc
+			// module matches the interface the contrib looks for.
 			name:         "ContribCreateTracedSessionNewClusterQueryDisabled",
 			otelcQueries: 0, orchestrionQueries: 1,
 			session: func(t *testing.T) *gocql.Session {

@@ -24,10 +24,10 @@ func ObserveCluster(cluster *gocql.ClusterConfig) bool {
 	if cluster == nil {
 		return false
 	}
-	var obs *gocqltrace.Observer
-	observer := func() *gocqltrace.Observer {
+	var obs *automaticObserver
+	observer := func() *automaticObserver {
 		if obs == nil {
-			obs = gocqltrace.NewAutomaticObserver(cluster)
+			obs = &automaticObserver{gocqltrace.NewObserver(cluster)}
 		}
 		return obs
 	}
@@ -49,9 +49,19 @@ func replaceable(o any) bool {
 	if o == nil {
 		return true
 	}
-	obs, ok := o.(*gocqltrace.Observer)
-	return ok && obs.Automatic()
+	_, ok := o.(*automaticObserver)
+	return ok
 }
+
+// automaticObserver is a contrib Observer that ObserveCluster set.
+type automaticObserver struct {
+	*gocqltrace.Observer
+}
+
+// DDOtelcAutomatic marks o as set by the otelc rules. The contrib's
+// CreateTracedSession looks for this method, through an unexported interface,
+// to remove o for an operation its options leave untraced.
+func (*automaticObserver) DDOtelcAutomatic() {}
 
 // BeforeCreateSession passes a copy of cluster with the observers set on to
 // the original call, so the application's cluster is left unchanged.
