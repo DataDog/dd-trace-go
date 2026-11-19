@@ -24,7 +24,8 @@ setup:
     - internal/appsec/AGENTS.md
     - internal/civisibility/AGENTS.md
   directories:
-    - .claude/skills
+    - .claude
+    - .agents/skills
 
 default_level: gate
 presets:
