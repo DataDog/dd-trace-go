@@ -136,12 +136,6 @@ func (m *WAFManager) Close() {
 	// WAFManagerLeakedMessage after a correct manual close. Stop is safe to call multiple times
 	// because Close holds the mutex here, so concurrent calls cannot occur.
 	m.cleanup.Stop()
-	// [runtime.Cleanup.Stop] cannot cancel a cleanup that the runtime already queued. The runtime
-	// guarantees cancellation only when the pointer that [runtime.AddCleanup] received stays
-	// reachable across the Stop call. The deferred unlock keeps m reachable through the return of
-	// this function. [runtime.KeepAlive] makes that requirement explicit, so this code does not
-	// depend on the liveness analysis of the compiler.
-	runtime.KeepAlive(m)
 }
 
 // RemoveConfig removes a configuration from the receiving [WAFManager].
