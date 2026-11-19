@@ -35,10 +35,10 @@ const (
 	defaultRulesPath     = "ASM_DD/default"
 	obfuscatorConfigPath = "obfuscator/config"
 
-	// WAFManagerLeakedMessage is the warning that the WAFManager GC cleanup reports when the runtime
+	// wafManagerLeakedMessage is the warning that the WAFManager GC cleanup reports when the runtime
 	// collects a WAFManager without a call to [WAFManager.Close]. The GC cleanup is a process-wide
 	// safety net.
-	WAFManagerLeakedMessage = "WAFManager was leaked and is being closed by GC. Remember to call WAFManager.Close() explicitly!"
+	wafManagerLeakedMessage = "WAFManager was leaked and is being closed by GC. Remember to call WAFManager.Close() explicitly!"
 )
 
 // NewWAFManager creates a new [WAFManager] with the provided [config.ObfuscatorConfig] and initial
@@ -73,7 +73,7 @@ func NewWAFManagerWithStaticRules(obfuscator ObfuscatorConfig, staticRules []byt
 	// Attach a [runtime.Cleanup] to close the builder when the runtime collects the
 	// [WAFManager] without a call to [WAFManager.Close].
 	mgr.cleanup = runtime.AddCleanup(mgr, func(b *libddwaf.Builder) {
-		telemetrylog.Warn(WAFManagerLeakedMessage)
+		telemetrylog.Warn(wafManagerLeakedMessage)
 		b.Close()
 	}, builder)
 
@@ -133,7 +133,7 @@ func (m *WAFManager) Close() {
 	m.rulesVersion = ""
 
 	// Stop the cleanup so that the runtime does not waste resources and does not emit
-	// WAFManagerLeakedMessage after a correct manual close. Stop is safe to call multiple times
+	// wafManagerLeakedMessage after a correct manual close. Stop is safe to call multiple times
 	// because Close holds the mutex here, so concurrent calls cannot occur.
 	m.cleanup.Stop()
 }
