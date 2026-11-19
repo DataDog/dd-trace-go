@@ -112,18 +112,18 @@ func (t *commitTracker) markFlushed() {
 
 // flush is the Flush method of the trackers whose chi writer has Flush. This is the
 // direct Flush path: chi's writer sends the flush to its immediate target, which is
-// the writer that is classified (see flushError for the rule). A flush that nothing
-// sends does not mark the response as sent, as without the tracker.
+// the writer that is classified (see flushError for the rule). On chi v5.3, a flush
+// that nothing sends does not mark the response as sent, as without the tracker.
 //
-// Since chi v5.4, the chi writer also sends WriteHeader(200) in Flush
-// (basicWriter.flush calls maybeWriteHeader), before the flush is classified.
-// A writer below that is not a known server writer is not proof of an ignored
-// flush: it can forward the flush (for example gzhttp.NoGzipResponseWriter),
-// and net/http locks the status and the headers at that WriteHeader. The
-// response is then not replaceable, so the status counts as a commit, like the
-// state of chi without the tracker: a late block does not run, and the tracker
-// reports a block failure instead of a false request_blocked. A safe replacement
-// for the lost late block is a follow-up.
+// On an initial, non-discarded flush, chi v5.4 and later record 200 and forward
+// WriteHeader (basicWriter.flush calls maybeWriteHeader), before the flush is
+// classified. If that WriteHeader reaches net/http, the status and the headers are
+// locked. An unknown writer below does not prove that a replacement is safe: it can
+// forward the flush (for example gzhttp.NoGzipResponseWriter). So the tracker keeps
+// chi's commit signal: the status counts as a commit, like the state of chi without
+// the tracker. A late block does not run, and the tracker reports a block failure
+// instead of a false request_blocked. A safe replacement for the lost late block is
+// a follow-up.
 func (t *commitTracker) flush() {
 	target := t.WrapResponseWriter.Unwrap()
 	t.WrapResponseWriter.(http.Flusher).Flush()

@@ -619,9 +619,13 @@ func TestAppSecWireSpecial(t *testing.T) {
 		})
 	}
 
-	// A direct Flush() through the tracker (no unwrapOnly): a writer below chi that
-	// ignores the flush must not mark the response as sent. The result is the result
-	// of main: 200 (chi's status after a flush) and the block body.
+	// A direct Flush() through the tracker (no unwrapOnly): the writer below chi
+	// ignores the flush. The outcome depends on the chi version:
+	//   - chi v5.3: the response is not marked as sent, and the block body is
+	//     written, as on main.
+	//   - chi v5.4 and later: the flush records chi's status 200 first, so the
+	//     response is committed. The client gets an empty 200, with
+	//     request_blocked=0 and block_failure=1.
 	for _, h2 := range []bool{false, true} {
 		for _, kind := range []string{"flusher", "controller"} {
 			name := "direct-ignored-flush-" + kind
@@ -642,11 +646,12 @@ func TestAppSecWireSpecial(t *testing.T) {
 					})}, target
 				})
 				if chiFlushSendsHeader {
-					// chi >= v5.4 sends WriteHeader(200) in Flush, before the tracker
-					// can classify the flush. An unknown writer below is not proof of
-					// an ignored flush: it can forward it. The response is committed,
-					// the block cannot replace it, and the tracker must not claim a
-					// block that it did not write.
+					// On an initial, non-discarded flush, chi v5.4 and later record
+					// 200 and forward WriteHeader. If that reaches net/http, the
+					// status and the headers are locked. An unknown writer below does
+					// not prove that a replacement is safe, so the tracker keeps
+					// chi's commit signal: the client gets an empty 200, with
+					// request_blocked=0 and block_failure=1.
 					assert.Equal(t, 200, res.status)
 					assert.Empty(t, res.body)
 					assert.Zero(t, res.requestBlocked())
