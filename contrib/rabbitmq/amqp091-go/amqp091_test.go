@@ -123,7 +123,6 @@ func TestPublishConsume(t *testing.T) {
 			assert.Equal(t, "hello", string(d.Body))
 			assert.Equal(t, "header", d.Headers["user"])
 			assert.Equal(t, expectedHash(t, tt.produceEdge(queue), []string{"direction:in", "topic:" + queue, "type:rabbitmq"}), pathwayHash(t, d.Headers))
-			require.NoError(t, ch.Cancel(t.Name(), false))
 
 			spans := waitForSpans(t, mt, 3)
 			byName := map[string]*mocktracer.Span{}
@@ -138,9 +137,13 @@ func TestPublishConsume(t *testing.T) {
 			assert.Equal(t, ext.SpanKindProducer, publish.Tag(ext.SpanKind))
 			assert.Equal(t, string(instrumentation.PackageRabbitMQAMQP091Go), publish.Tag(ext.Component))
 			assert.Equal(t, "rabbitmq", publish.Tag(ext.MessagingSystem))
-			assert.Equal(t, tt.exchange, publish.Tag(ext.MessagingDestinationName))
+			destination := tt.exchange
+			if destination == "" {
+				destination = "amq.default"
+			}
+			assert.Equal(t, destination, publish.Tag(ext.MessagingDestinationName))
 			assert.Equal(t, queue, publish.Tag(routingKeyTag))
-			assert.Equal(t, "basic.publish "+tt.exchange+" -> "+queue, publish.Tag(ext.ResourceName))
+			assert.Equal(t, "basic.publish "+destination+" -> "+queue, publish.Tag(ext.ResourceName))
 
 			assert.Equal(t, publish.SpanID(), consume.ParentID())
 			assert.Equal(t, publish.TraceID(), consume.TraceID())
@@ -215,6 +218,8 @@ func TestForward(t *testing.T) {
 	require.NoError(t, Publish(ch, "", first, false, false, amqp.Publishing{Body: []byte("hello")}, WithDataStreams()))
 
 	d := receive(t, deliveries)
+	consume := waitForSpans(t, mt, 2)[1]
+	require.Equal(t, "amqp.consume", consume.OperationName())
 	require.NoError(t, PublishWithContext(ContextFromDelivery(context.Background(), d), ch, "", second.Name, false, false, amqp.Publishing{Body: d.Body}, WithDataStreams()))
 
 	var got amqp.Delivery
@@ -231,6 +236,11 @@ func TestForward(t *testing.T) {
 		[]string{"direction:out", "topic:" + second.Name, "type:rabbitmq"},
 		[]string{"direction:in", "topic:" + second.Name, "type:rabbitmq"},
 	), pathwayHash(t, got.Headers))
+
+	forwarded := waitForSpans(t, mt, 4)[2]
+	assert.Equal(t, "amqp.publish", forwarded.OperationName())
+	assert.Equal(t, consume.SpanID(), forwarded.ParentID())
+	assert.Equal(t, consume.TraceID(), forwarded.TraceID())
 }
 
 func TestDataStreamsDisabled(t *testing.T) {
@@ -283,6 +293,13 @@ func TestOptions(t *testing.T) {
 	assert.Same(t, defaultConfig(), newConfig(nil))
 }
 
+func TestEmptyServiceName(t *testing.T) {
+	cfg := &config{}
+	base := cfg.baseSpanConfig(ext.SpanKindProducer, ext.SpanTypeMessageProducer)
+	assert.NotContains(t, base.Tags, ext.ServiceName)
+	assert.NotContains(t, base.Tags, ext.KeyServiceSource)
+}
+
 func TestTableCarrier(t *testing.T) {
 	c := TableCarrier(amqp.Table{"bytes": []byte("b"), "number": int32(1)})
 	c.Set("string", "s")
@@ -307,4 +324,43 @@ func TestContextFromDeliveryWithoutHeaders(t *testing.T) {
 	ctx := ContextFromDelivery(context.Background(), amqp.Delivery{})
 	_, ok := datastreams.PathwayFromContext(ctx)
 	assert.False(t, ok)
+}
+
+func TestConsumeWithContextCancel(t *testing.T) {
+	ch := openChannel(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	queue := declareQueue(t, ch, "")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	deliveries, err := ConsumeWithContext(ctx, ch, queue, "cancelled", true, false, false, false, nil)
+	require.NoError(t, err)
+	require.NoError(t, Publish(ch, "", queue, false, false, amqp.Publishing{Body: []byte("one")}))
+	require.NoError(t, Publish(ch, "", queue, false, false, amqp.Publishing{Body: []byte("two")}))
+	assert.Equal(t, "one", string(receive(t, deliveries).Body))
+	cancel()
+
+	require.Eventually(t, func() bool {
+		select {
+		case _, ok := <-deliveries:
+			return !ok
+		default:
+			return false
+		}
+	}, 10*time.Second, 50*time.Millisecond)
+}
+
+func TestConsumeSpanFinishesOnHandoff(t *testing.T) {
+	ch := openChannel(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	queue := declareQueue(t, ch, "")
+
+	deliveries, err := Consume(ch, queue, "handoff", true, false, false, false, nil)
+	require.NoError(t, err)
+	require.NoError(t, Publish(ch, "", queue, false, false, amqp.Publishing{Body: []byte("hello")}))
+	receive(t, deliveries)
+
+	spans := waitForSpans(t, mt, 2)
+	assert.Equal(t, "amqp.consume", spans[1].OperationName())
 }

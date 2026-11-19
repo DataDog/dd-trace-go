@@ -23,7 +23,10 @@ const (
 	componentName   = instrumentation.PackageRabbitMQAMQP091Go
 	messagingSystem = "rabbitmq"
 	routingKeyTag   = "messaging.rabbitmq.destination.routing_key"
+	defaultExchange = "amq.default"
 )
+
+type parentKey struct{}
 
 var instr *instrumentation.Instrumentation
 
@@ -59,7 +62,7 @@ func Consume(ch *amqp.Channel, queue, consumer string, autoAck, exclusive, noLoc
 	if err != nil {
 		return deliveries, err
 	}
-	return traceDeliveries(newConfig(opts), queue, deliveries), nil
+	return traceDeliveries(context.Background(), newConfig(opts), queue, deliveries), nil
 }
 
 func ConsumeWithContext(ctx context.Context, ch *amqp.Channel, queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table, opts ...Option) (<-chan amqp.Delivery, error) {
@@ -67,7 +70,7 @@ func ConsumeWithContext(ctx context.Context, ch *amqp.Channel, queue, consumer s
 	if err != nil {
 		return deliveries, err
 	}
-	return traceDeliveries(newConfig(opts), queue, deliveries), nil
+	return traceDeliveries(ctx, newConfig(opts), queue, deliveries), nil
 }
 
 func Get(ch *amqp.Channel, queue string, autoAck bool, opts ...Option) (amqp.Delivery, bool, error) {
@@ -83,37 +86,52 @@ func ContextFromDelivery(ctx context.Context, d amqp.Delivery) context.Context {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return datastreams.ExtractFromBase64Carrier(ctx, TableCarrier(d.Headers))
+	carrier := TableCarrier(d.Headers)
+	if parent, err := tracer.Extract(carrier); err == nil {
+		ctx = context.WithValue(ctx, parentKey{}, parent)
+	}
+	return datastreams.ExtractFromBase64Carrier(ctx, carrier)
 }
 
-func traceDeliveries(cfg *config, queue string, in <-chan amqp.Delivery) <-chan amqp.Delivery {
+func traceDeliveries(ctx context.Context, cfg *config, queue string, in <-chan amqp.Delivery) <-chan amqp.Delivery {
 	out := make(chan amqp.Delivery)
 	go func() {
 		defer close(out)
-		var active *tracer.Span
 		for d := range in {
-			if active != nil {
-				active.Finish()
+			span := startConsumeSpan(cfg, "basic.deliver", queue, &d)
+			select {
+			case out <- d:
+				span.Finish()
+			case <-ctx.Done():
+				span.Finish()
+				for range in {
+				}
+				return
 			}
-			active = startConsumeSpan(cfg, "basic.deliver", queue, &d)
-			out <- d
-		}
-		if active != nil {
-			active.Finish()
 		}
 	}()
 	return out
 }
 
 func startPublishSpan(ctx context.Context, cfg *config, exchange, key string, msg *amqp.Publishing) *tracer.Span {
-	span, ctx := tracer.StartSpanFromContext(ctx, "amqp.publish",
+	destination := exchange
+	if destination == "" {
+		destination = defaultExchange
+	}
+	opts := []tracer.StartSpanOption{
 		tracer.WithTags(map[string]any{
-			ext.ResourceName:             "basic.publish " + exchange + " -> " + key,
-			ext.MessagingDestinationName: exchange,
+			ext.ResourceName:             "basic.publish " + destination + " -> " + key,
+			ext.MessagingDestinationName: destination,
 			routingKeyTag:                key,
 		}),
 		tracer.WithStartSpanConfig(cfg.producerBase),
-	)
+	}
+	if parent, ok := ctx.Value(parentKey{}).(*tracer.SpanContext); ok {
+		if _, active := tracer.SpanFromContext(ctx); !active {
+			opts = append(opts, tracer.ChildOf(parent))
+		}
+	}
+	span, ctx := tracer.StartSpanFromContext(ctx, "amqp.publish", opts...)
 	headers := make(amqp.Table, len(msg.Headers)+4)
 	maps.Copy(headers, msg.Headers)
 	msg.Headers = headers

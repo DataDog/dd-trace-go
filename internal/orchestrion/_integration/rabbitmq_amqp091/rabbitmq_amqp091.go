@@ -43,7 +43,7 @@ func expectedTraces(consumeResource string, queue string) trace.Traces {
 					Tags: map[string]any{
 						"name":     "amqp.publish",
 						"type":     "queue",
-						"resource": "basic.publish  -> " + queue,
+						"resource": "basic.publish amq.default -> " + queue,
 					},
 					Meta: map[string]string{
 						"span.kind":        "producer",

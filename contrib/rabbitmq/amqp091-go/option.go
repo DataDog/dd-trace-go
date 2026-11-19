@@ -85,8 +85,9 @@ func (cfg *config) baseSpanConfig(kind, spanType string) *tracer.StartSpanConfig
 		ext.MessagingSystem: messagingSystem,
 	}
 	maps.Copy(tags, cfg.customTags)
-	return tracer.NewStartSpanConfig(
-		tracer.WithTags(tags),
-		instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
-	)
+	opts := []tracer.StartSpanOption{tracer.WithTags(tags)}
+	if cfg.serviceName != "" {
+		opts = append(opts, instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource))
+	}
+	return tracer.NewStartSpanConfig(opts...)
 }

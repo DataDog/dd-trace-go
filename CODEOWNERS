@@ -122,7 +122,7 @@
 /contrib/Shopify/sarama/                    @DataDog/apm-go @DataDog/apm-idm-go @DataDog/data-streams-monitoring
 /contrib/confluentinc/confluent-kafka-go/   @DataDog/apm-go @DataDog/apm-idm-go @DataDog/data-streams-monitoring
 /contrib/segmentio/kafka-go/                @DataDog/apm-go @DataDog/apm-idm-go @DataDog/data-streams-monitoring
-/contrib/rabbitmq/amqp091-go/                @DataDog/apm-go @DataDog/apm-idm-go @DataDog/data-streams-monitoring
+/contrib/rabbitmq/amqp091-go/               @DataDog/apm-go @DataDog/apm-idm-go @DataDog/data-streams-monitoring
 /contrib/streadway/amqp/                    @DataDog/apm-go @DataDog/apm-idm-go @DataDog/data-streams-monitoring
 
 # civisibility
