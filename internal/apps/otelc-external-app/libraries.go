@@ -33,6 +33,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"gorm.io/gorm"
 	gormtests "gorm.io/gorm/utils/tests"
+	"k8s.io/client-go/rest"
 )
 
 // useLibraries calls libraries whose otelc rules bring their contrib into the
@@ -67,6 +68,7 @@ func useLibraries() {
 		_ = c.Close()
 	}
 	_ = zerolog.New(io.Discard)
+	_ = &rest.Config{Host: "http://127.0.0.1"}
 	_, _ = gorm.Open(gormtests.DummyDialector{})
 	// The pool opens no connection until first used.
 	if pool, err := pgxpool.New(context.Background(), "postgres://localhost/db"); err == nil {

@@ -159,6 +159,7 @@ integration-suites:
     contrib/julienschmidt/httprouter: [ julienschmidt_httprouter ]
     contrib/julienschmidt/httprouter/otelc: [ julienschmidt_httprouter ]
     contrib/k8s.io/client-go: [ k8s_client_go ]
+    contrib/k8s.io/client-go/otelc: [ k8s_client_go ]
     contrib/k8s.io/gateway-api: []
     contrib/labstack/echo.v4: [ echo.v4 ]
     contrib/labstack/echo.v4/otelc: [ echo.v4 ]
@@ -504,6 +505,7 @@ components:
       - contrib/gorm.io/gorm.v1/**
       - contrib/jackc/pgx.v5/**
       - contrib/julienschmidt/httprouter/**
+      - contrib/k8s.io/client-go/**
       - contrib/labstack/echo.v4/**
       - contrib/labstack/echo.v5/**
       - contrib/net/http/**

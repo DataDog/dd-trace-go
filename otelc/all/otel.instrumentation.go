@@ -38,6 +38,7 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2"
+	_ "github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2"
