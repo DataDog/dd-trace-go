@@ -230,12 +230,14 @@ cases:
         a trace continuing from a parent reuses the parent's trace ID rather than regenerating the upper bits.
       - Describes the upper 64-bit layout as big-endian <32-bit unix start time in seconds><32 zero bits>, so the
         start time occupies the top 32 bits and the next 32 bits are zero (the low 64 bits of the trace ID are random).
-      - States the upper 64 bits travel to downstream services as the _dd.p.tid propagating tag, lowercase hex-encoded.
+      - States Datadog headers carry the upper 64 bits as the _dd.p.tid propagating tag (lowercase hex), while
+        W3C traceparent carries the full 128-bit ID. Mentioning both is correct.
       - States _dd.p.tid is stamped during Inject (propagation), not at span creation.
     bad_signals:
       - Claims the full 128 bits are random, or places the start-time component in the low/random half.
       - Claims the upper bits are regenerated per span or for a child span that continues an existing parent trace.
       - Invents a different propagation mechanism or key instead of the _dd.p.tid tag, or says the upper half is not propagated.
+      - Claims x-datadog-trace-id carries all 128 bits, or that the upper half is not propagated.
       - Says the time component is in milliseconds or nanoseconds, or that it fills the entire upper 64 bits.
 
   - id: dd-trace-go-tracer-doc-update-trigger
@@ -877,6 +879,7 @@ cases:
         entry in instrumentation/packages.go, and the contribIntegrations list -- not a single location.
       - Points to the authoring guides contrib/INTEGRATIONS.md as the source
         of the rules. Citing these guides directly is correct; they can be read from the repo.
+      - States that orchestrion.yml and internal/orchestrion/_integration tests are mandatory.
       - Keeps to the plan-only, read-only scope and does not edit files or run builds.
     bad_signals:
       - Claims the integration is registered in only one place, or invents a single central registry file.
