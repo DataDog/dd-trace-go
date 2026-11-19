@@ -323,6 +323,91 @@ func TestError(t *testing.T) {
 	})
 }
 
+func TestPanicWithRecoveryMiddleware(t *testing.T) {
+	t.Run("recovery registered before the tracer", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := gin.New()
+		router.Use(gin.Recovery())
+		router.Use(Middleware("foobar"))
+		router.GET("/boom", func(*gin.Context) {
+			panic("boom")
+		})
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest("GET", "/boom", nil))
+		assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		span := spans[0]
+		assert.Equal(t, "500", span.Tag(ext.HTTPCode))
+		assert.Equal(t, "panic: boom", span.Tag(ext.ErrorMsg))
+		assert.Equal(t, "GET /boom", span.Tag(ext.ResourceName))
+	})
+
+	t.Run("panic with an error value", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := gin.New()
+		router.Use(gin.Recovery())
+		router.Use(Middleware("foobar"))
+		router.GET("/boom", func(*gin.Context) {
+			panic(errors.New("kaboom"))
+		})
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest("GET", "/boom", nil))
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, "500", spans[0].Tag(ext.HTTPCode))
+		assert.Equal(t, "kaboom", spans[0].Tag(ext.ErrorMsg))
+	})
+
+	t.Run("response already sent", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := gin.New()
+		router.Use(gin.Recovery())
+		router.Use(Middleware("foobar"))
+		router.GET("/late", func(c *gin.Context) {
+			c.String(http.StatusAccepted, "ok")
+			panic("late")
+		})
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest("GET", "/late", nil))
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, "202", spans[0].Tag(ext.HTTPCode))
+		assert.Equal(t, "panic: late", spans[0].Tag(ext.ErrorMsg))
+	})
+
+	t.Run("panic is propagated", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := gin.New()
+		router.Use(Middleware("foobar"))
+		router.GET("/boom", func(*gin.Context) {
+			panic("boom")
+		})
+
+		w := httptest.NewRecorder()
+		assert.PanicsWithValue(t, "boom", func() {
+			router.ServeHTTP(w, httptest.NewRequest("GET", "/boom", nil))
+		})
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, "500", spans[0].Tag(ext.HTTPCode))
+	})
+}
+
 func TestHTML(t *testing.T) {
 	assert := assert.New(t)
 	mt := mocktracer.Start()

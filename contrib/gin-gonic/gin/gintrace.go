@@ -56,7 +56,15 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		opts = append(opts, httptrace.HeaderTagsFromRequest(c.Request, cfg.headerTags))
 		span, ctx, finishSpans := httptrace.StartRequestSpan(c.Request, opts...)
 		defer func() {
-			finishSpan(cfg, c, finishSpans)
+			// A panic that unwinds through this middleware is usually turned into
+			// a 500 by a recovery middleware registered earlier in the chain, which
+			// only runs once the span is finished. Record it here so the span does
+			// not report the default 200.
+			recovered := recover()
+			finishSpan(cfg, c, finishSpans, recovered)
+			if recovered != nil {
+				panic(recovered)
+			}
 		}()
 
 		// pass the span through the request context
@@ -93,15 +101,27 @@ func (cfg *config) routeTag(route string, req *http.Request) tracer.StartSpanOpt
 	return tracer.Tag(ext.HTTPRoute, route)
 }
 
-func finishSpan(cfg *config, c *gin.Context, finishSpans httptrace.FinishSpanFunc) {
+func finishSpan(cfg *config, c *gin.Context, finishSpans httptrace.FinishSpanFunc, recovered any) {
 	status := c.Writer.Status()
+	var panicOpts []tracer.FinishOption
+	if recovered != nil && recovered != http.ErrAbortHandler {
+		if !c.Writer.Written() {
+			// Nothing has been sent yet, so the response is going to be a 500.
+			status = http.StatusInternalServerError
+		}
+		err, ok := recovered.(error)
+		if !ok {
+			err = fmt.Errorf("panic: %v", recovered)
+		}
+		panicOpts = append(panicOpts, tracer.WithError(err))
+	}
 	if cfg.isStatusError == nil {
-		finishSpans(status, nil)
+		finishSpans(status, nil, panicOpts...)
 		return
 	}
 	statusError := cfg.isStatusError(status)
-	var finishOpts []tracer.FinishOption
-	if cfg.useGinErrors && statusError && len(c.Errors) > 0 {
+	finishOpts := panicOpts
+	if cfg.useGinErrors && statusError && len(c.Errors) > 0 && len(panicOpts) == 0 {
 		finishOpts = append(finishOpts, tracer.WithError(errors.New(c.Errors.String())))
 	}
 	finishSpans(status, func(int) bool { return statusError }, finishOpts...)
