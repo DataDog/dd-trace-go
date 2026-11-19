@@ -198,10 +198,10 @@ create_tracer:
   do:
     - inject_code:
         raw: |
-          _ = tracer.Start()
-          defer tracer.Stop()
+          _ = __dd_tracer.Start()
+          defer __dd_tracer.Stop()
   imports:
-    tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+    __dd_tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
 
 # ---------------------------------------------------------------------------
 # Custom spans
@@ -218,11 +218,11 @@ create_tracer:
 # reached. A //dd:span in a package the tracer imports would make an import
 # cycle.
 #
-# The imports keep the plain aliases. In package main, create_tracer already
-# adds `tracer`, and otelc rejects another alias for that path there
-# (internal/orchestrion/_integration/otelc-autostart checks it). A
-# package-level `tracer` or `context` identifier in a file that does not import
-# them breaks the build.
+# The imports use private aliases, the same as create_tracer, so a `tracer` or
+# `context` declared by the application does not hide them. In a file that
+# already imports a package, otelc uses the file's alias instead, and fails the
+# build if the annotated function declares a local with that name.
+# internal/orchestrion/_integration/dd-span and otelc-autostart cover both.
 dd_span:
   target: "**"
   where:
@@ -237,7 +237,7 @@ dd_span:
             {{- if $req }}
           __dd_span_ctx := {{ $req }}.Context()
             {{- else }}
-          __dd_span_ctx := context.TODO()
+          __dd_span_ctx := __dd_context.TODO()
             {{- end }}
           {{- end }}
           {{- $name := .FuncName -}}
@@ -246,14 +246,14 @@ dd_span:
             {{- if not $op -}}{{- $op = .Value -}}{{- end -}}
             {{- if eq .Key "span.name" -}}{{- $op = .Value -}}{{- break -}}{{- end -}}
           {{- end }}
-          var __dd_span *tracer.Span
-          __dd_span, {{ $ctx }} = tracer.StartSpanFromContext({{ $ctx }}, {{ printf "%q" $op }},
+          var __dd_span *__dd_tracer.Span
+          __dd_span, {{ $ctx }} = __dd_tracer.StartSpanFromContext({{ $ctx }}, {{ printf "%q" $op }},
           {{- with $name }}
-            tracer.Tag("function-name", {{ printf "%q" . }}),
+            __dd_tracer.Tag("function-name", {{ printf "%q" . }}),
           {{- end }}
           {{- range .DirectiveArgs }}
             {{- if ne .Key "span.name" }}
-            tracer.Tag({{ printf "%q" .Key }}, {{ printf "%q" .Value }}),
+            __dd_tracer.Tag({{ printf "%q" .Key }}, {{ printf "%q" .Value }}),
             {{- end }}
           {{- end }}
           )
@@ -261,10 +261,10 @@ dd_span:
           {{ . }} = {{ . }}.WithContext({{ $ctx }})
           {{- end }}
           {{- with .FuncReturnOfType "error" }}
-          defer func() { __dd_span.Finish(tracer.WithError({{ . }})) }()
+          defer func() { __dd_span.Finish(__dd_tracer.WithError({{ . }})) }()
           {{- else }}
           defer __dd_span.Finish()
           {{- end }}
   imports:
-    context: context
-    tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+    __dd_context: context
+    __dd_tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
