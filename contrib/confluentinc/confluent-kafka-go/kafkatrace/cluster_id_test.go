@@ -94,14 +94,12 @@ func TestClusterIDFetch(t *testing.T) {
 		var returned atomic.Int32
 		var wg sync.WaitGroup
 		for range 2 {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				f.Close()
 				// The lookup must be over before any Close returns.
 				assert.True(t, client.closed.Load())
 				returned.Add(1)
-			}()
+			})
 		}
 		time.Sleep(50 * time.Millisecond)
 		assert.Zero(t, returned.Load(), "Close returned while the lookup was running")
