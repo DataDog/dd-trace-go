@@ -61,6 +61,7 @@ presets:
       - dd-trace-go-general-code-coverage-flags-cap
       - dd-trace-go-general-codeowners-dual-consumer
       - dd-trace-go-control-general-go
+      - dd-trace-go-control-trace-id-128bit-layout
       - dd-trace-go-contrib-structure
       - dd-trace-go-contrib-tags
       - dd-trace-go-contrib-telemetry-registration
