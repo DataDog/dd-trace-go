@@ -104,16 +104,27 @@ jobs:
         if: runner.os == 'Windows'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: go_pkg_mod_cache
+          # RUNNER_TEMP, not the workspace: extracted module trees inside
+          # the workspace are swept up by the test step's `go list ./...`,
+          # and their go.sum files would re-key hashFiles('**/go.sum')
+          # between this restore and the save below.
+          path: ${{ runner.temp }}/go_pkg_mod_cache
           key: go-pkg-mod-multios-${{ hashFiles('**/go.sum') }}
           restore-keys: go-pkg-mod-multios-
           # Transient cache-service miss/timeout: fall back to a proxy
           # fetch instead of hard-failing the job.
           fail-on-cache-miss: false
+      # GITHUB_ENV, not `go env -w`: the latter only sets a default and
+      # loses to any later step that exports GOMODCACHE as a process
+      # environment variable. The export asserts that go resolves the
+      # restored directory, or the restore is decoration.
       - name: Use the restored module cache (Windows)
         if: runner.os == 'Windows'
         shell: bash
-        run: go env -w GOMODCACHE="${GITHUB_WORKSPACE}\go_pkg_mod_cache"
+        run: |
+          echo "GOMODCACHE=${RUNNER_TEMP}/go_pkg_mod_cache" >> "$GITHUB_ENV"
+          export GOMODCACHE="${RUNNER_TEMP}/go_pkg_mod_cache"
+          test "$(go env GOMODCACHE)" = "${RUNNER_TEMP}/go_pkg_mod_cache"
 
       - name: Restore and install development tools
         id: tools
@@ -141,17 +152,19 @@ jobs:
       # test step has downloaded the full workspace dependency set into
       # the restored GOMODCACHE, so save it as-is. Only the nightly
       # schedule through the main-branch-tests caller and a dispatch on
-      # the default branch reach this step; an unchanged go.sum digest
-      # saves nothing because the key already exists.
+      # the default branch reach this step, and only after the test step
+      # succeeded, so a partial run cannot publish an incomplete
+      # archive; an unchanged go.sum digest saves nothing because the
+      # key already exists.
       - name: Save Go modules cache (Windows)
         if: >-
-          always() && runner.os == 'Windows'
+          runner.os == 'Windows'
           && (github.event_name == 'schedule'
               || (github.event_name == 'workflow_dispatch'
                   && github.ref == 'refs/heads/main'))
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: go_pkg_mod_cache
+          path: ${{ runner.temp }}/go_pkg_mod_cache
           key: go-pkg-mod-multios-${{ hashFiles('**/go.sum') }}
 
       - name: Get Datadog credentials

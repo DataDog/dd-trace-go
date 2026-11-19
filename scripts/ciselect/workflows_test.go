@@ -294,6 +294,13 @@ func TestMultiosWindowsKeepsAModuleCache(t *testing.T) {
 		if got, _ := with["key"].(string); got != wantKey {
 			t.Errorf("multios module-cache %s key = %q, want %q", step.name, got, wantKey)
 		}
+		// The archive must live outside the workspace: extracted module
+		// trees under the workspace are swept up by the test step's
+		// `go list ./...`, and their go.sum files re-key hashFiles between
+		// the restore and the save.
+		if got, _ := with["path"].(string); got != "${{ runner.temp }}/go_pkg_mod_cache" {
+			t.Errorf("multios module-cache %s path = %q, want the RUNNER_TEMP path outside the workspace", step.name, got)
+		}
 		ifCond, _ := step.m["if"].(string)
 		if !strings.Contains(ifCond, "runner.os == 'Windows'") {
 			t.Errorf("multios module-cache %s gate %q must target the Windows stratum", step.name, ifCond)
@@ -316,13 +323,19 @@ func TestMultiosWindowsKeepsAModuleCache(t *testing.T) {
 			t.Errorf("multios module-cache save gate %q lacks %q: only seeding events may write", saveIf, want)
 		}
 	}
-	// The job must point GOMODCACHE at the restored directory before any
-	// go command runs, or the restore is decoration.
+	// The save must not carry always(): a failed or cancelled run must not
+	// publish a partial archive under an immutable key.
+	if strings.Contains(saveIf, "always()") {
+		t.Errorf("multios module-cache save gate %q must not force the save on failed runs", saveIf)
+	}
+	// The job must export GOMODCACHE at the restored directory through
+	// GITHUB_ENV (an env var beats a `go env -w` default), before any go
+	// command runs, or the restore is decoration.
 	hasModcacheExport := false
 	for _, s := range steps {
 		step, _ := s.(map[string]any)
 		run, _ := step["run"].(string)
-		if strings.Contains(run, "go env -w GOMODCACHE=") && strings.Contains(run, "go_pkg_mod_cache") {
+		if strings.Contains(run, "GOMODCACHE=${RUNNER_TEMP}/go_pkg_mod_cache") && strings.Contains(run, "$GITHUB_ENV") {
 			ifCond, _ := step["if"].(string)
 			if strings.Contains(ifCond, "runner.os == 'Windows'") {
 				hasModcacheExport = true
@@ -330,7 +343,7 @@ func TestMultiosWindowsKeepsAModuleCache(t *testing.T) {
 		}
 	}
 	if !hasModcacheExport {
-		t.Error("multios test-multi-os does not point GOMODCACHE at go_pkg_mod_cache on Windows (go env -w); the restored archive is unused")
+		t.Error("multios test-multi-os does not export GOMODCACHE at the RUNNER_TEMP module cache through GITHUB_ENV on Windows; the restored archive is unused")
 	}
 }
 
