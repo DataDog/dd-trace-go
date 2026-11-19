@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/crashtrackerstate"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
@@ -114,28 +114,44 @@ func parseSupervisedMarker(marker string) (fd string, ok bool) {
 	return fd, true
 }
 
+// defaultConfig resolves attribution through the tracer's shared configuration,
+// not the raw environment. It reads the same sources as the tracer: DD_*
+// variables, declarative configuration, OTEL_SERVICE_NAME, and
+// OTEL_RESOURCE_ATTRIBUTES (mapped to DD_TAGS). The supervisor never starts the
+// tracer, so it cannot rely on values that the tracer stores when it starts.
 func defaultConfig() *config {
-	tags := internal.ParseTagString(env.Get("DD_TAGS"))
+	tracerConfig := internalconfig.Get()
+	tags := stringTags(tracerConfig.GlobalTags())
 	return &config{
 		enabled: enabledFromEnvironment(),
-		service: resolveService(tags),
-		env:     resolveTag("DD_ENV", "env", tags),
-		version: resolveTag("DD_VERSION", "version", tags),
+		service: resolveService(tracerConfig.ServiceName(), tags),
+		env:     resolveTag(tracerConfig.Env(), "env", tags),
+		version: resolveTag(tracerConfig.Version(), "version", tags),
 		site:    env.Get("DD_SITE"),
 		apiKey:  env.Get("DD_API_KEY"),
 	}
 }
 
+// stringTags keeps the string values of the tracer's global tags.
+func stringTags(tags map[string]any) map[string]string {
+	out := make(map[string]string, len(tags))
+	for k, v := range tags {
+		if s, ok := v.(string); ok {
+			out[k] = s
+		}
+	}
+	return out
+}
+
 // resolveTag resolves a single attribution value using the same precedence
 // as the tracer's own DD_TAGS fallback (ddtrace/tracer/option.go): an
-// explicit envVar wins outright; otherwise the same-named DD_TAGS entry, if
-// any. Without this, service/env/version set only via DD_TAGS (with
-// DD_SERVICE/DD_ENV/DD_VERSION left unset) would resolve differently here
-// than in the tracer, and a crash report would fail to attribute to the same
-// service as that process's traces.
-func resolveTag(envVar, tagKey string, tags map[string]string) string {
-	if v := env.Get(envVar); v != "" {
-		return v
+// explicit value (DD_ENV or DD_VERSION) wins outright; otherwise the
+// same-named DD_TAGS entry, if any. Without this, service/env/version set only
+// via DD_TAGS would resolve differently here than in the tracer, and a crash
+// report would fail to attribute to the same service as that process's traces.
+func resolveTag(explicit, tagKey string, tags map[string]string) string {
+	if explicit != "" {
+		return explicit
 	}
 	return tags[tagKey]
 }
@@ -151,11 +167,11 @@ func resolveTag(envVar, tagKey string, tags map[string]string) string {
 // runs before tracer.Start sets that default, so without this the two would
 // independently pick different values for the same process and crash reports
 // would fail to correlate with that service's traces.
-func resolveService(tags map[string]string) string {
+func resolveService(explicit string, tags map[string]string) string {
 	if s := globalconfig.ServiceName(); s != "" {
 		return s
 	}
-	if s := resolveTag("DD_SERVICE", "service", tags); s != "" {
+	if s := resolveTag(explicit, "service", tags); s != "" {
 		return s
 	}
 	return filepath.Base(os.Args[0])

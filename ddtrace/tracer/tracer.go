@@ -251,9 +251,6 @@ func reportInitTime(start time.Time) {
 // Start starts the tracer with the given set of options. It will stop and replace
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
-//
-// With the crashtracker Orchestrion integration, the crashtracker supervisor
-// process does not start the tracer. The application process does.
 func Start(opts ...StartOption) error {
 	if crashtrackerstate.SupervisorPending() {
 		log.Debug("tracer.Start deferred: this process becomes the crashtracker supervisor.")
