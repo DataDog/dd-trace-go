@@ -5,15 +5,15 @@ use (
 	./.github/workflows/apps
 	./contrib/99designs/gqlgen
 	./contrib/99designs/gqlgen/otelc
-	./contrib/aerospike/aerospike-client-go.v7
 	./contrib/IBM/sarama
 	./contrib/Shopify/sarama
-	./contrib/azure/apim-callout
+	./contrib/aerospike/aerospike-client-go.v7
 	./contrib/aws/aws-sdk-go
-	./contrib/aws/aws-sdk-go/otelc
 	./contrib/aws/aws-sdk-go-v2
 	./contrib/aws/aws-sdk-go-v2/otelc
+	./contrib/aws/aws-sdk-go/otelc
 	./contrib/aws/datadog-lambda-go
+	./contrib/azure/apim-callout
 	./contrib/bradfitz/gomemcache
 	./contrib/cloud.google.com/go/pubsub.v1
 	./contrib/cloud.google.com/go/pubsub.v1/otelc
@@ -33,17 +33,17 @@ use (
 	./contrib/gin-gonic/gin/otelc
 	./contrib/globalsign/mgo
 	./contrib/go-chi/chi
-	./contrib/go-chi/chi/otelc
 	./contrib/go-chi/chi.v5
 	./contrib/go-chi/chi.v5/otelc
+	./contrib/go-chi/chi/otelc
 	./contrib/go-pg/pg.v10
 	./contrib/go-redis/redis
 	./contrib/go-redis/redis.v7
 	./contrib/go-redis/redis.v8
 	./contrib/go.mongodb.org/mongo-driver
-	./contrib/go.mongodb.org/mongo-driver/otelc
 	./contrib/go.mongodb.org/mongo-driver.v2
 	./contrib/go.mongodb.org/mongo-driver.v2/otelc
+	./contrib/go.mongodb.org/mongo-driver/otelc
 	./contrib/go.uber.org/zap
 	./contrib/gocql/gocql
 	./contrib/gofiber/fiber.v2
@@ -82,18 +82,20 @@ use (
 	./contrib/net/http
 	./contrib/net/http/otelc
 	./contrib/olivere/elastic.v5
-	./contrib/redis/go-redis.v9
 	./contrib/opensearch-project/opensearch-go.v4
+	./contrib/rabbitmq/amqp091-go
+	./contrib/redis/go-redis.v9
 	./contrib/redis/rueidis
 	./contrib/rs/zerolog
 	./contrib/rs/zerolog/otelc
 	./contrib/segmentio/kafka-go
 	./contrib/segmentio/kafka-go/otelc
 	./contrib/sirupsen/logrus
+	./contrib/streadway/amqp
 	./contrib/syndtr/goleveldb
 	./contrib/tidwall/buntdb
-	./contrib/twmb/franz-go
 	./contrib/twitchtv/twirp
+	./contrib/twmb/franz-go
 	./contrib/uptrace/bun
 	./contrib/urfave/negroni
 	./contrib/valkey-io/valkey-go

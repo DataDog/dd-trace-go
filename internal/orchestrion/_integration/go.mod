@@ -598,6 +598,8 @@ replace github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2
 require (
 	example.com/httprouterdep v0.0.0-00010101000000-000000000000
 	example.com/zerologdep v0.0.0-00010101000000-000000000000
+	github.com/rabbitmq/amqp091-go v1.17.0
+	github.com/streadway/amqp v1.1.0
 )
 
 replace example.com/httprouterdep => ./internal/httprouterdep
