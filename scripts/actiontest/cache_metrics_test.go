@@ -315,3 +315,40 @@ func TestPayloadSaveModeTags(t *testing.T) {
 		t.Errorf("save_mode = %q, want restore_only", v)
 	}
 }
+
+// TestPayloadRuntimeKeyTag pins the runtime.key tag: records from the
+// repository's setup-go action carry the version class their cache keys
+// use, so per-restore keying is observable. A null or absent key (older
+// records, other runtime sources) emits no tag.
+func TestPayloadRuntimeKeyTag(t *testing.T) {
+	withKey := map[string]any{
+		"provider": "cloudx",
+		"workload": "unit-core",
+		"runtime":  map[string]any{"name": "go", "version": "1.27.2", "key": "1.27"},
+		"restores": []map[string]any{restore(map[string]any{"cache_hit": "true"})},
+	}
+	got := onlyCount(t, runPayload(t, withKey, false))
+	if v := got.tag("runtime.key:"); v != "1.27" {
+		t.Errorf("runtime.key = %q, want 1.27", v)
+	}
+	if v := got.tag("runtime.version:"); v != "1.27.2" {
+		t.Errorf("runtime.version = %q, want 1.27.2", v)
+	}
+
+	for name, runtime := range map[string]map[string]any{
+		"null key":   {"name": "go", "version": "1.27.2", "key": nil},
+		"absent key": {"name": "go", "version": "1.27.2"},
+	} {
+		obs := map[string]any{
+			"provider": "cloudx",
+			"workload": "unit-core",
+			"runtime":  runtime,
+			"restores": []map[string]any{restore(map[string]any{"cache_hit": "true"})},
+		}
+		for _, tag := range onlyCount(t, runPayload(t, obs, false)).Tags {
+			if strings.HasPrefix(tag, "runtime.key:") {
+				t.Errorf("%s: runtime.key tag %q emitted for a keyless record", name, tag)
+			}
+		}
+	}
+}

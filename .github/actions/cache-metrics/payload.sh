@@ -81,7 +81,9 @@ jq -cn \
   def runtime_tags:
     ["runtime.name:" + $metrics.runtime.name,
      "runtime.version:" + (if $metrics.runtime.version == ""
-     then "unknown" else $metrics.runtime.version end)];
+     then "unknown" else $metrics.runtime.version end)]
+    + (if ($metrics.runtime | has("key")) and $metrics.runtime.key != null
+       then ["runtime.key:" + $metrics.runtime.key] else [] end);
   # The save post never reports its own outcome in these series: save
   # health is gauge-only (ci.cache.pool.*, scripts/citiming pool).
   def seed_tags($entry):
