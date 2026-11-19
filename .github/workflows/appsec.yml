@@ -90,7 +90,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27"
+          go-version: stable
           cache: false
 
       - name: Cache Go modules
@@ -120,6 +120,8 @@ jobs:
     strategy:
       matrix:
         runs-on: [ macos-15, macos-latest ] # oldest and newest macos runners available
+        # Numeric minors, not aliases: the golang: image tag below
+        # interpolates matrix.go-version, and Docker Hub resolves no aliases.
         go-version: [ "1.27", "1.26" ]
       fail-fast: true # saving some CI time - macos runners are too long to get
     steps:
@@ -284,7 +286,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27"
+          go-version: stable
           cache: false # we manage the caching ourselves
 
       - run: go env -w GOMODCACHE="${{ github.workspace }}\${{ needs.go-mod-caching.outputs.path }}"
@@ -355,6 +357,8 @@ jobs:
       - go-mod-caching
     strategy:
       matrix:
+        # Numeric minors, not aliases: the golang: image tag below
+        # interpolates matrix.go-version, and Docker Hub resolves no aliases.
         go-version: [ "1.27", "1.26" ]
         distribution: [ trixie, bookworm, alpine ]
         platform: [ linux/amd64, linux/arm64 ]

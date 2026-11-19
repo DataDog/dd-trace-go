@@ -26,6 +26,9 @@
 # - `os.architecture`: Runner architecture, e.g. `x64`.
 # - `runtime.name`: Runtime name, e.g. `go`.
 # - `runtime.version`: Resolved runtime version, e.g. `1.25.1`.
+# - `runtime.key`: The version class the cache keys carry (resolved Go
+#   minor for stable toolchains, exact semver for prereleases), e.g.
+#   `1.27`; present only on entries from the repository's setup-go action.
 # - `provider`: Cache provider, e.g. `github-cache` or `cloudx`.
 # - `workload`: Logical workload family, e.g. `unit-core`, `multi-os`.
 # - `ci.pipeline.name`: GitHub workflow name, e.g. `unit-integration-tests`.

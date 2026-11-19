@@ -172,7 +172,10 @@ jobs:
       - name: Setup Go
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.26.4"
+          # oldstable (the supported floor), not the 1.26.4 corruption-era
+          # pin from #5056/#5066: golang/go#77168 is fixed and the rest of
+          # the repository runs the latest 1.26.x patch.
+          go-version: oldstable
           workload: otelc-matrix
           cache-provider: github-cache
           cache: "false"
@@ -391,7 +394,10 @@ jobs:
       - name: Setup Go
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.26.4"
+          # oldstable (the supported floor), not the 1.26.4 corruption-era
+          # pin from #5056/#5066: golang/go#77168 is fixed and the rest of
+          # the repository runs the latest 1.26.x patch.
+          go-version: oldstable
           workload: otelc-external-app
           variant: |-
             {"instrumentation":"otelc",

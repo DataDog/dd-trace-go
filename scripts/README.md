@@ -356,7 +356,7 @@ inventory) and classifies every entry by cache kind
 (`go_build`, `go_modules`, `tools`, `setup_go_builtin`, `gitdb`,
 `appsec_modules`,
 `datadog_ci`, `other`), cloudx workload family (`n/a` outside `go_build`
-keys in the `ddtg-cx1-` layout), `os.platform`, and ref type (`default`
+keys in the `ddtg-cx`-marked layout), `os.platform`, and ref type (`default`
 for the default branch, `pr`, `mq`, `release`, `other`).
 
 `--format datadog` prints a `/api/v2/series` payload of gauges; the

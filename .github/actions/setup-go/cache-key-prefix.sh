@@ -43,6 +43,10 @@ canonical="$(printf '{"variant":%s}' "$variant_json" \
 digest="$(printf '%s' "$canonical" \
   | openssl dgst -sha256 | awk '{print $NF}' | cut -c1-16)"
 
-prefix="ddtg-cx1-${FAMILY}-${digest}"
+# cx2: keys carry the resolved Go version class (resolve-version.sh)
+# instead of the caller's go-version input; bumped from cx1 so the
+# migration window stays observable in restore_source instead of mixing
+# layouts in one prefix.
+prefix="ddtg-cx2-${FAMILY}-${digest}"
 printf 'prefix=%s\n' "$prefix" >> "$GITHUB_OUTPUT"
 printf 'Computed cache key prefix: %s\n' "$prefix"
