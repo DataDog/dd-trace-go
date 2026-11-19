@@ -1,0 +1,151 @@
+{
+  "timestamp": 0,
+  "ddsource": "crashtracker",
+  "ddtags": "",
+  "error": {
+    "type": "SIGSEGV",
+    "message": "signal SIGSEGV: segmentation violation code=0x1 addr=0x18 pc=0x4a1b2c",
+    "stack": {
+      "format": "Datadog Crashtracker 1.0",
+      "frames": [
+        {
+          "function": "runtime.gopark",
+          "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+          "line": 474
+        },
+        {
+          "function": "main.main",
+          "file": "/tmp/crashdemo/state/main.go",
+          "line": 24
+        }
+      ]
+    },
+    "threads": [
+      {
+        "crashed": true,
+        "name": "goroutine 1",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "runtime.gopark",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+              "line": 474
+            },
+            {
+              "function": "main.main",
+              "file": "/tmp/crashdemo/state/main.go",
+              "line": 24
+            }
+          ]
+        },
+        "state": "chan receive, 6883 minutes"
+      },
+      {
+        "crashed": false,
+        "name": "goroutine 7",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "main.(*worker).handle",
+              "file": "/tmp/crashdemo/state/main.go",
+              "line": 41
+            },
+            {
+              "function": "main.(*worker).loop",
+              "file": "/tmp/crashdemo/state/main.go",
+              "line": 33
+            },
+            {
+              "function": "runtime.goexit",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s",
+              "line": 1039
+            }
+          ]
+        },
+        "state": "running, locked to thread"
+      },
+      {
+        "crashed": false,
+        "name": "goroutine 9",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "runtime.gopark",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+              "line": 474
+            },
+            {
+              "function": "main.(*worker).wait",
+              "file": "/tmp/crashdemo/state/main.go",
+              "line": 52
+            }
+          ]
+        },
+        "state": "select, 12 minutes, locked to thread"
+      },
+      {
+        "crashed": false,
+        "name": "goroutine 11",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "main.leak",
+              "file": "/tmp/crashdemo/state/main.go",
+              "line": 60
+            }
+          ]
+        },
+        "state": "chan receive (leaked)"
+      },
+      {
+        "crashed": false,
+        "name": "goroutine 12",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "syscall.syscall",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/syscall/syscall_darwin.go",
+              "line": 384
+            }
+          ]
+        },
+        "state": "syscall, 3 minutes"
+      },
+      {
+        "crashed": false,
+        "name": "goroutine 13",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "main.inBubble",
+              "file": "/tmp/crashdemo/state/main.go",
+              "line": 70
+            }
+          ]
+        },
+        "state": "chan receive (durable), synctest bubble 1"
+      }
+    ],
+    "thread_name": "goroutine 1",
+    "is_crash": true,
+    "source_type": "Crashtracking"
+  },
+  "os_info": {
+    "architecture": "",
+    "bitness": "",
+    "os_type": "",
+    "version": ""
+  },
+  "sig_info": {
+    "si_addr": "0x18",
+    "si_code": 1,
+    "si_signo": 11,
+    "si_signo_human_readable": "SIGSEGV"
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "timestamp": 0,
+  "ddsource": "crashtracker",
+  "ddtags": "",
+  "error": {
+    "type": "runtime.plainError",
+    "message": "all goroutines are asleep - deadlock!",
+    "stack": {
+      "format": "Datadog Crashtracker 1.0",
+      "frames": [
+        {
+          "function": "main.main",
+          "file": "/tmp/crashtracker-fixtures/deadlock.go",
+          "line": 5
+        }
+      ]
+    },
+    "threads": [
+      {
+        "crashed": true,
+        "name": "goroutine 1",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "main.main",
+              "file": "/tmp/crashtracker-fixtures/deadlock.go",
+              "line": 5
+            }
+          ]
+        },
+        "state": "chan receive"
+      }
+    ],
+    "thread_name": "goroutine 1",
+    "is_crash": true,
+    "source_type": "Crashtracking"
+  },
+  "os_info": {
+    "architecture": "",
+    "bitness": "",
+    "os_type": "",
+    "version": ""
+  }
+}

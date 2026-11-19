@@ -1,0 +1,51 @@
+panic: assignment to entry in nil map
+
+goroutine 6 [running]:
+main.level3(0x0?)
+	/tmp/crashdemo/ancestors/main.go:12 +0x64
+created by main.level2 in goroutine 5
+	/tmp/crashdemo/ancestors/main.go:16 +0x64
+[originating from goroutine 5]:
+main.level2(...)
+	/tmp/crashdemo/ancestors/main.go:17 +0x64
+created by main.level1
+	/tmp/crashdemo/ancestors/main.go:21 +0x64
+[originating from goroutine 4]:
+main.level1(...)
+	/tmp/crashdemo/ancestors/main.go:22 +0x64
+created by main.main
+	/tmp/crashdemo/ancestors/main.go:28 +0x80
+[originating from goroutine 1]:
+main.main(...)
+	/tmp/crashdemo/ancestors/main.go:29 +0x80
+
+goroutine 1 [runnable]:
+runtime.Gosched(...)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go:403
+
+goroutine 4 [sleep]:
+time.Sleep(0x34630b8a000)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/time.go:368 +0x150
+main.level1(0x96c93c52140)
+	/tmp/crashdemo/ancestors/main.go:22 +0x74
+created by main.main in goroutine 1
+	/tmp/crashdemo/ancestors/main.go:28 +0x80
+[originating from goroutine 1]:
+main.main(...)
+	/tmp/crashdemo/ancestors/main.go:29 +0x80
+
+goroutine 5 [sleep]:
+time.Sleep(0x34630b8a000)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/time.go:368 +0x150
+main.level2(0x96c93c52140)
+	/tmp/crashdemo/ancestors/main.go:17 +0x74
+created by main.level1 in goroutine 4
+	/tmp/crashdemo/ancestors/main.go:21 +0x64
+[originating from goroutine 4]:
+main.level1(...)
+	/tmp/crashdemo/ancestors/main.go:22 +0x64
+created by main.main
+	/tmp/crashdemo/ancestors/main.go:28 +0x80
+[originating from goroutine 1]:
+main.main(...)
+	/tmp/crashdemo/ancestors/main.go:29 +0x80
