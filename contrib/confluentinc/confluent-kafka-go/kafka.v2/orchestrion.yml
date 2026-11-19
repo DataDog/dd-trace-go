@@ -258,7 +258,7 @@ aspects:
               })
               // TODO: accessing p.events and p.produceChannel here might break if the library renames this variable...
               p.__dd_events = p.events
-              p.__dd_produceChannel = kafkatrace.WrapProduceChannel(p.__dd_tracer, p.produceChannel, func(msg *Message) kafkatrace.Message {
+              p.__dd_produceChannel, p.__dd_produceDone = kafkatrace.WrapProduceChannelWithDone(p.__dd_tracer, p.produceChannel, func(msg *Message) kafkatrace.Message {
                 p.__dd_clusterID.Start()
                 return __dd_wrapMessage(msg)
               })
@@ -274,6 +274,7 @@ aspects:
             type __dd_clusterIDFetch = kafkatrace.ClusterIDFetch
             type __dd_configMap = kafkatrace.ConfigMap
             type __dd_once = sync.Once
+            type __dd_doneChan = <-chan struct{}
 
   ## Trace Consumer ##
   - id: NewConsumer
@@ -449,6 +450,9 @@ aspects:
           name: __dd_produceChannel
           type: "__dd_messageChan"
       - add-struct-field:
+          name: __dd_produceDone
+          type: "__dd_doneChan"
+      - add-struct-field:
           name: __dd_config
           type: "__dd_configMap"
       - add-struct-field:
@@ -529,9 +533,13 @@ aspects:
           template: |-
             {{- $p := .Function.Receiver -}}
             __dd_initProducer({{ $p }})
+            // Wait until the messages already sent on the produce channel are
+            // forwarded, so Close does not close the producer's own produce
+            // channel while they are still being sent on it.
+            close({{ $p }}.__dd_produceChannel)
+            <-{{ $p }}.__dd_produceDone
             // Stop the cluster ID lookup before the producer handle is closed.
             {{ $p }}.__dd_clusterID.Close()
-            close({{ $p }}.__dd_produceChannel)
 
   - id: Producer.Produce
     join-point:

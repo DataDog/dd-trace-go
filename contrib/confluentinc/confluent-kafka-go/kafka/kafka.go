@@ -189,6 +189,7 @@ type Producer struct {
 	*kafka.Producer
 	tracer         *kafkatrace.Tracer
 	produceChannel chan *kafka.Message
+	produceDone    <-chan struct{} // closed when produceChannel is drained
 	events         chan kafka.Event
 	clusterID      *kafkatrace.ClusterIDFetch
 }
@@ -217,7 +218,7 @@ func WrapProducer(p *kafka.Producer, opts ...Option) *Producer {
 		}
 		return admin, nil
 	})
-	wrapped.produceChannel = kafkatrace.WrapProduceChannel(wrapped.tracer, p.ProduceChannel(), func(msg *kafka.Message) kafkatrace.Message {
+	wrapped.produceChannel, wrapped.produceDone = kafkatrace.WrapProduceChannelWithDone(wrapped.tracer, p.ProduceChannel(), func(msg *kafka.Message) kafkatrace.Message {
 		wrapped.clusterID.Start()
 		return wrapMessage(msg)
 	})
@@ -239,9 +240,13 @@ func (p *Producer) Events() chan kafka.Event {
 // Close calls the underlying Producer.Close and also closes the internal
 // wrapping producer channel.
 func (p *Producer) Close() {
+	// Wait until the messages already sent on the produce channel are
+	// forwarded, so the producer does not close its own produce channel while
+	// they are still being sent on it.
+	close(p.produceChannel)
+	<-p.produceDone
 	// Stop the cluster ID fetch if it is still running
 	p.clusterID.Close()
-	close(p.produceChannel)
 	p.Producer.Close()
 }
 
