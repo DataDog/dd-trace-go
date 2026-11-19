@@ -8,6 +8,7 @@
 package crashtracker_test
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -58,7 +59,7 @@ func TestSupervisorHelper(t *testing.T) {
 			time.Sleep(time.Hour)
 		}
 	}
-	if mode == "ignored" && !supervisedChild {
+	if (mode == "ignored" || mode == "ignored-reenabled") && !supervisedChild {
 		signal.Ignore(syscall.SIGHUP)
 	}
 	if (mode == "wait-error" || mode == "wait-error-panic") && !supervisedChild {
@@ -155,7 +156,7 @@ func TestSupervisorHelper(t *testing.T) {
 	if expected := os.Getenv("_CRASHTRACKER_ARGV0"); expected != "" && os.Args[0] != expected {
 		t.Fatalf("child argv[0] = %q, want %q", os.Args[0], expected)
 	}
-	if mode == "ignored" && !signal.Ignored(syscall.SIGHUP) {
+	if (mode == "ignored" || mode == "ignored-reenabled") && !signal.Ignored(syscall.SIGHUP) {
 		t.Fatal("child did not inherit ignored SIGHUP")
 	}
 	if mode == "fd" {
@@ -199,9 +200,19 @@ func TestSupervisorHelper(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if mode == "close-stdio" {
+		// The application signals the end of its output and input, but keeps running.
+		_ = os.Stdout.Close()
+		_ = os.Stdin.Close()
+	}
 	ch := make(chan os.Signal, 32)
 	if mode == "signals" {
 		signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP, syscall.SIGUSR1)
+		defer signal.Stop(ch)
+	}
+	if mode == "ignored-reenabled" {
+		// For example, a daemon started with nohup that reloads on SIGHUP.
+		signal.Notify(ch, syscall.SIGHUP)
 		defer signal.Stop(ch)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "ppid"), []byte(strconv.Itoa(os.Getppid())), 0600); err != nil {
@@ -279,6 +290,65 @@ func startSupervisorHelper(t *testing.T, mode string, env ...string) (*exec.Cmd,
 		}
 	})
 	return cmd, dir
+}
+
+// The supervisor must not keep the application's stdin and stdout open. A
+// reader of the application's output waits for EOF, and a writer of its input
+// waits for a broken pipe, while the application keeps running.
+func TestSupervisorReleasesStdio(t *testing.T) {
+	dir := t.TempDir()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestSupervisorHelper$")
+	detachSupervisor(cmd)
+	cmd.Env = append(filterE2EEnv(os.Environ()), helperModeEnv+"=close-stdio",
+		"_CRASHTRACKER_HELPER_DIR="+dir, "DD_CRASHTRACKING_ENABLED=true", "GORACE=atexit_sleep_ms=0")
+	stdoutR, stdoutW, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdinR, stdinW, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdinR, stdoutW, nil
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	_ = stdoutW.Close()
+	_ = stdinR.Close()
+	t.Cleanup(func() {
+		_ = os.WriteFile(filepath.Join(dir, "exit"), nil, 0600)
+		_ = cmd.Wait()
+		_ = stdoutR.Close()
+		_ = stdinW.Close()
+	})
+	app := waitForFile(t, filepath.Join(dir, "ready"))
+
+	gotEOF := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(io.Discard, stdoutR)
+		gotEOF <- err
+	}()
+	select {
+	case err := <-gotEOF:
+		if err != nil {
+			t.Fatalf("reading the application's stdout: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no EOF on stdout after the application closed it: the supervisor keeps a copy")
+	}
+
+	signal.Ignore(syscall.SIGPIPE)
+	t.Cleanup(func() { signal.Reset(syscall.SIGPIPE) })
+	if _, err := stdinW.Write([]byte("x")); !errors.Is(err, syscall.EPIPE) {
+		t.Fatalf("write to the application's closed stdin = %v, want EPIPE: the supervisor keeps a copy", err)
+	}
+	pid, err := strconv.Atoi(string(app))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Kill(pid, 0); err != nil {
+		t.Fatalf("the application %d is no longer running: %v", pid, err)
+	}
 }
 
 func TestSupervisorExitCodes(t *testing.T) {
@@ -490,6 +560,34 @@ func TestSupervisorPreservesIgnoredSignals(t *testing.T) {
 	if cmd.ProcessState.ExitCode() != 3 {
 		output, _ := os.ReadFile(filepath.Join(dir, "stderr"))
 		t.Fatalf("ignored SIGHUP did not preserve normal exit: %v: %s", cmd.ProcessState, output)
+	}
+}
+
+// A signal that was ignored at start stays ignored in the application, but the
+// application can enable it again. The supervisor must then forward it.
+func TestSupervisorForwardsReenabledSignals(t *testing.T) {
+	cmd, dir := startSupervisorHelper(t, "ignored-reenabled")
+	waitForFile(t, filepath.Join(dir, "ready"))
+	if err := cmd.Process.Signal(syscall.SIGHUP); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		data, _ := os.ReadFile(filepath.Join(dir, "signals"))
+		if string(data) == strconv.Itoa(int(syscall.SIGHUP)) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the application did not receive SIGHUP that it enabled again (signals = %q)", data)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "exit"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	_ = waitForVictim(t, cmd, 5*time.Second)
+	if cmd.ProcessState.ExitCode() != 3 {
+		t.Fatalf("exit status = %v, want code 3", cmd.ProcessState)
 	}
 }
 

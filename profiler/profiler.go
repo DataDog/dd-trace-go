@@ -74,9 +74,6 @@ func init() {
 //
 // If DD_PROFILING_ENABLED=false is set in the process environment, it will
 // prevent the profiler from starting.
-//
-// With the crashtracker Orchestrion integration, the crashtracker supervisor
-// process does not start the profiler. The application process does.
 func Start(opts ...Option) error {
 	if crashtrackerstate.SupervisorPending() {
 		log.Debug("profiler.Start deferred: this process becomes the crashtracker supervisor.")

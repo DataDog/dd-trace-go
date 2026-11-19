@@ -34,8 +34,30 @@ func terminalMode(hasTTY bool, pid, ppid int) bool {
 	return hasTTY && pid != 1 && ppid > 1
 }
 
+// foregroundTerminal returns a standard descriptor that refers to the
+// controlling terminal, if the process group of this process owns the
+// terminal foreground.
+func foregroundTerminal() (int, bool) {
+	for fd := range 3 {
+		pgrp, err := unix.IoctlGetInt(fd, unix.TIOCGPGRP)
+		if err == nil && pgrp == unix.Getpgrp() {
+			return fd, true
+		}
+	}
+	return 0, false
+}
+
 func configureChild(cmd *exec.Cmd, pipe *os.File, terminalMode bool) (_ string, err error) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: !terminalMode}
+	if !terminalMode {
+		// No job-control shell gives the application the terminal, for
+		// example under docker run -t. Without the foreground, the
+		// application stops with SIGTTIN on its first terminal read.
+		if fd, ok := foregroundTerminal(); ok {
+			cmd.SysProcAttr.Foreground = true
+			cmd.SysProcAttr.Ctty = fd
+		}
+	}
 	dir, err := os.Open("/dev/fd")
 	if err != nil {
 		return "", err
@@ -92,6 +114,19 @@ func closeInheritedDescriptors(cmd *exec.Cmd, pipe *os.File) {
 			_ = unix.Close(3 + i)
 		}
 	}
+	// The application owns stdin and stdout. The supervisor keeps no copy, so
+	// a peer sees EOF or a broken pipe when the application closes them.
+	// /dev/null takes the slots, so that a later descriptor cannot reuse them.
+	if null, err := unix.Open("/dev/null", unix.O_RDWR|unix.O_CLOEXEC, 0); err == nil {
+		_ = unix.Dup2(null, 0)
+		_ = unix.Dup2(null, 1)
+		_ = unix.Close(null)
+	}
+	if cmd.SysProcAttr.Foreground {
+		// The supervisor is now in the background of its terminal. Its log
+		// output on stderr must not stop it when the terminal sets tostop.
+		signal.Ignore(syscall.SIGTTOU)
+	}
 }
 
 func inheritedCrashPipe(fd uintptr) (_ *os.File, err error) {
@@ -120,7 +155,7 @@ func inheritedCrashPipe(fd uintptr) (_ *os.File, err error) {
 
 func supervisorSignals(terminalMode bool) (start func(*os.Process), stop func()) {
 	ch := make(chan os.Signal, 256) // headroom so a burst of signals does not fill the channel
-	var signals, terminalSignals []os.Signal
+	var signals, ignored, terminalSignals []os.Signal
 	var terminalSink chan os.Signal
 	// Ignored panics outside the runtime signal table on Darwin.
 	// os/signal accepts at most 64. The BSD runtime tables are smaller.
@@ -158,7 +193,9 @@ func supervisorSignals(terminalMode bool) (start func(*os.Process), stop func())
 				continue
 			}
 		}
-		if !signal.Ignored(n) {
+		if signal.Ignored(n) {
+			ignored = append(ignored, n)
+		} else {
 			signals = append(signals, n)
 		}
 	}
@@ -175,6 +212,12 @@ func supervisorSignals(terminalMode bool) (start func(*os.Process), stop func())
 	return func(child *os.Process) {
 			// Apply ignores only after exec so the app keeps its own defaults.
 			signal.Ignore(syscall.SIGPIPE)
+			// The application inherited these signals as ignored, but it can
+			// enable them again. Catch them only after exec, so that the
+			// application keeps the inherited disposition.
+			if len(ignored) != 0 {
+				signal.Notify(ch, ignored...)
+			}
 			go func() {
 				for sig := range ch {
 					_ = child.Signal(sig)
