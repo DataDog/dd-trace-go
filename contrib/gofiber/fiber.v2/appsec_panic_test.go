@@ -68,7 +68,7 @@ func TestPanicRecoveryOrdering(t *testing.T) {
 			{"response-blocked", "testdata/response-blocking.json", "fiber-block-panic-response", true, false, 403, 403, 1},
 			{"body-blocked", "../../../internal/appsec/testdata/blocking.json", "crs-933-130-block", true, true, 403, 403, 0},
 			// Without AppSec, Fiber still renders errors after tracing returns.
-			{"disabled", "", "", false, false, 500, 200, 1},
+			{"disabled", "", "", false, false, 500, 500, 1},
 		} {
 			t.Run(setup+"/"+tc.name, func(t *testing.T) {
 				if tc.enabled {
