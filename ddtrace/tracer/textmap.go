@@ -1923,16 +1923,21 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 		}
 		return b.add(encodeKey(k), encodeValue(v))
 	})
-	if b.Len() == 0 {
-		return nil
-	}
-	// Without LLMObs items, a caller's baggage header is replaced as it always
-	// was. With them, the header is now written for every LLMObs request, so a
-	// caller's members are kept after ours instead of being lost.
-	if hasLLMObs {
+	// Without LLMObs, a caller's baggage header is replaced as it always was.
+	// With LLMObs enabled, the caller's members are kept after ours, and members
+	// that belong to one request's LLMObs context are dropped, so a carrier reused
+	// for another request does not keep an earlier parent.
+	callerHeader := false
+	if hasLLMObs || internalconfig.Get().LLMObsEnabled() {
 		if reader, ok := writer.(TextMapReader); ok {
-			mergeCallerBaggage(&b, ctx, reader)
+			callerHeader = mergeCallerBaggage(&b, ctx, reader)
 		}
+	}
+	if b.Len() == 0 {
+		if callerHeader {
+			deleteBaggageHeader(writer)
+		}
+		return nil
 	}
 	writer.Set("baggage", b.String())
 	if c, ok := writer.(TextMapCarrier); ok {
@@ -1979,13 +1984,13 @@ func (b *baggageHeaderBuilder) addMember(member string) bool {
 }
 
 // mergeCallerBaggage appends the members of a baggage header that the caller
-// already set on the carrier. A member whose key was already written loses: the
-// span context wins, as in dd-trace-py. Members keep their raw text, so W3C
-// properties survive.
-func mergeCallerBaggage(b *baggageHeaderBuilder, ctx *SpanContext, reader TextMapReader) {
+// already set on the carrier, and reports whether there was such a header. A
+// member whose key was already written loses: the span context wins, as in
+// dd-trace-py. Members keep their raw text, so W3C properties survive.
+func mergeCallerBaggage(b *baggageHeaderBuilder, ctx *SpanContext, reader TextMapReader) bool {
 	header, err := lookupBaggageHeader(reader)
 	if err != nil || header == "" {
-		return
+		return false
 	}
 	for member := range strings.SplitSeq(header, ",") {
 		member = strings.TrimSpace(member)
@@ -1994,13 +1999,14 @@ func mergeCallerBaggage(b *baggageHeaderBuilder, ctx *SpanContext, reader TextMa
 			continue
 		}
 		key, err := url.QueryUnescape(strings.TrimSpace(k))
-		if err != nil || key == "" || isLLMObsBaggageKeyWritten(key) || ctx.baggageItem(key) != "" {
+		if err != nil || key == "" || isLLMObsRequestScopedKey(key) || ctx.baggageItem(key) != "" {
 			continue
 		}
 		if !b.addMember(member) {
-			return
+			break
 		}
 	}
+	return true
 }
 
 func (p *propagatorBaggage) Extract(carrier any) (*SpanContext, error) {

@@ -32,3 +32,24 @@ func TestNormalizeTraceID(t *testing.T) {
 		})
 	}
 }
+
+func TestIsCanonicalTraceID(t *testing.T) {
+	for _, tt := range []struct {
+		in   string
+		want bool
+	}{
+		{"6928d1a700000000abcdef0123456789", true},
+		{"00000000000000010000000000000000", true},
+		{"12345", true},
+		{"18446744073709551615", true},
+		{"18446744073709551616", false},
+		{"0123", false},
+		{"0", false},
+		{"-1", false},
+		{"6928D1A700000000ABCDEF0123456789", false},
+		{"6928d1a700000000abcdef01234567890", false},
+		{"", false},
+	} {
+		assert.Equal(t, tt.want, IsCanonicalTraceID(tt.in), tt.in)
+	}
+}

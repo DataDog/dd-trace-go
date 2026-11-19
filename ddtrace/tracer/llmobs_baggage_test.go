@@ -75,3 +75,15 @@ func TestLLMObsBaggageInjectTextMapCarrier(t *testing.T) {
 		"baggage": "llmobs.parent_id=555,llmobs.trace_id=6928d1a700000000abcdef0123456789,tenant=acme",
 	}, carrier)
 }
+
+func TestBaggageInjectWithoutLLMObsReplacesCallerHeader(t *testing.T) {
+	// With LLMObs disabled, the injector behaves as before: the context's items
+	// replace a header the caller set.
+	sc := &SpanContext{trace: newTrace()}
+	sc.setBaggageItem("k", "v")
+	carrier := TextMapCarrier{"baggage": "tenant=a"}
+
+	require.NoError(t, (&propagatorBaggage{}).Inject(sc, carrier))
+
+	assert.Equal(t, TextMapCarrier{"baggage": "k=v"}, carrier)
+}

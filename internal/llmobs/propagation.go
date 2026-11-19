@@ -90,6 +90,21 @@ func NormalizeTraceID(v string) string {
 	return padHex(n.Text(16))
 }
 
+// IsCanonicalTraceID reports whether v is in the canonical form that the
+// llmobs.trace_id baggage item must carry: 32 lowercase hex characters, or a
+// decimal number from 1 to 2^64-1 without leading zeros. This is what
+// dd-trace-py's format_trace_id produces.
+func IsCanonicalTraceID(v string) bool {
+	if isHexTraceID(v) {
+		return true
+	}
+	if v == "" || v[0] == '0' || !isDigits(v) {
+		return false
+	}
+	_, err := strconv.ParseUint(v, 10, 64)
+	return err == nil
+}
+
 func isHexTraceID(v string) bool {
 	if len(v) != 32 {
 		return false
