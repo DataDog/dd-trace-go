@@ -65,6 +65,64 @@ func (r *agentInfoJSONRoundTripper) RoundTrip(*http.Request) (*http.Response, er
 	}, nil
 }
 
+func TestLLMObsClientWithUnixAgent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix domain sockets")
+	}
+	// Keep the path below the Unix socket path limit on macOS.
+	dir, err := os.MkdirTemp("", "dd")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+	socket := filepath.Join(dir, "apm.sock")
+	t.Setenv("DD_TRACE_AGENT_URL", "unix://"+socket)
+	t.Setenv("DD_LLMOBS_AGENTLESS_ENABLED", "")
+
+	cfg, err := newConfig()
+	require.NoError(t, err)
+	llm, err := buildLLMObsConfig(cfg)
+	require.NoError(t, err)
+	require.True(t, llm.AgentlessEnabled)
+
+	// The agent starts after the tracer has selected agentless mode.
+	listener, err := net.Listen("unix", socket)
+	require.NoError(t, err)
+	agent := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/info" {
+			fmt.Fprint(w, `{"endpoints":["/evp_proxy/v2/"]}`)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	agent.Listener.Close()
+	agent.Listener = listener
+	agent.Start()
+	defer agent.Close()
+
+	intake := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer intake.Close()
+	transport := llm.TracerConfig.HTTPClient.Transport.(*http.Transport).Clone()
+	transport.TLSClientConfig = intake.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
+	client := &http.Client{Transport: transport}
+	defer client.CloseIdleConnections()
+	resp, err := client.Get(intake.URL)
+	require.NoError(t, err)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusAccepted, resp.StatusCode)
+
+	// A tracer starting after agent discovery should still use the socket.
+	cfg, err = newConfig()
+	require.NoError(t, err)
+	llm, err = buildLLMObsConfig(cfg)
+	require.NoError(t, err)
+	require.False(t, llm.AgentlessEnabled)
+	resp, err = llm.TracerConfig.HTTPClient.Get(cfg.internalConfig.AgentURL().String())
+	require.NoError(t, err)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+}
+
 func TestFetchAgentFeaturesTraceFilters(t *testing.T) {
 	roundTripper := &agentInfoJSONRoundTripper{body: `{
 		"endpoints":["/v0.6/stats"],
