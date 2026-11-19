@@ -185,6 +185,12 @@ func classifyPoolKey(key string) (kind, workload, osPlatform, variant string) {
 	// go-pkg-mod-build-metrics- prefix; it is not the AppSec module cache.
 	case strings.HasPrefix(key, "go-pkg-mod-build-metrics-"):
 		return "other", poolNA, "unknown", ""
+	// The multios Windows module archive gets its own kind and cell: the
+	// generic go-pkg-mod- prefix would merge its bytes and seed presence
+	// with the AppSec archive, so a surviving AppSec entry could mask the
+	// eviction of the Windows seed (and the other way around).
+	case strings.HasPrefix(key, "go-pkg-mod-multios-"):
+		return "go_modules", "multi-os", "windows", ""
 	case strings.HasPrefix(key, "go-pkg-mod-"):
 		return "appsec_modules", poolNA, "unknown", ""
 	// system-tests.yml caches the npm-installed datadog-ci CLI.

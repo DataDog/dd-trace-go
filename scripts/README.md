@@ -353,7 +353,8 @@ go test -race -count=1 ./scripts/citiming/ ./scripts/actiontest/
 classifies one snapshot of the repository's shared Actions cache pool.
 It reuses the collector's cache snapshot (usage endpoint, entry
 inventory) and classifies every entry by cache kind
-(`go_build`, `tools`, `setup_go_builtin`, `gitdb`, `appsec_modules`,
+(`go_build`, `go_modules`, `tools`, `setup_go_builtin`, `gitdb`,
+`appsec_modules`,
 `datadog_ci`, `other`), cloudx workload family (`n/a` outside `go_build`
 keys in the `ddtg-cx1-` layout), `os.platform`, and ref type (`default`
 for the default branch, `pr`, `mq`, `release`, `other`).

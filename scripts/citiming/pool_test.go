@@ -113,6 +113,13 @@ func TestClassifyPoolKeyEveryKind(t *testing.T) {
 			kind: "appsec_modules", workload: poolNA, osX: "unknown",
 		},
 		{
+			// The multios Windows module archive gets its own kind, so
+			// its seed-presence cell cannot merge with the AppSec
+			// archive and one side mask the eviction of the other.
+			key:  "go-pkg-mod-multios-f6762d137b5e43d204c8afcb41b910685777f80c7feb64a2771c1ed664283657",
+			kind: "go_modules", workload: "multi-os", osX: "windows",
+		},
+		{
 			key: "datadog-ci-Linux-X64-v5.25.0", kind: "datadog_ci", workload: poolNA, osX: "unknown",
 		},
 		{
