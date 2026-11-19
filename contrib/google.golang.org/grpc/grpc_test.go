@@ -705,20 +705,21 @@ func TestStreamSendsErrorCode(t *testing.T) {
 	// to flush the spans
 	_, _ = stream.Recv()
 
-	spans := mt.FinishedSpans()
-
-	// check if at least one span with spank.kind=server has error code
-	var span mocktracer.Span
-	for _, s := range spans {
-		if s.Tag(tagCode) != wantCode {
-			continue
+	// The server span finishes in the server's handler goroutine, which can
+	// run after the client has seen the error. Wait for it instead of reading
+	// FinishedSpans() once.
+	hasServerErrorSpan := func() bool {
+		for _, s := range mt.FinishedSpans() {
+			if s.Tag(ext.SpanKind) == ext.SpanKindServer && s.Tag(tagCode) == wantCode {
+				return true
+			}
 		}
-		if s.Tag(ext.SpanKind) != ext.SpanKindServer {
-			continue
-		}
-		span = *s
+		return false
 	}
-	assert.NotNilf(t, span, "at least one span should contain error code, the spans were:\n%v", spans)
+	if !assert.Eventuallyf(t, hasServerErrorSpan, 5*time.Second, 10*time.Millisecond,
+		"no server span has %s=%s", tagCode, wantCode) {
+		t.Logf("finished spans:\n%v", mt.FinishedSpans())
+	}
 }
 
 // rig contains all of the servers and connections we'd need for a
