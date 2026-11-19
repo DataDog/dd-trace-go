@@ -25,10 +25,14 @@ aspects:
       - add-struct-field:
           name: __dd_clusterID
           type: "*__dd_clusterIDFetch"
+      - add-struct-field:
+          name: __dd_initOnce
+          type: "__dd_once"
       - inject-declarations:
           imports:
             kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
             instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
+            sync: sync
           lang: go1.18
           template: |-
             const __dd_ckgoVersion = kafkatrace.CKGoVersion1
@@ -194,10 +198,13 @@ aspects:
               return kafkatrace.NewKafkaTracer(__dd_instr, __dd_ckgoVersion, v, opts...)
             }
 
+            // __dd_initConsumer creates the tracer and the cluster ID lookup once,
+            // even when the first calls come from several goroutines at once.
             func __dd_initConsumer(c *Consumer) {
-              if c.__dd_tracer != nil {
-                return
-              }
+              c.__dd_initOnce.Do(func() { __dd_doInitConsumer(c) })
+            }
+
+            func __dd_doInitConsumer(c *Consumer) {
               var opts []kafkatrace.Option
               if c.__dd_confmap != nil {
                 opts = append(opts, kafkatrace.WithConfig(__dd_wrapConfigMap(c.__dd_confmap)))
@@ -226,10 +233,13 @@ aspects:
               }
             }
 
+            // __dd_initProducer creates the tracer and the cluster ID lookup once,
+            // even when the first calls come from several goroutines at once.
             func __dd_initProducer(p *Producer) {
-              if p.__dd_tracer != nil {
-                return
-              }
+              p.__dd_initOnce.Do(func() { __dd_doInitProducer(p) })
+            }
+
+            func __dd_doInitProducer(p *Producer) {
               var opts []kafkatrace.Option
               if p.__dd_config != nil {
                 opts = append(opts, kafkatrace.WithConfig(p.__dd_config))
@@ -263,6 +273,7 @@ aspects:
             type __dd_kafkaTracer = kafkatrace.Tracer
             type __dd_clusterIDFetch = kafkatrace.ClusterIDFetch
             type __dd_configMap = kafkatrace.ConfigMap
+            type __dd_once = sync.Once
 
   ## Trace Consumer ##
 
@@ -444,6 +455,9 @@ aspects:
       - add-struct-field:
           name: __dd_clusterID
           type: "*__dd_clusterIDFetch"
+      - add-struct-field:
+          name: __dd_initOnce
+          type: "__dd_once"
 
   - id: NewProducer
     join-point:
