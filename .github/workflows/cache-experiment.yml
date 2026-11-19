@@ -37,11 +37,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /d/x/ws /d/x/full /d/x/gc
-          # The lane working set: the multios package selection and filter,
-          # tests compiled but not run, githubci tag on, caches isolated.
+          # The lane working set: the multios package selection and
+          # filter, tests compiled but not run, caches isolated. The
+          # subtests package runs scenario logic in TestMain that fails
+          # without its full test run, so it is excluded from the probe.
           go list ./... |
             grep -v -e google.golang.org/api -e sarama \
-                    -e confluent-kafka-go -e cmemprof |
+                    -e confluent-kafka-go -e cmemprof \
+                    -e gotesting/subtests |
             sort > /d/x/packages.txt
           echo "RESULT lane_packages $(wc -l < /d/x/packages.txt)"
           export GOMODCACHE=D:/x/ws GOCACHE=D:/x/gc
@@ -54,7 +57,7 @@ jobs:
           }
           # shellcheck disable=SC2046
           ms lane_test_compile \
-            go test -count=1 -run '^$' -tags githubci $(cat /d/x/packages.txt)
+            go test -count=1 -run '^$' $(cat /d/x/packages.txt)
           # The full module graph, for the bloat comparison.
           export GOMODCACHE=D:/x/full GOCACHE=D:/x/gc2
           ms full_download go mod download all
@@ -146,7 +149,7 @@ jobs:
             go list -deps -test $(cat /d/x/packages.txt)
           # shellcheck disable=SC2046
           ms lazy_offline_compile \
-            go test -count=1 -run '^$' -tags githubci $(cat /d/x/packages.txt)
+            go test -count=1 -run '^$' $(cat /d/x/packages.txt)
   cloudx-manifest:
     # What does the real restored entry actually contain? Restore the
     # cloudx multios Windows entry (seeded on main) and count it.
