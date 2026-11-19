@@ -749,7 +749,7 @@ func TestEveryGoBearingComponentIsPinned(t *testing.T) {
 
 // TestOTelcModulesGateTheOTelcLane keeps the otelc-integrations entry honest.
 // The otelc lane reads and links every module in OTELC_MODULES (see
-// .github/workflows/otelc.yml), including the parent integrations its hooks
+// .github/workflows/otelc-lane.yml), including the parent integrations its hooks
 // attach to. A module on that list whose paths do not turn on the otelc gate
 // would break the lane on a later pull request, with only the nightly run to
 // catch it, so a migration that forgets the table entry fails here first.
@@ -758,7 +758,7 @@ func TestOTelcModulesGateTheOTelcLane(t *testing.T) {
 
 	modules := otelcModules(t, root)
 	if len(modules) == 0 {
-		t.Fatal("OTELC_MODULES in .github/workflows/otelc.yml parsed to no modules")
+		t.Fatal("OTELC_MODULES in .github/workflows/otelc-lane.yml parsed to no modules")
 	}
 	for _, dir := range modules {
 		t.Run(dir, func(t *testing.T) {
@@ -779,7 +779,7 @@ func TestOTelcModulesGateTheOTelcLane(t *testing.T) {
 // .github/workflows/otelc.yml.
 func otelcModules(t *testing.T, root string) []string {
 	t.Helper()
-	doc, _ := parseWorkflow(t, filepath.Join(root, workflowDir+"/otelc.yml"))
+	doc, _ := parseWorkflow(t, filepath.Join(root, workflowDir+"/otelc-lane.yml"))
 	env, _ := doc["env"].(map[string]any)
 	raw, _ := env["OTELC_MODULES"].(string)
 	return strings.Fields(raw)
@@ -790,7 +790,7 @@ func otelcModules(t *testing.T, root string) []string {
 // no longer feeds anything the lane reads keeps spending the three-OS matrix
 // on every pull request that touches it, with nothing to notice. Every
 // contrib or instrumentation module a component gates onto the otelc lane
-// must be covered by an OTELC_MODULES entry in .github/workflows/otelc.yml,
+// must be covered by an OTELC_MODULES entry in .github/workflows/otelc-lane.yml,
 // itself or an ancestor, with one exception: the otelc suites import
 // testcontainers, so it gates the lane without the module list reading it.
 func TestOTelcGatedModulesFeedTheLane(t *testing.T) {

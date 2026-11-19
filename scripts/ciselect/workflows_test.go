@@ -109,9 +109,9 @@ func TestCacheSeedAndDisableLiterals(t *testing.T) {
 		}
 	}
 	cacheFalse := map[string]int{
-		"static-checks.yml": 5,
-		"orchestrion.yml":   1,
-		"otelc.yml":         1, // Matrix computation; both instrumented workloads keep caches on.
+		"static-checks.yml":    5,
+		"orchestrion-lane.yml": 1,
+		"otelc-lane.yml":       1, // Matrix computation; both instrumented workloads keep caches on.
 	}
 	for name, want := range cacheFalse {
 		body := readText(t, filepath.Join(root, workflowDir), name)
@@ -422,12 +422,12 @@ func TestGatedWorkflowsHaveAChangesJob(t *testing.T) {
 	root, files := workflowPaths(t)
 
 	joinJobs := map[string]string{
-		"pull-request.yml":   "pull-request-tests-done",
-		"system-tests.yml":   "system-tests-done",
-		"orchestrion.yml":    "integration-test-done",
-		"otelc.yml":          "integration-test-done",
-		"dynamic-checks.yml": "dynamic-checks-summary",
-		"smoke-tests.yml":    "smoke-tests-done",
+		"pull-request.yml":     "pull-request-tests-done",
+		"system-tests.yml":     "system-tests-done",
+		"orchestrion-lane.yml": "integration-test-done",
+		"otelc-lane.yml":       "integration-test-done",
+		"dynamic-checks.yml":   "dynamic-checks-summary",
+		"smoke-tests.yml":      "smoke-tests-done",
 	}
 
 	for _, f := range files {
@@ -574,7 +574,7 @@ func TestJoinJobsRejectDependencyInducedSkips(t *testing.T) {
 			},
 		},
 		{
-			workflow: "orchestrion.yml",
+			workflow: "orchestrion-lane.yml",
 			job:      "integration-test-done",
 			strict:   []string{"needs.changes.outputs.orchestrion == 'true'"},
 			deps: []string{
@@ -583,7 +583,7 @@ func TestJoinJobsRejectDependencyInducedSkips(t *testing.T) {
 			},
 		},
 		{
-			workflow: "otelc.yml",
+			workflow: "otelc-lane.yml",
 			job:      "integration-test-done",
 			strict: []string{
 				"needs.changes.outputs.otelc == 'true'",
@@ -739,7 +739,7 @@ func TestCoverageUploadsRespectRetries(t *testing.T) {
 // three-OS matrix on every pull request, and the suite stays green.
 func TestOTelcGatedJobsKeepTheClassifierCondition(t *testing.T) {
 	_, _, root := testTable(t)
-	path := filepath.Join(root, workflowDir, "otelc.yml")
+	path := filepath.Join(root, workflowDir, "otelc-lane.yml")
 	doc, _ := parseWorkflow(t, path)
 	jobs, _ := doc["jobs"].(map[string]any)
 	for _, job := range []string{"go-versions-matrix", "integration-test", "external-app"} {
@@ -757,23 +757,22 @@ func TestOTelcGatedJobsKeepTheClassifierCondition(t *testing.T) {
 // failing.
 func TestOrchestrionRunsOnTheMergeQueue(t *testing.T) {
 	_, _, root := testTable(t)
-	body := readText(t, root, workflowDir+"/orchestrion.yml")
+	body := readText(t, root, workflowDir+"/orchestrion-pr.yml")
 	if !strings.Contains(body, "- mq-working-branch-**") {
-		t.Errorf("orchestrion.yml stopped triggering on merge-queue pushes")
+		t.Errorf("orchestrion-pr.yml stopped triggering on merge-queue pushes")
 	}
 }
 
 // TestOTelcSkipsTheMergeQueue is the counterpart of
 // TestOrchestrionRunsOnTheMergeQueue: the merge queue deliberately excludes
-// the OTelc lane (see .github/AGENTS.md), so the on.push.branches list must
-// keep every merge-queue branch out. GitHub evaluates the entries in order,
-// so a "!" entry after a positive entry legitimately excludes the queue, and
-// the check honors that ordering. The trigger is decoded as YAML rather than
-// searched as text, because the explanatory comment in otelc.yml itself names
-// the forbidden pattern.
+// the OTelc lane (see .github/AGENTS.md). The pull-request half of the lane
+// is otelc-pr.yml, so it must carry no push trigger at all: a bare or
+// branch-filtered push is the only way a queue branch could reach it. The
+// main-based otelc.yml never lists queue branches either, pinned by
+// TestIntegrationLanesMacWindowsMainOnly.
 func TestOTelcSkipsTheMergeQueue(t *testing.T) {
 	_, _, root := testTable(t)
-	doc, _ := parseWorkflow(t, filepath.Join(root, workflowDir, "otelc.yml"))
+	doc, _ := parseWorkflow(t, filepath.Join(root, workflowDir, "otelc-pr.yml"))
 
 	// parseWorkflow handles the decoder's boolean-key rules for the "on"
 	// mapping, but the event list ("on: [push, schedule]") and the single
@@ -785,7 +784,7 @@ func TestOTelcSkipsTheMergeQueue(t *testing.T) {
 		}
 	}
 	unfiltered := func(why string) {
-		t.Errorf("otelc.yml: %s, so push events run on every branch, including "+
+		t.Errorf("otelc-pr.yml: %s, so push events run on every branch, including "+
 			"the queue's. The OTelc lane is deliberately excluded from the merge "+
 			"queue (see .github/AGENTS.md).", why)
 	}
@@ -1533,4 +1532,98 @@ func TestBranchListRunsQueueBranch(t *testing.T) {
 			t.Errorf("branchListRunsQueueBranch(%q) = %q, want %q", tt.patterns, got, tt.want)
 		}
 	}
+}
+
+// TestIntegrationLanesMacWindowsMainOnly pins the lane policy of
+// .github/AGENTS.md in its dedicated-files shape: the pull-request file
+// of each integration lane runs the ubuntu legs only, the main-based
+// file runs the full OS matrix on every push to main (and never on
+// merge-queue branches), and the shared lane body takes its OS list
+// from the caller instead of deciding inline.
+func TestIntegrationLanesMacWindowsMainOnly(t *testing.T) {
+	_, _, root := testTable(t)
+	for _, lane := range []string{"orchestrion", "otelc"} {
+		prFile := lane + "-pr.yml"
+		mainFile := lane + ".yml"
+		laneFile := lane + "-lane.yml"
+
+		// The pull-request file runs the ubuntu legs only.
+		doc, on := parseWorkflow(t, filepath.Join(root, workflowDir, prFile))
+		if _, has := on["pull_request"]; !has {
+			t.Errorf("%s: lost the pull_request trigger", prFile)
+		}
+		if got := laneOSList(t, doc); got != `["ubuntu"]` {
+			t.Errorf("%s: os-list = %s, want the ubuntu-only list: "+
+				"pull requests do not gate on the macOS/Windows legs", prFile, got)
+		}
+		// The merge queue reaches the orchestrion lane through its PR file
+		// (ubuntu legs) and must never reach the otelc lane: it deliberately
+		// skips that lane (see .github/AGENTS.md).
+		if push, has := on["push"]; has {
+			branches := branchPatterns(push)
+			if lane == "orchestrion" && !slices.Contains(branches, "mq-working-branch-**") {
+				t.Errorf("%s: lost the merge-queue push trigger, so a queued "+
+					"commit can land without the lane's ubuntu legs", prFile)
+			}
+		} else if lane == "orchestrion" {
+			t.Errorf("%s: lost the push trigger for merge-queue branches", prFile)
+		}
+
+		// The main-based file runs the full OS matrix on every merge to
+		// main, minutes after landing, and never on queue branches.
+		doc, on = parseWorkflow(t, filepath.Join(root, workflowDir, mainFile))
+		push, _ := on["push"].(map[string]any)
+		if push == nil {
+			t.Fatalf("%s: no push trigger", mainFile)
+		}
+		branches := branchPatterns(push)
+		if !slices.Contains(branches, "main") {
+			t.Errorf("%s: push.branches misses main, so merges stop "+
+				"re-running the macOS/Windows legs", mainFile)
+		}
+		if slices.Contains(branches, "mq-working-branch-**") {
+			t.Errorf("%s: the merge queue must not run the full matrix; "+
+				"queue branches belong in the PR file", mainFile)
+		}
+		if got := laneOSList(t, doc); got != `["ubuntu", "macos", "windows"]` {
+			t.Errorf("%s: os-list = %s, want the full OS list: this is where "+
+				"the macOS/Windows coverage lives", mainFile, got)
+		}
+
+		// The shared lane body takes the OS list from its caller.
+		doc, on = parseWorkflow(t, filepath.Join(root, workflowDir, laneFile))
+		if _, has := on["workflow_call"]; !has {
+			t.Errorf("%s: lost the workflow_call trigger; the lane body is "+
+				"only reachable through its callers", laneFile)
+		}
+		job := doc["jobs"].(map[string]any)["integration-test"].(map[string]any)
+		matrix := job["strategy"].(map[string]any)["matrix"].(map[string]any)
+		if got, _ := matrix["runs-on"].(string); got != `${{ fromJSON(inputs.os-list) }}` {
+			t.Errorf("%s: matrix.runs-on = %q, want the caller-provided "+
+				"os-list, not an inline decision", laneFile, got)
+		}
+	}
+}
+
+// branchPatterns extracts the branch strings from a decoded push event.
+func branchPatterns(push any) []string {
+	m, _ := push.(map[string]any)
+	raw, _ := m["branches"].([]any)
+	out := make([]string, 0, len(raw))
+	for _, b := range raw {
+		if s, ok := b.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// laneOSList extracts the os-list a caller passes to its lane job.
+func laneOSList(t *testing.T, doc map[string]any) string {
+	t.Helper()
+	jobs := doc["jobs"].(map[string]any)
+	lane := jobs["lane"].(map[string]any)
+	with := lane["with"].(map[string]any)
+	s, _ := with["os-list"].(string)
+	return s
 }

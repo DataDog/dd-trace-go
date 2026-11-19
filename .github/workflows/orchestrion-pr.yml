@@ -1,0 +1,41 @@
+name: Orchestrion PR
+
+# The pull-request half of the orchestrion integration lane: pull
+# requests and merge-queue branches, ubuntu legs only, gated by the
+# changed-components classifier. The macOS and Windows legs do not gate
+# pull requests; they run on main-based events through orchestrion.yml,
+# where ci-lane-triage.yml turns their failures into issues. The lane
+# body lives in orchestrion-lane.yml.
+
+on:
+  pull_request:
+  push:
+    # The merge queue builds every queued commit on an
+    # mq-working-branch-<target>-<hash> branch before it lands (see
+    # .github/AGENTS.md): the queue runs the ubuntu legs of this lane, so
+    # a queued commit cannot land without them.
+    branches:
+      - mq-working-branch-**
+    tags-ignore:
+      - 'contrib/**'
+      - 'instrumentation/**'
+      - 'internal/**'
+      - 'orchestrion/**'
+      - 'otelc/**'
+      - 'scripts/**'
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  # Cancel superseded runs of the same pull request or queue branch.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lane:
+    uses: ./.github/workflows/orchestrion-lane.yml
+    with:
+      os-list: '["ubuntu"]'
+    secrets: inherit

@@ -1,0 +1,63 @@
+name: CI Lane Triage
+
+# Turns macOS/Windows failures of the Orchestrion and OTelc integration
+# lanes into tracked work after those legs left pull requests (they now
+# run on main-based events only; see orchestrion.yml and otelc.yml,
+# the main-based callers of orchestrion-lane.yml and otelc-lane.yml):
+#
+# - every failed macOS or Windows leg of a main-based run opens one
+#   issue per leg (deduplicated by lane and leg name while open),
+#   mentioning @DataDog/apm-go and pointing at the failing commit,
+#   the run, and the Datadog CI dashboard query for it;
+# - a leg that goes green again closes its open issue with a comment;
+# - one pinned tracking issue ("macOS/Windows integration lanes")
+#   summarizes every leg's last status and the open failures;
+# - a daily check alerts on the tracking issue when a lane went 26
+#   hours without a macOS or Windows leg (a missing nightly).
+
+on:
+  workflow_run:
+    workflows: [Orchestrion, OTelc]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+  schedule: # daily missing-run check, off the lane schedules
+    - cron: "17 7 * * *"
+
+permissions:
+  issues: write
+  contents: read
+  actions: read
+
+concurrency:
+  # One entry per triggering run: a merge produces one workflow_run event
+  # per lane, and a shared group would let a newer pending run cancel an
+  # older one before it opens its failure issue.
+  group: ci-lane-triage-${{ github.event.workflow_run.id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  triage:
+    # A fork pull request from a branch named main matches the branches
+    # filter on head_branch; its events are pull_request events from
+    # another repository, and they must never open issues that ping the
+    # team. Only this repository's own push, schedule, dispatch and
+    # workflow_call runs of the lanes are triaged.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.head_repository.full_name == github.repository
+      && github.event.workflow_run.event != 'pull_request')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      RUN_ID: ${{ github.event.workflow_run.id || '' }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha || '' }}
+    steps:
+      - name: Check out the triage script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run lane triage
+        shell: bash
+        run: bash .github/scripts/lane-triage.sh
