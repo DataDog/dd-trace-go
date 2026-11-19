@@ -764,7 +764,7 @@ cases:
 
   - id: dd-trace-go-orchestrion-yml-structure
     files:
-      - orchestrion/AGENTS.md
+      - contrib/ORCHESTRION.md
     input: |
       I'm writing a new orchestrion.yml file for a contrib integration. What are the required
       top-level sections in this file, and what does the "aspects" section actually define?
@@ -779,7 +779,7 @@ cases:
 
   - id: dd-trace-go-orchestrion-build-time-enabled-check
     files:
-      - orchestrion/AGENTS.md
+      - contrib/ORCHESTRION.md
     input: |
       How can Go code check at runtime whether the current binary was actually compiled with
       Orchestrion (auto-instrumented), as opposed to a plain go build?
@@ -794,7 +794,7 @@ cases:
 
   - id: dd-trace-go-orchestrion-template-function-fields
     files:
-      - orchestrion/AGENTS.md
+      - contrib/ORCHESTRION.md
     input: |
       Inside an orchestrion.yml advice template, I want to reference the name of the matched
       function's first argument and the name of its second return value. What expressions should I use?
@@ -808,7 +808,7 @@ cases:
 
   - id: dd-trace-go-orchestrion-integration-test-harness
     files:
-      - orchestrion/AGENTS.md
+      - contrib/ORCHESTRION.md
     input: |
       I'm adding a new orchestrion integration test under internal/orchestrion/_integration. What
       interface must my test case struct implement, what is each method responsible for, and what
@@ -827,7 +827,7 @@ cases:
 
   - id: dd-trace-go-orchestrion-argument-of-type-lookup
     files:
-      - orchestrion/AGENTS.md
+      - contrib/ORCHESTRION.md
     input: |
       Inside an orchestrion.yml advice template, I don't know the positional index of the *http.Request
       argument on the matched function -- I only know its type. Is there a template expression that
@@ -848,7 +848,7 @@ cases:
 
   - id: dd-trace-go-orchestrion-directive-args-access
     files:
-      - orchestrion/AGENTS.md
+      - contrib/ORCHESTRION.md
     input: |
       A join point in my orchestrion.yml aspect matches based on a directive comment that carries its
       own key/value arguments. Inside the advice template, what expression gives me access to those

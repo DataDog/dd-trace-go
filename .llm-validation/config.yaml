@@ -5,10 +5,10 @@ runs: 3
 instruction_files:
   - AGENTS.md
   - contrib/AGENTS.md
+  - contrib/ORCHESTRION.md
   - ddtrace/tracer/AGENTS.md
   - internal/AGENTS.md
   - profiler/AGENTS.md
-  - orchestrion/AGENTS.md
   - internal/appsec/AGENTS.md
   - internal/civisibility/AGENTS.md
 
@@ -17,10 +17,10 @@ setup:
     - CLAUDE.md
     - AGENTS.md
     - contrib/AGENTS.md
+    - contrib/ORCHESTRION.md
     - ddtrace/tracer/AGENTS.md
     - internal/AGENTS.md
     - profiler/AGENTS.md
-    - orchestrion/AGENTS.md
     - internal/appsec/AGENTS.md
     - internal/civisibility/AGENTS.md
   directories:
@@ -36,7 +36,7 @@ presets:
       - dd-trace-go-internal-config-source-precedence     # internal/AGENTS.md
       - dd-trace-go-profiler-cpu-duration-clamp           # profiler/AGENTS.md
       - dd-trace-go-appsec-purpose                        # internal/appsec/AGENTS.md
-      - dd-trace-go-orchestrion-build-time-enabled-check  # orchestrion/AGENTS.md
+      - dd-trace-go-orchestrion-build-time-enabled-check  # contrib/ORCHESTRION.md
       - dd-trace-go-apm-integrations-new-contrib          # .claude/skills/apm-integrations (setup-only)
       - dd-trace-go-migrate-orchestrion-to-otelc          # .claude/skills/migrate-orchestrion-to-otelc (setup-only)
       - dd-trace-go-control-general-go                    # control / out-of-scope (shallow, general Go)
@@ -52,7 +52,7 @@ presets:
       - dd-trace-go-profiler-cpu-duration-clamp            # profiler/AGENTS.md
       - dd-trace-go-appsec-purpose                         # internal/appsec/AGENTS.md
       - dd-trace-go-civisibility-close-action-order        # internal/civisibility/AGENTS.md
-      - dd-trace-go-orchestrion-build-time-enabled-check   # orchestrion/AGENTS.md
+      - dd-trace-go-orchestrion-build-time-enabled-check   # contrib/ORCHESTRION.md
     runs: 3
   # Three cases per monitored file (the gate case plus two additional ones).
   minimum:
