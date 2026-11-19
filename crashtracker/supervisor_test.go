@@ -7,7 +7,9 @@ package crashtracker
 
 import (
 	"bytes"
+	"math"
 	"os"
+	"runtime/debug"
 	"testing"
 )
 
@@ -91,5 +93,23 @@ func TestBuildCrashReportMarksTruncatedDumpIncomplete(t *testing.T) {
 		if report.DDTags == "" {
 			t.Error("report has no ddtags")
 		}
+	}
+}
+
+func TestApplySupervisorRuntimeLimitsOverridesHostileValues(t *testing.T) {
+	previousPercent := debug.SetGCPercent(-1)
+	previousLimit := debug.SetMemoryLimit(math.MaxInt64)
+	t.Cleanup(func() {
+		debug.SetGCPercent(previousPercent)
+		debug.SetMemoryLimit(previousLimit)
+	})
+
+	applySupervisorRuntimeLimits()
+
+	if got := debug.SetGCPercent(defaultGCPercent); got != defaultGCPercent {
+		t.Errorf("GC percent = %d, want %d", got, defaultGCPercent)
+	}
+	if got := debug.SetMemoryLimit(-1); got != supervisorMemoryLimit {
+		t.Errorf("memory limit = %d, want %d", got, supervisorMemoryLimit)
 	}
 }

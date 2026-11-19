@@ -30,8 +30,8 @@ func TestTerminalMode(t *testing.T) {
 		{"shell job", true, 50, 40, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := terminalMode(tt.hasTTY, tt.pid, tt.ppid); got != tt.want {
-				t.Fatalf("terminalMode(%t, %d, %d) = %t, want %t", tt.hasTTY, tt.pid, tt.ppid, got, tt.want)
+			if got := isTerminalMode(tt.hasTTY, tt.pid, tt.ppid); got != tt.want {
+				t.Fatalf("isTerminalMode(%t, %d, %d) = %t, want %t", tt.hasTTY, tt.pid, tt.ppid, got, tt.want)
 			}
 		})
 	}

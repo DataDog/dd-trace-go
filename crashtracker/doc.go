@@ -9,10 +9,11 @@
 // environment, and standard streams. The original process becomes a supervisor.
 // It reads the child's crash dump through a pipe registered with
 // [runtime/debug.SetCrashOutput]. It parses and uploads the report before it
-// exits. The upload phase has an overall deadline of 10 seconds, including
-// retries, after a pipe-EOF wait of at most 2 seconds, so the exit takes about
-// 12 seconds at most after a crash. During that time the supervisor ignores
-// stop signals. A normal exit does not produce a report.
+// exits. With the default client, the upload phase has an overall deadline of
+// 10 seconds, including retries, after a pipe-EOF wait of at most 2 seconds, so
+// the exit takes about 12 seconds at most after a crash. A custom client from
+// WithHTTPClient must honor request contexts for this bound. During that time
+// the supervisor ignores stop signals. A normal exit does not produce a report.
 //
 // # Lifecycle
 //
@@ -31,7 +32,8 @@
 // Start. Crashes during package initialization or before Start are not captured.
 // The supervisor does not return from Start. The child registers the inherited
 // crash pipe, removes the internal marker, and returns. Subprocesses spawned
-// after Start do not inherit the crash pipe or the marker. The marker names the
+// after Start do not inherit the crash pipe or the marker. Code that runs
+// before Start, such as package init, can inherit both. The marker names the
 // supervisor's PID, and the child takes the child role only if that PID is its
 // parent PID. If startup fails, Start returns an error so the application can
 // continue without crash tracking.
@@ -54,6 +56,10 @@
 // On Unix, terminal mode requires a controlling terminal, a supervisor PID other
 // than 1, and a parent PID above 1. The child shares the supervisor's process group
 // in terminal mode. Otherwise, detached mode gives the child its own process group.
+// Detached mode gives the child the terminal foreground only if the supervisor
+// owns it. If the supervisor does not own the terminal foreground, the child
+// does not get it either, the same as the application without crash tracking,
+// so a terminal read can stop it with SIGTTIN.
 //
 // Detached mode forwards external signals to the child's PID. Both modes exclude
 // runtime signals (SIGCHLD, SIGURG, SIGPROF), SIGPIPE, SIGABRT, SIGTTIN,
@@ -64,8 +70,8 @@
 // the application does not receive it. Other forwarded signals sent to the whole
 // job group, such as with kill %1, can reach the application twice.
 //
-// On Windows, console Ctrl events reach both processes. The supervisor ignores
-// os.Interrupt and does not forward signals.
+// On Windows, console Ctrl events reach both processes. The supervisor catches
+// os.Interrupt with a private handler and does not forward signals.
 //
 // On Unix, non-close-on-exec inherited descriptors keep their numbers. This
 // requires /dev/fd. Without it, Start returns an error and the application
@@ -73,14 +79,25 @@
 // its copies of those duplicated descriptors.
 //
 // For systemd socket activation, the child updates LISTEN_PID to its own PID if
-// the value names the supervisor. It preserves LISTEN_FDS and LISTEN_FDNAMES.
+// the value names the supervisor. It does the same for WATCHDOG_PID. It
+// preserves LISTEN_FDS and LISTEN_FDNAMES.
+//
+// Under systemd, the supervisor is the main process of the service, and the
+// application sends its notifications from another PID. A service with
+// Type=notify or WatchdogSec must set NotifyAccess=all. Otherwise systemd
+// rejects READY=1 and the watchdog keep-alives of the application. With
+// KillMode=control-group, the default, systemd sends the stop signal to both
+// processes. The supervisor also forwards it, so the application can receive
+// SIGTERM twice.
 //
 // The supervisor propagates the child's exit code. On Unix,
 // it re-raises SIGHUP, SIGINT, SIGTERM, or SIGKILL if that signal killed the child.
 // For other signals, it exits with code 128 plus the signal number. It does not
 // re-raise signals that could produce a second crash dump from the supervisor.
 // On Linux, the kernel kills the child if the supervisor dies. On other
-// platforms the child keeps running without crash reporting.
+// platforms the child keeps running without crash reporting. On those platforms,
+// if the supervisor dies before the child calls Start, the child sees a stray
+// marker and supervises itself, so the application runs one generation deeper.
 //
 // # Cost
 //
@@ -89,6 +106,10 @@
 // and fork/exec are a large part of their run time. Init-heavy binaries also pay
 // more, because the supervisor keeps its init heap for the lifetime of the
 // application.
+//
+// The supervisor's memory limit is soft. Near the 256 MiB limit the runtime
+// throttles through GC assist. The real peak adds the supervisor's init heap
+// and the raw dump to the parse cost that the measure test bounds.
 //
 // # Configuration
 //

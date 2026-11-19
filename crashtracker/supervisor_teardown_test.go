@@ -63,8 +63,9 @@ func TestSupervisorTeardownInvariant(t *testing.T) {
 	cmd.Env = append(filterE2EEnv(os.Environ()),
 		"_CRASHTRACKER_TEARDOWN=1", "_CRASHTRACKER_TEARDOWN_DIR="+dir,
 		"DD_CRASHTRACKING_ENABLED=true", "DD_TRACE_AGENT_URL="+srv.URL)
-	// A real file prevents exec.Cmd.Wait from waiting for a surviving monitor
-	// to close an output-copy pipe after the top process has already exited.
+	// A real file prevents exec.Cmd.Wait from waiting for output-copy
+	// goroutines that would read until the surviving application child closes
+	// the pipe after the supervisor exits.
 	null, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
 	if err != nil {
 		t.Fatal(err)

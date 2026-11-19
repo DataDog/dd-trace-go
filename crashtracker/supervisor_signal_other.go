@@ -21,16 +21,25 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const (
+	// signalChanBuffer leaves headroom so that a burst of signals does not fill the channel.
+	signalChanBuffer = 256
+	// exitSignalBase is added to a signal number to form the exit status of a signaled process.
+	exitSignalBase = 128
+	// sigINFO is SIGINFO on Darwin and the BSDs. x/sys/unix does not define it for Linux.
+	sigINFO = syscall.Signal(29)
+)
+
 func supervisorTerminalMode() bool {
 	fd, err := unix.Open("/dev/tty", unix.O_RDONLY|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
 	hasTTY := err == nil
 	if hasTTY {
 		_ = unix.Close(fd)
 	}
-	return terminalMode(hasTTY, os.Getpid(), os.Getppid())
+	return isTerminalMode(hasTTY, os.Getpid(), os.Getppid())
 }
 
-func terminalMode(hasTTY bool, pid, ppid int) bool {
+func isTerminalMode(hasTTY bool, pid, ppid int) bool {
 	return hasTTY && pid != 1 && ppid > 1
 }
 
@@ -94,24 +103,67 @@ func configureChild(cmd *exec.Cmd, pipe *os.File, terminalMode bool) (_ string, 
 			continue
 		}
 		// Own a duplicate so a failed re-exec cannot close the app's fd.
-		dup, err := unix.FcntlInt(uintptr(fd), unix.F_DUPFD_CLOEXEC, 3)
+		dup, err := unix.FcntlInt(uintptr(fd), unix.F_DUPFD_CLOEXEC, firstExtraFD)
 		if err != nil {
 			return "", fmt.Errorf("duplicate inherited fd %d: %w", fd, err)
 		}
-		for len(cmd.ExtraFiles) <= fd-3 {
+		for len(cmd.ExtraFiles) <= fd-firstExtraFD {
 			cmd.ExtraFiles = append(cmd.ExtraFiles, nil)
 		}
-		cmd.ExtraFiles[fd-3] = os.NewFile(uintptr(dup), "inherited-fd-"+name)
+		cmd.ExtraFiles[fd-firstExtraFD] = os.NewFile(uintptr(dup), "inherited-fd-"+name)
 	}
-	marker := strconv.Itoa(3 + len(cmd.ExtraFiles))
+	marker := strconv.Itoa(firstExtraFD + len(cmd.ExtraFiles))
 	cmd.ExtraFiles = append(cmd.ExtraFiles, pipe)
 	return marker, nil
+}
+
+// startChild starts the application process.
+func startChild(cmd *exec.Cmd) error {
+	// An application can ignore SIGCHLD before Start. The kernel then reaps
+	// the child on its own and Wait fails with ECHILD.
+	childIgnored := signal.Ignored(syscall.SIGCHLD)
+	resetSignal(syscall.SIGCHLD)
+	err := cmd.Start()
+	if err != nil {
+		// This process continues as the application. Keep its setting.
+		if childIgnored {
+			signal.Ignore(syscall.SIGCHLD)
+		}
+		restoreForeground(cmd)
+	}
+	return err
+}
+
+// resetSignal undoes signal.Ignore. Reset alone keeps the ignore for signals
+// that the runtime handles by default. Notify installs the runtime handler
+// and Stop keeps it.
+func resetSignal(sig syscall.Signal) {
+	sink := make(chan os.Signal, 1)
+	signal.Notify(sink, sig)
+	signal.Stop(sink)
+}
+
+// restoreForeground gives the terminal foreground back to this process after
+// a failed start. Before exec, Go moves the foreground to the child group,
+// which is gone now.
+func restoreForeground(cmd *exec.Cmd) {
+	if !cmd.SysProcAttr.Foreground {
+		return
+	}
+	// This process is in the background group now. Without the ignore,
+	// tcsetpgrp stops it with SIGTTOU.
+	wasIgnored := signal.Ignored(syscall.SIGTTOU)
+	signal.Ignore(syscall.SIGTTOU)
+	_ = unix.IoctlSetPointerInt(cmd.SysProcAttr.Ctty, unix.TIOCSPGRP, unix.Getpgrp())
+	if !wasIgnored {
+		resetSignal(syscall.SIGTTOU)
+	}
 }
 
 func closeInheritedDescriptors(cmd *exec.Cmd, pipe *os.File) {
 	for i, f := range cmd.ExtraFiles {
 		if f != nil && f != pipe {
-			_ = unix.Close(3 + i)
+			_ = unix.Close(firstExtraFD + i)
 		}
 	}
 	// The application owns stdin and stdout. The supervisor keeps no copy, so
@@ -154,7 +206,7 @@ func inheritedCrashPipe(fd uintptr) (_ *os.File, err error) {
 }
 
 func supervisorSignals(terminalMode bool) (start func(*os.Process), stop func()) {
-	ch := make(chan os.Signal, 256) // headroom so a burst of signals does not fill the channel
+	ch := make(chan os.Signal, signalChanBuffer)
 	var signals, ignored, terminalSignals []os.Signal
 	var terminalSink chan os.Signal
 	// Ignored panics outside the runtime signal table on Darwin.
@@ -164,10 +216,10 @@ func supervisorSignals(terminalMode bool) (start func(*os.Process), stop func())
 	switch runtime.GOOS {
 	case "darwin":
 		maxSignal = 31
-		sigInfo = 29 // SIGINFO on Darwin and BSDs.
+		sigInfo = sigINFO
 	case "freebsd", "netbsd", "openbsd", "dragonfly":
 		maxSignal = 32
-		sigInfo = 29
+		sigInfo = sigINFO
 	}
 	for n := syscall.Signal(1); n <= maxSignal; n++ {
 		switch n {
@@ -246,7 +298,7 @@ func exitWithChildStatus(state *os.ProcessState) {
 			// Another OS thread can receive the signal after Kill returns.
 			time.Sleep(100 * time.Millisecond)
 		}
-		os.Exit(128 + int(sig))
+		os.Exit(exitSignalBase + int(sig))
 	}
 	os.Exit(state.ExitCode())
 }

@@ -9,8 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -44,44 +42,6 @@ func TestSupervisorDeathKillsChild(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Logf("child died within %s of supervisor SIGKILL", time.Since(start))
-}
-
-func TestSupervisorWaitFailure(t *testing.T) {
-	cmd, dir := startSupervisorHelper(t, "wait-error")
-	_ = waitForVictim(t, cmd, 5*time.Second)
-	if cmd.ProcessState.ExitCode() != 1 {
-		t.Fatalf("supervisor exit code = %d, want 1", cmd.ProcessState.ExitCode())
-	}
-	output, err := os.ReadFile(filepath.Join(dir, "stderr"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(output), "crashtracker: wait for application process failed:") {
-		t.Fatalf("missing wait failure warning: %s", output)
-	}
-}
-
-func TestSupervisorWaitFailureStillUploadsCrashReport(t *testing.T) {
-	received := make(chan struct{}, 1)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		received <- struct{}{}
-		w.WriteHeader(http.StatusAccepted)
-	}))
-	defer srv.Close()
-	cmd, dir := startSupervisorHelper(t, "wait-error-panic", "DD_TRACE_AGENT_URL="+srv.URL)
-	_ = waitForVictim(t, cmd, 10*time.Second)
-	output, _ := os.ReadFile(filepath.Join(dir, "stderr"))
-	if got := cmd.ProcessState.ExitCode(); got != 1 {
-		t.Fatalf("supervisor exit code = %d, want 1: %s", got, output)
-	}
-	if !strings.Contains(string(output), "crashtracker: wait for application process failed:") {
-		t.Fatalf("missing wait failure warning: %s", output)
-	}
-	select {
-	case <-received:
-	default:
-		t.Fatalf("wait failure lost the crash report: %s", output)
-	}
 }
 
 func TestSupervisorClosesInheritedListener(t *testing.T) {

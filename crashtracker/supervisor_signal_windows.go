@@ -27,6 +27,10 @@ func configureChild(cmd *exec.Cmd, pipe *os.File, _ bool) (string, error) {
 	return strconv.FormatUint(uint64(h), 10), nil
 }
 
+func startChild(cmd *exec.Cmd) error {
+	return cmd.Start()
+}
+
 func closeInheritedDescriptors(_ *exec.Cmd, _ *os.File) {}
 
 func inheritedCrashPipe(fd uintptr) (_ *os.File, err error) {
@@ -54,14 +58,13 @@ func inheritedCrashPipe(fd uintptr) (_ *os.File, err error) {
 }
 
 func supervisorSignals(_ bool) (start func(*os.Process), stop func()) {
-	// Console Ctrl events reach both processes without forwarding.
-	wasIgnored := signal.Ignored(os.Interrupt)
-	signal.Ignore(os.Interrupt)
+	// Console Ctrl events reach both processes without forwarding. A sink
+	// keeps the supervisor alive on Ctrl-C and leaves the application's own
+	// Notify and Ignore settings alone. Stop restores the default.
+	sink := make(chan os.Signal, 1)
+	signal.Notify(sink, os.Interrupt)
 	return func(*os.Process) {}, func() {
-		// Keep an ignore that the application set before Start.
-		if !wasIgnored {
-			signal.Reset(os.Interrupt)
-		}
+		signal.Stop(sink)
 	}
 }
 

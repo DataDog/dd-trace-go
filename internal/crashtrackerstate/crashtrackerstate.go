@@ -79,9 +79,9 @@ func SetResolver(resolve func() bool) {
 // aspects inject their start calls into init functions of package main, so the
 // flag is set before they run.
 //
-// A test binary of package main never runs main, so crashtracker.Start never
-// runs and never releases the deferred starts. MarkSupervisorPending therefore
-// reports false in a test binary.
+// The injected initializer runs in a test binary too, but that binary never
+// runs main, so nothing ever releases the deferred starts. The inTestBinary
+// guard is what keeps the flag false in a test binary.
 func MarkSupervisorPending() bool {
 	state.mu.Lock()
 	defer state.mu.Unlock()

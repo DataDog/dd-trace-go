@@ -35,10 +35,12 @@ func TestSupervisorRegressionHelper(t *testing.T) {
 		return
 	}
 	dir := os.Getenv("_CRASHTRACKER_REGRESSION_DIR")
-	if mode == "activation" && os.Getenv(inheritedFDEnv) == "" {
+	if mode == "activation" && os.Getenv(supervisedFDEnv) == "" {
 		value := string(waitForFile(t, filepath.Join(dir, "listen-pid")))
-		if err := os.Setenv("LISTEN_PID", value); err != nil {
-			t.Fatal(err)
+		for _, key := range []string{"LISTEN_PID", "WATCHDOG_PID"} {
+			if err := os.Setenv(key, value); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	if mode == "reexec-fds" {
@@ -64,8 +66,10 @@ func TestSupervisorRegressionHelper(t *testing.T) {
 		if expected == "self" {
 			expected = strconv.Itoa(os.Getpid())
 		}
-		if got := os.Getenv("LISTEN_PID"); got != expected {
-			t.Fatalf("LISTEN_PID = %q, want %q", got, expected)
+		for _, key := range []string{"LISTEN_PID", "WATCHDOG_PID"} {
+			if got := os.Getenv(key); got != expected {
+				t.Fatalf("%s = %q, want %q", key, got, expected)
+			}
 		}
 		if os.Getenv("LISTEN_FDS") != "1" || os.Getenv("LISTEN_FDNAMES") != "listener" {
 			t.Fatal("socket activation metadata changed")

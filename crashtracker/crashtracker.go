@@ -82,11 +82,9 @@ func start(opts ...Option) error {
 	// A marker that names another supervisor is stray. Drop it and supervise.
 	_ = os.Unsetenv(supervisedFDEnv)
 	if fd, ok := parseSupervisedMarker(marker); ok {
-		// The socket handoff must not depend on the pipe validation.
-		if pid, ok := os.LookupEnv("LISTEN_PID"); ok && pid == strconv.Itoa(os.Getppid()) { //nolint:forbidigo // systemd process handoff, not tracer configuration.
-			if err := os.Setenv("LISTEN_PID", strconv.Itoa(os.Getpid())); err != nil {
-				return fmt.Errorf("crashtracker: transfer socket activation: %w", err)
-			}
+		// The service-manager handoff must not depend on the pipe validation.
+		if err := takeOverServiceManagerPIDs(); err != nil {
+			return err
 		}
 		return registerCrashOutput(fd)
 	}
@@ -101,6 +99,22 @@ func start(opts ...Option) error {
 	}
 
 	return superviseApplication(cfg)
+}
+
+// takeOverServiceManagerPIDs makes the application the owner of the systemd
+// variables that name the supervisor. LISTEN_PID is the socket activation
+// target. WATCHDOG_PID is the process that must send watchdog keep-alives.
+// A value that names another process stays unchanged.
+func takeOverServiceManagerPIDs() error {
+	supervisor := strconv.Itoa(os.Getppid())
+	for _, key := range []string{"LISTEN_PID", "WATCHDOG_PID"} {
+		if pid, ok := os.LookupEnv(key); ok && pid == supervisor { //nolint:forbidigo // systemd process handoff, not tracer configuration.
+			if err := os.Setenv(key, strconv.Itoa(os.Getpid())); err != nil {
+				return fmt.Errorf("crashtracker: transfer %s: %w", key, err)
+			}
+		}
+	}
+	return nil
 }
 
 // parseSupervisedMarker returns the crash pipe descriptor in a marker of the

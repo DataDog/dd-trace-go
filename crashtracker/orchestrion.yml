@@ -57,6 +57,11 @@ aspects:
       # init functions of package main run. A package variable initializes before
       # any init function of its package, and the imported crashtracker package
       # has initialized before both. See internal/crashtrackerstate.
+      #
+      # Exception to the public-API rule in contrib/ORCHESTRION.md: the
+      # template calls an internal package. A public marker in the crashtracker
+      # package would make the always-on tracer and profiler depend on the
+      # opt-in crashtracker package.
       - inject-declarations:
           imports:
             crashtrackerstate: github.com/DataDog/dd-trace-go/v2/internal/crashtrackerstate

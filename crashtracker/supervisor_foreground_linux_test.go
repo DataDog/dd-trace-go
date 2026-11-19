@@ -43,14 +43,39 @@ func TestDetachedChildForegroundHelper(t *testing.T) {
 		}
 		closeInheritedDescriptors(cmd, w)
 		_ = cmd.Wait()
-	case "application":
-		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	case "supervisor-exec-fails":
+		// The child's exec fails after Go moved the terminal foreground to it.
+		// The supervisor then returns to the caller, which reads the terminal.
+		notExecutable := filepath.Join(dir, "not-executable")
+		if err := os.WriteFile(notExecutable, []byte("not a program"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		_, w, err := os.Pipe()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(dir, "line"), []byte(line), 0600); err != nil {
+		cmd := exec.Command(notExecutable)
+		if _, err := configureChild(cmd, w, false); err != nil {
 			t.Fatal(err)
 		}
+		if err := startChild(cmd); err == nil {
+			t.Fatal("start of a non-executable file succeeded")
+		}
+		recordTerminalLine(t, dir)
+	case "application":
+		recordTerminalLine(t, dir)
+	}
+}
+
+// recordTerminalLine reads one line from stdin and stores it in dir.
+func recordTerminalLine(t *testing.T, dir string) {
+	t.Helper()
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "line"), []byte(line), 0600); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -58,6 +83,19 @@ func TestDetachedChildForegroundHelper(t *testing.T) {
 // supervisor owns the terminal foreground, the application must get it, or
 // its first terminal read stops it with SIGTTIN.
 func TestDetachedChildReadsTerminal(t *testing.T) {
+	runOnTerminal(t, "supervisor", "the application did not read from the terminal: it does not own the foreground")
+}
+
+// If the exec of the application fails, the supervisor must get the terminal
+// foreground back, or its next terminal read stops it with SIGTTIN.
+func TestDetachedChildExecFailureRestoresForeground(t *testing.T) {
+	runOnTerminal(t, "supervisor-exec-fails", "the supervisor did not read from the terminal: the failed start left the foreground with the dead child group")
+}
+
+// runOnTerminal runs the helper in the given role as a session leader on a pty
+// and expects it, or its child, to read a line that the test types.
+func runOnTerminal(t *testing.T, role, timeoutMessage string) {
+	t.Helper()
 	masterFD, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
 	if err != nil {
 		t.Skipf("no pty: %v", err)
@@ -78,7 +116,7 @@ func TestDetachedChildReadsTerminal(t *testing.T) {
 	defer slave.Close()
 	dir := t.TempDir()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestDetachedChildForegroundHelper$")
-	cmd.Env = append(os.Environ(), foregroundRoleEnv+"=supervisor", "_CRASHTRACKER_FOREGROUND_DIR="+dir)
+	cmd.Env = append(os.Environ(), foregroundRoleEnv+"="+role, "_CRASHTRACKER_FOREGROUND_DIR="+dir)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = slave, slave, slave
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
 	if err := cmd.Start(); err != nil {
@@ -104,7 +142,7 @@ func TestDetachedChildReadsTerminal(t *testing.T) {
 			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("the application did not read from the terminal: it does not own the foreground")
+			t.Fatal(timeoutMessage)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

@@ -29,11 +29,17 @@ const (
 	// so it stays out of the supported configuration registry.
 	supervisedFDEnv = "_DD_CRASHTRACKING_SUPERVISED_FD"
 
+	// firstExtraFD is the descriptor of exec.Cmd.ExtraFiles[0].
+	// ExtraFiles[i] becomes fd firstExtraFD+i in the child.
+	firstExtraFD = 3
+
 	maxCrashDumpSize = 32 * 1024 * 1024 // 32 MiB
 	// supervisorMemoryLimit is the supervisor's GOMEMLIMIT. Parsing a dump at
 	// maxCrashDumpSize peaks at about 124 MiB above a baseline that already
 	// holds the dump (see manygoroutines_measure_test.go).
 	supervisorMemoryLimit = 256 * 1024 * 1024
+	// defaultGCPercent is the supervisor's GOGC, which is the Go default.
+	defaultGCPercent = 100
 
 	// uploadDeadline bounds the whole upload phase, including retries.
 	// After a crash the supervisor exits up to pipeEOFTimeout plus
@@ -56,7 +62,7 @@ type crashDump struct {
 
 func registerCrashOutput(value string) error {
 	fd, err := strconv.ParseUint(value, 10, strconv.IntSize)
-	if err != nil || fd < 3 {
+	if err != nil || fd < firstExtraFD {
 		return fmt.Errorf("crashtracker: invalid inherited crash descriptor %q (fd numbers on Unix, handles on Windows)", value)
 	}
 	f, err := inheritedCrashPipe(uintptr(fd))
@@ -83,6 +89,13 @@ func readCrashDump(r io.Reader) (data []byte, truncated bool, err error) {
 	return data, truncated, nil
 }
 
+// applySupervisorRuntimeLimits overrides GOMEMLIMIT and GOGC, which the
+// application sets for its own workload.
+func applySupervisorRuntimeLimits() {
+	debug.SetMemoryLimit(supervisorMemoryLimit)
+	debug.SetGCPercent(defaultGCPercent)
+}
+
 func supervise(cfg *config) error {
 	exe, err := os.Executable()
 	if err != nil {
@@ -106,7 +119,7 @@ func supervise(cfg *config) error {
 	cmd.Env = append(os.Environ(), supervisedFDEnv+"="+strconv.Itoa(os.Getpid())+":"+pipeFD)
 	startForwarding, stopForwarding := supervisorSignals(terminalMode)
 	releaseThread := retainSupervisorThread(cmd)
-	err = cmd.Start()
+	err = startChild(cmd)
 	for _, f := range cmd.ExtraFiles {
 		if f != nil && f != w {
 			_ = f.Close()
@@ -120,8 +133,7 @@ func supervise(cfg *config) error {
 	closeInheritedDescriptors(cmd, w)
 	startForwarding(cmd.Process)
 	_ = w.Close()
-	debug.SetMemoryLimit(supervisorMemoryLimit)
-	debug.SetGCPercent(100) // ignore a GOGC value tuned for the application's workload
+	applySupervisorRuntimeLimits()
 
 	dumps := make(chan crashDump, 1)
 	go func() {
@@ -168,7 +180,8 @@ func finishCrashReport(cfg *config, r *os.File, dumps <-chan crashDump) {
 			if errors.Is(dump.err, os.ErrClosed) {
 				dump.err = nil
 			}
-		case <-time.After(100 * time.Millisecond): // the reader did not return after Close
+		case <-time.After(100 * time.Millisecond):
+			log.Warn("crashtracker: discarded crash report: the reader did not return after closing the pipe")
 		}
 	}
 	_ = r.Close()
