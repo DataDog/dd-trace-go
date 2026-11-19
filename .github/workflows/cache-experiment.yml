@@ -1,0 +1,180 @@
+name: Windows cache extraction experiment
+# One-off probe for APMLP-2249: quantitative timings for the Go cache
+# extraction problem on Windows. Runs only on the probe branch, writes no
+# Actions cache entries, and gates nothing.
+on:
+  push:
+    branches: [experiment/windows-cache-probe]
+permissions:
+  contents: read
+concurrency:
+  group: windows-cache-experiment
+  cancel-in-progress: true
+jobs:
+  extraction-matrix:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27"
+          cache: false
+      - name: Runner and volume context
+        shell: pwsh
+        run: |
+          "processors: $env:NUMBER_OF_PROCESSORS"
+          Get-Volume | Where-Object DriveLetter |
+            Format-Table DriveLetter,FileSystemType,
+              @{n='GiB';e={[math]::Round($_.Size/1GB,1)}}
+          fsutil devdrv query D: 2>&1
+          $rtp = (Get-MpComputerStatus).RealTimeProtectionEnabled
+          "defender realtime: $rtp"
+      - name: Build payloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /d/x/ws /d/x/full /d/x/gc
+          # The lane working set: the multios package selection and filter,
+          # tests compiled but not run, githubci tag on, caches isolated.
+          go list ./... |
+            grep -v -e google.golang.org/api -e sarama \
+                    -e confluent-kafka-go -e cmemprof |
+            sort > /d/x/packages.txt
+          echo "RESULT lane_packages $(wc -l < /d/x/packages.txt)"
+          export GOMODCACHE=D:/x/ws GOCACHE=D:/x/gc
+          ms() {
+            local l="$1"; shift
+            local s; s=$(date +%s%3N)
+            "$@"
+            local e; e=$(date +%s%3N)
+            printf 'RESULT %s %d ms\n' "$l" $((e-s)) >&2
+          }
+          # shellcheck disable=SC2046
+          ms lane_test_compile \
+            go test -count=1 -run '^$' -tags githubci $(cat /d/x/packages.txt)
+          # The full module graph, for the bloat comparison.
+          export GOMODCACHE=D:/x/full GOCACHE=D:/x/gc2
+          ms full_download go mod download all
+          echo "RESULT payload_counts files MiB"
+          for p in ws full gc; do
+            f=$(find /d/x/$p -type f | wc -l)
+            m=$(du -sm /d/x/$p | cut -f1)
+            printf 'RESULT %s %s %s\n' "$p" "$f" "$m"
+          done
+          f=$(find /d/x/ws/cache/download -type f | wc -l)
+          m=$(du -sm /d/x/ws/cache/download | cut -f1)
+          printf 'RESULT dl %s %s\n' "$f" "$m"
+      - name: Pack payloads (MSYS tar + zstd, the cache-service codec)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /d/x
+          ms() {
+            local l="$1"; shift
+            local s; s=$(date +%s%3N)
+            "$@"
+            local e; e=$(date +%s%3N)
+            printf 'RESULT %s %d ms\n' "$l" $((e-s)) >&2
+          }
+          for p in ws full gc; do
+            ms pack_$p tar --use-compress-program=zstd -cf $p.tar.zst $p
+            m=$(du -sm $p.tar.zst | cut -f1)
+            printf 'RESULT %s_tar_size %s MiB\n' "$p" "$m"
+            zstd -d -f $p.tar.zst -o $p.tar
+          done
+      - name: Extraction matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /d/x
+          ms() {
+            local l="$1"; shift
+            local s; s=$(date +%s%3N)
+            "$@"
+            local e; e=$(date +%s%3N)
+            printf 'RESULT %s %d ms\n' "$l" $((e-s)) >&2
+          }
+          rm -rf out && mkdir -p out
+          # MSYS GNU tar, the extractor the cache service uses, on D:.
+          for p in ws full gc; do
+            rm -rf out/d$p && mkdir -p out/d$p
+            ms msys_d_$p tar -xf $p.tar.zst -C out/d$p
+          done
+          # Native bsdtar on the same uncompressed payloads, same disk.
+          for p in ws full gc; do
+            rm -rf out/b$p && mkdir -p out/b$p
+            ms bsd_d_$p /c/Windows/System32/tar.exe -xf $p.tar -C out/b$p
+          done
+          # Decompression alone: the I/O read bound.
+          for p in ws full gc; do
+            rm -f $p.tar2
+            ms zstd_d_$p zstd -d -f $p.tar.zst -o $p.tar2
+            rm -f $p.tar2
+          done
+          # Read without materializing: content to the null device.
+          for p in ws full gc; do
+            ms null_d_$p bash -c "tar -xf $p.tar -O > /dev/null"
+          done
+          # Same trials on C:.
+          mkdir -p /c/x && cd /c/x
+          for p in ws full gc; do
+            rm -rf c$p && mkdir -p c$p
+            ms msys_c_$p tar -xf /d/x/$p.tar.zst -C c$p
+            rm -rf b$p && mkdir -p b$p
+            ms bsd_c_$p /c/Windows/System32/tar.exe -xf /d/x/$p.tar -C b$p
+          done
+      - name: Download-only restore plus lazy extraction, offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /d/x/lazy/cache
+          cp -r /d/x/ws/cache/download /d/x/lazy/cache/
+          cd "$GITHUB_WORKSPACE"
+          export GOMODCACHE=D:/x/lazy GOCACHE=D:/x/gc GOPROXY=off
+          ms() {
+            local l="$1"; shift
+            local s; s=$(date +%s%3N)
+            "$@"
+            local e; e=$(date +%s%3N)
+            printf 'RESULT %s %d ms\n' "$l" $((e-s)) >&2
+          }
+          # shellcheck disable=SC2046
+          ms lazy_offline_list \
+            go list -deps -test $(cat /d/x/packages.txt)
+          # shellcheck disable=SC2046
+          ms lazy_offline_compile \
+            go test -count=1 -run '^$' -tags githubci $(cat /d/x/packages.txt)
+  cloudx-manifest:
+    # What does the real restored entry actually contain? Restore the
+    # cloudx multios Windows entry (seeded on main) and count it.
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup Go
+        id: setup-go
+        uses: ./.github/actions/setup-go
+        with:
+          go-version: "1.27"
+          workload: multi-os
+          variant: |-
+            {"runner":"windows-latest",
+             "modules":["core","contrib"]}
+      - name: Count the restored entry
+        shell: bash
+        run: |
+          s="${{ steps.setup-go.outputs.restore-source }}"
+          k="${{ steps.setup-go.outputs.cache-matched-key }}"
+          echo "RESULT restore_source $s"
+          echo "RESULT matched_key $k"
+          for v in GOMODCACHE GOCACHE; do
+            d="$(go env $v)"
+            f=$(find "$d" -type f | wc -l)
+            m=$(du -sm "$d" | cut -f1)
+            printf 'RESULT cloudx_%s %s files %s MiB\n' "$v" "$f" "$m"
+          done
