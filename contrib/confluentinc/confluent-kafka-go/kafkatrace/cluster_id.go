@@ -71,15 +71,16 @@ func (f *ClusterIDFetch) Started() bool {
 }
 
 // Close prevents the lookup from starting, and cancels and waits for it if it
-// is running.
+// is running. Every caller waits, also when several close concurrently: the
+// lookup uses the traced client's native handle, which the caller destroys
+// after Close returns.
 func (f *ClusterIDFetch) Close() {
 	if f == nil {
 		return
 	}
 	f.mu.Lock()
 	f.closed = true
-	stop := f.stop
-	f.stop = nil
+	stop := f.stop // kept: stop can be called more than once
 	f.mu.Unlock()
 	if stop != nil {
 		stop()

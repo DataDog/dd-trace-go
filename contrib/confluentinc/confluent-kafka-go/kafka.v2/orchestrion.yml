@@ -459,8 +459,11 @@ aspects:
               if {{ $p }} == nil {
                 return
               }
+              // Keep the configuration for the tracer, which is created lazily on
+              // first use: a producer created in a package initializer exists
+              // before the injected tracer.Start, and the tracer reads the
+              // naming settings once.
               {{ $p }}.__dd_confmap = {{ $conf }}
-              __dd_initProducer({{ $p }})
             }()
 
   - id: Producer.Events

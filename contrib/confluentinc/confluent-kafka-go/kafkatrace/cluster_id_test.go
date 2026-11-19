@@ -8,6 +8,7 @@ package kafkatrace
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,14 +18,20 @@ import (
 )
 
 // fakeClusterIDClient returns id, or blocks until the context is done when
-// block is set.
+// block is set, or until release is closed when release is set, ignoring the
+// context like a lookup that can't be cancelled.
 type fakeClusterIDClient struct {
-	id     string
-	block  bool
-	closed atomic.Bool
+	id      string
+	block   bool
+	release chan struct{}
+	closed  atomic.Bool
 }
 
 func (c *fakeClusterIDClient) ClusterID(ctx context.Context) (string, error) {
+	if c.release != nil {
+		<-c.release
+		return "", ctx.Err()
+	}
 	if c.block {
 		<-ctx.Done()
 		return "", ctx.Err()
@@ -77,6 +84,30 @@ func TestClusterIDFetch(t *testing.T) {
 		assert.Less(t, time.Since(start), clusterIDTimeout)
 		assert.True(t, client.closed.Load())
 		assert.Empty(t, tr.ClusterID())
+	})
+	t.Run("concurrent closes wait for the lookup", func(t *testing.T) {
+		tr := newTracer()
+		client := &fakeClusterIDClient{release: make(chan struct{})}
+		f := NewClusterIDFetch(tr, func() (ClusterIDClient, error) { return client, nil })
+		f.Start()
+
+		var returned atomic.Int32
+		var wg sync.WaitGroup
+		for range 2 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				f.Close()
+				// The lookup must be over before any Close returns.
+				assert.True(t, client.closed.Load())
+				returned.Add(1)
+			}()
+		}
+		time.Sleep(50 * time.Millisecond)
+		assert.Zero(t, returned.Load(), "Close returned while the lookup was running")
+		close(client.release)
+		wg.Wait()
+		assert.Equal(t, int32(2), returned.Load())
 	})
 	t.Run("client creation fails", func(t *testing.T) {
 		tr := newTracer()
