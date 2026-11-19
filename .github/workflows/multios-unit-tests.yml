@@ -71,24 +71,49 @@ jobs:
           # Seed set: the four non-Windows multi-OS strata (both Go
           # versions on Linux and macOS), about 2.5 GiB compressed each —
           # roughly 10 GiB — against the 100 GiB cache quota (2026-10-28).
-          # Windows skips the Go cache entirely: restoring it on Windows
-          # costs more time than it saves (APMLP-2248 — the 1.4 GiB restore
-          # extracts for 2m38s with tar.exe while saving about 2m of
-          # build time), so that stratum neither seeds nor restores, and
-          # the freed quota pays for the newly seeded orchestrion,
-          # otelc and AppSec macOS strata. The nightly default-branch
-          # seeds total well under half that quota: these four, the
-          # unit-integration keys (the standard variant on both nightly
-          # Go versions, and the debug and deadlock families on Go 1.27
-          # through the nightly dynamic-checks runs), and the four smoke
-          # keys. The `ci.cache.pool.*` gauges watch the fill. Nightly
-          # schedules and default-branch dispatches save these keys;
-          # every other run of them, including all PR and merge-queue
-          # runs, restores only. To drop a stratum that does not pay for
-          # its restore cost, replace the literal with a contains() list
-          # of the runs-on/go-version pairs to keep.
+          # Windows skips the isolated caches: restoring the combined
+          # build and module archive measured net-negative there
+          # (APMLP-2248 — the 1.4 GiB restore extracts for 2m38s with
+          # tar.exe while saving about 2m of build time), so that stratum
+          # neither seeds nor restores, and the freed quota pays for the
+          # newly seeded orchestrion, otelc and AppSec macOS strata. The
+          # nightly default-branch seeds total well under half that
+          # quota: these four, the unit-integration keys (the standard
+          # variant on both nightly Go versions, and the debug and
+          # deadlock families on Go 1.27 through the nightly
+          # dynamic-checks runs), and the four smoke keys. The
+          # `ci.cache.pool.*` gauges watch the fill. Nightly schedules
+          # and default-branch dispatches save these keys; every other
+          # run of them, including all PR and merge-queue runs, restores
+          # only. To drop a stratum that does not pay for its restore
+          # cost, replace the literal with a contains() list of the
+          # runs-on/go-version pairs to keep.
           cache: ${{ runner.os != 'Windows' }}
           seed: ${{ runner.os != 'Windows' }}
+
+      # A cold Windows runner re-fetches the whole workspace dependency
+      # set from proxy.golang.org on every run, and a saturated proxy
+      # turns minutes into tens of minutes through the |direct fallback.
+      # The module-only archive (the AppSec go-pkg-mod pattern, without
+      # the build cache that measured net-negative above) keeps that
+      # exposure off this lane. Only the nightly schedule and a
+      # default-branch dispatch save the archive; the key is the go.sum
+      # digest, so an unchanged dependency set saves nothing and the pool
+      # holds one entry per dependency-set change.
+      - name: Restore Go modules cache (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: go_pkg_mod_cache
+          key: go-pkg-mod-multios-${{ hashFiles('**/go.sum') }}
+          restore-keys: go-pkg-mod-multios-
+          # Transient cache-service miss/timeout: fall back to a proxy
+          # fetch instead of hard-failing the job.
+          fail-on-cache-miss: false
+      - name: Use the restored module cache (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: go env -w GOMODCACHE="${GITHUB_WORKSPACE}\go_pkg_mod_cache"
 
       - name: Restore and install development tools
         id: tools
@@ -96,7 +121,6 @@ jobs:
         with:
           go-version: ${{ steps.setup-go.outputs.go-version }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
-
       # The gotesting fixture tests invoke this binary directly; without it
       # they pay `go run` module resolution inside their per-test timeouts.
       - name: Install orchestrion binary
@@ -112,6 +136,23 @@ jobs:
           go list ./... | grep -v -e google.golang.org/api -e sarama -e confluent-kafka-go -e cmemprof | sort >packages.txt
           # shellcheck disable=SC2046
           gotestsum --junitfile "${REPORT}" -- $(cat packages.txt) -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
+
+      # Seed the Windows module archive (see the restore step above): the
+      # test step has downloaded the full workspace dependency set into
+      # the restored GOMODCACHE, so save it as-is. Only the nightly
+      # schedule through the main-branch-tests caller and a dispatch on
+      # the default branch reach this step; an unchanged go.sum digest
+      # saves nothing because the key already exists.
+      - name: Save Go modules cache (Windows)
+        if: >-
+          always() && runner.os == 'Windows'
+          && (github.event_name == 'schedule'
+              || (github.event_name == 'workflow_dispatch'
+                  && github.ref == 'refs/heads/main'))
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: go_pkg_mod_cache
+          key: go-pkg-mod-multios-${{ hashFiles('**/go.sum') }}
 
       - name: Get Datadog credentials
         id: dd-sts

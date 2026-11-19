@@ -247,6 +247,93 @@ func TestGoCachePolicyPerOS(t *testing.T) {
 	}
 }
 
+// TestMultiosWindowsKeepsAModuleCache pins the proxy-resilience half of
+// the Windows policy: the multios lane skips the isolated caches on
+// Windows because the combined restore measured net-negative there
+// (APMLP-2248), but a fully cold runner also re-fetches the whole
+// workspace dependency set from proxy.golang.org on every run, and a
+// saturated proxy turns minutes into tens of minutes through the |direct
+// fallback. The lane therefore restores a module-only archive on
+// Windows (the AppSec go-pkg-mod pattern), seeded by the nightly run
+// alone: the restore step must never save on pull requests, and the save
+// step must stay gated on the seeding events. A dropped step pair
+// silently re-exposes the lane to the proxy, and actionlint cannot
+// catch that.
+func TestMultiosWindowsKeepsAModuleCache(t *testing.T) {
+	root, _ := workflowPaths(t)
+	doc, _ := parseWorkflow(t, filepath.Join(root, workflowDir, "multios-unit-tests.yml"))
+	jobs, _ := doc["jobs"].(map[string]any)
+	job, _ := jobs["test-multi-os"].(map[string]any)
+	if job == nil {
+		t.Fatal("multios-unit-tests.yml has no job test-multi-os")
+	}
+	const wantKey = "go-pkg-mod-multios-${{ hashFiles('**/go.sum') }}"
+	steps, _ := job["steps"].([]any)
+	var restore, save map[string]any
+	for _, s := range steps {
+		step, _ := s.(map[string]any)
+		uses, _ := step["uses"].(string)
+		switch {
+		case strings.Contains(uses, "cache/restore"):
+			restore = step
+		case strings.Contains(uses, "cache/save"):
+			save = step
+		}
+	}
+	if restore == nil {
+		t.Fatal("multios test-multi-os has no actions/cache/restore step")
+	}
+	if save == nil {
+		t.Fatal("multios test-multi-os has no actions/cache/save step")
+	}
+	for _, step := range []struct {
+		name string
+		m    map[string]any
+	}{{"restore", restore}, {"save", save}} {
+		with, _ := step.m["with"].(map[string]any)
+		if got, _ := with["key"].(string); got != wantKey {
+			t.Errorf("multios module-cache %s key = %q, want %q", step.name, got, wantKey)
+		}
+		ifCond, _ := step.m["if"].(string)
+		if !strings.Contains(ifCond, "runner.os == 'Windows'") {
+			t.Errorf("multios module-cache %s gate %q must target the Windows stratum", step.name, ifCond)
+		}
+	}
+	// The restore must exist on every event and never write: only the
+	// save step writes, and only on the seeding events (the nightly
+	// schedule through the main-branch-tests caller, or a dispatch on
+	// the default branch).
+	if got, _ := restore["if"].(string); strings.Contains(got, "github.event_name") {
+		t.Errorf("multios module-cache restore gate %q must not exclude events: every run restores", got)
+	}
+	saveIf, _ := save["if"].(string)
+	for _, want := range []string{
+		"github.event_name == 'schedule'",
+		"github.event_name == 'workflow_dispatch'",
+		"github.ref == 'refs/heads/main'",
+	} {
+		if !strings.Contains(saveIf, want) {
+			t.Errorf("multios module-cache save gate %q lacks %q: only seeding events may write", saveIf, want)
+		}
+	}
+	// The job must point GOMODCACHE at the restored directory before any
+	// go command runs, or the restore is decoration.
+	hasModcacheExport := false
+	for _, s := range steps {
+		step, _ := s.(map[string]any)
+		run, _ := step["run"].(string)
+		if strings.Contains(run, "go env -w GOMODCACHE=") && strings.Contains(run, "go_pkg_mod_cache") {
+			ifCond, _ := step["if"].(string)
+			if strings.Contains(ifCond, "runner.os == 'Windows'") {
+				hasModcacheExport = true
+			}
+		}
+	}
+	if !hasModcacheExport {
+		t.Error("multios test-multi-os does not point GOMODCACHE at go_pkg_mod_cache on Windows (go env -w); the restored archive is unused")
+	}
+}
+
 // jobRunsTestCacheClean reports whether the job runs go clean -testcache
 // on its restored build cache.
 func jobRunsTestCacheClean(t *testing.T, path, jobID string) bool {
