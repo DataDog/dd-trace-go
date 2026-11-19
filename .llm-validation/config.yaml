@@ -40,6 +40,7 @@ presets:
       - dd-trace-go-orchestrion-build-time-enabled-check  # contrib/ORCHESTRION.md
       - dd-trace-go-apm-integrations-new-contrib          # .claude/skills/apm-integrations (setup-only)
       - dd-trace-go-migrate-orchestrion-to-otelc          # .claude/skills/migrate-orchestrion-to-otelc (setup-only)
+      - dd-trace-go-civisibility-close-action-order        # internal/civisibility/AGENTS.md
       - dd-trace-go-control-general-go                    # control / out-of-scope (shallow, general Go)
       - dd-trace-go-control-trace-id-128bit-layout        # control / out-of-scope (deep, repo-internal)
     runs: 3
