@@ -18,6 +18,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
@@ -379,8 +380,17 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 			ctx.baggage = maps.Clone(baggage) // +checklocksignore - Initialization time, not shared yet.
 			atomic.StoreUint32(&ctx.hasBaggage, 1)
 		}
+		if internalconfig.Get().LLMObsEnabled() {
+			deleteLLMObsBaggage(ctx)
+		}
 
 		return ctx, nil
+	}
+
+	// A baggage-only context under "restart" has no trace to restart, but its
+	// LLMObs context must still not be continued.
+	if p.propagationBehaviorExtract == propagationBehaviorExtractRestart && incomingCtx != nil && internalconfig.Get().LLMObsEnabled() {
+		deleteLLMObsBaggage(incomingCtx)
 	}
 
 	// "continue" continues the trace from the incoming context. Baggage is
@@ -1896,32 +1906,101 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 		return nil
 	}
 
-	ctr := 0
-	var baggageBuilder strings.Builder
+	var b baggageHeaderBuilder
+	// The llmobs.* items go first, so that they survive the item and byte caps,
+	// and replace any inbound copies of the same keys.
+	llmCtx, hasLLMObs := ctx.llmobsDistributedContext()
+	if hasLLMObs {
+		for _, item := range llmobsBaggageItems(llmCtx) {
+			if item[1] != "" && !b.add(encodeKey(item[0]), encodeValue(item[1])) {
+				break
+			}
+		}
+	}
 	ctx.ForeachBaggageItem(func(k, v string) bool {
-		if baggageItemCapped(ctr) {
-			return false
+		if hasLLMObs && isLLMObsBaggageKeyWritten(k) {
+			return true
 		}
-
-		var itemBuilder strings.Builder
-		if ctr > 0 {
-			itemBuilder.WriteRune(',')
-		}
-
-		itemBuilder.WriteString(encodeKey(k))
-		itemBuilder.WriteRune('=')
-		itemBuilder.WriteString(encodeValue(v))
-		if baggageByteCapped(baggageBuilder.Len(), itemBuilder.Len()) {
-			return false
-		}
-		baggageBuilder.WriteString(itemBuilder.String())
-		ctr++
-		return true
+		return b.add(encodeKey(k), encodeValue(v))
 	})
-	if baggageBuilder.Len() > 0 {
-		writer.Set("baggage", baggageBuilder.String())
+	if b.Len() == 0 {
+		return nil
+	}
+	// Without LLMObs items, a caller's baggage header is replaced as it always
+	// was. With them, the header is now written for every LLMObs request, so a
+	// caller's members are kept after ours instead of being lost.
+	if hasLLMObs {
+		if reader, ok := writer.(TextMapReader); ok {
+			mergeCallerBaggage(&b, ctx, reader)
+		}
+	}
+	writer.Set("baggage", b.String())
+	if c, ok := writer.(TextMapCarrier); ok {
+		// Set stores the lowercase key. Remove a caller's "Baggage" so that the
+		// carrier does not hold two headers.
+		for k := range c {
+			if k != "baggage" && len(k) == baggageKeyLen && strings.EqualFold(k, "baggage") {
+				delete(c, k)
+			}
+		}
 	}
 	return nil
+}
+
+// baggageHeaderBuilder joins encoded baggage members and stops at the first
+// member that would exceed baggageMaxItems or baggageMaxBytes.
+type baggageHeaderBuilder struct {
+	strings.Builder
+	items int
+}
+
+// add appends one member and reports whether more members can follow.
+func (b *baggageHeaderBuilder) add(encodedKey, encodedValue string) bool {
+	return b.addMember(encodedKey + "=" + encodedValue)
+}
+
+func (b *baggageHeaderBuilder) addMember(member string) bool {
+	if baggageItemCapped(b.items) {
+		return false
+	}
+	sep := 0
+	if b.items > 0 {
+		sep = 1
+	}
+	if baggageByteCapped(b.Len(), sep+len(member)) {
+		return false
+	}
+	if sep == 1 {
+		b.WriteByte(',')
+	}
+	b.WriteString(member)
+	b.items++
+	return true
+}
+
+// mergeCallerBaggage appends the members of a baggage header that the caller
+// already set on the carrier. A member whose key was already written loses: the
+// span context wins, as in dd-trace-py. Members keep their raw text, so W3C
+// properties survive.
+func mergeCallerBaggage(b *baggageHeaderBuilder, ctx *SpanContext, reader TextMapReader) {
+	header, err := lookupBaggageHeader(reader)
+	if err != nil || header == "" {
+		return
+	}
+	for member := range strings.SplitSeq(header, ",") {
+		member = strings.TrimSpace(member)
+		k, _, ok := strings.Cut(member, "=")
+		if !ok {
+			continue
+		}
+		key, err := url.QueryUnescape(strings.TrimSpace(k))
+		if err != nil || key == "" || isLLMObsBaggageKeyWritten(key) || ctx.baggageItem(key) != "" {
+			continue
+		}
+		if !b.addMember(member) {
+			return
+		}
+	}
 }
 
 func (p *propagatorBaggage) Extract(carrier any) (*SpanContext, error) {

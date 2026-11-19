@@ -1422,10 +1422,18 @@ func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
 func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	llmSpan, ok := illmobs.ActiveLLMSpanFromContext(ctx)
 	if !ok {
+		// A service that forwards a request without an LLMObs span of its own
+		// still sends the inbound context on, in its canonical form.
+		if p, ok := illmobs.PropagatedLLMSpanFromContext(ctx); ok {
+			spanCtx.llmobsSpan = nil
+			spanCtx.llmobsPropagated = p
+		}
 		return
 	}
+	spanCtx.llmobsSpan = llmSpan
+	spanCtx.llmobsPropagated = nil
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, llmSpan.SpanID())
-	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.TraceID())
+	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.WireTraceID())
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, llmSpan.MLApp())
 	// session_id is optional. Propagating tags are trace-scoped, so unset the key when the active
 	// span has no session; otherwise a predecessor's value lingers and propagates downstream.

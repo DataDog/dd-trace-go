@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -131,42 +132,23 @@ func contextWithPropagatedLLMSpan(ctx context.Context, s *Span) context.Context 
 	if _, ok := illmobs.PropagatedLLMSpanFromContext(ctx); ok {
 		return ctx
 	}
-	// Fast path: peek at the two required tags before allocating.
-	// Most spans carry no LLMObs propagation, so we skip the heap allocation on that hot path.
 	if s.context == nil || s.context.trace == nil {
 		return ctx
 	}
-	if s.context.trace.propagatingTag(keyPropagatedLLMObsParentID) == "" ||
-		s.context.trace.propagatingTag(keyPropagatedLLMObsTraceID) == "" {
+	// Fast path for the common span without LLMObs propagation: no baggage, and no tag.
+	if atomic.LoadUint32(&s.context.hasBaggage) == 0 && s.context.trace.propagatingTag(keyPropagatedLLMObsParentID) == "" {
 		return ctx
 	}
-	return illmobs.ContextWithPropagatedLLMSpan(ctx, propagatedLLMSpanFromTags(s))
-}
-
-// propagatedLLMSpanFromTags extracts LLMObs propagation information from the trace propagating tags.
-// This is used during distributed tracing to set the correct parent span for the current span.
-func propagatedLLMSpanFromTags(s *Span) *illmobs.PropagatedLLMSpan {
-	propagatedLLMObs := &illmobs.PropagatedLLMSpan{}
-	if s.context == nil || s.context.trace == nil {
-		return propagatedLLMObs
+	p, carrier := propagatedLLMSpan(s.context)
+	if p == nil {
+		return ctx
 	}
-	if parentID := s.context.trace.propagatingTag(keyPropagatedLLMObsParentID); parentID != "" {
-		propagatedLLMObs.SpanID = parentID
+	// Count only the local root: later spans of the trace can find this
+	// process's own propagating tags, which are not an inbound request.
+	if s.context.trace.root == s {
+		illmobs.TrackDistributedContextCarrier(carrier)
 	}
-	if mlApp := s.context.trace.propagatingTag(keyPropagatedLLMObsMLAPP); mlApp != "" {
-		propagatedLLMObs.MLApp = mlApp
-	}
-	if trID := s.context.trace.propagatingTag(keyPropagatedLLMObsTraceID); trID != "" {
-		propagatedLLMObs.TraceID = trID
-	}
-	if sessionID := s.context.trace.propagatingTag(keyPropagatedLLMObsSessionID); sessionID != "" {
-		propagatedLLMObs.SessionID = sessionID
-	}
-	if parentAgentID := s.context.trace.propagatingTag(keyPropagatedLLMObsParentAgentSpanID); parentAgentID != "" {
-		propagatedLLMObs.ParentAgentSpanID = parentAgentID
-		propagatedLLMObs.ParentAgentName = s.context.trace.propagatingTag(keyPropagatedLLMObsParentAgentName)
-	}
-	return propagatedLLMObs
+	return illmobs.ContextWithPropagatedLLMSpan(ctx, p)
 }
 
 // SpanFromContext returns the span contained in the given context. A second return
