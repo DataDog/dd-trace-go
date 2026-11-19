@@ -135,3 +135,43 @@ func TestClusterIDTagWithoutDataStreams(t *testing.T) {
 		})
 	}
 }
+
+type testConfigMap map[string]any
+
+func (m testConfigMap) Get(key string, defVal any) (any, error) {
+	v, ok := m[key]
+	if !ok {
+		return defVal, nil
+	}
+	if _, isString := v.(string); !isString {
+		return nil, fmt.Errorf("%s is not a string", key)
+	}
+	return v, nil
+}
+
+func TestSnapshotConfig(t *testing.T) {
+	t.Run("ignoresLaterChanges", func(t *testing.T) {
+		cfg := testConfigMap{"bootstrap.servers": "kafka-a:9092", "group.id": "group-a"}
+		snapshot := SnapshotConfig(cfg)
+		cfg["bootstrap.servers"] = "kafka-b:9092"
+		cfg["group.id"] = "group-b"
+
+		tr := NewKafkaTracer(testInstr, 0, 0, WithConfig(snapshot))
+		assert.Equal(t, "kafka-a", tr.bootstrapServers)
+		assert.Equal(t, "group-a", tr.groupID)
+	})
+	t.Run("missingEntries", func(t *testing.T) {
+		snapshot := SnapshotConfig(testConfigMap{})
+
+		tr := NewKafkaTracer(testInstr, 0, 0, WithConfig(snapshot))
+		assert.Empty(t, tr.bootstrapServers)
+		assert.Empty(t, tr.groupID)
+	})
+	t.Run("nonStringEntries", func(t *testing.T) {
+		snapshot := SnapshotConfig(testConfigMap{"bootstrap.servers": 42, "group.id": true})
+
+		tr := NewKafkaTracer(testInstr, 0, 0, WithConfig(snapshot))
+		assert.Empty(t, tr.bootstrapServers)
+		assert.Empty(t, tr.groupID)
+	})
+}

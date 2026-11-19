@@ -231,8 +231,8 @@ aspects:
                 return
               }
               var opts []kafkatrace.Option
-              if p.__dd_confmap != nil {
-                opts = append(opts, kafkatrace.WithConfig(__dd_wrapConfigMap(p.__dd_confmap)))
+              if p.__dd_config != nil {
+                opts = append(opts, kafkatrace.WithConfig(p.__dd_config))
               }
               p.__dd_tracer = __dd_newKafkaTracer(opts...)
               // The cluster ID is fetched with an admin client created from the
@@ -262,6 +262,7 @@ aspects:
             type __dd_messageChan = chan *Message
             type __dd_kafkaTracer = kafkatrace.Tracer
             type __dd_clusterIDFetch = kafkatrace.ClusterIDFetch
+            type __dd_configMap = kafkatrace.ConfigMap
 
   ## Trace Consumer ##
 
@@ -438,8 +439,8 @@ aspects:
           name: __dd_produceChannel
           type: "__dd_messageChan"
       - add-struct-field:
-          name: __dd_confmap
-          type: "*ConfigMap"
+          name: __dd_config
+          type: "__dd_configMap"
       - add-struct-field:
           name: __dd_clusterID
           type: "*__dd_clusterIDFetch"
@@ -453,6 +454,8 @@ aspects:
               - name: NewProducer
     advice:
       - prepend-statements:
+          imports:
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
           template: |-
             {{- $conf := .Function.Argument 0 -}}
             {{- $p := .Function.Result 0 -}}
@@ -463,8 +466,11 @@ aspects:
               // Keep the configuration for the tracer, which is created lazily on
               // first use: a producer created in a package initializer exists
               // before the injected tracer.Start, and the tracer reads the
-              // naming settings once.
-              {{ $p }}.__dd_confmap = {{ $conf }}
+              // naming settings once. The producer copies the configuration
+              // here, so take a snapshot now rather than read the map later.
+              if {{ $conf }} != nil {
+                {{ $p }}.__dd_config = kafkatrace.SnapshotConfig(__dd_wrapConfigMap({{ $conf }}))
+              }
             }()
 
   - id: Producer.Events
