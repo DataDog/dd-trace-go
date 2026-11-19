@@ -641,9 +641,21 @@ func TestAppSecWireSpecial(t *testing.T) {
 						return &ignoreFlushWriter{ResponseWriter: w}
 					})}, target
 				})
-				assert.Contains(t, res.body, `{"errors":`, "the block body is written, as on main")
-				assert.EqualValues(t, 1, res.requestBlocked())
-				assert.Zero(t, res.blockFailure())
+				if chiFlushSendsHeader {
+					// chi >= v5.4 sends WriteHeader(200) in Flush, before the tracker
+					// can classify the flush. An unknown writer below is not proof of
+					// an ignored flush: it can forward it. The response is committed,
+					// the block cannot replace it, and the tracker must not claim a
+					// block that it did not write.
+					assert.Equal(t, 200, res.status)
+					assert.Empty(t, res.body)
+					assert.Zero(t, res.requestBlocked())
+					assert.EqualValues(t, 1, res.blockFailure())
+				} else {
+					assert.Contains(t, res.body, `{"errors":`, "the block body is written, as on main")
+					assert.EqualValues(t, 1, res.requestBlocked())
+					assert.Zero(t, res.blockFailure())
+				}
 			})
 		}
 	}

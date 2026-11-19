@@ -400,13 +400,15 @@ func TestCommitTrackerState(t *testing.T) {
 		assert.True(t, rec.Flushed)
 	})
 
-	t.Run("flush, ignored, then write", func(t *testing.T) {
-		// An ignored flush does not commit the response: the status that chi v5.4
-		// adds in Flush is not a commit. A later write with bytes still commits.
+	t.Run("flush, ignored by the writer below", func(t *testing.T) {
+		// The tracker cannot tell an ignored flush from a forwarded one when
+		// the writer below is not a known server writer. chi >= v5.4 sets its
+		// status in Flush, and that status counts as a commit: the safe state
+		// is the state of chi without the tracker.
 		rec := httptest.NewRecorder()
 		tw, ct, _ := track(t, &ignoringWriter{ResponseWriter: rec}, 1)
 		tw.(http.Flusher).Flush()
-		assert.False(t, ct.Committed())
+		assert.Equal(t, chiFlushSendsHeader, ct.Committed())
 		assert.False(t, rec.Flushed, "the writer below ignored the flush")
 		_, _ = tw.Write([]byte("x"))
 		assert.True(t, ct.Committed())

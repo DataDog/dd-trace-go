@@ -63,22 +63,6 @@ type commitTracker struct {
 	// status that chi had, or 200 (what the client got). A later WriteHeader does
 	// not change it: the wire already has the status.
 	flushStatus int
-
-	// ignoredChiStatus records that the chi writer set a status as a side effect of
-	// a Flush that did not reach the wire, while the response was not sent before.
-	// chi v5.4 makes the chi writer call WriteHeader(200) in Flush
-	// (basicWriter.flush calls maybeWriteHeader). That status is not a commit: the
-	// writer below can still be waiting for the first write, and the header goes
-	// out with the end of the handler, like without the tracker. Committed ignores
-	// it, so a late block can still write its body. A later Write still commits
-	// through BytesWritten.
-	//
-	// Known limit with chi v5.4 and later: after an ignored flush, chi has already
-	// sent WriteHeader(200) down. The block response keeps the status 200, and its
-	// own headers (for example Content-Type) are lost: the writer below locked its
-	// header map at that WriteHeader. chi v5.3 sent nothing in Flush, so the block
-	// kept its headers there. Fixing this needs chi to not forward the WriteHeader.
-	ignoredChiStatus bool
 }
 
 // trackerCarrier is implemented by all the generated tracker types.
@@ -93,7 +77,7 @@ func (t *commitTracker) tracker() *commitTracker { return t }
 // still replace the response.
 func (t *commitTracker) Committed() bool {
 	return t.flushed || t.hijacked ||
-		(t.WrapResponseWriter.Status() != 0 && !t.ignoredChiStatus) ||
+		t.WrapResponseWriter.Status() != 0 ||
 		t.WrapResponseWriter.BytesWritten() > 0 ||
 		(t.parent != nil && t.parent.Committed())
 }
@@ -130,17 +114,21 @@ func (t *commitTracker) markFlushed() {
 // direct Flush path: chi's writer sends the flush to its immediate target, which is
 // the writer that is classified (see flushError for the rule). A flush that nothing
 // sends does not mark the response as sent, as without the tracker.
+//
+// Since chi v5.4, the chi writer also sends WriteHeader(200) in Flush
+// (basicWriter.flush calls maybeWriteHeader), before the flush is classified.
+// A writer below that is not a known server writer is not proof of an ignored
+// flush: it can forward the flush (for example gzhttp.NoGzipResponseWriter),
+// and net/http locks the status and the headers at that WriteHeader. The
+// response is then not replaceable, so the status counts as a commit, like the
+// state of chi without the tracker: a late block does not run, and the tracker
+// reports a block failure instead of a false request_blocked. A safe replacement
+// for the lost late block is a follow-up.
 func (t *commitTracker) flush() {
 	target := t.WrapResponseWriter.Unwrap()
-	committedBefore := t.Committed()
 	t.WrapResponseWriter.(http.Flusher).Flush()
 	if flushIsOnWire(target) {
 		t.markFlushed()
-	} else if !committedBefore {
-		// The flush did not reach the wire. The response was not sent before, so
-		// the status that the chi writer now holds (200 from chi v5.4, 0 before)
-		// came from the flush side effect, not from the handler. Ignore it.
-		t.ignoredChiStatus = true
 	}
 }
 
