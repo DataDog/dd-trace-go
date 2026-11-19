@@ -15,9 +15,10 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"reflect"
 
 	"github.com/go-chi/chi/v5/middleware"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
 // maxUnwrapWalk is the maximum number of writers that newCommitTracker visits
@@ -132,8 +133,9 @@ func (t *commitTracker) flush() {
 // itself, in one pass, from the chi writer: the writer that gets the flush is the writer that
 // is classified. A second walk could find another writer, if an Unwrap method
 // returns a different writer after the flush. The first writer that flushes is
-// on the wire if it is a known server writer (its Flush always sends the status
-// line and the headers, or locks the status of a recorder), or an outer tracker
+// on the wire if it is a known server writer (httptrace.KnownServerWriter: its Flush
+// always sends the status line and the headers, or locks the status of a recorder),
+// or an outer tracker
 // that recorded the flush. For any other writer (a compressing writer that
 // ignores a flush before the first write, a buffering writer, ...), the state
 // does not change: it is the state without the tracker.
@@ -167,37 +169,15 @@ func (t *commitTracker) flushError() error {
 	return http.NewResponseController(w).Flush()
 }
 
-// flushIsOnWire reports whether a flush that w got reached the wire.
+// flushIsOnWire reports whether a flush that w got reached the wire: w is an outer
+// tracker that recorded a flush, or a known server writer
+// (httptrace.KnownServerWriter owns the list of the types, which change with the
+// Go version).
 func flushIsOnWire(w http.ResponseWriter) bool {
 	if tc, ok := w.(trackerCarrier); ok {
 		return tc.tracker().flushed
 	}
-	return knownServerWriter(w)
-}
-
-// knownServerWriters are the writers whose Flush always sends the headers
-// ("package path.type name"). Their types are not exported, and their names depend
-// on the Go version (the HTTP/2 writer is a pointer type in Go 1.26 and a value
-// type in Go 1.27), so they are compared by name, pointer or value. A renamed type
-// is not known: the tracker then keeps the state without the tracker, and the test
-// of the writers of this Go version fails.
-var knownServerWriters = map[string]bool{
-	"net/http.response":                     true, // HTTP/1
-	"net/http.http2responseWriter":          true, // HTTP/2 (Go 1.26)
-	"net/http.http2ResponseWriter":          true, // HTTP/2 (Go 1.27)
-	"golang.org/x/net/http2.responseWriter": true, // h2c and x/net HTTP/2
-	"net/http/httptest.ResponseRecorder":    true,
-}
-
-func knownServerWriter(w http.ResponseWriter) bool {
-	typ := reflect.TypeOf(w)
-	if typ == nil {
-		return false
-	}
-	if typ.Kind() == reflect.Pointer {
-		typ = typ.Elem()
-	}
-	return knownServerWriters[typ.PkgPath()+"."+typ.Name()]
+	return httptrace.KnownServerWriter(w)
 }
 
 func (t *commitTracker) hijack() (net.Conn, *bufio.ReadWriter, error) {

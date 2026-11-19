@@ -685,14 +685,17 @@ func (w *ignoringWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter 
 // package: it is not a known writer.
 type ResponseRecorder struct{ http.ResponseWriter }
 
-// TestKnownServerWriters checks the names of the writers that net/http gives with
-// this Go version (they change between versions): HTTP/1, HTTP/2 and the recorder.
-func TestKnownServerWriters(t *testing.T) {
+// TestFlushIsOnWire checks the writers that flushIsOnWire counts as on the wire.
+// httptrace.KnownServerWriter owns the list of the server writers and its own test;
+// this checks the answer for the real writers of this Go version (they change
+// between versions): HTTP/1, HTTP/2 and the recorder, and for writers that are not
+// known.
+func TestFlushIsOnWire(t *testing.T) {
 	for _, h2 := range []bool{false, true} {
-		var known bool
+		var onWire bool
 		var typeName string
 		srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			known, typeName = knownServerWriter(w), fmt.Sprintf("%T", w)
+			onWire, typeName = flushIsOnWire(w), fmt.Sprintf("%T", w)
 		}))
 		srv.EnableHTTP2 = h2
 		if h2 {
@@ -705,14 +708,14 @@ func TestKnownServerWriters(t *testing.T) {
 		res.Body.Close()
 		srv.Close()
 		assert.Equal(t, h2, res.ProtoMajor == 2)
-		assert.True(t, known, "HTTP/2=%v: %s", h2, typeName)
+		assert.True(t, onWire, "HTTP/2=%v: %s", h2, typeName)
 	}
 
-	assert.True(t, knownServerWriter(httptest.NewRecorder()))
-	assert.True(t, knownServerWriter(&httptest.ResponseRecorder{}))
-	assert.False(t, knownServerWriter(ResponseRecorder{httptest.NewRecorder()}), "same name, another package")
-	assert.False(t, knownServerWriter(&ResponseRecorder{httptest.NewRecorder()}))
-	assert.False(t, knownServerWriter(plain{httptest.NewRecorder()}))
-	assert.False(t, knownServerWriter(&ignoringWriter{ResponseWriter: httptest.NewRecorder()}))
-	assert.False(t, knownServerWriter(nil))
+	assert.True(t, flushIsOnWire(httptest.NewRecorder()))
+	assert.True(t, flushIsOnWire(&httptest.ResponseRecorder{}))
+	assert.False(t, flushIsOnWire(ResponseRecorder{httptest.NewRecorder()}), "same name, another package")
+	assert.False(t, flushIsOnWire(&ResponseRecorder{httptest.NewRecorder()}))
+	assert.False(t, flushIsOnWire(plain{httptest.NewRecorder()}))
+	assert.False(t, flushIsOnWire(&ignoringWriter{ResponseWriter: httptest.NewRecorder()}))
+	assert.False(t, flushIsOnWire(nil))
 }
