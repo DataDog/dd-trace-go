@@ -309,6 +309,8 @@ func TestFakeGitForUnshallowHelperProcess(t *testing.T) {
 		}
 	case "log":
 		_, _ = os.Stdout.WriteString("0123456789012345678901234567890123456789 first commit\n")
+	case "show":
+		_, _ = os.Stdout.WriteString("commit message\n--- FAIL: TestPhantom\n")
 	case "remote", "config":
 		_, _ = os.Stdout.WriteString("origin\n")
 	case "fetch":
@@ -326,6 +328,8 @@ func TestFakeGitForUnshallowHelperProcess(t *testing.T) {
 		}
 	case "branch":
 		_, _ = os.Stdout.WriteString("main\n")
+	case "phantom":
+		_, _ = os.Stdout.WriteString(phantomGitOutput)
 	}
 	os.Exit(0)
 }
@@ -366,7 +370,7 @@ func countFakeGitFetches(t *testing.T, fetchesFile string) int {
 }
 
 func TestFetchCommitData(t *testing.T) {
-	log.SetLevel(log.LevelDebug)
+	recordGitDebugLogs(t)
 	commits := GetLastLocalGitCommitShas()
 	for _, sha := range commits[:min(len(commits), 3)] {
 		if gitData, err := fetchCommitData(sha); err == nil {
@@ -382,6 +386,73 @@ func TestFetchCommitData(t *testing.T) {
 		} else {
 			t.Errorf("Failed to fetch commit data for SHA: %s, error: %v", sha, err)
 		}
+	}
+}
+
+func recordGitDebugLogs(t *testing.T) *log.RecordLogger {
+	t.Helper()
+	recorder := new(log.RecordLogger)
+	t.Cleanup(log.UseLogger(recorder))
+	previousLevel := log.GetLevel()
+	t.Cleanup(func() { log.SetLevel(previousLevel) })
+	log.SetLevel(log.LevelDebug)
+	return recorder
+}
+
+func TestGitDebugLoggingIsolated(t *testing.T) {
+	setupFakeGitForUnshallow(t, false)
+	previousLevel := log.GetLevel()
+	t.Cleanup(func() { log.SetLevel(previousLevel) })
+	log.SetLevel(log.LevelWarn)
+	outerLogger := new(log.RecordLogger)
+	t.Cleanup(log.UseLogger(outerLogger))
+
+	t.Run("commit message", func(t *testing.T) {
+		recorder := recordGitDebugLogs(t)
+		out, err := execGitString(telemetry.GetGitCommitInfoCommandType, "show", "HEAD")
+		assert.NoError(t, err)
+		assert.Contains(t, out, "\n--- FAIL: TestPhantom")
+		logs := strings.Join(recorder.Logs(), "\n")
+		assert.Contains(t, logs, "civisibility.git.command")
+		assert.Contains(t, logs, `\n--- FAIL: TestPhantom`, "git output must be logged quoted")
+	})
+
+	assert.Equal(t, log.LevelWarn, log.GetLevel())
+	assert.Empty(t, outerLogger.Logs(), "git debug output must stay in the test recorder")
+	log.Warn("logger restored after git debug logging")
+	assert.Len(t, outerLogger.Logs(), 1)
+}
+
+// phantomGitOutput looks like go test output. If it reached stderr unquoted,
+// test2json would read it as a failing test.
+const phantomGitOutput = "x\n--- FAIL: TestPhantom (0.00s)\nFAIL\n"
+
+func TestExecGitDebugLogIsSingleLine(t *testing.T) {
+	for name, run := range map[string]func() (string, error){
+		"execGitString": func() (string, error) {
+			return execGitString(telemetry.NotSpecifiedCommandsType, "phantom")
+		},
+		"execGitStringWithInput": func() (string, error) {
+			return execGitStringWithInput(telemetry.NotSpecifiedCommandsType, "input", "phantom")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			setupFakeGitForUnshallow(t, false)
+			recorder := recordGitDebugLogs(t)
+
+			out, err := run()
+			require.NoError(t, err)
+			require.Contains(t, out, "--- FAIL: TestPhantom", "fake git did not run")
+
+			var found bool
+			for _, l := range recorder.Logs() {
+				if strings.Contains(l, "TestPhantom") {
+					found = true
+					assert.NotContains(t, l, "\n", "git output must be logged on one line")
+				}
+			}
+			assert.True(t, found, "git output was not logged")
+		})
 	}
 }
 
@@ -628,8 +699,11 @@ func TestGetBaseBranchSha(t *testing.T) {
 }
 
 func TestGetBaseBranchShaWithoutGit(t *testing.T) {
-	// Temporarily disable git for this test
+	// Temporarily disable git for this test. Consume gitFinderOnce first:
+	// otherwise isGitFound runs the real lookup and overwrites the value.
 	originalGitFound := isGitFoundValue
+	gitFinderOnce = sync.Once{}
+	gitFinderOnce.Do(func() {})
 	isGitFoundValue = false
 	defer func() {
 		isGitFoundValue = originalGitFound
@@ -640,7 +714,7 @@ func TestGetBaseBranchShaWithoutGit(t *testing.T) {
 	if err != nil && acceptableError(err) {
 		t.Skipf("test skipped due to: %s", err.Error())
 	}
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Equal(t, "", sha)
 	assert.Contains(t, err.Error(), "git executable not found")
 }

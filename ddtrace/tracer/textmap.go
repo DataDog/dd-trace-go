@@ -1663,7 +1663,7 @@ func parseTraceparent(ctx *SpanContext, header string) error {
 	}
 	// parsing flags
 	flags := parts[3]
-	f, err := strconv.ParseInt(flags, 16, 8)
+	f, err := strconv.ParseUint(flags, 16, 8)
 	if err != nil {
 		return ErrSpanContextCorrupted
 	}
