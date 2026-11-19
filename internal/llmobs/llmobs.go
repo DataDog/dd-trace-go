@@ -537,6 +537,7 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 	span := &Span{
 		name:      spanName,
 		apm:       apmSpan,
+		spanID:    apmSpan.SpanID(),
 		startTime: cfg.StartTime,
 	}
 	if !l.Config.Enabled {
@@ -558,6 +559,12 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 		span.llmTraceID = newLLMObsTraceID()
 	}
 
+	switch {
+	case span.parent != nil:
+		span.wireTraceID = span.parent.wireTraceID
+	case span.propagated != nil:
+		span.wireTraceID = span.propagated.WireTraceID
+	}
 	span.parentAgentName, span.parentAgentSpanID = resolveParentAgent(span.parent, span.propagated)
 
 	span.mlApp = cfg.MLApp

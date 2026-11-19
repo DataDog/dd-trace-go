@@ -31,6 +31,7 @@ const (
 	telemetryMetricUserFlushes       = "user_flush"
 	telemetryMetricCostTagsAnnotated = "cost_tags.annotated"
 	telemetryMetricCostTagsSubmitted = "cost_tags.submitted"
+	telemetryMetricActivateHeaders   = "activate_distributed_headers"
 )
 
 // maxTelemetryMLApps caps distinct ml_app values, because telemetry never evicts a metric
@@ -354,4 +355,14 @@ func boolTag(b bool) string {
 		return "1"
 	}
 	return "0"
+}
+
+// TrackDistributedContextCarrier counts an inbound request whose LLMObs context was
+// read from carrier: "baggage", "tags", or "stale_baggage" (the tags won over a
+// different baggage parent). The metric name and tags match dd-trace-py.
+func TrackDistributedContextCarrier(carrier string) {
+	if telemetry.Disabled() {
+		return
+	}
+	telemetry.Count(telemetry.NamespaceMLObs, telemetryMetricActivateHeaders, []string{"error:0", "carrier:" + carrier}).Submit(1)
 }

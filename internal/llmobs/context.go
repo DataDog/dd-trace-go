@@ -19,8 +19,12 @@ type (
 type PropagatedLLMSpan struct {
 	// MLApp is the ML application name.
 	MLApp string
-	// TraceID is the LLMObs trace ID.
+	// TraceID is the LLMObs trace ID, in canonical form.
 	TraceID string
+	// WireTraceID is the trace ID as the inbound _dd.p.llmobs_trace_id tag carried
+	// it, or empty. The tag is sent on in the same form: dd-trace-py writes it in
+	// decimal, and dd-trace-py before 4.9 cannot parse hex there.
+	WireTraceID string
 	// SpanID is the span ID.
 	SpanID string
 	// SessionID is the session ID.
@@ -36,6 +40,11 @@ type PropagatedLLMSpan struct {
 // PropagatedLLMSpanFromContext retrieves a PropagatedLLMSpan from the context.
 // Returns the span and true if found, nil and false otherwise.
 func PropagatedLLMSpanFromContext(ctx context.Context) (*PropagatedLLMSpan, bool) {
+	// The tracer calls this at every span start, so skip the context.Value walk
+	// until a propagated span is stored for the first time.
+	if !propagatedLLMSpanUsed.Load() {
+		return nil, false
+	}
 	if val, ok := ctx.Value(ctxKeyPropagatedLLMSpan{}).(*PropagatedLLMSpan); ok {
 		return val, true
 	}
@@ -44,6 +53,7 @@ func PropagatedLLMSpanFromContext(ctx context.Context) (*PropagatedLLMSpan, bool
 
 // ContextWithPropagatedLLMSpan returns a new context with the given PropagatedLLMSpan attached.
 func ContextWithPropagatedLLMSpan(ctx context.Context, span *PropagatedLLMSpan) context.Context {
+	propagatedLLMSpanUsed.Store(true)
 	return context.WithValue(ctx, ctxKeyPropagatedLLMSpan{}, span)
 }
 
@@ -60,6 +70,9 @@ func ActiveLLMSpanFromContext(ctx context.Context) (*Span, bool) {
 	}
 	return nil, false
 }
+
+// propagatedLLMSpanUsed reports whether ContextWithPropagatedLLMSpan was ever called.
+var propagatedLLMSpanUsed atomic.Bool
 
 // activeLLMSpanUsed reports whether contextWithActiveLLMSpan was ever called.
 var activeLLMSpanUsed atomic.Bool
