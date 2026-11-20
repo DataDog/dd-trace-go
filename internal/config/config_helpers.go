@@ -306,6 +306,16 @@ func TraceProtocolVersionString(v float64) string {
 	return TraceProtocolVersionStringV04
 }
 
+// otelLogLevel returns the OTEL_LOG_LEVEL threshold and whether a valid level
+// above debug was set. OTEL_LOG_LEVEL=debug already reaches debug mode through
+// DD_TRACE_DEBUG, which keeps DD_TRACE_DEBUG precedence.
+func otelLogLevel(p *provider.Provider) (log.Level, bool) {
+	if lvl, ok := log.ParseLevel(p.GetString("OTEL_LOG_LEVEL", "")); ok && lvl != log.LevelDebug {
+		return lvl, true
+	}
+	return log.LevelInfo, false
+}
+
 // resolveAgentURL computes the final agent URL from the three env-var strings
 // read through the provider. The priority mirrors internal.AgentURLFromEnv:
 //  1. DD_TRACE_AGENT_URL (if non-empty and valid)
