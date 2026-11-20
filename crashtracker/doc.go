@@ -11,9 +11,11 @@
 // [runtime/debug.SetCrashOutput]. It parses and uploads the report before it
 // exits. With the default client, the upload phase has an overall deadline of
 // 10 seconds, including retries, after a pipe-EOF wait of at most 2 seconds, so
-// the exit takes about 12 seconds at most after a crash. A custom client from
-// WithHTTPClient must honor request contexts for this bound. During that time
-// the supervisor ignores stop signals. A normal exit does not produce a report.
+// the exit takes about 12 seconds at most after a crash. The default client
+// limits each attempt to 3 seconds. A custom client from WithHTTPClient keeps
+// its own per-attempt timeout, and it must honor request contexts for this
+// bound. During that time the supervisor ignores stop signals. A normal exit
+// does not produce a report.
 //
 // # Lifecycle
 //

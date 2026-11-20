@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -98,6 +99,53 @@ func TestUploadReportContextDeadlineInterruptsRequest(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("uploadReport = %v, want context.DeadlineExceeded", err)
 	}
+}
+
+func TestUploadReportRetriesHungFirstAttempt(t *testing.T) {
+	var requests atomic.Int32
+	delivered := make(chan []byte, uploadAttempts)
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if requests.Add(1) == 1 {
+			select {
+			case <-release:
+			case <-r.Context().Done():
+			}
+			return
+		}
+		delivered <- body
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	ctx, cancel := context.WithTimeout(t.Context(), uploadDeadline)
+	defer cancel()
+	started := time.Now()
+	err := uploadReport(ctx, &config{agentURL: srv.URL}, newTestReport())
+	elapsed := time.Since(started)
+	if err != nil {
+		t.Errorf("uploadReport = %v, want success", err)
+	}
+	if got := requests.Load(); got != 2 {
+		t.Errorf("upload attempts = %d, want 2", got)
+	}
+	if elapsed >= uploadDeadline {
+		t.Errorf("upload took %s, want less than %s", elapsed, uploadDeadline)
+	}
+	select {
+	case body := <-delivered:
+		assertRFC0013Body(t, decompressBody(t, body))
+	default:
+		t.Error("intake did not receive the report on a retry")
+	}
+	t.Logf("upload finished after %s with %d attempts", elapsed, requests.Load())
 }
 
 func TestUploadReportDeadlineErrorIncludesLastError(t *testing.T) {

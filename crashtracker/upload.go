@@ -202,7 +202,8 @@ func (t uploadTarget) newRequest(cfg *config, body []byte) (*http.Request, error
 
 // newClient returns the client for the upload: the caller-supplied client from
 // WithHTTPClient, a UDS-aware client for a Unix socket agent URL, or the default
-// client.
+// client. Default clients use a 3-second per-attempt timeout. A custom client
+// keeps its own timeout.
 func (t uploadTarget) newClient(cfg *config) *http.Client {
 	switch {
 	case cfg.httpClient != nil:
