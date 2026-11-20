@@ -34,6 +34,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -77,7 +78,8 @@ func TestLLMObsClientWithUnixAgent(t *testing.T) {
 	t.Setenv("DD_TRACE_AGENT_URL", "unix://"+socket)
 	t.Setenv("DD_LLMOBS_AGENTLESS_ENABLED", "")
 
-	cfg, err := newConfig()
+	t.Setenv("DD_API_KEY", "0123456789abcdef0123456789abcdef")
+	cfg, err := newConfig(WithLLMObsMLApp("test"))
 	require.NoError(t, err)
 	llm, err := buildLLMObsConfig(cfg)
 	require.NoError(t, err)
@@ -98,18 +100,33 @@ func TestLLMObsClientWithUnixAgent(t *testing.T) {
 	agent.Start()
 	defer agent.Close()
 
-	intake := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	intake := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	}))
+	closed := make(chan struct{}, 1)
+	intake.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateClosed {
+			closed <- struct{}{}
+		}
+	}
+	intake.StartTLS()
 	defer intake.Close()
-	transport := llm.TracerConfig.HTTPClient.Transport.(*http.Transport).Clone()
-	transport.TLSClientConfig = intake.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
-	client := &http.Client{Transport: transport}
-	defer client.CloseIdleConnections()
+	require.NoError(t, llmobs.Start(llm, &llmobsTracerAdapter{}, nil))
+	t.Cleanup(llmobs.Stop)
+	active, err := llmobs.ActiveLLMObs()
+	require.NoError(t, err)
+	client := active.Config.TracerConfig.HTTPClient
+	client.Transport.(*http.Transport).TLSClientConfig = intake.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
 	resp, err := client.Get(intake.URL)
 	require.NoError(t, err)
 	resp.Body.Close()
 	assert.Equal(t, http.StatusAccepted, resp.StatusCode)
+	llmobs.Stop()
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("idle intake connection still open after LLMObs shutdown")
+	}
 
 	// A tracer starting after agent discovery should still use the socket.
 	cfg, err = newConfig()

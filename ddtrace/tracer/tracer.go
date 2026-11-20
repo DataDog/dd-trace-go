@@ -399,7 +399,7 @@ func buildLLMObsConfig(c *config) (llmobsconfig.Config, error) {
 	} else if resolvedAgentless {
 		// The tracer client targets the agent and may dial its Unix socket
 		// regardless of the intake URL.
-		cfg.TracerConfig.HTTPClient = cfg.DefaultHTTPClient()
+		cfg.TracerConfig.HTTPClient = nil
 	}
 	return cfg, nil
 }
