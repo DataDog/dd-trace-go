@@ -131,9 +131,24 @@ func WithProducerCustomTag(tag string, tagFn func(msg *sarama.ProducerMessage) a
 // WithBrokers provides broker addresses for automatic Kafka cluster ID
 // detection for Data Streams Monitoring. The cluster ID is fetched
 // asynchronously in the background when the producer or consumer is wrapped.
+// The addresses are also set as the messaging.kafka.bootstrap.servers tag on
+// producer and consumer spans.
 func WithBrokers(addrs []string) OptionFn {
 	return func(cfg *config) {
 		cfg.brokerAddrs = addrs
+	}
+}
+
+// WithSaramaConfig provides the sarama configuration of a wrapped consumer,
+// partition consumer or consumer group handler. With Data Streams Monitoring,
+// the cluster ID is fetched from the brokers set with WithBrokers over a new
+// connection, which then uses this configuration, so that it has the same
+// TLS, SASL and protocol version settings as the client. Without it, the
+// default sarama configuration is used. Producers use the configuration
+// passed to WrapSyncProducer or WrapAsyncProducer instead.
+func WithSaramaConfig(saramaConfig *sarama.Config) OptionFn {
+	return func(cfg *config) {
+		cfg.saramaConfig = saramaConfig
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/IBM/sarama"
+	"github.com/IBM/sarama/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -537,4 +538,34 @@ func TestStartProducerSpanCustomTagPrecedence(t *testing.T) {
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
 	assert.Equal(t, "custom-component", spans[0].Tag(ext.Component))
+}
+
+func TestSyncProducerBootstrapServers(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		opts     []Option
+		expected any
+	}{
+		{name: "without brokers", expected: nil},
+		{name: "with brokers", opts: []Option{WithBrokers([]string{"broker-1:9092", "broker-2:9092"})}, expected: "broker-1:9092,broker-2:9092"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			mp := mocks.NewSyncProducer(t, nil)
+			mp.ExpectSendMessageAndSucceed()
+			// Data streams is disabled, so no cluster ID fetch is started.
+			p := WrapSyncProducer(nil, mp, tt.opts...)
+			assert.Empty(t, p.(*syncProducer).closeAsync)
+
+			_, _, err := p.SendMessage(&sarama.ProducerMessage{Topic: "test-topic", Value: sarama.StringEncoder("test")})
+			require.NoError(t, err)
+			require.NoError(t, p.Close())
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			assert.Equal(t, tt.expected, spans[0].Tag(ext.KafkaBootstrapServers))
+		})
+	}
 }

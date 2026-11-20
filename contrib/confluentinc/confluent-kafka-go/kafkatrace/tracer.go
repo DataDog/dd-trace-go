@@ -69,6 +69,7 @@ func (c *dsmEdgeTagCache) getOrStore(key uint64, tags []string) []string {
 
 type Tracer struct {
 	PrevSpan            *tracer.Span
+	instr               *instrumentation.Instrumentation
 	ctx                 context.Context
 	consumerServiceName string
 	producerServiceName string
@@ -125,6 +126,7 @@ func (fn OptionFn) apply(cfg *Tracer) {
 
 func NewKafkaTracer(instr *instrumentation.Instrumentation, ckgoVersion CKGoVersion, librdKafkaVersion int, opts ...Option) *Tracer {
 	tr := &Tracer{
+		instr:             instr,
 		ctx:               context.Background(),
 		analyticsRate:     instr.AnalyticsRate(false),
 		ckgoVersion:       ckgoVersion,
@@ -207,6 +209,32 @@ func WithCustomTag(tag string, tagFn func(msg Message) any) OptionFn {
 		}
 		cfg.tagFns[tag] = tagFn
 	}
+}
+
+// configKeys are the ConfigMap entries WithConfig reads.
+var configKeys = [...]string{"group.id", "bootstrap.servers"}
+
+// configSnapshot is a ConfigMap holding a copy of the entries WithConfig reads.
+type configSnapshot map[string]any
+
+func (s configSnapshot) Get(key string, defVal any) (any, error) {
+	if v, ok := s[key]; ok {
+		return v, nil
+	}
+	return defVal, nil
+}
+
+// SnapshotConfig copies the entries WithConfig reads from cg. Passing the
+// snapshot to WithConfig later tags the configuration as it was when
+// SnapshotConfig was called, even if cg has been changed in the meantime.
+func SnapshotConfig(cg ConfigMap) ConfigMap {
+	s := configSnapshot{}
+	for _, key := range configKeys {
+		if v, err := cg.Get(key, ""); err == nil {
+			s[key] = v
+		}
+	}
+	return s
 }
 
 // WithConfig extracts the config information for the client to be tagged

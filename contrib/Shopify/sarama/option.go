@@ -114,6 +114,8 @@ func WithAnalyticsRate(rate float64) OptionFn {
 // WithBrokers provides broker addresses for automatic Kafka cluster ID
 // detection for Data Streams Monitoring. The cluster ID is fetched
 // asynchronously in the background when the producer or consumer is wrapped.
+// The addresses are also set as the messaging.kafka.bootstrap.servers tag on
+// producer and consumer spans.
 func WithBrokers(addrs []string) OptionFn {
 	return func(cfg *config) {
 		cfg.brokerAddrs = addrs

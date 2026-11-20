@@ -7,6 +7,7 @@ package sarama
 
 import (
 	"math"
+	"strings"
 
 	"github.com/IBM/sarama"
 
@@ -56,6 +57,9 @@ func newConsumerSpanConfig(cfg *config) *tracer.StartSpanConfig {
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	}
+	if len(cfg.brokerAddrs) > 0 {
+		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, strings.Join(cfg.brokerAddrs, ",")))
 	}
 	return tracer.NewStartSpanConfig(opts...)
 }
