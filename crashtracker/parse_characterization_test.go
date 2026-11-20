@@ -14,9 +14,9 @@ import (
 )
 
 // The tests in this file characterize the current behavior of parseCrashDump
-// through its public result only. They deliberately avoid parseFrames,
-// splitDump and the other parser internals so that they keep working when the
-// goroutine and frame parser is replaced. Where the behavior looks like a bug
+// through its public result only. They deliberately avoid splitDump and the
+// other parser internals so that they keep working when the goroutine and
+// frame parser is replaced. Where the behavior looks like a bug
 // or a gap, the test still pins it and the case carries a "KNOWN GAP" comment.
 
 // fixtureGOROOT is the toolchain directory in the real_* and synthetic_*
@@ -99,6 +99,7 @@ func TestParseCrashDumpFixtures(t *testing.T) {
 			wantCrashedName:   "goroutine 35",
 			wantCrashedFrames: 2,
 			wantCrashedTop:    Frame{Function: "internal/runtime/maps.fatal", File: "/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/panic.go", Line: 1181},
+			wantIncompleteN:   1, // the "exit status 2" trailer cuts the last goroutine
 		},
 		{
 			fixture:           "deadlock.txt",
@@ -117,6 +118,7 @@ func TestParseCrashDumpFixtures(t *testing.T) {
 			wantCrashedName:   "goroutine 1",
 			wantCrashedFrames: 4,
 			wantCrashedTop:    Frame{Function: "panic", File: "/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/panic.go", Line: 830},
+			wantIncompleteN:   1, // the "exit status 2" trailer cuts the last goroutine
 		},
 		{
 			fixture:           "panic_traceback_all.txt",
@@ -139,6 +141,7 @@ func TestParseCrashDumpFixtures(t *testing.T) {
 			wantCrashedName:   "goroutine 1",
 			wantCrashedFrames: 2,
 			wantCrashedTop:    Frame{Function: "main.deref", File: "/tmp/crashdemo/main.go", Line: 7},
+			wantIncompleteN:   1, // the "exit status 2" trailer cuts the last goroutine
 		},
 		{
 			fixture:     "stack_exhaustion.txt",
@@ -204,13 +207,10 @@ func TestParseCrashDumpFixtures(t *testing.T) {
 			wantIncompleteN:   4,
 		},
 		{
-			// KNOWN GAP: "[originating from goroutine N]:" blocks are not
-			// understood. The line is read as a function line, the frame
-			// after it as a malformed location, and the rest of the
-			// goroutine's block is dropped. The crashed goroutine keeps only
-			// the frames before its "created by" line (1 of its frames here)
-			// and is marked Incomplete, as are the other two goroutines that
-			// have ancestors. Goroutine 1 has none and is complete.
+			// "[originating from goroutine N]:" blocks are ancestors of the
+			// goroutine above them. They are not part of its stack, so the
+			// crashed goroutine keeps its one own frame and no goroutine is
+			// Incomplete.
 			fixture:           "real_tracebackancestors.txt",
 			wantType:          "panic",
 			wantMessage:       "assignment to entry in nil map",
@@ -218,8 +218,6 @@ func TestParseCrashDumpFixtures(t *testing.T) {
 			wantCrashedName:   "goroutine 6",
 			wantCrashedFrames: 1,
 			wantCrashedTop:    Frame{Function: "main.level3", File: "/tmp/crashdemo/ancestors/main.go", Line: 12},
-			wantStackIncompl:  true,
-			wantIncompleteN:   3,
 		},
 		{
 			// "created by X in goroutine N" lines are skipped and do not
@@ -233,26 +231,25 @@ func TestParseCrashDumpFixtures(t *testing.T) {
 			wantCrashedTop:    Frame{Function: "main.main", File: "/tmp/crashdemo/createdby/main.go", Line: 27},
 		},
 		{
-			// KNOWN GAP: with GODEBUG=tracebacklabels=1 the header ends with
-			// "] {handler: checkout, ...}:", which goroutineHeaderRe does not
-			// match. Goroutine 5 is not reported at all: one thread, no
-			// Incomplete flag, no sign that anything was dropped.
+			// With GODEBUG=tracebacklabels=1 the header ends with
+			// "] {handler: checkout, ...}:". gostackparse accepts it, so
+			// the labeled goroutine 5 is reported with its frames.
 			fixture:           "real_goroutine_labels.txt",
 			wantType:          "panic",
 			wantMessage:       "assignment to entry in nil map",
-			wantStates:        []string{"running"},
+			wantStates:        []string{"running", "sleep"},
 			wantCrashedName:   "goroutine 1",
 			wantCrashedFrames: 1,
 			wantCrashedTop:    Frame{Function: "main.main", File: "/tmp/crashdemo/labels/main.go", Line: 18},
 		},
 		{
-			// The State string is everything between "[" and "]:", verbatim.
+			// The State string keeps the runtime's wire format, with the
+			// ", N minutes" and ", locked to thread" suffixes. The crashing
+			// goroutine 7 is "running, locked to thread" and is recognized.
 			//
-			// KNOWN GAP: crashingThread compares State with "running"
-			// exactly. The real crashing goroutine 7 is "running, locked to
-			// thread", so it is not recognized. No goroutine matches, and the
-			// first goroutine in the dump ("goroutine 1", blocked in chan
-			// receive) is reported as the crashed one.
+			// Goroutine 13 is in a synctest bubble. gostackparse accepts
+			// the ", synctest bubble N" suffix and reports the goroutine,
+			// but the State drops the suffix: "chan receive (durable)".
 			fixture:     "synthetic_state_suffixes.txt",
 			wantType:    "SIGSEGV",
 			wantMessage: "signal SIGSEGV: segmentation violation code=0x1 addr=0x18 pc=0x4a1b2c",
@@ -263,11 +260,11 @@ func TestParseCrashDumpFixtures(t *testing.T) {
 				"select, 12 minutes, locked to thread",
 				"chan receive (leaked)",
 				"syscall, 3 minutes",
-				"chan receive (durable), synctest bubble 1",
+				"chan receive (durable)",
 			},
-			wantCrashedName:   "goroutine 1",
-			wantCrashedFrames: 2,
-			wantCrashedTop:    Frame{Function: "runtime.gopark", File: fixtureGOROOT + "/src/runtime/proc.go", Line: 474},
+			wantCrashedName:   "goroutine 7",
+			wantCrashedFrames: 3,
+			wantCrashedTop:    Frame{Function: "main.(*worker).handle", File: "/tmp/crashdemo/state/main.go", Line: 41},
 		},
 		{
 			// The elision marker is not a frame. Frames after it are kept,
@@ -314,8 +311,8 @@ func TestParseCrashDumpFixtures(t *testing.T) {
 			wantIncompleteN:   1,
 		},
 		{
-			// KNOWN GAP: a dump cut inside a location line is not detected.
-			// See TestParseCrashDumpTruncatedLocationLine for the frame.
+			// A dump cut inside a location line: the frame is dropped and the
+			// goroutine is Incomplete. See TestParseCrashDumpTruncatedLocationLine.
 			fixture:           "synthetic_truncated_location_line.txt",
 			wantType:          "panic",
 			wantMessage:       "boom",
@@ -323,6 +320,7 @@ func TestParseCrashDumpFixtures(t *testing.T) {
 			wantCrashedName:   "goroutine 1",
 			wantCrashedFrames: 2,
 			wantCrashedTop:    Frame{Function: "panic", File: "/tmp/crashdemo/trunc/main.go", Line: 7},
+			wantIncompleteN:   1,
 		},
 	}
 
@@ -402,18 +400,16 @@ func TestParseCrashDumpTruncatedLocationLine(t *testing.T) {
 		t.Fatalf("len(Threads) = %d, want 2", len(r.Error.Threads))
 	}
 	worker := r.Error.Threads[1]
-	if worker.Name != "goroutine 6" || len(worker.Stack.Frames) != 2 {
-		t.Fatalf("thread = %q with %d frames, want goroutine 6 with 2 frames", worker.Name, len(worker.Stack.Frames))
+	if worker.Name != "goroutine 6" || len(worker.Stack.Frames) != 1 {
+		t.Fatalf("thread = %q with %d frames, want goroutine 6 with 1 frame", worker.Name, len(worker.Stack.Frames))
 	}
-	// KNOWN GAP: the cut location line "\t.../runtime/asm_ar" starts with a tab,
-	// so it counts as a location. It becomes a frame with a truncated file
-	// and line 0, and the stack is not marked Incomplete.
-	want := Frame{Function: "runtime.goexit", File: fixtureGOROOT + "/src/runtime/asm_ar", Line: 0}
-	if got := worker.Stack.Frames[1]; got != want {
-		t.Errorf("last frame = %+v, want %+v", got, want)
+	// The frame whose location line was cut ("\t.../runtime/asm_ar") is
+	// dropped, and the stack is Incomplete.
+	if got := worker.Stack.Frames[0].Function; got == "runtime.goexit" {
+		t.Errorf("the frame with the cut location line was kept: %+v", worker.Stack.Frames[0])
 	}
-	if worker.Stack.Incomplete {
-		t.Error("goroutine 6 Stack.Incomplete = true, want false (gap: the cut is not detected)")
+	if !worker.Stack.Incomplete {
+		t.Error("goroutine 6 Stack.Incomplete = false, want true")
 	}
 }
 
@@ -660,20 +656,21 @@ func TestParseCrashDumpDegenerateInput(t *testing.T) {
 func TestParseCrashDumpHeaderWithoutFramesBeforeNextHeader(t *testing.T) {
 	r := parseCrashDump([]byte("panic: boom\n\ngoroutine 1 [running]:\ngoroutine 2 [chan receive]:\nmain.f()\n\t/a.go:1 +0x2\n"))
 
-	if len(r.Error.Threads) != 2 {
-		t.Fatalf("len(Threads) = %d, want 2", len(r.Error.Threads))
+	// KNOWN GAP: gostackparse consumes the second header while it aborts the
+	// first goroutine, so goroutine 2 is lost. The runtime prints "\n" before
+	// each goroutine header (tracebacksomeothers in runtime/traceback.go), so
+	// a header directly after a header cannot come from runtime output.
+	if len(r.Error.Threads) != 1 {
+		t.Fatalf("len(Threads) = %d, want 1", len(r.Error.Threads))
 	}
-	first, second := r.Error.Threads[0], r.Error.Threads[1]
+	first := r.Error.Threads[0]
 	if first.Name != "goroutine 1" || len(first.Stack.Frames) != 0 || !first.Stack.Incomplete {
 		t.Errorf("first = %q, %d frames, Incomplete=%t; want goroutine 1, 0 frames, Incomplete", first.Name, len(first.Stack.Frames), first.Stack.Incomplete)
 	}
-	if second.Name != "goroutine 2" || len(second.Stack.Frames) != 1 || second.Stack.Incomplete {
-		t.Errorf("second = %q, %d frames, Incomplete=%t; want goroutine 2, 1 frame, complete", second.Name, len(second.Stack.Frames), second.Stack.Incomplete)
-	}
 }
 
-// TestParseCrashDumpContinuesPastElisionMarker is the black-box version of
-// TestParseFramesContinuesPastElisionMarker.
+// TestParseCrashDumpContinuesPastElisionMarker checks that frames after the
+// "frames elided" marker are kept.
 func TestParseCrashDumpContinuesPastElisionMarker(t *testing.T) {
 	dump := []byte(`fatal error: stack overflow
 

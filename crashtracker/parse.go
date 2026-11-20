@@ -6,13 +6,14 @@
 package crashtracker
 
 import (
-	"bufio"
 	"bytes"
 	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/DataDog/gostackparse"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/osinfo"
@@ -25,12 +26,15 @@ const stackFormat = "Datadog Crashtracker 1.0"
 const ddSource = "crashtracker"
 
 var (
-	// goroutineHeaderRe matches a goroutine block header in both standard and
-	// GOTRACEBACK=system format:
+	// goroutineHeaderRe matches a goroutine block header in every format the
+	// runtime prints. It only finds where the preamble ends: gostackparse
+	// parses the blocks. Label values are quoted and can contain "]", so the
+	// bracket and label parts match greedily.
 	//   standard: "goroutine 1 [running]:"
 	//   system:   "goroutine 1 gp=0xc000... m=0 [running]:"
-	// The [^[]* skips any extra runtime fields between the id and the state bracket.
-	goroutineHeaderRe = regexp.MustCompile(`^goroutine (\d+)[^[]*\[([^\]]+)\]:$`)
+	//   go1.26 labels: `goroutine 1 [running labels:{"k": "v"}]:`
+	//   go1.27 labels: "goroutine 1 [running] {k: v}:"
+	goroutineHeaderRe = regexp.MustCompile(`^goroutine \d+ [^\[]*\[.*\](?: \{.*\})?:$`)
 
 	// The following expressions extract fields from the runtime signal line,
 	// e.g. "[signal SIGSEGV: segmentation violation code=0x2 addr=0x0 pc=0x1000a79b4]".
@@ -52,13 +56,6 @@ var (
 	// There is no Unix-style signal number here, so this crash kind is
 	// classified without populating SigInfo, which is inherently POSIX-shaped.
 	windowsExceptionRe = regexp.MustCompile(`^Exception (0x[0-9a-fA-F]+)`)
-
-	// framesElidedRe matches the Go runtime's frame-elision marker for a very
-	// deep stack, e.g. "...16777082 frames elided..." — the runtime prints
-	// the innermost and outermost 50 logical frames of a goroutine's stack
-	// and elides the middle (runtime/traceback.go). It is not a frame itself:
-	// it has no source location line following it.
-	framesElidedRe = regexp.MustCompile(`^\.\.\.\d+ frames elided\.\.\.$`)
 )
 
 // maxReportThreads bounds how many goroutines a single report includes. A
@@ -121,182 +118,77 @@ func parseCrashDump(dump []byte) *Report {
 
 // splitDump separates the leading message lines (preamble) from the goroutine
 // stack blocks. The split point is the first goroutine header line.
+//
+// Note this also discards the frames of a leading "runtime stack:" block
+// (emitted for stack overflow and for faults during runtime execution), since
+// those precede any goroutine header. That is deliberate: the user goroutine
+// below is the actionable stack for grouping and display.
 func splitDump(dump []byte) (preamble []string, threads []Thread) {
-	sc := bufio.NewScanner(bytes.NewReader(dump))
-	// Raise the per-token limit to the dump cap so an oversized panic message
-	// does not prevent the scanner from reaching the goroutine stacks below it.
-	sc.Buffer(make([]byte, 0, 64*1024), maxCrashDumpSize)
-
-	// Preallocate: rough estimate of 80 bytes per line for typical Go stack frames.
-	lines := make([]string, 0, len(dump)/80)
-	for sc.Scan() {
-		lines = append(lines, sc.Text())
-	}
-	if err := sc.Err(); err != nil {
-		// Scanner errors mean the dump was truncated mid-stream. Mark the output
-		// incomplete so callers know the parse is partial rather than silently
-		// returning what looks like a complete result.
-		preamble = lines
-		threads = []Thread{{
-			Crashed: true,
-			Name:    "goroutine unknown",
-			State:   "unknown",
-			Stack:   StackTrace{Format: stackFormat, Incomplete: true},
-		}}
-		return preamble, threads
-	}
-
-	// Find the first goroutine header; everything before it is the preamble.
-	// Note this also discards the frames of a leading "runtime stack:" block
-	// (emitted for stack overflow and for faults during runtime execution),
-	// since those precede any goroutine header. That is deliberate: the user
-	// goroutine below is the actionable stack for grouping and display.
-	start := len(lines)
-	for i, line := range lines {
-		if goroutineHeaderRe.MatchString(line) {
-			start = i
+	off := 0
+	for off < len(dump) {
+		end := len(dump)
+		if i := bytes.IndexByte(dump[off:], '\n'); i >= 0 {
+			end = off + i
+		}
+		line := bytes.TrimSuffix(dump[off:end], []byte("\r"))
+		if len(line) >= maxCrashDumpSize {
+			// A line this long cannot be a message line of a real dump. Mark the
+			// output incomplete so callers know the parse is partial rather than
+			// silently returning what looks like a complete result.
+			return preamble, []Thread{{
+				Crashed: true,
+				Name:    "goroutine unknown",
+				State:   "unknown",
+				Stack:   StackTrace{Format: stackFormat, Incomplete: true},
+			}}
+		}
+		if goroutineHeaderRe.Match(line) {
 			break
 		}
+		preamble = append(preamble, string(line))
+		off = end + 1
+	}
+	if off >= len(dump) {
+		return preamble, nil
 	}
 
-	preamble = lines[:start]
-	threads = parseThreads(lines[start:])
+	// The returned errors are not needed: Goroutine.Incomplete carries the signal.
+	goroutines, _ := gostackparse.ParseWithOptions(bytes.NewReader(dump[off:]), gostackparse.ParseOptions{KeepIncomplete: true})
+	threads = make([]Thread, len(goroutines))
+	for i, g := range goroutines {
+		threads[i] = newThread(g)
+	}
 	return preamble, threads
 }
 
-// parseThreads parses goroutine blocks from the stack portion of the dump.
-func parseThreads(lines []string) []Thread {
-	var threads []Thread
-	i := 0
-	for i < len(lines) {
-		m := goroutineHeaderRe.FindStringSubmatch(lines[i])
-		if m == nil {
-			i++
-			continue
-		}
-
-		thread := Thread{
-			Name:  "goroutine " + m[1],
-			State: m[2],
-			Stack: StackTrace{Format: stackFormat},
-		}
-		i++
-
-		frames, incomplete, consumed := parseFrames(lines[i:])
-		thread.Stack.Frames = frames
-		thread.Stack.Incomplete = incomplete
-		i += consumed
-
-		threads = append(threads, thread)
+// newThread converts a parsed goroutine into a Thread. The state keeps the
+// runtime's wire format, e.g. "chan receive, 3 minutes, locked to thread".
+// The created-by frame and the ancestors are not part of the thread's stack.
+func newThread(g *gostackparse.Goroutine) Thread {
+	state := g.State
+	if g.Wait > 0 {
+		state += ", " + strconv.Itoa(int(g.Wait/time.Minute)) + " minutes"
 	}
-	return threads
-}
-
-// parseFrames parses the function/location line pairs of a single goroutine
-// block. It stops at the next goroutine header or the end of the stack input,
-// returning the frames, whether the stack was incomplete, and how many lines
-// it consumed.
-func parseFrames(lines []string) (frames []Frame, incomplete bool, consumed int) {
-	for consumed < len(lines) {
-		line := lines[consumed]
-
-		// A blank line or the "exit status" trailer ends this block.
-		if strings.TrimSpace(line) == "" || strings.HasPrefix(line, "exit status") {
-			consumed++
-			break
-		}
-		// The next goroutine header ends this block; do not consume it.
-		if goroutineHeaderRe.MatchString(line) {
-			break
-		}
-
-		// "created by <fn> in goroutine N" is a two-line pseudo-frame that
-		// records where the goroutine was spawned. It is not part of the
-		// goroutine's own stack, so skip both lines.
-		if strings.HasPrefix(line, "created by ") {
-			consumed++
-			if consumed < len(lines) && isLocationLine(lines[consumed]) {
-				consumed++
-			}
-			continue
-		}
-
-		// The elision marker has no location line of its own, so treating it
-		// as a function line would see the following line as malformed and
-		// break out of the whole stack, discarding every frame the runtime
-		// resumed printing after it — commonly main and the original call
-		// site. Note the gap and continue instead.
-		if framesElidedRe.MatchString(line) {
-			incomplete = true
-			consumed++
-			continue
-		}
-
-		// Once the cap is hit, skip the function/location line pair without
-		// extracting or allocating a Frame — only advancing consumed is still
-		// needed so the caller finds the next goroutine header correctly.
-		if len(frames) >= maxFramesPerThread {
-			incomplete = true
-			consumed++
-			if consumed < len(lines) && isLocationLine(lines[consumed]) {
-				consumed++
-			}
-			continue
-		}
-
-		// Otherwise this is a function line; the following line is its
-		// source location.
-		fn := funcName(line)
-		consumed++
-		if consumed >= len(lines) || !isLocationLine(lines[consumed]) {
-			// Missing or malformed location: the stack is truncated.
-			incomplete = true
-			break
-		}
-		file, lineNo := parseLocation(lines[consumed])
-		consumed++
-
-		frames = append(frames, Frame{Function: fn, File: file, Line: lineNo})
+	if g.LockedToThread {
+		state += ", locked to thread"
 	}
-
-	if len(frames) == 0 {
-		incomplete = true
+	t := Thread{
+		Name:  "goroutine " + strconv.Itoa(g.ID),
+		State: state,
+		Stack: StackTrace{
+			Format: stackFormat,
+			// An elided stack, a stack over the frame cap and a goroutine
+			// without frames are all partial.
+			Incomplete: g.Incomplete || g.FramesElided || len(g.Stack) == 0 || len(g.Stack) > maxFramesPerThread,
+		},
 	}
-	return frames, incomplete, consumed
-}
-
-// isLocationLine reports whether a line is an indented source location line,
-// e.g. "\t/path/to/file.go:20 +0x58".
-func isLocationLine(line string) bool {
-	return len(line) > 0 && (line[0] == '\t' || line[0] == ' ')
-}
-
-// funcName extracts the function name from a stack function line by stripping
-// the argument list. Uses the LAST '(' to correctly handle pointer-receiver
-// methods, e.g. "main.(*Server).Serve(0x...)" -> "main.(*Server).Serve".
-func funcName(line string) string {
-	line = strings.TrimSpace(line)
-	if i := strings.LastIndexByte(line, '('); i > 0 {
-		return line[:i]
+	if n := min(len(g.Stack), maxFramesPerThread); n > 0 {
+		t.Stack.Frames = make([]Frame, n)
+		for i, f := range g.Stack[:n] {
+			t.Stack.Frames[i] = Frame{Function: f.Func, File: f.File, Line: f.Line}
+		}
 	}
-	return line
-}
-
-// parseLocation extracts the file path and line number from a location line,
-// e.g. "\t/tmp/main.go:20 +0x58" -> ("/tmp/main.go", 20).
-func parseLocation(line string) (file string, lineNo int) {
-	s := strings.TrimSpace(line)
-	// Strip the trailing program-counter offset, e.g. " +0x58".
-	if i := strings.Index(s, " +0x"); i >= 0 {
-		s = s[:i]
-	}
-	// The line number follows the last colon.
-	if i := strings.LastIndexByte(s, ':'); i >= 0 {
-		file = s[:i]
-		lineNo, _ = strconv.Atoi(s[i+1:])
-		return file, lineNo
-	}
-	return s, 0
+	return t
 }
 
 // crashingThread returns the goroutine that crashed: the first goroutine in
@@ -319,7 +211,8 @@ func crashingThread(threads []Thread) *Thread {
 	}
 	idx := 0
 	for i := range threads {
-		if threads[i].State == "running" {
+		// The state may carry ", locked to thread" or ", N minutes" suffixes.
+		if state, _, _ := strings.Cut(threads[i].State, ","); state == "running" {
 			idx = i
 			break
 		}

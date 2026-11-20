@@ -16,8 +16,8 @@ import (
 )
 
 func TestSplitDumpHandlesOversizedLine(t *testing.T) {
-	// A single line longer than the scanner's token limit (maxCrashDumpSize)
-	// trips bufio.Scanner's ErrTooLong. This is the only producer of a thread
+	// A single line as long as the whole dump cap (maxCrashDumpSize) cannot be
+	// a message line. This is the only producer of a thread
 	// with Incomplete: true and zero frames, and it feeds reportIncomplete, so
 	// it decides whether a torn dump is reported as partial or silently as
 	// complete — worth covering even though a dump this size is rare. A
@@ -41,6 +41,26 @@ func TestSplitDumpHandlesOversizedLine(t *testing.T) {
 	}
 	if len(preamble) != 1 || preamble[0] != "panic: boom" {
 		t.Errorf("preamble = %v, want the one line scanned before the failure point", preamble)
+	}
+}
+
+// TestSplitDumpFindsEveryHeaderForm checks that every goroutine header form
+// ends the preamble. Label values are quoted and can contain "]", "}" and ":".
+func TestSplitDumpFindsEveryHeaderForm(t *testing.T) {
+	headers := map[string]string{
+		"standard":      "goroutine 7 [running]:",
+		"system":        "goroutine 7 gp=0xc000102000 m=0 mp=0x1008 [running, locked to thread]:",
+		"go1.26 labels": `goroutine 7 [running labels:{"handler": "check]out}: x"}]:`,
+		"go1.27 labels": "goroutine 7 [running] {handler: check]out}: x}:",
+	}
+	for name, header := range headers {
+		t.Run(name, func(t *testing.T) {
+			preamble, _ := splitDump([]byte("panic: boom\n\n" + header + "\nmain.f()\n\t/a.go:1 +0x2\n"))
+
+			if len(preamble) != 2 || preamble[0] != "panic: boom" || preamble[1] != "" {
+				t.Errorf("preamble = %q, want the two lines before the header", preamble)
+			}
+		})
 	}
 }
 
@@ -411,33 +431,6 @@ func TestCapThreadsKeepsCrashedGoroutineWhenTruncating(t *testing.T) {
 	}
 }
 
-func TestParseFramesCapsDeepStack(t *testing.T) {
-	// Synthesize a goroutine stack far deeper than maxFramesPerThread, the
-	// shape a real stack-overflow crash produces: one goroutine, thousands of
-	// (function, location) line pairs. maxReportThreads (goroutine count)
-	// does nothing to bound this — the cap under test is per-goroutine.
-	const depth = maxFramesPerThread * 2
-	lines := make([]string, 0, depth*2)
-	for range depth {
-		lines = append(lines,
-			"main.recurse(0x1)",
-			"\t/tmp/main.go:10 +0x20",
-		)
-	}
-
-	frames, incomplete, consumed := parseFrames(lines)
-
-	if len(frames) != maxFramesPerThread {
-		t.Errorf("len(frames) = %d, want %d", len(frames), maxFramesPerThread)
-	}
-	if !incomplete {
-		t.Error("incomplete = false, want true for a capped stack")
-	}
-	if consumed != len(lines) {
-		t.Errorf("consumed = %d, want %d (all input lines, even past the cap)", consumed, len(lines))
-	}
-}
-
 func TestParseSignalDoesNotPopulateSiCodeHuman(t *testing.T) {
 	// Documents a known gap rather than masking it: si_code is signal- and
 	// platform-specific (SEGV_MAPERR, BUS_ADRALN, FPE_INTDIV, ...), needing the
@@ -453,45 +446,6 @@ func TestParseSignalDoesNotPopulateSiCodeHuman(t *testing.T) {
 	}
 	if r.SigInfo.SiCodeHuman != "" {
 		t.Errorf("SiCodeHuman = %q, want empty (not yet implemented)", r.SigInfo.SiCodeHuman)
-	}
-}
-
-func TestParseFramesContinuesPastElisionMarker(t *testing.T) {
-	// Shape of a real captured stack-overflow dump (runtime/traceback.go
-	// prints the innermost 50 and outermost 50 logical frames and elides the
-	// middle): a few inner frames, the elision marker, then the resumed
-	// outer frames down to main.main/runtime.main. Trimmed to a handful of
-	// frames on each side rather than the real dump's 16-million-frame gap.
-	lines := []string{
-		"main.recurse(0x0?)",
-		"\t/tmp/main.go:10 +0x34",
-		"main.recurse(0x0?)",
-		"\t/tmp/main.go:10 +0x34",
-		"...16777082 frames elided...",
-		"main.recurse(0x20?)",
-		"\t/tmp/main.go:10 +0x34",
-		"main.main()",
-		"\t/tmp/main.go:14 +0x24",
-		"runtime.main()",
-		"\t/usr/local/go/src/runtime/proc.go:290 +0x2b4",
-	}
-
-	frames, incomplete, consumed := parseFrames(lines)
-
-	if !incomplete {
-		t.Error("incomplete = false, want true: frames were elided")
-	}
-	if consumed != len(lines) {
-		t.Errorf("consumed = %d, want %d (all lines, including those after the marker)", consumed, len(lines))
-	}
-	// 2 frames before the marker + 3 after (recurse, main.main, runtime.main):
-	// the marker itself contributes no frame.
-	if len(frames) != 5 {
-		t.Fatalf("len(frames) = %d, want 5", len(frames))
-	}
-	last := frames[len(frames)-1]
-	if last.Function != "runtime.main" {
-		t.Errorf("last frame = %+v, want the resumed runtime.main frame to survive", last)
 	}
 }
 

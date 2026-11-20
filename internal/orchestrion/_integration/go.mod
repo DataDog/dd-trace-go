@@ -596,6 +596,7 @@ replace example.com/httprouterdep => ./internal/httprouterdep
 require (
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/gostackparse v0.7.1-0.20261118070818-6fb2413ade0f // indirect
 )
 
 replace github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 => ../../../contrib/gorilla/mux/otelc

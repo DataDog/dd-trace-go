@@ -37,9 +37,9 @@ func manyGoroutinesDump(targetSize int) (dump []byte, goroutines int) {
 // whether a near-32MiB dump containing many shallow goroutines -- as opposed
 // to one deeply recursive goroutine, a different allocation pattern -- pushes
 // peak parsing memory past the supervisor's 256MiB GOMEMLIMIT, since capThreads
-// runs after parseThreads has already allocated every goroutine's frames.
+// runs after the parser has already allocated every goroutine's frames.
 // Measured directly rather than assumed: the parse increment (peak HeapAlloc
-// above a baseline that already holds the ~31MiB dump) is ~124MiB. The real
+// above a baseline that already holds the ~31MiB dump) is ~109MiB. The real
 // supervisor peak adds its own init heap and the raw dump to that figure.
 func TestParseCrashDumpManyGoroutinesStaysWithinSupervisorMemoryBudget(t *testing.T) {
 	dump, goroutines := manyGoroutinesDump(manyGoroutinesDumpSize)

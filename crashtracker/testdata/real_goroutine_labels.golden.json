@@ -30,6 +30,31 @@
           ]
         },
         "state": "running"
+      },
+      {
+        "crashed": false,
+        "name": "goroutine 5",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "time.Sleep",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/time.go",
+              "line": 368
+            },
+            {
+              "function": "main.serve",
+              "file": "/tmp/crashdemo/labels/main.go",
+              "line": 10
+            },
+            {
+              "function": "runtime/pprof.Do",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/pprof/runtime.go",
+              "line": 57
+            }
+          ]
+        },
+        "state": "sleep"
       }
     ],
     "thread_name": "goroutine 1",

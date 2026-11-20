@@ -428,7 +428,7 @@ func assertRFC0013Body(t *testing.T, body []byte) map[string]any {
 
 	// A report is permitted to have no primary stack at all (crashingThread
 	// returns nil for a dump with zero parsed threads) or a present-but-empty
-	// one (reportIncomplete's Stack.Incomplete case, when parseFrames bails
+	// one (reportIncomplete's Stack.Incomplete case, when the parser bails
 	// before capturing a single frame): asserting non-empty frames
 	// unconditionally would fail on a shape production is allowed to emit.
 	// Only assert format/frames when the stack is both present and complete.

@@ -13,8 +13,7 @@
           "file": "/tmp/crashdemo/ancestors/main.go",
           "line": 12
         }
-      ],
-      "incomplete": true
+      ]
     },
     "threads": [
       {
@@ -28,8 +27,7 @@
               "file": "/tmp/crashdemo/ancestors/main.go",
               "line": 12
             }
-          ],
-          "incomplete": true
+          ]
         },
         "state": "running"
       },
@@ -64,8 +62,7 @@
               "file": "/tmp/crashdemo/ancestors/main.go",
               "line": 22
             }
-          ],
-          "incomplete": true
+          ]
         },
         "state": "sleep"
       },
@@ -85,8 +82,7 @@
               "file": "/tmp/crashdemo/ancestors/main.go",
               "line": 17
             }
-          ],
-          "incomplete": true
+          ]
         },
         "state": "sleep"
       }
