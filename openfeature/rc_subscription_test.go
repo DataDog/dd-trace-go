@@ -6,10 +6,12 @@
 package openfeature
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
 
+	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -121,9 +123,10 @@ func TestStartWithRemoteConfigFastPath(t *testing.T) {
 	// without touching global remoteconfig state.
 	provider := newDatadogProvider(ProviderConfig{})
 	cleanupProvider(t, provider)
-	tracerOwnsSubscription, err := internalffe.SubscribeProvider(provider.rcCallback)
+	tracerOwnsSubscription, token, err := internalffe.SubscribeProvider(provider.rcCallback)
 	require.NoError(t, err)
 	require.True(t, tracerOwnsSubscription, "SubscribeProvider should report tracer subscribed")
+	assert.Zero(t, token)
 
 	// Attach the provider, which replays the buffered config.
 	attached := attachProvider(provider)
@@ -153,4 +156,225 @@ func TestStartWithRemoteConfig_ConfiguresAgentEVP(t *testing.T) {
 	assert.Empty(t, evp.apiKey)
 	assert.Nil(t, evp.directURL)
 	assert.Nil(t, evp.directClient)
+}
+
+func TestRemoteConfigSlowPathShutdownRemovesEvaluatorCapabilities(t *testing.T) {
+	internalffe.ResetForTest()
+	remoteconfig.Reset()
+	t.Cleanup(func() {
+		internalffe.ResetForTest()
+		remoteconfig.Reset()
+	})
+
+	provider, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+
+	for _, capability := range []remoteconfig.Capability{
+		remoteconfig.FFEFlagEvaluation,
+		remoteconfig.FFEFlagDependentFlagVariantKeyV1,
+	} {
+		has, err := remoteconfig.HasCapability(capability)
+		require.NoError(t, err)
+		require.True(t, has, "slow-path subscription should register capability %d", capability)
+	}
+
+	require.NoError(t, provider.ShutdownWithContext(context.Background()))
+	hasProduct, err := remoteconfig.HasProduct(internalffe.FFEProductName)
+	require.NoError(t, err)
+	assert.False(t, hasProduct)
+	for _, capability := range []remoteconfig.Capability{
+		remoteconfig.FFEFlagEvaluation,
+		remoteconfig.FFEFlagDependentFlagVariantKeyV1,
+	} {
+		has, err := remoteconfig.HasCapability(capability)
+		require.NoError(t, err)
+		assert.False(t, has, "slow-path shutdown should remove capability %d", capability)
+	}
+}
+
+func TestRemoteConfigSlowPathShutdownAfterRCRestartWithoutTracerFFESubscription(t *testing.T) {
+	internalffe.ResetForTest()
+	remoteconfig.Reset()
+	t.Cleanup(func() {
+		internalffe.ResetForTest()
+		remoteconfig.Reset()
+	})
+
+	provider, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+
+	remoteconfig.Stop()
+	require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+	_, err = remoteconfig.Subscribe(
+		"APM_TRACING",
+		func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus { return nil },
+		remoteconfig.APMTracingSampleRate,
+	)
+	require.NoError(t, err)
+
+	require.NoError(t, provider.ShutdownWithContext(context.Background()))
+	has, err := remoteconfig.HasProduct("APM_TRACING")
+	require.NoError(t, err)
+	assert.True(t, has, "a stale FFE token must not remove another product")
+	has, err = remoteconfig.HasProduct(internalffe.FFEProductName)
+	require.NoError(t, err)
+	assert.False(t, has, "the replacement client did not select the FFE source")
+}
+
+func TestRemoteConfigSlowPathShutdownAfterRCStop(t *testing.T) {
+	internalffe.ResetForTest()
+	remoteconfig.Reset()
+	t.Cleanup(func() {
+		internalffe.ResetForTest()
+		remoteconfig.Reset()
+	})
+
+	provider, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+	remoteconfig.Stop()
+
+	assert.NoError(t, provider.ShutdownWithContext(context.Background()))
+}
+
+func TestRemoteConfigFastPathShutdownKeepsTracerCapabilities(t *testing.T) {
+	internalffe.ResetForTest()
+	remoteconfig.Reset()
+	t.Cleanup(func() {
+		internalffe.ResetForTest()
+		remoteconfig.Reset()
+	})
+
+	require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+	require.NoError(t, internalffe.SubscribeRC())
+	provider, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+	internalffe.ForwardForTest(remoteconfig.ProductUpdate{
+		"path/first": remoteConfigTestPayload(t, "first-flag"),
+	})
+	firstConfig := provider.getConfiguration()
+	require.NotNil(t, firstConfig)
+	require.Contains(t, firstConfig.Flags, "first-flag")
+
+	require.NoError(t, provider.ShutdownWithContext(context.Background()))
+	internalffe.ForwardForTest(remoteconfig.ProductUpdate{
+		"path/buffered": remoteConfigTestPayload(t, "buffered-flag"),
+	})
+	assert.Nil(t, provider.getConfiguration(), "stopped provider must not receive buffered updates")
+	require.NotNil(t, internalffe.GetBufferedForTest(), "update should buffer while no provider is attached")
+
+	replacement, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+	bufferedConfig := replacement.getConfiguration()
+	require.NotNil(t, bufferedConfig)
+	require.Contains(t, bufferedConfig.Flags, "buffered-flag")
+	assert.Nil(t, internalffe.GetBufferedForTest(), "replacement should drain the buffered update")
+
+	internalffe.ForwardForTest(remoteconfig.ProductUpdate{
+		"path/live": remoteConfigTestPayload(t, "live-flag"),
+	})
+	liveConfig := replacement.getConfiguration()
+	require.NotNil(t, liveConfig)
+	require.Contains(t, liveConfig.Flags, "live-flag")
+	assert.Nil(t, provider.getConfiguration(), "live updates must not reach the stopped provider")
+	require.NoError(t, replacement.ShutdownWithContext(context.Background()))
+
+	hasProduct, err := remoteconfig.HasProduct(internalffe.FFEProductName)
+	require.NoError(t, err)
+	assert.True(t, hasProduct, "provider shutdown must not remove the tracer-owned subscription")
+	for _, capability := range []remoteconfig.Capability{
+		remoteconfig.FFEFlagEvaluation,
+		remoteconfig.FFEFlagDependentFlagVariantKeyV1,
+	} {
+		has, err := remoteconfig.HasCapability(capability)
+		require.NoError(t, err)
+		assert.True(t, has, "provider shutdown must keep tracer capability %d", capability)
+	}
+}
+
+func TestRemoteConfigFastPathReplacementWithoutNewUpdate(t *testing.T) {
+	internalffe.ResetForTest()
+	remoteconfig.Reset()
+	t.Cleanup(func() {
+		internalffe.ResetForTest()
+		remoteconfig.Reset()
+	})
+	require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+	require.NoError(t, internalffe.SubscribeRC())
+
+	first, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+	internalffe.ForwardForTest(remoteconfig.ProductUpdate{
+		"path/ffe": remoteConfigTestPayload(t, "live-flag"),
+	})
+	require.NotNil(t, first.getConfiguration())
+	require.NoError(t, first.ShutdownWithContext(context.Background()))
+
+	replacement, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+	t.Cleanup(replacement.Shutdown)
+	config := replacement.getConfiguration()
+	require.NotNil(t, config, "replacement must be seeded with the last delivered state")
+	assert.Contains(t, config.Flags, "live-flag")
+}
+
+func TestRemoteConfigFastPathReplacementReplaysOnlyAcknowledgedState(t *testing.T) {
+	internalffe.ResetForTest()
+	remoteconfig.Reset()
+	t.Cleanup(func() {
+		internalffe.ResetForTest()
+		remoteconfig.Reset()
+	})
+	require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+	require.NoError(t, internalffe.SubscribeRC())
+
+	first, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+	statuses := internalffe.ForwardForTest(remoteconfig.ProductUpdate{
+		"path/ffe": remoteConfigTestPayload(t, "last-good-flag"),
+	})
+	require.Equal(t, rc.ApplyStateAcknowledged, statuses["path/ffe"].State)
+	require.Contains(t, first.getConfiguration().Flags, "last-good-flag")
+
+	statuses = internalffe.ForwardForTest(remoteconfig.ProductUpdate{
+		"path/ffe": []byte(`{"flags":`),
+	})
+	require.Equal(t, rc.ApplyStateError, statuses["path/ffe"].State)
+	require.Contains(t, first.getConfiguration().Flags, "last-good-flag",
+		"a rejected update must not replace the active configuration")
+	require.NoError(t, first.ShutdownWithContext(context.Background()))
+
+	replacement, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+	require.Contains(t, replacement.getConfiguration().Flags, "last-good-flag",
+		"replacement must receive the last acknowledged configuration")
+	statuses = internalffe.ForwardForTest(remoteconfig.ProductUpdate{"path/ffe": nil})
+	require.Equal(t, rc.ApplyStateAcknowledged, statuses["path/ffe"].State)
+	require.Nil(t, replacement.getConfiguration())
+	require.NoError(t, replacement.ShutdownWithContext(context.Background()))
+
+	afterRemoval, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+	t.Cleanup(afterRemoval.Shutdown)
+	require.Nil(t, afterRemoval.getConfiguration(),
+		"an acknowledged removal must also remove the replayable configuration")
+}
+
+func remoteConfigTestPayload(t *testing.T, flagKey string) []byte {
+	t.Helper()
+	data, err := json.Marshal(universalFlagsConfiguration{
+		Format: "SERVER",
+		Flags: map[string]*flag{
+			flagKey: {
+				Key:           flagKey,
+				Enabled:       true,
+				VariationType: valueTypeBoolean,
+				Variations: map[string]*variant{
+					"on": {Key: "on", Value: true},
+				},
+				Allocations: []*allocation{},
+			},
+		},
+	})
+	require.NoError(t, err)
+	return data
 }

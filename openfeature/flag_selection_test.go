@@ -239,6 +239,30 @@ func TestRequestURLWithFlagSelection_WholeURLLimit(t *testing.T) {
 	assert.True(t, flagSelectionReportedFor(flagSelectionDroppedMetric, "too_many_values"))
 }
 
+func TestAgentlessSource_FlagSelectionLimitIncludesCapabilities(t *testing.T) {
+	resetFlagSelectionReports(t)
+
+	const base = "https://example.test/"
+	capability := "?cap_dependent-flags-variant-key=v1"
+	selectionParameter := "&selected_flag_tags="
+	padding := flagSelectionMaxURLBytes - len(base) - len(capability) - len(selectionParameter) - len("t")
+	endpoint := base + strings.Repeat("p", padding)
+
+	atLimit, err := newAgentlessSource(internalffe.Settings{AgentlessBaseURL: endpoint}, &FlagSelection{Tags: []string{"t"}}, func(*universalFlagsConfiguration) {})
+	require.NoError(t, err)
+	assert.True(t, atLimit.selectionSent)
+	assert.Len(t, atLimit.endpoint, flagSelectionMaxURLBytes)
+	assert.Contains(t, atLimit.endpoint, capability)
+	assert.Contains(t, atLimit.endpoint, selectionParameter+"t")
+
+	overLimit, err := newAgentlessSource(internalffe.Settings{AgentlessBaseURL: endpoint}, &FlagSelection{Tags: []string{"tt"}}, func(*universalFlagsConfiguration) {})
+	require.NoError(t, err)
+	assert.False(t, overLimit.selectionSent)
+	assert.LessOrEqual(t, len(overLimit.endpoint), flagSelectionMaxURLBytes)
+	assert.Contains(t, overLimit.endpoint, capability)
+	assert.NotContains(t, overLimit.endpoint, "selected_flag_tags")
+}
+
 func TestCanonicalizeFlagSelection_InvalidUTF8IsMalformed(t *testing.T) {
 	for name, selection := range map[string]FlagSelection{
 		"tag":                                       {Tags: []string{"mobile", "\xff"}},
@@ -490,7 +514,16 @@ func (b *selectionBackend) handle(w http.ResponseWriter, r *http.Request) {
 func (b *selectionBackend) requests() (rawQueries, paths, ifNoneMatch []string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return slices.Clone(b.rawQueries), slices.Clone(b.paths), slices.Clone(b.ifNoneMatch)
+	rawQueries = slices.Clone(b.rawQueries)
+	capability := url.QueryEscape(internalffe.DependentFlagsVariantKeyQueryParameter) + "=" + url.QueryEscape(internalffe.DependentFlagsVariantKeyQueryVersion)
+	for i, rawQuery := range rawQueries {
+		if rawQuery == capability {
+			rawQueries[i] = ""
+			continue
+		}
+		rawQueries[i] = strings.TrimPrefix(rawQuery, capability+"&")
+	}
+	return rawQueries, slices.Clone(b.paths), slices.Clone(b.ifNoneMatch)
 }
 
 func newSelectionSource(t *testing.T, baseURL string, selection *FlagSelection, apply func(*universalFlagsConfiguration)) *agentlessSource {
@@ -541,9 +574,12 @@ func TestAgentlessSource_NoFlagSelectionLeavesTheRequestUnchanged(t *testing.T) 
 			backend := newSelectionBackend(t, selectionResponse{status: http.StatusOK, ignored: new("invalid_tag")})
 			plain, err := buildAgentlessEndpoint(backend.server.URL+"/rules?dd_env=test", "", "", "")
 			require.NoError(t, err)
+			plainURL, err := url.Parse(plain.url)
+			require.NoError(t, err)
+			addEvaluatorCapabilities(plainURL, internalffe.EvaluatorCapabilities())
 
 			src := newSelectionSource(t, backend.server.URL+"/rules?dd_env=test", selection, nil)
-			assert.Equal(t, plain.url, src.endpoint)
+			assert.Equal(t, plainURL.String(), src.endpoint)
 			outcome, _ := src.pollOnce(1)
 			require.Equal(t, pollOutcomeSuccess, outcome)
 

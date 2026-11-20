@@ -14,6 +14,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -98,7 +99,12 @@ func newAgentlessSource(settings internalffe.Settings, selection *FlagSelection,
 	if err != nil {
 		return nil, err
 	}
-	requestURL, selectionSent := requestURLWithFlagSelection(endpoint.url, selection)
+	requestURL, err := url.Parse(endpoint.url)
+	if err != nil {
+		return nil, err
+	}
+	addEvaluatorCapabilities(requestURL, internalffe.EvaluatorCapabilities())
+	requestURLString, selectionSent := requestURLWithFlagSelection(requestURL.String(), selection)
 
 	apiKey := ""
 	if endpoint.managed {
@@ -106,7 +112,7 @@ func newAgentlessSource(settings internalffe.Settings, selection *FlagSelection,
 	}
 
 	s := &agentlessSource{
-		endpoint:       requestURL,
+		endpoint:       requestURLString,
 		apiKey:         apiKey,
 		env:            settings.Env,
 		managed:        endpoint.managed,
@@ -245,6 +251,34 @@ func reportMalformedAgentlessConfiguration(err error) {
 		log.Warn("openfeature: agentless: received malformed configuration: %v", err.Error()) //errtrack:ignore reported by ReportError below
 	})
 	telemetrylog.ReportError("openfeature: agentless: received malformed configuration", err)
+}
+
+func addEvaluatorCapabilities(requestURL *url.URL, capabilities []string) {
+	if !slices.Contains(capabilities, internalffe.DependentFlagVariantKeyV1) {
+		return
+	}
+	capability := url.QueryEscape(internalffe.DependentFlagsVariantKeyQueryParameter) + "=" + url.QueryEscape(internalffe.DependentFlagsVariantKeyQueryVersion)
+	if requestURL.RawQuery == "" {
+		requestURL.RawQuery = capability
+		return
+	}
+
+	// Remove every existing spelling of this key, including stale and duplicate
+	// values, without re-encoding or reordering unrelated query segments.
+	segments := strings.Split(requestURL.RawQuery, "&")
+	kept := segments[:0]
+	for _, segment := range segments {
+		rawKey, _, _ := strings.Cut(segment, "=")
+		key, err := url.QueryUnescape(rawKey)
+		if err == nil && key == internalffe.DependentFlagsVariantKeyQueryParameter {
+			continue
+		}
+		kept = append(kept, segment)
+	}
+	requestURL.RawQuery = capability
+	if len(kept) > 0 {
+		requestURL.RawQuery += "&" + strings.Join(kept, "&")
+	}
 }
 
 // attempt is only used to number debug log lines.

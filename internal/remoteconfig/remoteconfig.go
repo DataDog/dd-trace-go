@@ -141,6 +141,9 @@ const (
 	FFEFlagEvaluation
 )
 
+// FFEFlagDependentFlagVariantKeyV1 is protocol registration, not evaluator support.
+const FFEFlagDependentFlagVariantKeyV1 Capability = 50
+
 // ErrClientNotStarted is returned when the remote config client is not started.
 var ErrClientNotStarted = errors.New("remote config client not started")
 
@@ -181,6 +184,9 @@ type Client struct {
 
 	lastError        error
 	lastConfigStates []*configState
+	// registrationSnapshotHook lets tests hold a request snapshot open while
+	// another goroutine attempts to subscribe. It is nil outside tests.
+	registrationSnapshotHook func()
 }
 
 // subscription represents a callback that was registered to run on updates to a
@@ -438,7 +444,18 @@ func (c *Client) requestPoll() {
 	}
 }
 
-type SubscriptionToken int
+// SubscriptionToken identifies a subscription on the client that created it.
+// Tokens from a stopped client are harmless when a replacement client is
+// running, even if both clients allocated the same numeric subscription ID.
+type SubscriptionToken struct {
+	client *Client
+	id     int
+}
+
+// IsZero reports whether token identifies no subscription.
+func (token SubscriptionToken) IsZero() bool {
+	return token.client == nil
+}
 
 // Subscribe registers a product and its callback to be invoked when the client
 // receives configuration updates for the specified product. The returned token
@@ -446,10 +463,8 @@ type SubscriptionToken int
 //
 // It is legal to call Subscribe multiple times with the same product, and even
 // to call it multiple times with the same product and different capabilities.
-// Note, however, that the capabilities reported to RC are the union of all
-// capabilities passed to Subscribe and RegisterCapability (across all
-// products); in other words, the capabilities are not tied to a specific
-// product or subscription.
+// The capabilities reported to RC are the union of all capabilities passed to
+// active subscriptions and RegisterCapability calls across all products.
 //
 // Subscribe should be preferred over RegisterProduct and RegisterCallback if
 // your callback only handles a single product.
@@ -458,12 +473,12 @@ func Subscribe(product string, callback ProductCallback, capabilities ...Capabil
 	// global) can't cause a nil deref mid-function.
 	c := clientSingleton.Load()
 	if c == nil {
-		return 0, ErrClientNotStarted
+		return SubscriptionToken{}, ErrClientNotStarted
 	}
 	c.productsMu.RLock()
 	defer c.productsMu.RUnlock()
 	if _, found := c.products[product]; found {
-		return 0, fmt.Errorf("product %s already registered via RegisterProduct", product)
+		return SubscriptionToken{}, fmt.Errorf("product %s already registered via RegisterProduct", product)
 	}
 
 	c.subscriptionsMu.Lock()
@@ -478,16 +493,11 @@ func Subscribe(product string, callback ProductCallback, capabilities ...Capabil
 	}
 	c.subscriptionsMu.subs = append(c.subscriptionsMu.subs, sub)
 
-	c.capabilitiesMu.Lock()
-	defer c.capabilitiesMu.Unlock()
-	for _, cap := range capabilities {
-		c.capabilities[cap] = struct{}{}
-	}
 	// Poll now: Subscribe registers product+callback+capabilities atomically, so
 	// the poll can't arrive before the callback. (RegisterProduct/RegisterCapability
 	// don't — they're used before a callback exists; see those.)
 	c.requestPoll()
-	return SubscriptionToken(id), nil
+	return SubscriptionToken{client: c, id: id}, nil
 }
 
 // Unsubscribe removes a subscription previously registered via Subscribe. The
@@ -498,15 +508,20 @@ func Unsubscribe(token SubscriptionToken) error {
 	if client == nil {
 		return ErrClientNotStarted
 	}
+	if token.client != client {
+		// The issuing client was stopped or replaced. Its subscriptions ended
+		// with it, and token.id may identify an unrelated subscription now.
+		return nil
+	}
 	client.subscriptionsMu.Lock()
 	defer client.subscriptionsMu.Unlock()
 	for i, sub := range client.subscriptionsMu.subs {
-		if sub.id == int(token) {
+		if sub.id == token.id {
 			client.subscriptionsMu.subs = append(client.subscriptionsMu.subs[:i], client.subscriptionsMu.subs[i+1:]...)
 			return nil
 		}
 	}
-	return fmt.Errorf("subscription %d not found", token)
+	return fmt.Errorf("subscription %d not found", token.id)
 }
 
 // RegisterCallback allows registering a callback that will be invoked when the client
@@ -633,30 +648,57 @@ func HasCapability(cpb Capability) (bool, error) {
 		return false, ErrClientNotStarted
 	}
 	client.capabilitiesMu.RLock()
-	defer client.capabilitiesMu.RUnlock()
 	_, found := client.capabilities[cpb]
-	return found, nil
-}
-
-func (c *Client) allCapabilities() *big.Int {
-	capa := big.NewInt(0)
-
-	// Read registered capabilities without holding the lock while we also read subscriptions.
-	c.capabilitiesMu.RLock()
-	for i := range c.capabilities {
-		capa.SetBit(capa, int(i), 1)
+	client.capabilitiesMu.RUnlock()
+	if found {
+		return true, nil
 	}
-	c.capabilitiesMu.RUnlock()
-
-	c.subscriptionsMu.RLock()
-	for _, s := range c.subscriptionsMu.subs {
-		for _, cap := range s.capabilities {
-			capa.SetBit(capa, int(cap), 1)
+	client.subscriptionsMu.RLock()
+	defer client.subscriptionsMu.RUnlock()
+	for _, subscription := range client.subscriptionsMu.subs {
+		if slices.Contains(subscription.capabilities, cpb) {
+			return true, nil
 		}
 	}
-	c.subscriptionsMu.RUnlock()
+	return false, nil
+}
 
-	return capa
+// requestRegistrations snapshots the products and capabilities reported in one
+// request while holding the registration locks in the Client's documented
+// order. A concurrent Subscribe therefore cannot appear in only one field.
+func (c *Client) requestRegistrations() ([]string, *big.Int) {
+	c.productsMu.RLock()
+	c.subscriptionsMu.RLock()
+	c.capabilitiesMu.RLock()
+	defer c.capabilitiesMu.RUnlock()
+	defer c.subscriptionsMu.RUnlock()
+	defer c.productsMu.RUnlock()
+	if c.registrationSnapshotHook != nil {
+		c.registrationSnapshotHook()
+	}
+
+	products := make(map[string]struct{})
+	for product := range c.products {
+		products[product] = struct{}{}
+	}
+
+	capabilities := big.NewInt(0)
+	for capability := range c.capabilities {
+		capabilities.SetBit(capabilities, int(capability), 1)
+	}
+
+	for _, subscription := range c.subscriptionsMu.subs {
+		products[subscription.product] = struct{}{}
+		for _, capability := range subscription.capabilities {
+			capabilities.SetBit(capabilities, int(capability), 1)
+		}
+	}
+
+	productList := make([]string, 0, len(products))
+	for product := range products {
+		productList = append(productList, product)
+	}
+	return productList, capabilities
 }
 
 func (c *Client) globalCallbacks() []Callback {
@@ -874,7 +916,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 		c.lastConfigStates = pbConfigState
 	}
 
-	capa := c.allCapabilities()
+	products, capabilities := c.requestRegistrations()
 	var tags []string
 	for k, v := range internal.GetGitMetadataTags() {
 		tags = append(tags, k+":"+v)
@@ -889,7 +931,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				Error:          errMsg,
 			},
 			ID:       c.clientID,
-			Products: c.allProducts(),
+			Products: products,
 			IsTracer: true,
 			ClientTracer: &clientTracer{
 				RuntimeID:     c.RuntimeID,
@@ -901,7 +943,7 @@ func (c *Client) newUpdateRequest() (bytes.Buffer, error) {
 				ProcessTags:   processtags.GlobalTags().Slice(),
 				Tags:          tags,
 			},
-			Capabilities: capa.Bytes(),
+			Capabilities: capabilities.Bytes(),
 		},
 		CachedTargetFiles: pbCachedFiles,
 	}

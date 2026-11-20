@@ -10,10 +10,76 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	jsoniter "github.com/json-iterator/go"
 	of "github.com/open-feature/go-sdk/openfeature"
 )
+
+type countingExposureStringer struct {
+	calls *int
+}
+
+func (s countingExposureStringer) String() string {
+	(*s.calls)++
+	return "counted"
+}
+
+type reentrantExposureStringer struct {
+	writer *exposureWriter
+}
+
+func (s reentrantExposureStringer) String() string {
+	s.writer.append(exposureEvent{
+		Allocation: exposureAllocation{Key: "reentrant-allocation"},
+		Flag:       exposureFlag{Key: "reentrant"},
+		Variant:    exposureVariant{Key: "on"},
+		Subject:    exposureSubject{ID: "subject"},
+	})
+	return "reentrant"
+}
+
+type panickingExposureStringer struct{}
+
+func (panickingExposureStringer) String() string {
+	panic("snapshot failed")
+}
+
+func wideDependencyExposureMetadata(count int) of.FlagMetadata {
+	candidates := make([]dependencyExposureCandidate, 0, count)
+	for i := range count {
+		candidates = append(candidates, dependencyExposureCandidate{
+			FlagKey: fmt.Sprintf("dependency-%d", i),
+			Result: evaluationResult{
+				VariantKey: "on",
+				Metadata: map[string]any{
+					metadataAllocationKey: fmt.Sprintf("allocation-%d", i),
+					metadataDoLogKey:      true,
+				},
+			},
+		})
+	}
+	return of.FlagMetadata{
+		metadataAllocationKey:          "root-allocation",
+		metadataDoLogKey:               true,
+		metadataDependencyExposuresKey: encodeDependencyExposureCandidates(candidates),
+	}
+}
+
+func wideExposureHookDetails(metadata of.FlagMetadata) of.InterfaceEvaluationDetails {
+	return of.InterfaceEvaluationDetails{
+		Value: true,
+		EvaluationDetails: of.EvaluationDetails{
+			FlagKey:  "root",
+			FlagType: of.Boolean,
+			ResolutionDetail: of.ResolutionDetail{
+				Variant:      "on",
+				Reason:       of.TargetingMatchReason,
+				FlagMetadata: metadata,
+			},
+		},
+	}
+}
 
 func TestLRUCache_NewEntry(t *testing.T) {
 	cache := newExposureLRUCache(100)
@@ -199,6 +265,275 @@ func TestExposureWriter_AppendCarriesSerialIDIntoCache(t *testing.T) {
 	if *writer.buffer[1].SerialID != 340132 {
 		t.Errorf("expected serial id 340132, got %d", *writer.buffer[1].SerialID)
 	}
+}
+
+func TestExposureHookWideDependenciesShareDetachedSubjectSnapshot(t *testing.T) {
+	const dependencyCount = 512
+	calls := 0
+	attributes := map[string]any{
+		"counted": countingExposureStringer{calls: &calls},
+		"profile": map[string]any{"tier": "paid"},
+	}
+	evalCtx := of.NewEvaluationContext("subject", attributes)
+	hookCtx := of.NewHookContext(
+		"root", of.Boolean, false, of.NewClientMetadata(""),
+		of.Metadata{Name: datadogProviderName}, evalCtx,
+	)
+	writer := &exposureWriter{
+		datadogLoggingEnabled: true,
+		buffer:                make([]exposureEvent, 0, dependencyCount+1),
+		cache:                 newExposureLRUCache(defaultExposureCacheCapacity),
+	}
+	hook := newExposureHook(writer)
+	details := wideExposureHookDetails(wideDependencyExposureMetadata(dependencyCount))
+
+	hook.Finally(context.Background(), hookCtx, details, of.HookHints{})
+	if calls != 1 {
+		t.Fatalf("context walks = %d, want 1 for %d dependency and root exposures", calls, dependencyCount)
+	}
+	if got := len(writer.buffer); got != dependencyCount+1 {
+		t.Fatalf("buffered exposures = %d, want %d", got, dependencyCount+1)
+	}
+	attributes["profile"].(map[string]any)["tier"] = "mutated"
+	for i, event := range writer.buffer {
+		if got := event.Subject.Attributes["counted"]; got != "counted" {
+			t.Fatalf("exposure %d counted attribute = %#v, want counted", i, got)
+		}
+		if got := event.Subject.Attributes["profile.tier"]; got != "paid" {
+			t.Fatalf("exposure %d retained caller mutation: got %#v, want paid", i, got)
+		}
+	}
+
+	// Every event is now a cache hit. A fresh per-evaluation lazy snapshot must
+	// remain untouched because no event is admitted to the buffer.
+	hook.Finally(context.Background(), hookCtx, details, of.HookHints{})
+	if calls != 1 {
+		t.Fatalf("cache-hit context walks = %d, want no additional walk", calls)
+	}
+	if got := len(writer.buffer); got != dependencyCount+1 {
+		t.Fatalf("cache hits appended exposures: buffer=%d", got)
+	}
+}
+
+func TestExposureSubjectSnapshotDoesNotRunApplicationCodeUnderWriterLock(t *testing.T) {
+	writer := &exposureWriter{
+		datadogLoggingEnabled: true,
+		buffer:                make([]exposureEvent, 0, 2),
+		cache:                 newExposureLRUCache(defaultExposureCacheCapacity),
+	}
+	evalCtx := of.NewEvaluationContext("subject", map[string]any{
+		"reentrant": reentrantExposureStringer{writer: writer},
+	})
+	hookCtx := of.NewHookContext(
+		"root", of.Boolean, false, of.NewClientMetadata(""),
+		of.Metadata{Name: datadogProviderName}, evalCtx,
+	)
+	details := wideExposureHookDetails(of.FlagMetadata{
+		metadataAllocationKey: "root-allocation",
+		metadataDoLogKey:      true,
+	})
+
+	newExposureHook(writer).Finally(context.Background(), hookCtx, details, of.HookHints{})
+
+	if got := len(writer.buffer); got != 2 {
+		t.Fatalf("buffered exposures = %d, want reentrant and root events", got)
+	}
+	if got := writer.buffer[1].Subject.Attributes["reentrant"]; got != "reentrant" {
+		t.Fatalf("root reentrant attribute = %#v, want reentrant", got)
+	}
+}
+
+func TestExposureSnapshotDoesNotBlockWriterStop(t *testing.T) {
+	writer := &exposureWriter{
+		datadogLoggingEnabled: true,
+		buffer:                make([]exposureEvent, 0, 1),
+		cache:                 newExposureLRUCache(defaultExposureCacheCapacity),
+		stopChan:              make(chan struct{}),
+	}
+	event := exposureEvent{
+		Allocation: exposureAllocation{Key: "allocation"},
+		Flag:       exposureFlag{Key: "flag"},
+		Variant:    exposureVariant{Key: "on"},
+		Subject:    exposureSubject{ID: "subject"},
+	}
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	appendDone := make(chan struct{})
+	go func() {
+		defer close(appendDone)
+		writer.appendWithAttributes(event, func() map[string]any {
+			close(entered)
+			<-release
+			return map[string]any{"detached": true}
+		})
+	}()
+	<-entered
+
+	stopDone := make(chan struct{})
+	go func() {
+		defer close(stopDone)
+		writer.stop()
+	}()
+	select {
+	case <-stopDone:
+	case <-time.After(time.Second):
+		t.Fatal("writer stop blocked on application String work")
+	}
+	close(release)
+	select {
+	case <-appendDone:
+	case <-time.After(time.Second):
+		t.Fatal("exposure append did not observe stopped writer")
+	}
+	if got := len(writer.buffer); got != 0 {
+		t.Fatalf("buffered exposures after stop = %d, want 0", got)
+	}
+}
+
+func TestExposureSnapshotPanicDoesNotConsumeCacheDecision(t *testing.T) {
+	writer := &exposureWriter{
+		datadogLoggingEnabled: true,
+		buffer:                make([]exposureEvent, 0, 1),
+		cache:                 newExposureLRUCache(defaultExposureCacheCapacity),
+	}
+	hook := newExposureHook(writer)
+	details := wideExposureHookDetails(of.FlagMetadata{
+		metadataAllocationKey: "root-allocation",
+		metadataDoLogKey:      true,
+	})
+	makeHookContext := func(attribute any) of.HookContext {
+		return of.NewHookContext(
+			"root", of.Boolean, false, of.NewClientMetadata(""),
+			of.Metadata{Name: datadogProviderName},
+			of.NewEvaluationContext("subject", map[string]any{"attribute": attribute}),
+		)
+	}
+
+	panicked := false
+	func() {
+		defer func() { panicked = recover() != nil }()
+		hook.Finally(context.Background(), makeHookContext(panickingExposureStringer{}), details, of.HookHints{})
+	}()
+	if !panicked {
+		t.Fatal("snapshot Stringer did not panic")
+	}
+	if got := len(writer.buffer); got != 0 {
+		t.Fatalf("buffered exposures after snapshot panic = %d, want 0", got)
+	}
+
+	second := wideExposureHookDetails(of.FlagMetadata{
+		metadataAllocationKey: "root-allocation",
+		metadataDoLogKey:      true,
+	})
+	hook.Finally(context.Background(), makeHookContext("safe"), second, of.HookHints{})
+	if got := len(writer.buffer); got != 1 {
+		t.Fatalf("buffered exposures after retry = %d, want 1", got)
+	}
+	if !(&ExposureEvaluation{Details: second}).ShouldSend() {
+		t.Fatal("retry after snapshot panic was reported as a cache hit")
+	}
+}
+
+func TestExposureSnapshotConcurrentDuplicatesCommitOnce(t *testing.T) {
+	writer := &exposureWriter{
+		datadogLoggingEnabled: true,
+		buffer:                make([]exposureEvent, 0, 1),
+		cache:                 newExposureLRUCache(defaultExposureCacheCapacity),
+	}
+	event := exposureEvent{
+		Allocation: exposureAllocation{Key: "allocation"},
+		Flag:       exposureFlag{Key: "flag"},
+		Variant:    exposureVariant{Key: "on"},
+		Subject:    exposureSubject{ID: "subject"},
+	}
+	entered := make(chan struct{}, 2)
+	release := make(chan struct{})
+	results := make(chan bool, 2)
+	attributes := func() map[string]any {
+		entered <- struct{}{}
+		<-release
+		return map[string]any{"detached": true}
+	}
+
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Go(func() {
+			added, known := writer.appendWithDecisionAndAttributes(event, attributes)
+			results <- added && known
+		})
+	}
+	<-entered
+	<-entered
+	close(release)
+	wg.Wait()
+	close(results)
+
+	added := 0
+	for result := range results {
+		if result {
+			added++
+		}
+	}
+	if added != 1 {
+		t.Fatalf("successful concurrent appends = %d, want 1", added)
+	}
+	if got := len(writer.buffer); got != 1 {
+		t.Fatalf("buffered concurrent duplicate exposures = %d, want 1", got)
+	}
+}
+
+func BenchmarkExposureHookWideDependenciesSharedSubject(b *testing.B) {
+	const dependencyCount = 512
+	metadata := wideDependencyExposureMetadata(dependencyCount)
+	details := wideExposureHookDetails(metadata)
+
+	b.Run("cache_miss", func(b *testing.B) {
+		calls := 0
+		evalCtx := of.NewEvaluationContext("subject", map[string]any{
+			"counted": countingExposureStringer{calls: &calls},
+			"profile": map[string]any{"tier": "paid"},
+		})
+		hookCtx := of.NewHookContext(
+			"root", of.Boolean, false, of.NewClientMetadata(""),
+			of.Metadata{Name: datadogProviderName}, evalCtx,
+		)
+		b.ReportAllocs()
+		for b.Loop() {
+			writer := &exposureWriter{
+				datadogLoggingEnabled: true,
+				buffer:                make([]exposureEvent, 0, dependencyCount+1),
+				cache:                 newExposureLRUCache(defaultExposureCacheCapacity),
+			}
+			newExposureHook(writer).Finally(context.Background(), hookCtx, details, of.HookHints{})
+		}
+		b.ReportMetric(float64(calls)/float64(b.N), "context_walks/op")
+	})
+
+	b.Run("cache_hit", func(b *testing.B) {
+		calls := 0
+		evalCtx := of.NewEvaluationContext("subject", map[string]any{
+			"counted": countingExposureStringer{calls: &calls},
+			"profile": map[string]any{"tier": "paid"},
+		})
+		hookCtx := of.NewHookContext(
+			"root", of.Boolean, false, of.NewClientMetadata(""),
+			of.Metadata{Name: datadogProviderName}, evalCtx,
+		)
+		writer := &exposureWriter{
+			datadogLoggingEnabled: true,
+			buffer:                make([]exposureEvent, 0, dependencyCount+1),
+			cache:                 newExposureLRUCache(defaultExposureCacheCapacity),
+		}
+		hook := newExposureHook(writer)
+		hook.Finally(context.Background(), hookCtx, details, of.HookHints{})
+		calls = 0
+		b.ReportAllocs()
+		b.ResetTimer()
+		for b.Loop() {
+			hook.Finally(context.Background(), hookCtx, details, of.HookHints{})
+		}
+		b.ReportMetric(float64(calls)/float64(b.N), "context_walks/op")
+	})
 }
 
 // TestExposureWriter_FlushReportsEventsStrandedByStop pins that flush reports
