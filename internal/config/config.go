@@ -334,6 +334,12 @@ type Config struct {
 	// DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED controls Datadog exposure
 	// delivery, without disabling customer hooks, deduplication, or evaluation telemetry.
 	featureFlagsExposuresDatadogLoggingEnabled bool
+	// featureFlagsEvaluationTelemetryEnabled is DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_ENABLED.
+	featureFlagsEvaluationTelemetryEnabled bool
+	// featureFlagsExposuresEnabled is DD_FEATURE_FLAGS_EXPOSURES_ENABLED. Unlike
+	// DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED, false also disables
+	// customer exposure hooks and deduplication.
+	featureFlagsExposuresEnabled bool
 	// featureFlagsExperimentationOptOutMode is kept raw so the provider can
 	// reject unsupported values after applying its programmatic override.
 	featureFlagsExperimentationOptOutMode string
@@ -616,6 +622,8 @@ func loadConfig() *Config {
 	}
 	cfg.flagEvalTelemetryOptOutEnabled = p.GetBool("DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED", false)
 	cfg.featureFlagsExposuresDatadogLoggingEnabled = p.GetBool("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", true)
+	cfg.featureFlagsEvaluationTelemetryEnabled = p.GetBool("DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_ENABLED", true)
+	cfg.featureFlagsExposuresEnabled = p.GetBool("DD_FEATURE_FLAGS_EXPOSURES_ENABLED", true)
 	cfg.featureFlagsExperimentationOptOutMode = p.GetString("DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE", "disabled")
 	featureFlagsSource, featureFlagsSourceOrigin := p.GetStringWithOrigin("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "agentless")
 	cfg.featureFlagsConfigurationSource = featureFlagsSource
@@ -2446,6 +2454,20 @@ func (c *Config) FeatureFlagsExposuresDatadogLoggingEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.featureFlagsExposuresDatadogLoggingEnabled
+}
+
+// FeatureFlagsEvaluationTelemetryEnabled returns DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_ENABLED.
+func (c *Config) FeatureFlagsEvaluationTelemetryEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.featureFlagsEvaluationTelemetryEnabled
+}
+
+// FeatureFlagsExposuresEnabled returns DD_FEATURE_FLAGS_EXPOSURES_ENABLED.
+func (c *Config) FeatureFlagsExposuresEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.featureFlagsExposuresEnabled
 }
 
 // FeatureFlagsExperimentationOptOutMode returns DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE.

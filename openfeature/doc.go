@@ -83,6 +83,52 @@
 //
 // The provider automatically looks for a targeting key "targetingKey" (OpenFeature standard)
 //
+// # Evaluation Telemetry and Exposures
+//
+// A provider has two independent switches. Each is on by default, set for every
+// provider in the process by an environment variable, and overridden, in either
+// direction, by a ProviderConfig field:
+//
+//   - EvaluationTelemetryEnabled (DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_ENABLED):
+//     when false, the provider sends no flag evaluation events, records no
+//     feature_flag.evaluations metric, and does not enrich spans.
+//   - ExposuresEnabled (DD_FEATURE_FLAGS_EXPOSURES_ENABLED): when false,
+//     evaluations are not exposures. None is recorded, deduplicated, sent to
+//     Datadog, or reported as an exposure to an ExposureHook.
+//
+// Neither switch changes flag values, variants, or allocation selection. The
+// provider reads both at construction.
+//
+// To look up the variant a subject gets before the subject experiences it, for
+// example to decide which version of a notification to send, register a second
+// provider under its own OpenFeature domain with both switches off:
+//
+//	live, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{})
+//	// Handle err.
+//	peek, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{
+//	    EvaluationTelemetryEnabled: new(false),
+//	    ExposuresEnabled:           new(false),
+//	})
+//	// Handle err.
+//	of.SetNamedProviderAndWait("live", live)
+//	of.SetNamedProviderAndWait("peek", peek)
+//
+//	evalCtx := of.NewEvaluationContext("user-123", nil)
+//	// At send time: the variant, with no exposure or evaluation telemetry.
+//	planned, err := of.NewClient("peek").StringValue(ctx, "digest-subject-line", "control", evalCtx)
+//	// When the subject opens the notification: the same variant, and the exposure.
+//	seen, err := of.NewClient("live").StringValue(ctx, "digest-subject-line", "control", evalCtx)
+//
+// For the same flag, targeting key, attributes, and configuration, both
+// providers return the same variant. An inspection does not mark the subject
+// as exposed, so the later live evaluation still sends the exposure. Hooks that
+// the application registers itself, at the API or client level, still run. A
+// process that only ever inspects can set the environment variables instead.
+//
+// ExposuresEnabled differs from DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED=false,
+// which keeps exposures for ExposureHook and deduplication and only stops
+// sending them to Datadog.
+//
 // # Evaluation Telemetry Opt-Out
 //
 // Applications can enable a per-evaluation telemetry opt-out parameter:
@@ -554,13 +600,27 @@
 //
 //   - DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED: Default
 //     "false". Set to "true" to enable the dd_evaluation_telemetry_opt_out context
-//     parameter. This setting does not globally disable evaluation telemetry.
+//     parameter. This setting does not globally disable evaluation telemetry;
+//     see DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_ENABLED.
 //     An explicit ProviderConfig.EnableEvaluationTelemetryOptOutParameter overrides it.
+//
+//   - DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_ENABLED: Default "true". Set to
+//     "false" to stop evaluation events, the feature_flag.evaluations metric, and
+//     span enrichment for every provider. An explicit
+//     ProviderConfig.EvaluationTelemetryEnabled overrides it. Flag values and
+//     exposures are unchanged.
+//
+//   - DD_FEATURE_FLAGS_EXPOSURES_ENABLED: Default "true". Set to "false" so that
+//     evaluations through every provider are not exposures: none is recorded,
+//     deduplicated, sent, or reported to ExposureHook. An explicit
+//     ProviderConfig.ExposuresEnabled overrides it. Flag values and evaluation
+//     telemetry are unchanged.
 //
 //   - DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED: Default "true". Set to
 //     "false" to disable only Datadog exposure delivery. The provider snapshots
 //     this setting at construction. Customer hooks and exposure deduplication
 //     remain active. Evaluation telemetry and flag values are unchanged.
+//     To stop evaluations from being exposures, use DD_FEATURE_FLAGS_EXPOSURES_ENABLED.
 //
 //   - DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE: Default "disabled". Set to
 //     "immediate" or "future_experiments_only" to enable the
