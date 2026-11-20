@@ -50,7 +50,8 @@ func parseSQLServerURL(url string) (map[string]string, error) {
 
 	q := u.Query()
 	for k := range q {
-		if k == "database" {
+		// go-mssqldb lowercases the parameter names of the URL form.
+		if strings.EqualFold(k, "database") {
 			accrue("dbname", q.Get(k))
 		}
 	}

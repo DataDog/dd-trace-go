@@ -39,7 +39,7 @@ func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 			instr.Logger().Debug("Error parsing DSN for postgres: %v", sanitizeError(err))
 			return
 		}
-	case "sqlserver":
+	case "sqlserver", "mssql", "azuresql":
 		meta, err = parseSQLServerDSN(dsn)
 		if err != nil {
 			instr.Logger().Debug("Error parsing DSN for sqlserver: %v", sanitizeError(err))
@@ -130,7 +130,8 @@ func parseSQLServerDSN(dsn string) (map[string]string, error) {
 			return nil, err
 		}
 	} else {
-		meta, err = parseSQLServerADO(dsn)
+		// go-mssqldb accepts the same ADO style pairs behind an odbc: prefix.
+		meta, err = parseSQLServerADO(strings.TrimPrefix(dsn, "odbc:"))
 		if err != nil {
 			return nil, err
 		}
