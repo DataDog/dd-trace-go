@@ -58,11 +58,6 @@ linters:
       exclude_godoc_examples: true
       analyze_types: true
     modernize:
-      disable:
-        # errorsastype rewrites errors.As into errors.AsType. That needs
-        # Go 1.27, but the module floor is go 1.26, so the rewrite cannot
-        # compile on oldstable. Enable this checker once the floor is 1.27.
-        - errorsastype
     govet:
       enable-all: true
       disable:
