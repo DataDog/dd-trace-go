@@ -82,6 +82,7 @@ use (
 	./contrib/net/http
 	./contrib/net/http/otelc
 	./contrib/olivere/elastic.v5
+	./contrib/rabbitmq/amqp091-go
 	./contrib/redis/go-redis.v9
 	./contrib/opensearch-project/opensearch-go.v4
 	./contrib/redis/rueidis
@@ -90,6 +91,7 @@ use (
 	./contrib/segmentio/kafka-go
 	./contrib/segmentio/kafka-go/otelc
 	./contrib/sirupsen/logrus
+	./contrib/streadway/amqp
 	./contrib/syndtr/goleveldb
 	./contrib/tidwall/buntdb
 	./contrib/twmb/franz-go
