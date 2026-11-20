@@ -1044,6 +1044,12 @@ func TestRulesSampler(t *testing.T) {
 				spanSrv:  "test-service",
 				spanName: "abcde",
 			},
+			{
+				// integers of 1e6 and up must not be matched in exponent form ("1.2345678e+07")
+				rules:    SpanSamplingRules(Rule{Tags: map[string]string{"customer.id": "12345678"}, Rate: 1}),
+				spanSrv:  "test-service",
+				spanName: "abcde",
+			},
 		} {
 			t.Run(strconv.Itoa(i), func(t *testing.T) {
 				assert := assert.New(t)
@@ -1052,9 +1058,10 @@ func TestRulesSampler(t *testing.T) {
 				rs := newRulesSampler(nil, c.internalConfig.SpanSamplingRules(), c.internalConfig.GlobalSampleRate(), c.internalConfig.TraceRateLimitPerSecond())
 
 				span := makeFinishedSpan(tt.spanName, tt.spanSrv, "res-10", map[string]any{"hostname": "hn-30",
-					"tag":        20.1,
-					"tier":       209,
-					"shall-pass": true,
+					"tag":         20.1,
+					"tier":        209,
+					"shall-pass":  true,
+					"customer.id": 12345678,
 				})
 				result := rs.SampleSpan(span)
 				assert.True(result)
