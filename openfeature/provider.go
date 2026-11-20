@@ -74,18 +74,17 @@ type ProviderConfig struct {
 
 	// EvaluationTelemetryEnabled controls whether this provider produces
 	// evaluation telemetry: flag evaluation events, the feature_flag.evaluations
-	// metric, and span enrichment. Nil uses
-	// DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_ENABLED, which defaults to true.
-	// A non-nil value overrides the environment setting, including when true.
-	// The provider resolves the value at construction. Flag results, assignment,
-	// exposures, application hooks, and ordinary tracing are unchanged; use
-	// ExposuresEnabled to control exposures.
+	// metric, and span enrichment. Nil means enabled. The provider copies the
+	// value at construction. Flag results, assignment, exposures, application
+	// hooks, and ordinary tracing are unchanged; use ExposuresEnabled to control
+	// exposures. DD_FLAGGING_EVALUATION_COUNTS_ENABLED and
+	// DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED still apply to
+	// every provider.
 	EvaluationTelemetryEnabled *bool
 
 	// ExposuresEnabled controls whether evaluations through this provider are
-	// exposures. Nil uses DD_FEATURE_FLAGS_EXPOSURES_ENABLED, which defaults to
-	// true. A non-nil value overrides the environment setting, including when
-	// true. The provider resolves the value at construction.
+	// exposures. Nil means enabled. The provider copies the value at
+	// construction.
 	//
 	// When false, an evaluation is not recorded, deduplicated, sent to Datadog,
 	// or reported as an exposure to an ExposureHook (IsExposure and ShouldSend
@@ -321,19 +320,12 @@ func newDatadogProviderWithSourceAndEVP(
 	source internalffe.Source,
 	evp *evpClient,
 ) *DatadogProvider {
-	cfg := internalconfig.Get()
-	telemetryOptOutEnabled := cfg.FlagEvalTelemetryOptOutEnabled()
+	telemetryOptOutEnabled := internalconfig.Get().FlagEvalTelemetryOptOutEnabled()
 	if config.EnableEvaluationTelemetryOptOutParameter != nil {
 		telemetryOptOutEnabled = *config.EnableEvaluationTelemetryOptOutParameter
 	}
-	evaluationTelemetryEnabled := cfg.FeatureFlagsEvaluationTelemetryEnabled()
-	if config.EvaluationTelemetryEnabled != nil {
-		evaluationTelemetryEnabled = *config.EvaluationTelemetryEnabled
-	}
-	exposuresEnabled := cfg.FeatureFlagsExposuresEnabled()
-	if config.ExposuresEnabled != nil {
-		exposuresEnabled = *config.ExposuresEnabled
-	}
+	evaluationTelemetryEnabled := config.EvaluationTelemetryEnabled == nil || *config.EvaluationTelemetryEnabled
+	exposuresEnabled := config.ExposuresEnabled == nil || *config.ExposuresEnabled
 	if !evaluationTelemetryEnabled || !exposuresEnabled {
 		log.Info("openfeature: evaluation telemetry enabled=%t, exposures enabled=%t", evaluationTelemetryEnabled, exposuresEnabled)
 	}

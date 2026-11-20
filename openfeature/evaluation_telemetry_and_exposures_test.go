@@ -9,8 +9,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"os"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -23,11 +21,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
-)
-
-const (
-	evaluationTelemetryEnabledEnvVar = "DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_ENABLED"
-	exposuresEnabledEnvVar           = "DD_FEATURE_FLAGS_EXPOSURES_ENABLED"
 )
 
 // switchesHarness registers any number of providers in one process. They share
@@ -53,17 +46,13 @@ func newSwitchesHarness(t *testing.T) *switchesHarness {
 	t.Setenv(flagEvalCountsEnabledEnvVar, "true")
 	t.Setenv("DD_METRICS_OTEL_ENABLED", "false")
 	t.Setenv("OTEL_METRICS_EXPORTER", "")
-	for _, key := range []string{evaluationTelemetryEnabledEnvVar, exposuresEnabledEnvVar} {
-		t.Setenv(key, "")
-		require.NoError(t, os.Unsetenv(key))
-	}
 	mt := mocktracer.Start()
 	t.Cleanup(mt.Stop)
 	m, reader := setupTestMetrics(t)
 	return &switchesHarness{sink: &optOutSink{}, metrics: m, reader: reader, tracer: mt}
 }
 
-// newProvider builds a provider from the current environment and config.
+// newProvider builds a provider from config.
 func (h *switchesHarness) newProvider(t *testing.T, config ProviderConfig) *DatadogProvider {
 	t.Helper()
 	evp := newEVPClient()
@@ -230,11 +219,14 @@ func TestInspectionDoesNotSuppressTheLaterExposure(t *testing.T) {
 	h.assertTelemetry(t, 1)
 }
 
-func TestEvaluationTelemetryAndExposuresEnvironment(t *testing.T) {
+func TestEvaluationTelemetryAndExposuresDisabledRegisterNoHooks(t *testing.T) {
 	h := newSwitchesHarness(t)
-	t.Setenv(evaluationTelemetryEnabledEnvVar, "false")
-	t.Setenv(exposuresEnabledEnvVar, "false")
-	client := h.register(t, "live", ProviderConfig{})
+	client := h.register(t, "peek", ProviderConfig{
+		EvaluationTelemetryEnabled: new(false),
+		ExposuresEnabled:           new(false),
+		// The per-subject wrapper must not resurrect a disabled hook.
+		EnableEvaluationTelemetryOptOutParameter: new(true),
+	})
 
 	details := h.evaluate(t, client, "user-1", nil)
 
@@ -253,35 +245,14 @@ func TestEvaluationTelemetryAndExposuresEnvironment(t *testing.T) {
 	}
 }
 
-func TestEvaluationTelemetryAndExposuresOptionsOverrideEnvironment(t *testing.T) {
-	for _, enabled := range []bool{false, true} {
-		t.Run(strconv.FormatBool(enabled), func(t *testing.T) {
-			h := newSwitchesHarness(t)
-			t.Setenv(evaluationTelemetryEnabledEnvVar, strconv.FormatBool(!enabled))
-			t.Setenv(exposuresEnabledEnvVar, strconv.FormatBool(!enabled))
-			client := h.register(t, "live", ProviderConfig{
-				EvaluationTelemetryEnabled: new(enabled),
-				ExposuresEnabled:           new(enabled),
-			})
-
-			h.evaluate(t, client, "user-1", nil)
-
-			want := 0
-			if enabled {
-				want = 1
-			}
-			h.assertTelemetry(t, want)
-			assert.Len(t, h.exposures(t), want)
-		})
-	}
-}
-
-func TestEvaluationTelemetryAndExposuresCapturedAtConstruction(t *testing.T) {
+func TestEvaluationTelemetryAndExposuresCopiedAtConstruction(t *testing.T) {
 	h := newSwitchesHarness(t)
-	t.Setenv(exposuresEnabledEnvVar, "false")
-	client := h.register(t, "live", ProviderConfig{})
-	t.Setenv(exposuresEnabledEnvVar, "true")
-	t.Setenv(evaluationTelemetryEnabledEnvVar, "false")
+	telemetry, exposures := true, false
+	client := h.register(t, "live", ProviderConfig{
+		EvaluationTelemetryEnabled: &telemetry,
+		ExposuresEnabled:           &exposures,
+	})
+	telemetry, exposures = false, true
 
 	h.evaluate(t, client, "user-1", nil)
 

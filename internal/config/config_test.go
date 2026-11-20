@@ -2781,34 +2781,6 @@ func TestFeatureFlagsExposuresDatadogLoggingEnabled(t *testing.T) {
 	}
 }
 
-func TestFeatureFlagsEvaluationTelemetryEnabled(t *testing.T) {
-	for _, tc := range []struct {
-		value string
-		want  bool
-	}{
-		{"", true}, {"true", true}, {"false", false}, {"invalid", true},
-	} {
-		t.Run(tc.value, func(t *testing.T) {
-			t.Setenv("DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_ENABLED", tc.value)
-			assert.Equal(t, tc.want, loadConfig().FeatureFlagsEvaluationTelemetryEnabled())
-		})
-	}
-}
-
-func TestFeatureFlagsExposuresEnabled(t *testing.T) {
-	for _, tc := range []struct {
-		value string
-		want  bool
-	}{
-		{"", true}, {"true", true}, {"false", false}, {"invalid", true},
-	} {
-		t.Run(tc.value, func(t *testing.T) {
-			t.Setenv("DD_FEATURE_FLAGS_EXPOSURES_ENABLED", tc.value)
-			assert.Equal(t, tc.want, loadConfig().FeatureFlagsExposuresEnabled())
-		})
-	}
-}
-
 func TestFeatureFlagsExperimentationOptOutMode(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
