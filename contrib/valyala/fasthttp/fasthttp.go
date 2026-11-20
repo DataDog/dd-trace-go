@@ -7,6 +7,9 @@
 package fasthttp // import "github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2"
 
 import (
+	"net/textproto"
+	"strings"
+
 	"github.com/valyala/fasthttp"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -79,6 +82,33 @@ func defaultSpanOptions(fctx *fasthttp.RequestCtx) []tracer.StartSpanOption {
 		opts = append(opts, tracer.Tag("http.host", host))
 	}
 	opts = appsechttpsec.AppendSecurityTestingHeaderTagsFromBytes(opts, fctx.Request.Header.VisitAll)
+	return opts
+}
+
+// headerTagOptions returns the span tags for the request headers selected by
+// headerTags. Header names are matched in their canonical form, so the match
+// does not depend on the server's header name normalization.
+func headerTagOptions(fctx *fasthttp.RequestCtx, headerTags instrumentation.HeaderTags) []tracer.StartSpanOption {
+	if headerTags == nil {
+		return nil
+	}
+	tagFor := make(map[string]string)
+	headerTags.Iter(func(header, tag string) {
+		tagFor[textproto.CanonicalMIMEHeaderKey(header)] = tag
+	})
+	if len(tagFor) == 0 {
+		return nil
+	}
+	values := make(map[string][]string)
+	fctx.Request.Header.VisitAll(func(key, value []byte) {
+		if tag, ok := tagFor[textproto.CanonicalMIMEHeaderKey(string(key))]; ok {
+			values[tag] = append(values[tag], string(value))
+		}
+	})
+	opts := make([]tracer.StartSpanOption, 0, len(values))
+	for tag, vs := range values {
+		opts = append(opts, tracer.Tag(tag, strings.TrimSpace(strings.Join(vs, ","))))
+	}
 	return opts
 }
 

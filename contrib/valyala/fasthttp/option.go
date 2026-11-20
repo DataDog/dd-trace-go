@@ -20,6 +20,7 @@ type config struct {
 	isStatusError func(int) bool
 	resourceNamer func(*fasthttp.RequestCtx) string
 	ignoreRequest func(*fasthttp.RequestCtx) bool
+	headerTags    instrumentation.HeaderTags
 }
 
 // Option describes options for the FastHTTP integration.
@@ -42,6 +43,7 @@ func newConfig() *config {
 		isStatusError: defaultIsServerError,
 		resourceNamer: defaultResourceNamer,
 		ignoreRequest: defaultIgnoreRequest,
+		headerTags:    instr.HTTPHeadersAsTags(),
 	}
 }
 
@@ -87,6 +89,16 @@ func WithResourceNamer(fn func(fctx *fasthttp.RequestCtx) string) OptionFn {
 func WithIgnoreRequest(f func(fctx *fasthttp.RequestCtx) bool) OptionFn {
 	return func(cfg *config) {
 		cfg.ignoreRequest = f
+	}
+}
+
+// WithHeaderTags enables the integration to attach HTTP request headers as span tags.
+// Warning:
+// Using this feature can risk exposing sensitive data such as authorization tokens to Datadog.
+// Special headers can not be sub-selected. E.g., an entire Cookie header would be transmitted, without the ability to choose specific Cookies.
+func WithHeaderTags(headers []string) OptionFn {
+	return func(cfg *config) {
+		cfg.headerTags = instrumentation.NewHeaderTags(headers)
 	}
 }
 
