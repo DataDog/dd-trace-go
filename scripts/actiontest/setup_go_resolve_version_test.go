@@ -15,10 +15,17 @@ import (
 
 const resolveVersionScript = "../../.github/actions/setup-go/resolve-version.sh"
 
+// resolveVersionOutputs holds the resolver's GITHUB_OUTPUT fields.
+type resolveVersionOutputs struct {
+	key      string // go-version-key: the cache-key version class
+	provider string // go-version-provider: what the cloudx provider gets
+}
+
 // runResolveVersion executes the resolver with a stub `go` whose GOVERSION
-// is the fixture, and returns the go-version-key it wrote to GITHUB_OUTPUT
-// (or its combined output and error when it fails).
-func runResolveVersion(t *testing.T, goversion string) (string, string, error) {
+// is the fixture and REQUESTED_VERSION as the caller's go-version input,
+// and returns both outputs (or the combined output and error when the
+// script fails).
+func runResolveVersion(t *testing.T, requested, goversion string) (resolveVersionOutputs, string, error) {
 	t.Helper()
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skipf("bash not found: %v", err)
@@ -47,6 +54,7 @@ func runResolveVersion(t *testing.T, goversion string) (string, string, error) {
 	cmd := exec.CommandContext(t.Context(), "bash", resolveVersionScript)
 	cmd.Env = []string{
 		"PATH=" + dir,
+		"REQUESTED_VERSION=" + requested,
 		"GITHUB_OUTPUT=" + output,
 	}
 	out, err := cmd.CombinedOutput()
@@ -54,11 +62,12 @@ func runResolveVersion(t *testing.T, goversion string) (string, string, error) {
 	if readErr != nil {
 		t.Fatal(readErr)
 	}
-	key, ok := strings.CutPrefix(strings.TrimSpace(string(written)), "go-version-key=")
-	if !ok {
-		key = ""
+	fields := map[string]string{}
+	for line := range strings.SplitSeq(strings.TrimSpace(string(written)), "\n") {
+		k, v, _ := strings.Cut(line, "=")
+		fields[k] = v
 	}
-	return key, string(out), err
+	return resolveVersionOutputs{key: fields["go-version-key"], provider: fields["go-version-provider"]}, string(out), err
 }
 
 // TestResolveVersionMapsEverySpellingToTheMinor covers the one invariant the
@@ -94,10 +103,10 @@ func TestResolveVersionMapsEverySpellingToTheMinor(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			key, out, err := runResolveVersion(t, tc.goversion)
+			got, out, err := runResolveVersion(t, "", tc.goversion)
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("GOVERSION %q resolved to %q, want failure", tc.goversion, key)
+					t.Fatalf("GOVERSION %q resolved to %+v, want failure", tc.goversion, got)
 				}
 				if !strings.Contains(out, tc.wantErrOut) {
 					t.Fatalf("error output %q lacks %q", out, tc.wantErrOut)
@@ -107,8 +116,67 @@ func TestResolveVersionMapsEverySpellingToTheMinor(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GOVERSION %q failed: %v\n%s", tc.goversion, err, out)
 			}
-			if key != tc.want {
-				t.Fatalf("GOVERSION %q resolved to %q, want %q", tc.goversion, key, tc.want)
+			if got.key != tc.want {
+				t.Fatalf("GOVERSION %q resolved to key %q, want %q", tc.goversion, got.key, tc.want)
+			}
+		})
+	}
+}
+
+// TestResolveVersionProviderPreservesExactPatches covers the provider
+// output: every alias and minor spelling passes the version class, so the
+// nested installer finds the binary select-go installed and the cache key
+// carries one entry per minor. A fully-specified request ("1.27.1")
+// passes its exact patch instead: check-latest never upgrades a full
+// version, so the minor would let the nested installer resolve the range
+// to the latest patch and swap the toolchain under the Verify step.
+func TestResolveVersionProviderPreservesExactPatches(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		requested string
+		goversion string
+		wantKey   string
+		wantProv  string
+	}{
+		{
+			name:      "alias request passes the class",
+			requested: "stable", goversion: "go1.27.4",
+			wantKey: "1.27", wantProv: "1.27",
+		},
+		{
+			name:      "moving alias request passes the class",
+			requested: "oldstable", goversion: "go1.26.11",
+			wantKey: "1.26", wantProv: "1.26",
+		},
+		{
+			name:      "minor request passes the class",
+			requested: "1.27", goversion: "go1.27.4",
+			wantKey: "1.27", wantProv: "1.27",
+		},
+		{
+			name:      "exact patch request passes its exact patch",
+			requested: "1.27.1", goversion: "go1.27.1",
+			wantKey: "1.27", wantProv: "1.27.1",
+		},
+		{
+			name:      "prerelease request passes its exact semver",
+			requested: "1.28.0-rc.1", goversion: "go1.28rc1",
+			wantKey: "1.28.0-rc.1", wantProv: "1.28.0-rc.1",
+		},
+		{
+			name:      "empty request passes the class",
+			requested: "", goversion: "go1.27.4",
+			wantKey: "1.27", wantProv: "1.27",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, out, err := runResolveVersion(t, tc.requested, tc.goversion)
+			if err != nil {
+				t.Fatalf("requested %q GOVERSION %q failed: %v\n%s", tc.requested, tc.goversion, err, out)
+			}
+			if got.key != tc.wantKey || got.provider != tc.wantProv {
+				t.Fatalf("requested %q GOVERSION %q resolved to key=%q provider=%q, want key=%q provider=%q",
+					tc.requested, tc.goversion, got.key, got.provider, tc.wantKey, tc.wantProv)
 			}
 		})
 	}

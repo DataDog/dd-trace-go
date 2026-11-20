@@ -303,26 +303,30 @@ func resolveSavePolicy(t *testing.T, env map[string]string) string {
 	return value
 }
 
-// TestRestoreSourcePinsGoVersionKey pins the GO_VERSION env of the
-// Derive-restore-source step: it must carry the resolved Go minor (the
-// same string the cloudx provider embeds in its cache keys), not the
-// caller's input or the exact resolved patch. Any other value breaks the
-// branch parsing of matched keys, and the step's run block cannot detect
-// the mistake on its own.
-func TestRestoreSourcePinsGoVersionKey(t *testing.T) {
+// TestRestoreSourcePinsProviderVersion pins the GO_VERSION env of the
+// Derive-restore-source step: it must carry the go-version-provider
+// output (the same string the cloudx provider embeds in its cache keys —
+// the resolved class for alias and minor spellings, the exact patch for
+// fully-specified requests), not the caller's input or the bare key
+// output. Any other value breaks the branch parsing of matched keys, and
+// the step's run block cannot detect the mistake on its own.
+func TestRestoreSourcePinsProviderVersion(t *testing.T) {
 	step := setupGoStep(t, "Derive restore source")
-	const want = "${{ steps.resolve-version.outputs.go-version-key }}"
+	const want = "${{ steps.resolve-version.outputs.go-version-provider }}"
 	if got := step.Env["GO_VERSION"]; got != want {
 		t.Fatalf("GO_VERSION = %q, want %q (the same string the cloudx provider keys on)", got, want)
 	}
 }
 
-// TestCloudxKeysOnResolvedMinor pins the wiring the whole scheme rests
-// on: the cloudx provider receives the resolved Go minor, never the
-// caller's input string. If this reverts to inputs.go-version, `stable`
-// and `oldstable` keys stop rotating across Go minor releases and every
-// spelling of the same minor double-writes the pool.
-func TestCloudxKeysOnResolvedMinor(t *testing.T) {
+// TestCloudxKeysOnResolvedClass pins the wiring the whole scheme rests
+// on: the cloudx provider receives the go-version-provider output, never
+// the caller's input string. If this reverts to inputs.go-version,
+// `stable` and `oldstable` keys stop rotating across Go minor releases
+// and every spelling of the same minor double-writes the pool; if it
+// reverts to the bare go-version-key output, fully-specified requests
+// break the Verify step (the provider's nested installer resolves the
+// minor as a range and picks a different patch than select-go installed).
+func TestCloudxKeysOnResolvedClass(t *testing.T) {
 	raw, err := os.ReadFile(setupGoAction)
 	if err != nil {
 		t.Fatal(err)
@@ -338,7 +342,7 @@ func TestCloudxKeysOnResolvedMinor(t *testing.T) {
 	if err := yaml.Unmarshal(raw, &action); err != nil {
 		t.Fatal(err)
 	}
-	const want = "${{ steps.resolve-version.outputs.go-version-key }}"
+	const want = "${{ steps.resolve-version.outputs.go-version-provider }}"
 	for _, step := range action.Runs.Steps {
 		if step.Name == "Isolate and refresh Go build caches" {
 			if got := step.With["go-version"]; got != want {
