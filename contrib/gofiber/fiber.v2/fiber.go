@@ -7,6 +7,7 @@
 package fiber // import "github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2"
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -125,6 +126,15 @@ func middleware(cfg *config) fiber.Handler {
 			// 0 - means we do not have a status code at this point
 			// in case the response was returned by a middleware without one
 			status = http.StatusOK
+		}
+		if err != nil && !handledResponse && status < http.StatusBadRequest {
+			// Fiber renders a returned error only after the middleware chain
+			// unwinds, so the response still has its default status here.
+			// Report the status Fiber's default error handler will send.
+			status = http.StatusInternalServerError
+			if fe, ok := errors.AsType[*fiber.Error](err); ok {
+				status = fe.Code
+			}
 		}
 		span.SetTag(ext.HTTPCode, strconv.Itoa(status))
 
