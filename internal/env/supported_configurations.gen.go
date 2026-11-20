@@ -184,6 +184,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TEST_OPTIMIZATION_ENV_DATA_FILE":                                      {},
 	"DD_TEST_OPTIMIZATION_MANIFEST_FILE":                                      {},
 	"DD_TEST_OPTIMIZATION_PAYLOADS_IN_FILES":                                  {},
+	"DD_TEST_OPTIMIZATION_RUNTIME_TAGS":                                       {},
 	"DD_TEST_SESSION_NAME":                                                    {},
 	"DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED":                                {},
 	"DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED":                             {},

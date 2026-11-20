@@ -99,6 +99,9 @@ const (
 	// CIVisibilityAutoInstrumentationProviderEnvironmentVariable indicates that the auto-instrumentation script was used.
 	CIVisibilityAutoInstrumentationProviderEnvironmentVariable = "DD_CIVISIBILITY_AUTO_INSTRUMENTATION_PROVIDER"
 
+	// CIVisibilityRuntimeTagsEnvironmentVariable holds a JSON object that overrides the detected OS and runtime tags.
+	CIVisibilityRuntimeTagsEnvironmentVariable = "DD_TEST_OPTIMIZATION_RUNTIME_TAGS"
+
 	// CIVisibilityEnvironmentDataFilePath is the environment variable that holds the path to the file containing the environmental data.
 	CIVisibilityEnvironmentDataFilePath = "DD_TEST_OPTIMIZATION_ENV_DATA_FILE"
 

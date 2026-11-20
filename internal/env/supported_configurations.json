@@ -1241,6 +1241,13 @@
         "default": "false"
       }
     ],
+    "DD_TEST_OPTIMIZATION_RUNTIME_TAGS": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
     "DD_TEST_SESSION_NAME": [
       {
         "implementation": "A",

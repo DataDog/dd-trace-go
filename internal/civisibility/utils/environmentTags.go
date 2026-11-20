@@ -6,6 +6,7 @@
 package utils
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
@@ -211,6 +212,30 @@ func GetRelativePathFromCITagsSourceRoot(path string) string {
 	return path
 }
 
+// applyRuntimeTagsOverrides replaces the detected OS and runtime tags with the values set in
+// DD_TEST_OPTIMIZATION_RUNTIME_TAGS. Unsupported keys, non-string values and blank values are ignored.
+func applyRuntimeTagsOverrides(tags map[string]string) {
+	value := strings.TrimSpace(env.Get(constants.CIVisibilityRuntimeTagsEnvironmentVariable))
+	if value == "" {
+		return
+	}
+
+	var overrides map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(value), &overrides); err != nil || overrides == nil {
+		log.Warn("civisibility: ignoring %s=%q, expected a JSON object", constants.CIVisibilityRuntimeTagsEnvironmentVariable, value) //errtrack:ignore invalid user configuration
+		return
+	}
+
+	for _, tag := range []string{constants.OSPlatform, constants.OSVersion, constants.OSArchitecture, constants.RuntimeName, constants.RuntimeVersion} {
+		var override string
+		if json.Unmarshal(overrides[tag], &override) == nil {
+			if override = strings.TrimSpace(override); override != "" {
+				tags[tag] = override
+			}
+		}
+	}
+}
+
 // createCITagsMap creates a map of CI/CD tags by extracting information from environment variables and the local Git repository.
 // It also adds OS and runtime information to the tags.
 //
@@ -226,9 +251,10 @@ func createCITagsMap() map[string]string {
 	localTags[constants.OSArchitecture] = runtime.GOARCH
 	localTags[constants.RuntimeName] = runtime.Compiler
 	localTags[constants.RuntimeVersion] = runtime.Version()
-	log.Debug("civisibility: os platform: %s", runtime.GOOS)
-	log.Debug("civisibility: os architecture: %s", runtime.GOARCH)
-	log.Debug("civisibility: runtime version: %s", runtime.Version())
+	applyRuntimeTagsOverrides(localTags)
+	log.Debug("civisibility: os platform: %s", localTags[constants.OSPlatform])
+	log.Debug("civisibility: os architecture: %s", localTags[constants.OSArchitecture])
+	log.Debug("civisibility: runtime version: %s", localTags[constants.RuntimeVersion])
 
 	// Get command line test command, without the flags that change between runs.
 	cmd := testCommand(os.Args)
