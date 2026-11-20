@@ -16,6 +16,15 @@ Before reviewing or changing files in these areas, read the applicable scoped in
 * [internal/AGENTS.md](./internal/AGENTS.md) -- for updating features and implementations that are not customer facing
 * [profiler/AGENTS.md](./profiler/AGENTS.md) -- for profiling updates
 
+## Adding or changing configuration
+
+Adding, renaming, or changing how an environment variable or configuration key is read MUST follow [Working with environment variables](./CONTRIBUTING.md#working-with-environment-variables). The non-negotiables:
+
+* Tracer configuration belongs in `internal/config`, its single source of truth: follow [internal/config/README.md](./internal/config/README.md) rather than adding a new env read in `ddtrace/tracer`.
+* Elsewhere, read keys with `env.Get`/`env.Lookup` from `internal/env` (or `instrumentation/env` in contrib), never `os.Getenv`/`os.LookupEnv`. `make lint` rejects the latter.
+* Register each new `DD_*` or `OTEL_*` key in `internal/env/supported_configurations.json` with `go run ./scripts/configinverter/main.go add <KEY>` (or let a test detect it, then run `generate`). Replace the `FIX_ME` type and default placeholders, set `"sensitive": true` for secrets so telemetry omits their values, then rerun `generate` and commit the regenerated `supported_configurations.gen.go`. Unregistered keys read as unset.
+* Every key must exist in Datadog's central configuration registry, or the GitLab registry validation job fails. Only an internal contributor can add it there.
+
 ## Where documentation goes
 
 Put docs and comments about one product or feature in the most specific place that fits:
