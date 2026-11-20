@@ -277,6 +277,20 @@ func TestLLMObsBaggageWrite(t *testing.T) {
 		}
 	})
 
+	t.Run("a-space-is-percent-encoded", func(t *testing.T) {
+		// Other tracers decode baggage with W3C percent-decoding, which reads "+" as
+		// a literal plus sign.
+		_, _, ll := testTracer(t)
+		out := newOutboundCapture(t)
+
+		agent, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "Research Agent", llmobs.StartSpanConfig{})
+		out.get(t, ctx, nil)
+		agent.Finish(llmobs.FinishSpanConfig{})
+
+		baggage, _ := out.last()
+		assert.Contains(t, baggage, "llmobs.parent_agent_name=Research%20Agent")
+	})
+
 	t.Run("blank-values-are-not-sent", func(t *testing.T) {
 		// An empty member makes the receiving extractor reject the whole header,
 		// the caller's own items included.
@@ -536,6 +550,23 @@ func TestLLMObsBaggageRead(t *testing.T) {
 		assert.Equal(t, "555", items["llmobs.parent_id"])
 		assert.Equal(t, upstreamTraceIDHex, items["llmobs.trace_id"])
 		assert.Equal(t, "sess-up", items["llmobs.session_id"])
+	})
+
+	t.Run("a-pass-through-hop-after-a-baggage-only-hop-also-writes-the-tags", func(t *testing.T) {
+		// As in dd-trace-py, so that a downstream tracer that reads only the tags
+		// still continues the trace. The tag trace ID is decimal.
+		_, _, _ = testTracer(t)
+		out := newOutboundCapture(t)
+		inbound := http.Header{}
+		inbound.Set("Baggage", "llmobs.parent_id=555,llmobs.trace_id="+upstreamTraceIDHex+",llmobs.ml_app=upstream,llmobs.session_id=sess-up")
+
+		serveInbound(t, inbound, func(ctx context.Context) { out.get(t, ctx, nil) })
+
+		_, tags := out.last()
+		assert.Contains(t, tags, "_dd.p.llmobs_parent_id=555")
+		assert.Contains(t, tags, "_dd.p.llmobs_trace_id="+upstreamTraceIDDecimal)
+		assert.Contains(t, tags, "_dd.p.llmobs_ml_app=upstream")
+		assert.Contains(t, tags, "_dd.p.llmobs_sid=sess-up")
 	})
 
 	t.Run("inbound-llmobs-baggage-is-replaced-not-forwarded", func(t *testing.T) {

@@ -1423,10 +1423,13 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	llmSpan, ok := illmobs.ActiveLLMSpanFromContext(ctx)
 	if !ok {
 		// A service that forwards a request without an LLMObs span of its own
-		// still sends the inbound context on, in its canonical form.
+		// still sends the inbound context on, in both carriers, as dd-trace-py does.
+		// After a baggage-only hop the tags are otherwise missing, and a downstream
+		// tracer that reads only the tags would start a new trace.
 		if p, ok := illmobs.PropagatedLLMSpanFromContext(ctx); ok {
 			spanCtx.llmobsSpan = nil
 			spanCtx.llmobsPropagated = p
+			setPropagatedLLMObsTags(spanCtx, p)
 		}
 		return
 	}
@@ -1443,6 +1446,30 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSessionID)
 	}
 	setPropagatingParentAgentTags(spanCtx, llmSpan.PropagatedParentAgentSpanID(), llmSpan.PropagatedParentAgentName())
+}
+
+// setPropagatedLLMObsTags writes the inbound LLMObs context to the trace's
+// propagating tags for a request this process forwards. The session is written
+// only when the trace has none yet: it is trace-level, and the first writer wins.
+//
+// It runs at every span start under a forwarded request, so it returns at once
+// when the tags already name this parent: the inbound tags did, or an earlier
+// span of this request wrote them.
+func setPropagatedLLMObsTags(spanCtx *SpanContext, p *illmobs.PropagatedLLMSpan) {
+	if spanCtx.trace.propagatingTag(keyPropagatedLLMObsParentID) == p.SpanID {
+		return
+	}
+	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, p.SpanID)
+	if p.WireTraceID != "" {
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, p.WireTraceID)
+	}
+	if p.MLApp != "" {
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, p.MLApp)
+	}
+	if p.SessionID != "" && spanCtx.trace.propagatingTag(keyPropagatedLLMObsSessionID) == "" {
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSessionID, p.SessionID)
+	}
+	setPropagatingParentAgentTags(spanCtx, p.ParentAgentSpanID, p.ParentAgentName)
 }
 
 // setPropagatingParentAgentTags writes the parent-agent attribution tags onto the trace's

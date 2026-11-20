@@ -21,9 +21,10 @@ type PropagatedLLMSpan struct {
 	MLApp string
 	// TraceID is the LLMObs trace ID, in canonical form.
 	TraceID string
-	// WireTraceID is the trace ID as the inbound _dd.p.llmobs_trace_id tag carried
-	// it, or empty. The tag is sent on in the same form: dd-trace-py writes it in
-	// decimal, and dd-trace-py before 4.9 cannot parse hex there.
+	// WireTraceID is the trace ID for the _dd.p.llmobs_trace_id tag: the form the
+	// inbound tag carried, or decimal when no tag carried it. The tag is sent on in
+	// this form: dd-trace-py writes it in decimal, and dd-trace-py before 4.9
+	// cannot parse hex there.
 	WireTraceID string
 	// SpanID is the span ID.
 	SpanID string

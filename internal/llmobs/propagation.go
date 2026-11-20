@@ -90,6 +90,20 @@ func NormalizeTraceID(v string) string {
 	return padHex(n.Text(16))
 }
 
+// TraceIDToWire converts a canonical LLMObs trace ID to the decimal form that
+// dd-trace-py writes to the _dd.p.llmobs_trace_id tag. Any other value is
+// returned unchanged.
+func TraceIDToWire(v string) string {
+	if !isHexTraceID(v) {
+		return v
+	}
+	n, ok := new(big.Int).SetString(v, 16)
+	if !ok {
+		return v
+	}
+	return n.Text(10)
+}
+
 // IsCanonicalTraceID reports whether v is in the canonical form that the
 // llmobs.trace_id baggage item must carry: 32 lowercase hex characters, or a
 // decimal number from 1 to 2^64-1 without leading zeros. This is what

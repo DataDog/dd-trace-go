@@ -124,6 +124,7 @@ func propagatedLLMSpanFromTags(spanCtx *SpanContext, parentID string) *illmobs.P
 		p.WireTraceID = traceID
 	} else {
 		p.TraceID = apmTraceID(spanCtx)
+		p.WireTraceID = illmobs.TraceIDToWire(p.TraceID)
 	}
 	if agentSpanID := t.propagatingTag(keyPropagatedLLMObsParentAgentSpanID); agentSpanID != "" {
 		p.ParentAgentSpanID = agentSpanID
@@ -160,6 +161,9 @@ func propagatedLLMSpanFromBaggage(spanCtx *SpanContext, parentID string, tagsMat
 		p.TraceID = illmobs.NormalizeTraceID(tagTraceID)
 	default:
 		p.TraceID = apmTraceID(spanCtx)
+	}
+	if p.WireTraceID == "" {
+		p.WireTraceID = illmobs.TraceIDToWire(p.TraceID)
 	}
 	if agentSpanID := read(baggageKeyLLMObsParentAgentSpanID, keyPropagatedLLMObsParentAgentSpanID); agentSpanID != "" {
 		p.ParentAgentSpanID = agentSpanID
