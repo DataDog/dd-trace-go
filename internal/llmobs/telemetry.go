@@ -357,12 +357,16 @@ func boolTag(b bool) string {
 	return "0"
 }
 
-// TrackDistributedContextCarrier counts an inbound request whose LLMObs context was
-// read from carrier: "baggage", "tags", or "stale_baggage" (the tags won over a
-// different baggage parent). The metric name and tags match dd-trace-py.
-func TrackDistributedContextCarrier(carrier string) {
+// TrackDistributedContextCarrier counts one inbound request, with the same metric
+// and tags as dd-trace-py: carrier is "baggage", "tags", "stale_baggage" (the tags
+// won over a different baggage parent), or "none". errorType is empty on success.
+func TrackDistributedContextCarrier(carrier, errorType string) {
 	if telemetry.Disabled() {
 		return
 	}
-	telemetry.Count(telemetry.NamespaceMLObs, telemetryMetricActivateHeaders, []string{"error:0", "carrier:" + carrier}).Submit(1)
+	tags := []string{"error:0", "carrier:" + carrier}
+	if errorType != "" {
+		tags = []string{"error:1", "error_type:" + errorType, "carrier:" + carrier}
+	}
+	telemetry.Count(telemetry.NamespaceMLObs, telemetryMetricActivateHeaders, tags).Submit(1)
 }

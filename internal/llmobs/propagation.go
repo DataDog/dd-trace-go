@@ -16,9 +16,10 @@ type DistributedContext struct {
 	TraceID           string
 	MLApp             string
 	SessionID         string
+	SampleRate        string
+	SamplingDecision  string
 	ParentAgentSpanID string
-	// ParentAgentName is empty when ParentAgentSpanID is empty.
-	ParentAgentName string
+	ParentAgentName   string // empty when ParentAgentSpanID is empty
 }
 
 // DistributedContext returns the context that a downstream service inherits from s.
@@ -31,6 +32,8 @@ func (s *Span) DistributedContext() DistributedContext {
 		TraceID:           s.llmTraceID,
 		MLApp:             s.mlApp,
 		SessionID:         s.sessionID,
+		SampleRate:        s.sampleRate,
+		SamplingDecision:  s.samplingDecision,
 		ParentAgentSpanID: s.PropagatedParentAgentSpanID(),
 	}
 	if dc.ParentAgentSpanID != "" {
@@ -47,6 +50,8 @@ func (p *PropagatedLLMSpan) DistributedContext() DistributedContext {
 		TraceID:           p.TraceID,
 		MLApp:             p.MLApp,
 		SessionID:         p.SessionID,
+		SampleRate:        p.SampleRate,
+		SamplingDecision:  p.SamplingDecision,
 		ParentAgentSpanID: p.ParentAgentSpanID,
 	}
 	if dc.ParentAgentSpanID != "" {

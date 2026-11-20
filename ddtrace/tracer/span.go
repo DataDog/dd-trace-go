@@ -1469,6 +1469,12 @@ func setPropagatedLLMObsTags(spanCtx *SpanContext, p *illmobs.PropagatedLLMSpan)
 	if p.SessionID != "" && spanCtx.trace.propagatingTag(keyPropagatedLLMObsSessionID) == "" {
 		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSessionID, p.SessionID)
 	}
+	if p.SampleRate != "" {
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSampleRate, p.SampleRate)
+	}
+	if p.SamplingDecision != "" {
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSamplingDecision, p.SamplingDecision)
+	}
 	setPropagatingParentAgentTags(spanCtx, p.ParentAgentSpanID, p.ParentAgentName)
 }
 
@@ -1587,6 +1593,10 @@ const (
 	keyPropagatedLLMObsParentAgentSpanID = "_dd.p.llmobs_pagent_span_id"
 	// keyPropagatedLLMObsParentAgentName contains the propagated parent-agent name.
 	keyPropagatedLLMObsParentAgentName = "_dd.p.llmobs_pagent_name"
+	// keyPropagatedLLMObsSampleRate and keyPropagatedLLMObsSamplingDecision carry the
+	// LLMObs sampling values that dd-trace-py decides. This tracer only forwards them.
+	keyPropagatedLLMObsSampleRate       = "_dd.p.llmobs_sr"
+	keyPropagatedLLMObsSamplingDecision = "_dd.p.llmobs_sd"
 
 	// serviceSourceManual is the service source value used when the service name is set manually via SetTag.
 	serviceSourceManual = "m"

@@ -36,6 +36,10 @@ type PropagatedLLMSpan struct {
 	// ParentAgentSpanID is the span ID of the nearest agent ancestor, propagated
 	// across process boundaries. Empty when there is no agent ancestor.
 	ParentAgentSpanID string
+	// SampleRate and SamplingDecision are the trace's LLMObs sampling values. Only
+	// dd-trace-py decides them; this tracer forwards them unchanged.
+	SampleRate       string
+	SamplingDecision string
 }
 
 // PropagatedLLMSpanFromContext retrieves a PropagatedLLMSpan from the context.

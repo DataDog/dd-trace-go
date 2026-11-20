@@ -239,6 +239,10 @@ type Span struct {
 	// carried into this process, or empty for a trace that started here.
 	wireTraceID string
 
+	// sampleRate and samplingDecision are forwarded from the propagated context.
+	sampleRate       string
+	samplingDecision string
+
 	integration string
 	scope       string
 	error       error

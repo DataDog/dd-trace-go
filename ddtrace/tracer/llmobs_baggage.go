@@ -12,92 +12,127 @@ import (
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 )
 
-// LLMObs distributed context also travels in the W3C baggage header, under the
-// llmobs.* keys below. Baggage is extracted even when an intermediary drops the
-// APM trace headers, so the LLMObs trace survives that hop. The keys and the
-// rules in this file are a cross-SDK contract shared with dd-trace-py and
-// dd-trace-js.
+// LLMObs distributed context travels in the W3C baggage header under the llmobs.*
+// keys, next to the _dd.p.llmobs_* tags. Baggage survives an intermediary that
+// drops the APM trace headers. The keys and rules are a cross-SDK contract, and
+// dd-trace-py is the reference implementation.
 const (
 	baggageKeyLLMObsParentID          = "llmobs.parent_id"
 	baggageKeyLLMObsTraceID           = "llmobs.trace_id" // canonical form, never the decimal tag form
 	baggageKeyLLMObsMLApp             = "llmobs.ml_app"
 	baggageKeyLLMObsSessionID         = "llmobs.session_id"
+	baggageKeyLLMObsSampleRate        = "llmobs.sample_rate"
+	baggageKeyLLMObsSamplingDecision  = "llmobs.sampling_decision"
 	baggageKeyLLMObsParentAgentSpanID = "llmobs.parent_agent_span_id"
 	baggageKeyLLMObsParentAgentName   = "llmobs.parent_agent_name"
 
 	baggageLLMObsPrefix = "llmobs."
 
-	// Limits on percent-encoded bytes, which is what the baggage byte cap counts.
-	// The agent name is cut to its limit. Any other value over its limit is not
-	// sent, because one oversized item stops the injector and drops every item
-	// after it. These match dd-trace-py.
+	// Limits on percent-encoded bytes, which the baggage byte cap counts. The agent
+	// name is cut to its limit. Any other value over the limit is not sent: one
+	// oversized item would stop the injector and drop every item after it.
 	baggageLLMObsAgentNameMaxEncodedBytes = 128
 	baggageLLMObsValueMaxEncodedBytes     = 512
 
-	// The sampling keys are written by dd-trace-py, not by this tracer. They are
-	// request-scoped like the others, so a caller's stale copy is not merged.
-	baggageKeyLLMObsSampleRate       = "llmobs.sample_rate"
-	baggageKeyLLMObsSamplingDecision = "llmobs.sampling_decision"
-
-	// llmobsRootParentID is the parent ID of a root LLMObs span. It never names a parent.
 	llmobsRootParentID = "undefined"
-)
 
-// Values for the carrier tag of the activate_distributed_headers telemetry count.
-const (
+	// Values of the carrier and error_type tags of the activation telemetry.
 	llmobsCarrierBaggage      = "baggage"
 	llmobsCarrierTags         = "tags"
 	llmobsCarrierStaleBaggage = "stale_baggage"
+	llmobsCarrierNone         = "none"
+	llmobsErrMissingParentID  = "missing_parent_id"
+	llmobsErrInvalidParentID  = "invalid_parent_id"
+	llmobsErrMissingTraceID   = "missing_parent_llmobs_trace_id"
 )
 
-// isLLMObsBaggageKeyWritten reports whether k is one of the keys this tracer
-// writes. Inbound copies of these keys are replaced, never forwarded. Other
-// llmobs.* keys (such as the sampling keys dd-trace-py writes) pass through.
-func isLLMObsBaggageKeyWritten(k string) bool {
+// isLLMObsBaggageKey reports whether k is one of the llmobs.* keys this tracer
+// owns. With LLMObs enabled, an inbound or caller-set copy of k is never
+// forwarded: k is written from the request's own LLMObs context, or not at all.
+func isLLMObsBaggageKey(k string) bool {
 	switch k {
-	case baggageKeyLLMObsParentID, baggageKeyLLMObsTraceID, baggageKeyLLMObsMLApp,
-		baggageKeyLLMObsSessionID, baggageKeyLLMObsParentAgentSpanID, baggageKeyLLMObsParentAgentName:
+	case baggageKeyLLMObsParentID, baggageKeyLLMObsTraceID, baggageKeyLLMObsMLApp, baggageKeyLLMObsSessionID,
+		baggageKeyLLMObsSampleRate, baggageKeyLLMObsSamplingDecision,
+		baggageKeyLLMObsParentAgentSpanID, baggageKeyLLMObsParentAgentName:
 		return true
 	}
 	return false
 }
 
-// isLLMObsRequestScopedKey reports whether k belongs to one request's LLMObs
-// context, so that a copy left in a caller's baggage header is not merged.
-func isLLMObsRequestScopedKey(k string) bool {
-	return isLLMObsBaggageKeyWritten(k) || k == baggageKeyLLMObsSampleRate || k == baggageKeyLLMObsSamplingDecision
-}
-
-// propagatedLLMSpan reads the inbound LLMObs context from one carrier, and
-// returns the carrier it used.
-//
-// Baggage is preferred. But when the tags name a different real parent, a hop
-// that only writes the tags (an older tracer) sat between the caller and this
-// service and forwarded the caller's baggage unchanged. Then the tags are the
-// fresh copy. All fields come from the chosen carrier, so the context of two
-// hops is never mixed. This matches dd-trace-py's _select_propagated_carrier.
-//
-// spanCtx and spanCtx.trace must be non-nil.
-func propagatedLLMSpan(spanCtx *SpanContext) (*illmobs.PropagatedLLMSpan, string) {
-	baggageParent := llmobsParentID(spanCtx.baggageItem(baggageKeyLLMObsParentID))
-	tagParent := llmobsParentID(spanCtx.trace.propagatingTag(keyPropagatedLLMObsParentID))
+// propagatedLLMSpan reads the inbound LLMObs context from one carrier, as
+// dd-trace-py's _select_propagated_carrier does. Baggage is preferred. A real tag
+// parent that differs from the baggage parent means a tags-only hop forwarded
+// stale baggage, so then the tags are used. It also returns the carrier and the
+// error type for telemetry. spanCtx and spanCtx.trace must be non-nil.
+func propagatedLLMSpan(spanCtx *SpanContext) (p *illmobs.PropagatedLLMSpan, carrier, errType string) {
+	tagParent := spanCtx.trace.propagatingTag(keyPropagatedLLMObsParentID)
+	baggageParent := spanCtx.baggageItem(baggageKeyLLMObsParentID)
+	parent := baggageParent
 	switch {
 	case baggageParent == "" && tagParent == "":
-		return nil, ""
+		return nil, llmobsCarrierNone, llmobsErrMissingParentID
 	case baggageParent == "":
-		return propagatedLLMSpanFromTags(spanCtx, tagParent), llmobsCarrierTags
-	case tagParent != "" && tagParent != baggageParent:
-		return propagatedLLMSpanFromTags(spanCtx, tagParent), llmobsCarrierStaleBaggage
+		carrier, parent = llmobsCarrierTags, tagParent
+	case tagParent != "" && tagParent != llmobsRootParentID && tagParent != baggageParent:
+		carrier, parent = llmobsCarrierStaleBaggage, tagParent
 	default:
-		// When both carriers name the same parent, one hop wrote them, so a field
-		// missing from baggage can come from the tags.
-		return propagatedLLMSpanFromBaggage(spanCtx, baggageParent, tagParent == baggageParent), llmobsCarrierBaggage
+		carrier = llmobsCarrierBaggage
 	}
+	if parent == llmobsRootParentID {
+		return nil, carrier, llmobsErrMissingParentID
+	}
+	if _, err := strconv.ParseUint(parent, 10, 64); err != nil {
+		return nil, carrier, llmobsErrInvalidParentID
+	}
+
+	fromBaggage := carrier == llmobsCarrierBaggage
+	// One hop wrote both carriers, so a field missing from baggage can come from the tags.
+	tagsMatch := fromBaggage && tagParent == baggageParent
+	read := func(baggageKey, tagKey string) string {
+		if fromBaggage {
+			if v := spanCtx.baggageItem(baggageKey); v != "" || !tagsMatch {
+				return v
+			}
+		}
+		return spanCtx.trace.propagatingTag(tagKey)
+	}
+	p = &illmobs.PropagatedLLMSpan{
+		SpanID:            parent,
+		MLApp:             read(baggageKeyLLMObsMLApp, keyPropagatedLLMObsMLAPP),
+		SessionID:         read(baggageKeyLLMObsSessionID, keyPropagatedLLMObsSessionID),
+		SampleRate:        read(baggageKeyLLMObsSampleRate, keyPropagatedLLMObsSampleRate),
+		SamplingDecision:  read(baggageKeyLLMObsSamplingDecision, keyPropagatedLLMObsSamplingDecision),
+		ParentAgentSpanID: read(baggageKeyLLMObsParentAgentSpanID, keyPropagatedLLMObsParentAgentSpanID),
+	}
+	if p.ParentAgentSpanID != "" {
+		p.ParentAgentName = read(baggageKeyLLMObsParentAgentName, keyPropagatedLLMObsParentAgentName)
+	}
+
+	var baggageTraceID, tagTraceID string
+	if fromBaggage {
+		baggageTraceID = spanCtx.baggageItem(baggageKeyLLMObsTraceID)
+	}
+	if !fromBaggage || tagsMatch {
+		tagTraceID = spanCtx.trace.propagatingTag(keyPropagatedLLMObsTraceID)
+	}
+	switch {
+	case illmobs.IsCanonicalTraceID(baggageTraceID):
+		p.TraceID = baggageTraceID
+	case tagTraceID != "":
+		p.TraceID = illmobs.NormalizeTraceID(tagTraceID)
+	default:
+		// As in dd-trace-py: the caller's APM trace ID, or a new one.
+		p.TraceID, errType = apmTraceID(spanCtx), llmobsErrMissingTraceID
+	}
+	// The tag is sent on in the form its writer chose; dd-trace-py writes decimal.
+	p.WireTraceID = tagTraceID
+	if p.WireTraceID == "" {
+		p.WireTraceID = illmobs.TraceIDToWire(p.TraceID)
+	}
+	return p, carrier, errType
 }
 
-// apmTraceID returns the APM trace ID of spanCtx in the canonical form. It is
-// the LLMObs trace ID of last resort, as in dd-trace-py: on a continued trace
-// it is the caller's APM trace ID, and otherwise a new one.
+// apmTraceID returns the APM trace ID of spanCtx in canonical form.
 func apmTraceID(spanCtx *SpanContext) string {
 	if spanCtx.TraceIDUpper() == 0 {
 		return strconv.FormatUint(spanCtx.TraceIDLower(), 10)
@@ -105,77 +140,9 @@ func apmTraceID(spanCtx *SpanContext) string {
 	return spanCtx.TraceID()
 }
 
-func llmobsParentID(v string) string {
-	if v == llmobsRootParentID {
-		return ""
-	}
-	return v
-}
-
-func propagatedLLMSpanFromTags(spanCtx *SpanContext, parentID string) *illmobs.PropagatedLLMSpan {
-	t := spanCtx.trace
-	p := &illmobs.PropagatedLLMSpan{
-		SpanID:    parentID,
-		MLApp:     t.propagatingTag(keyPropagatedLLMObsMLAPP),
-		SessionID: t.propagatingTag(keyPropagatedLLMObsSessionID),
-	}
-	if traceID := t.propagatingTag(keyPropagatedLLMObsTraceID); traceID != "" {
-		p.TraceID = illmobs.NormalizeTraceID(traceID)
-		p.WireTraceID = traceID
-	} else {
-		p.TraceID = apmTraceID(spanCtx)
-		p.WireTraceID = illmobs.TraceIDToWire(p.TraceID)
-	}
-	if agentSpanID := t.propagatingTag(keyPropagatedLLMObsParentAgentSpanID); agentSpanID != "" {
-		p.ParentAgentSpanID = agentSpanID
-		p.ParentAgentName = t.propagatingTag(keyPropagatedLLMObsParentAgentName)
-	}
-	return p
-}
-
-func propagatedLLMSpanFromBaggage(spanCtx *SpanContext, parentID string, tagsMatch bool) *illmobs.PropagatedLLMSpan {
-	read := func(baggageKey, tagKey string) string {
-		if v := spanCtx.baggageItem(baggageKey); v != "" {
-			return v
-		}
-		if tagsMatch {
-			return spanCtx.trace.propagatingTag(tagKey)
-		}
-		return ""
-	}
-	p := &illmobs.PropagatedLLMSpan{
-		SpanID:    parentID,
-		MLApp:     read(baggageKeyLLMObsMLApp, keyPropagatedLLMObsMLAPP),
-		SessionID: read(baggageKeyLLMObsSessionID, keyPropagatedLLMObsSessionID),
-	}
-	tagTraceID := ""
-	if tagsMatch {
-		// The same hop wrote both carriers, so its tag form is sent on.
-		tagTraceID = spanCtx.trace.propagatingTag(keyPropagatedLLMObsTraceID)
-		p.WireTraceID = tagTraceID
-	}
-	switch traceID := spanCtx.baggageItem(baggageKeyLLMObsTraceID); {
-	case illmobs.IsCanonicalTraceID(traceID):
-		p.TraceID = traceID
-	case tagTraceID != "":
-		p.TraceID = illmobs.NormalizeTraceID(tagTraceID)
-	default:
-		p.TraceID = apmTraceID(spanCtx)
-	}
-	if p.WireTraceID == "" {
-		p.WireTraceID = illmobs.TraceIDToWire(p.TraceID)
-	}
-	if agentSpanID := read(baggageKeyLLMObsParentAgentSpanID, keyPropagatedLLMObsParentAgentSpanID); agentSpanID != "" {
-		p.ParentAgentSpanID = agentSpanID
-		p.ParentAgentName = read(baggageKeyLLMObsParentAgentName, keyPropagatedLLMObsParentAgentName)
-	}
-	return p
-}
-
 // llmobsDistributedContext returns the LLMObs context that a request injected
-// from c must carry. It is computed at injection, not stored in c's baggage:
-// baggage is copied into every child span, which would cost every span start
-// and let one request's parent stay behind for another.
+// from c carries. It is computed at injection and never stored in c's baggage,
+// which every child span copies.
 func (c *SpanContext) llmobsDistributedContext() (illmobs.DistributedContext, bool) {
 	switch {
 	case c.llmobsSpan != nil:
@@ -186,14 +153,16 @@ func (c *SpanContext) llmobsDistributedContext() (illmobs.DistributedContext, bo
 	return illmobs.DistributedContext{}, false
 }
 
-// llmobsBaggageItems returns the llmobs.* items for dc, in a fixed order. An
-// empty value means the key is not sent.
-func llmobsBaggageItems(dc illmobs.DistributedContext) [6][2]string {
-	return [6][2]string{
+// llmobsBaggageItems returns the llmobs.* items for dc, in dd-trace-py's order.
+// An empty value is not sent.
+func llmobsBaggageItems(dc illmobs.DistributedContext) [8][2]string {
+	return [8][2]string{
 		{baggageKeyLLMObsParentID, llmobsBaggageValue(dc.ParentID)},
 		{baggageKeyLLMObsTraceID, llmobsBaggageValue(dc.TraceID)},
 		{baggageKeyLLMObsMLApp, llmobsBaggageValue(dc.MLApp)},
 		{baggageKeyLLMObsSessionID, llmobsBaggageValue(dc.SessionID)},
+		{baggageKeyLLMObsSampleRate, llmobsBaggageValue(dc.SampleRate)},
+		{baggageKeyLLMObsSamplingDecision, llmobsBaggageValue(dc.SamplingDecision)},
 		{baggageKeyLLMObsParentAgentSpanID, llmobsBaggageValue(dc.ParentAgentSpanID)},
 		{baggageKeyLLMObsParentAgentName, llmobsBaggageValue(
 			truncateToEncodedBytes(dc.ParentAgentName, baggageLLMObsAgentNameMaxEncodedBytes))},
@@ -201,8 +170,7 @@ func llmobsBaggageItems(dc illmobs.DistributedContext) [6][2]string {
 }
 
 // llmobsBaggageValue returns v, or "" when v must not be sent. A blank value
-// would encode to an empty member, which makes the receiving extractor reject
-// the whole header. An oversized value would stop the injector.
+// encodes to an empty member, which makes the receiver reject the whole header.
 func llmobsBaggageValue(v string) string {
 	encoded := encodeValue(v)
 	if encoded == "" || len(encoded) > baggageLLMObsValueMaxEncodedBytes {
@@ -229,23 +197,24 @@ func truncateToEncodedBytes(s string, maxBytes int) string {
 func deleteBaggageHeader(writer TextMapWriter) {
 	switch c := writer.(type) {
 	case HTTPHeadersCarrier:
-		for k := range c {
-			if len(k) == baggageKeyLen && strings.EqualFold(k, "baggage") {
-				delete(c, k)
-			}
-		}
+		deleteBaggageKeys(c, "")
 	case TextMapCarrier:
-		for k := range c {
-			if len(k) == baggageKeyLen && strings.EqualFold(k, "baggage") {
-				delete(c, k)
-			}
+		deleteBaggageKeys(c, "")
+	}
+}
+
+// deleteBaggageKeys deletes every key of m that is "baggage" in any case, except keep.
+func deleteBaggageKeys[M ~map[string]V, V any](m M, keep string) {
+	for k := range m {
+		if k != keep && len(k) == baggageKeyLen && strings.EqualFold(k, "baggage") {
+			delete(m, k)
 		}
 	}
 }
 
 // deleteLLMObsBaggage removes every llmobs.* item from a freshly extracted
-// context. It is used for the restart extract behavior, which starts a new trace
-// on purpose: the LLMObs trace must not continue across that boundary either.
+// context, for the restart extract behavior: the LLMObs trace must not continue
+// across that boundary either.
 // +checklocksignore — Initialization time, freshly extracted ctx not yet shared.
 func deleteLLMObsBaggage(ctx *SpanContext) {
 	for k := range ctx.baggage {

@@ -6,84 +6,198 @@
 package tracer
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 )
 
-func TestPropagatedLLMSpanCarrier(t *testing.T) {
-	const hexID, decimalID = "6928d1a700000000abcdef0123456789", "139780883686467862853683758018840586121"
+const (
+	testLLMObsHexTraceID     = "6928d1a700000000abcdef0123456789"
+	testLLMObsDecimalTraceID = "139780883686467862853683758018840586121"
+)
+
+// TestPropagatedLLMSpan covers the read rules of the dd-trace-py contract:
+// carrier choice, trace ID fallbacks, filling from tags, and error types.
+func TestPropagatedLLMSpan(t *testing.T) {
+	type want struct {
+		carrier, errType, parent, traceID, wireTraceID, mlApp, session, decision string
+	}
 	for _, tt := range []struct {
-		name          string
-		tagParent     string
-		baggageParent string
-		wantCarrier   string
-		wantParent    string
+		name    string
+		tags    map[string]string
+		baggage map[string]string
+		want    want
 	}{
-		{"nothing", "", "", "", ""},
-		{"tags only", "111", "", llmobsCarrierTags, "111"},
-		{"baggage only", "", "222", llmobsCarrierBaggage, "222"},
-		{"both agree", "222", "222", llmobsCarrierBaggage, "222"},
-		{"tags differ", "111", "222", llmobsCarrierStaleBaggage, "111"},
-		{"root tag parent", "undefined", "222", llmobsCarrierBaggage, "222"},
-		{"root baggage parent", "111", "undefined", llmobsCarrierTags, "111"},
+		{"nothing", nil, nil, want{carrier: llmobsCarrierNone, errType: llmobsErrMissingParentID}},
+		{
+			"tags only: the trace ID becomes canonical, the tag form is kept",
+			map[string]string{keyPropagatedLLMObsParentID: "111", keyPropagatedLLMObsTraceID: testLLMObsDecimalTraceID, keyPropagatedLLMObsSamplingDecision: "1"},
+			nil,
+			want{carrier: llmobsCarrierTags, parent: "111", traceID: testLLMObsHexTraceID, wireTraceID: testLLMObsDecimalTraceID, decision: "1"},
+		},
+		{
+			"baggage only",
+			nil,
+			map[string]string{baggageKeyLLMObsParentID: "222", baggageKeyLLMObsTraceID: testLLMObsHexTraceID, baggageKeyLLMObsSessionID: "s", baggageKeyLLMObsSamplingDecision: "0"},
+			want{carrier: llmobsCarrierBaggage, parent: "222", traceID: testLLMObsHexTraceID, wireTraceID: testLLMObsDecimalTraceID, session: "s", decision: "0"},
+		},
+		{
+			"same parent: baggage wins, missing fields come from the tags",
+			map[string]string{keyPropagatedLLMObsParentID: "222", keyPropagatedLLMObsTraceID: testLLMObsDecimalTraceID, keyPropagatedLLMObsMLAPP: "app-tags", keyPropagatedLLMObsSessionID: "s-tags"},
+			map[string]string{baggageKeyLLMObsParentID: "222", baggageKeyLLMObsTraceID: testLLMObsHexTraceID, baggageKeyLLMObsMLApp: "app-baggage"},
+			want{carrier: llmobsCarrierBaggage, parent: "222", traceID: testLLMObsHexTraceID, wireTraceID: testLLMObsDecimalTraceID, mlApp: "app-baggage", session: "s-tags"},
+		},
+		{
+			"different tag parent: stale baggage, no field from baggage",
+			map[string]string{keyPropagatedLLMObsParentID: "111", keyPropagatedLLMObsTraceID: testLLMObsDecimalTraceID, keyPropagatedLLMObsMLAPP: "app-b"},
+			map[string]string{baggageKeyLLMObsParentID: "222", baggageKeyLLMObsTraceID: "ab", baggageKeyLLMObsMLApp: "app-a", baggageKeyLLMObsSessionID: "s-a"},
+			want{carrier: llmobsCarrierStaleBaggage, parent: "111", traceID: testLLMObsHexTraceID, wireTraceID: testLLMObsDecimalTraceID, mlApp: "app-b"},
+		},
+		{
+			"root baggage parent with a real tag parent: stale baggage",
+			map[string]string{keyPropagatedLLMObsParentID: "111", keyPropagatedLLMObsTraceID: testLLMObsDecimalTraceID},
+			map[string]string{baggageKeyLLMObsParentID: "undefined"},
+			want{carrier: llmobsCarrierStaleBaggage, parent: "111", traceID: testLLMObsHexTraceID, wireTraceID: testLLMObsDecimalTraceID},
+		},
+		{
+			"root tag parent does not make baggage stale",
+			map[string]string{keyPropagatedLLMObsParentID: "undefined"},
+			map[string]string{baggageKeyLLMObsParentID: "222", baggageKeyLLMObsTraceID: "12345"},
+			want{carrier: llmobsCarrierBaggage, parent: "222", traceID: "12345", wireTraceID: "12345"},
+		},
+		{
+			"root parent only",
+			nil,
+			map[string]string{baggageKeyLLMObsParentID: "undefined"},
+			want{carrier: llmobsCarrierBaggage, errType: llmobsErrMissingParentID},
+		},
+		{
+			"non-numeric parent",
+			nil,
+			map[string]string{baggageKeyLLMObsParentID: "abc", baggageKeyLLMObsTraceID: testLLMObsHexTraceID},
+			want{carrier: llmobsCarrierBaggage, errType: llmobsErrInvalidParentID},
+		},
+		{
+			"non-canonical baggage trace ID falls back to the matching tag",
+			map[string]string{keyPropagatedLLMObsParentID: "222", keyPropagatedLLMObsTraceID: testLLMObsDecimalTraceID},
+			map[string]string{baggageKeyLLMObsParentID: "222", baggageKeyLLMObsTraceID: strings.ToUpper(testLLMObsHexTraceID)},
+			want{carrier: llmobsCarrierBaggage, parent: "222", traceID: testLLMObsHexTraceID, wireTraceID: testLLMObsDecimalTraceID},
+		},
+		{
+			"no usable trace ID falls back to the APM trace ID",
+			nil,
+			map[string]string{baggageKeyLLMObsParentID: "222", baggageKeyLLMObsTraceID: "0123"},
+			want{carrier: llmobsCarrierBaggage, errType: llmobsErrMissingTraceID, parent: "222", traceID: "42", wireTraceID: "42"},
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			sc := &SpanContext{trace: newTrace()}
-			if tt.tagParent != "" {
-				sc.trace.setPropagatingTag(keyPropagatedLLMObsParentID, tt.tagParent)
-				sc.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, decimalID)
-				sc.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, "from-tags")
+			sc.traceID.SetLower(42)
+			for k, v := range tt.tags {
+				sc.trace.setPropagatingTag(k, v)
 			}
-			if tt.baggageParent != "" {
-				sc.setBaggageItem(baggageKeyLLMObsParentID, tt.baggageParent)
-				sc.setBaggageItem(baggageKeyLLMObsTraceID, hexID)
-				sc.setBaggageItem(baggageKeyLLMObsMLApp, "from-baggage")
+			for k, v := range tt.baggage {
+				sc.setBaggageItem(k, v)
 			}
 
-			p, carrier := propagatedLLMSpan(sc)
-			assert.Equal(t, tt.wantCarrier, carrier)
-			if tt.wantCarrier == "" {
+			p, carrier, errType := propagatedLLMSpan(sc)
+			assert.Equal(t, tt.want.carrier, carrier)
+			assert.Equal(t, tt.want.errType, errType)
+			if tt.want.parent == "" {
 				assert.Nil(t, p)
 				return
 			}
 			require.NotNil(t, p)
-			assert.Equal(t, tt.wantParent, p.SpanID)
-			assert.Equal(t, hexID, p.TraceID, "both carriers give the canonical trace ID")
-			if tt.wantCarrier == llmobsCarrierBaggage {
-				assert.Equal(t, "from-baggage", p.MLApp)
-			} else {
-				assert.Equal(t, "from-tags", p.MLApp)
-			}
+			got := want{carrier, errType, p.SpanID, p.TraceID, p.WireTraceID, p.MLApp, p.SessionID, p.SamplingDecision}
+			assert.Equal(t, tt.want, got)
 		})
 	}
 }
 
-func TestLLMObsBaggageInjectTextMapCarrier(t *testing.T) {
-	// A plain map can hold the caller's header under "Baggage". The merged header
-	// must replace it, not sit next to it.
-	sc := &SpanContext{trace: newTrace()}
-	sc.llmobsPropagated = &illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: "6928d1a700000000abcdef0123456789"}
-	carrier := TextMapCarrier{"Baggage": "tenant=acme"}
+func TestLLMObsBaggageInject(t *testing.T) {
+	t.Setenv("DD_LLMOBS_ENABLED", "true")
+	internalconfig.SetUseFreshConfig(true)
+	defer internalconfig.SetUseFreshConfig(false)
+	inject := func(sc *SpanContext, carrier TextMapCarrier) TextMapCarrier {
+		require.NoError(t, (&propagatorBaggage{}).Inject(sc, carrier))
+		return carrier
+	}
 
-	require.NoError(t, (&propagatorBaggage{}).Inject(sc, carrier))
+	t.Run("owned keys go first, sampling is forwarded, inbound copies are replaced", func(t *testing.T) {
+		sc := &SpanContext{trace: newTrace()}
+		sc.setBaggageItem("tenant", "acme")
+		sc.setBaggageItem(baggageKeyLLMObsParentID, "1")
+		sc.setBaggageItem(baggageKeyLLMObsSamplingDecision, "1")
+		sc.llmobsPropagated = &illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: testLLMObsHexTraceID, SamplingDecision: "0"}
 
-	assert.Equal(t, TextMapCarrier{
-		"baggage": "llmobs.parent_id=555,llmobs.trace_id=6928d1a700000000abcdef0123456789,tenant=acme",
-	}, carrier)
+		assert.Equal(t, TextMapCarrier{
+			"baggage": "llmobs.parent_id=555,llmobs.trace_id=" + testLLMObsHexTraceID + ",llmobs.sampling_decision=0,tenant=acme",
+		}, inject(sc, TextMapCarrier{}))
+	})
+
+	t.Run("without an LLMObs context no owned key is forwarded", func(t *testing.T) {
+		sc := &SpanContext{trace: newTrace()}
+		sc.setBaggageItem("tenant", "acme")
+		sc.setBaggageItem(baggageKeyLLMObsParentID, "undefined")
+		sc.setBaggageItem(baggageKeyLLMObsSampleRate, "0.5")
+
+		assert.Equal(t, TextMapCarrier{"baggage": "tenant=acme"}, inject(sc, TextMapCarrier{}))
+	})
+
+	t.Run("a caller header under Baggage is merged into one key", func(t *testing.T) {
+		sc := &SpanContext{trace: newTrace()}
+		sc.llmobsPropagated = &illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: testLLMObsHexTraceID}
+
+		assert.Equal(t, TextMapCarrier{
+			"baggage": "llmobs.parent_id=555,llmobs.trace_id=" + testLLMObsHexTraceID + ",tenant=acme;p=1",
+		}, inject(sc, TextMapCarrier{"Baggage": "tenant=acme;p=1,llmobs.parent_id=9"}))
+	})
 }
 
 func TestBaggageInjectWithoutLLMObsReplacesCallerHeader(t *testing.T) {
 	// With LLMObs disabled, the injector behaves as before: the context's items
-	// replace a header the caller set.
+	// replace a header the caller set, and llmobs.* items are ordinary baggage.
+	internalconfig.SetUseFreshConfig(true)
+	defer internalconfig.SetUseFreshConfig(false)
 	sc := &SpanContext{trace: newTrace()}
-	sc.setBaggageItem("k", "v")
+	sc.setBaggageItem(baggageKeyLLMObsParentID, "1")
 	carrier := TextMapCarrier{"baggage": "tenant=a"}
 
 	require.NoError(t, (&propagatorBaggage{}).Inject(sc, carrier))
 
-	assert.Equal(t, TextMapCarrier{"baggage": "k=v"}, carrier)
+	assert.Equal(t, TextMapCarrier{"baggage": "llmobs.parent_id=1"}, carrier)
+}
+
+func TestLLMObsBaggageItemValues(t *testing.T) {
+	item := func(dc illmobs.DistributedContext, key string) string {
+		for _, it := range llmobsBaggageItems(dc) {
+			if it[0] == key {
+				return it[1]
+			}
+		}
+		return ""
+	}
+	for _, tt := range []struct {
+		name, agentName, session, wantAgentName, wantSession string
+	}{
+		{"ascii name capped at 128 encoded bytes", strings.Repeat("a", 600), "s", strings.Repeat("a", 128), "s"},
+		// Each character percent-encodes to 9 bytes, so 14 fit in 128, cut on a rune boundary.
+		{"multi-byte name capped on a rune boundary", strings.Repeat("研", 600), "s", strings.Repeat("研", 14), "s"},
+		{"blank values are not sent", " ", " ", "", ""},
+		{"an oversized value is not sent", "a", strings.Repeat("s", 600), "a", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dc := illmobs.DistributedContext{ParentID: "1", SessionID: tt.session, ParentAgentSpanID: "2", ParentAgentName: tt.agentName}
+			assert.Equal(t, tt.wantAgentName, item(dc, baggageKeyLLMObsParentAgentName))
+			assert.Equal(t, tt.wantSession, item(dc, baggageKeyLLMObsSessionID))
+			assert.Equal(t, "2", item(dc, baggageKeyLLMObsParentAgentSpanID), "items after a dropped one are still sent")
+		})
+	}
+	// Other tracers decode baggage with W3C percent-decoding, which reads "+" as a plus sign.
+	assert.Equal(t, "Research%20Agent", encodeValue("Research Agent"))
 }

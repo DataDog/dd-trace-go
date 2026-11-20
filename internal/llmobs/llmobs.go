@@ -562,8 +562,10 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 	switch {
 	case span.parent != nil:
 		span.wireTraceID = span.parent.wireTraceID
+		span.sampleRate, span.samplingDecision = span.parent.sampleRate, span.parent.samplingDecision
 	case span.propagated != nil:
 		span.wireTraceID = span.propagated.WireTraceID
+		span.sampleRate, span.samplingDecision = span.propagated.SampleRate, span.propagated.SamplingDecision
 	}
 	span.parentAgentName, span.parentAgentSpanID = resolveParentAgent(span.parent, span.propagated)
 

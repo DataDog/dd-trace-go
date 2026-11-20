@@ -15,7 +15,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"unicode/utf8"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -152,7 +151,6 @@ func TestLLMObsBaggageWrite(t *testing.T) {
 		assert.Contains(t, tags, "_dd.p.llmobs_parent_id="+span.SpanID())
 		assert.Contains(t, tags, "_dd.p.llmobs_trace_id="+span.TraceID())
 	})
-
 	t.Run("llmobs-items-are-not-stored-in-span-baggage", func(t *testing.T) {
 		// Items stored in a span's baggage are copied into every child span. The
 		// items are made at injection instead.
@@ -167,7 +165,6 @@ func TestLLMObsBaggageWrite(t *testing.T) {
 			return true
 		})
 	})
-
 	t.Run("llmobs-items-go-first-and-survive-the-item-cap", func(t *testing.T) {
 		_, _, ll := testTracer(t)
 		out := newOutboundCapture(t)
@@ -188,7 +185,6 @@ func TestLLMObsBaggageWrite(t *testing.T) {
 			assert.Equal(t, span.TraceID(), items["llmobs.trace_id"])
 		}
 	})
-
 	t.Run("concurrent-requests-each-carry-their-own-parent", func(t *testing.T) {
 		_, _, ll := testTracer(t)
 		out := newOutboundCapture(t)
@@ -218,7 +214,6 @@ func TestLLMObsBaggageWrite(t *testing.T) {
 		}
 		assert.Equal(t, want, got)
 	})
-
 	t.Run("a-caller-baggage-header-is-merged", func(t *testing.T) {
 		_, _, ll := testTracer(t)
 		out := newOutboundCapture(t)
@@ -235,7 +230,6 @@ func TestLLMObsBaggageWrite(t *testing.T) {
 		assert.Equal(t, span.SpanID(), items["llmobs.parent_id"], "the caller's llmobs item is replaced")
 		assert.Equal(t, 1, strings.Count(baggage, "llmobs.parent_id="))
 	})
-
 	t.Run("a-caller-baggage-header-is-merged-outside-an-llmobs-span-when-llmobs-is-enabled", func(t *testing.T) {
 		_, _, _ = testTracer(t)
 		out := newOutboundCapture(t)
@@ -250,87 +244,6 @@ func TestLLMObsBaggageWrite(t *testing.T) {
 		baggage, _ := out.last()
 		assert.Equal(t, "k=v,tenant=acme", baggage)
 	})
-
-	t.Run("the-agent-name-is-capped-at-128-encoded-bytes", func(t *testing.T) {
-		for _, tt := range []struct {
-			name, want string
-		}{
-			{strings.Repeat("a", 600), strings.Repeat("a", 128)},
-			// Each character percent-encodes to 9 bytes, so 14 fit in 128.
-			{strings.Repeat("研", 600), strings.Repeat("研", 14)},
-		} {
-			_, _, ll := testTracer(t)
-			out := newOutboundCapture(t)
-
-			agent, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, tt.name, llmobs.StartSpanConfig{})
-			out.get(t, ctx, nil)
-			agent.Finish(llmobs.FinishSpanConfig{})
-
-			baggage, tags := out.last()
-			items := baggageItems(t, baggage)
-			assert.Equal(t, agent.SpanID(), items["llmobs.parent_agent_span_id"])
-			assert.Equal(t, tt.want, items["llmobs.parent_agent_name"])
-			assert.True(t, utf8.ValidString(items["llmobs.parent_agent_name"]))
-			if tt.name[0] != 'a' {
-				assert.NotContains(t, tags, "_dd.p.llmobs_pagent_name=", "x-datadog-tags still refuses non-ASCII names")
-			}
-		}
-	})
-
-	t.Run("a-space-is-percent-encoded", func(t *testing.T) {
-		// Other tracers decode baggage with W3C percent-decoding, which reads "+" as
-		// a literal plus sign.
-		_, _, ll := testTracer(t)
-		out := newOutboundCapture(t)
-
-		agent, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "Research Agent", llmobs.StartSpanConfig{})
-		out.get(t, ctx, nil)
-		agent.Finish(llmobs.FinishSpanConfig{})
-
-		baggage, _ := out.last()
-		assert.Contains(t, baggage, "llmobs.parent_agent_name=Research%20Agent")
-	})
-
-	t.Run("blank-values-are-not-sent", func(t *testing.T) {
-		// An empty member makes the receiving extractor reject the whole header,
-		// the caller's own items included.
-		_, _, ll := testTracer(t)
-		out := newOutboundCapture(t)
-
-		agent, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, " ", llmobs.StartSpanConfig{SessionID: " "})
-		apm, ctx := tracer.StartSpanFromContext(ctx, "work")
-		apm.SetBaggageItem("tenant", "acme")
-		out.get(t, ctx, nil)
-		apm.Finish()
-		agent.Finish(llmobs.FinishSpanConfig{})
-
-		baggage, _ := out.last()
-		items := baggageItems(t, baggage)
-		assert.Equal(t, "acme", items["tenant"])
-		assert.NotContains(t, items, "llmobs.session_id")
-		assert.NotContains(t, items, "llmobs.parent_agent_name")
-		assert.Equal(t, agent.SpanID(), items["llmobs.parent_agent_span_id"])
-	})
-
-	t.Run("an-oversized-value-is-not-sent-and-the-rest-survive", func(t *testing.T) {
-		_, _, ll := testTracer(t)
-		out := newOutboundCapture(t)
-
-		span, ctx := ll.StartSpan(context.Background(), llmobs.SpanKindAgent, "agent", llmobs.StartSpanConfig{SessionID: strings.Repeat("s", 9000)})
-		apm, ctx := tracer.StartSpanFromContext(ctx, "work")
-		apm.SetBaggageItem("tenant", "acme")
-		out.get(t, ctx, nil)
-		apm.Finish()
-		span.Finish(llmobs.FinishSpanConfig{})
-
-		baggage, _ := out.last()
-		items := baggageItems(t, baggage)
-		assert.NotContains(t, items, "llmobs.session_id")
-		assert.Equal(t, span.SpanID(), items["llmobs.parent_id"])
-		assert.Equal(t, span.SpanID(), items["llmobs.parent_agent_span_id"], "items after the oversized one are still sent")
-		assert.Equal(t, "acme", items["tenant"])
-	})
-
 	t.Run("a-reused-carrier-drops-the-earlier-requests-llmobs-items", func(t *testing.T) {
 		_, _, ll := testTracer(t)
 
@@ -368,21 +281,6 @@ func TestLLMObsBaggageWrite(t *testing.T) {
 }
 
 func TestLLMObsBaggageRead(t *testing.T) {
-	t.Run("baggage-alone-continues-the-trace", func(t *testing.T) {
-		// An intermediary dropped the APM trace headers.
-		_, coll, ll := testTracer(t)
-		out := newOutboundCapture(t)
-		inbound := http.Header{}
-		inbound.Set("Baggage", "llmobs.parent_id=555,llmobs.trace_id="+upstreamTraceIDHex+",llmobs.ml_app=upstream,llmobs.session_id=sess-up")
-
-		serveInbound(t, inbound, serverToolThenCall(t, ll, out))
-
-		tool := coll.RequireSpan(t, "server_tool")
-		assert.Equal(t, "555", tool.ParentID)
-		assert.Equal(t, upstreamTraceIDHex, tool.TraceID)
-		assert.Equal(t, "sess-up", tool.SessionID)
-	})
-
 	t.Run("tags-alone-continue-the-trace-and-the-trace-id-becomes-hex", func(t *testing.T) {
 		// A caller on an older tracer sends only the tags, with a decimal trace ID.
 		_, coll, ll := testTracer(t)
@@ -398,113 +296,6 @@ func TestLLMObsBaggageRead(t *testing.T) {
 		assert.Equal(t, upstreamTraceIDHex, baggageItems(t, baggage)["llmobs.trace_id"], "baggage carries hex")
 		assert.Contains(t, tags, "_dd.p.llmobs_trace_id="+upstreamTraceIDDecimal, "the tag keeps the form it arrived in")
 	})
-
-	t.Run("both-carriers-from-one-hop-baggage-wins-and-the-tag-form-is-kept", func(t *testing.T) {
-		_, coll, ll := testTracer(t)
-		out := newOutboundCapture(t)
-		inbound := apmHeaders("_dd.p.llmobs_parent_id=555,_dd.p.llmobs_trace_id=" + upstreamTraceIDDecimal)
-		inbound.Set("Baggage", "llmobs.parent_id=555,llmobs.trace_id="+upstreamTraceIDHex)
-
-		serveInbound(t, inbound, serverToolThenCall(t, ll, out))
-
-		assert.Equal(t, upstreamTraceIDHex, coll.RequireSpan(t, "server_tool").TraceID)
-		_, tags := out.last()
-		assert.Contains(t, tags, "_dd.p.llmobs_trace_id="+upstreamTraceIDDecimal, "dd-trace-py before 4.9 parses this tag with int()")
-	})
-
-	t.Run("a-different-tag-parent-means-stale-baggage-and-the-tags-win", func(t *testing.T) {
-		// A -> B -> here, where B is an older tracer: B wrote the tags with its own
-		// parent and forwarded A's baggage. No field may come from A.
-		_, coll, ll := testTracer(t)
-		out := newOutboundCapture(t)
-		inbound := apmHeaders("_dd.p.llmobs_parent_id=222,_dd.p.llmobs_trace_id=" + upstreamTraceIDDecimal + ",_dd.p.llmobs_ml_app=app-b")
-		inbound.Set("Baggage", "llmobs.parent_id=111,llmobs.trace_id="+upstreamTraceIDHex+",llmobs.ml_app=app-a,llmobs.session_id=sess-a")
-
-		serveInbound(t, inbound, serverToolThenCall(t, ll, out))
-
-		tool := coll.RequireSpan(t, "server_tool")
-		assert.Equal(t, "222", tool.ParentID)
-		assert.NotEqual(t, "sess-a", tool.SessionID)
-		assert.Equal(t, "app-b", findTag(tool.Tags, "ml_app"))
-	})
-
-	t.Run("a-root-tag-parent-does-not-make-baggage-stale", func(t *testing.T) {
-		_, coll, ll := testTracer(t)
-		out := newOutboundCapture(t)
-		inbound := apmHeaders("_dd.p.llmobs_parent_id=undefined,_dd.p.llmobs_trace_id=" + upstreamTraceIDDecimal)
-		inbound.Set("Baggage", "llmobs.parent_id=111,llmobs.trace_id="+upstreamTraceIDHex)
-
-		serveInbound(t, inbound, serverToolThenCall(t, ll, out))
-
-		assert.Equal(t, "111", coll.RequireSpan(t, "server_tool").ParentID)
-	})
-
-	t.Run("a-non-canonical-baggage-trace-id-falls-back-to-the-tags", func(t *testing.T) {
-		for _, bad := range []string{"-1", strings.Repeat("a", 33), strings.Repeat("1", 42), "0123", strings.ToUpper(upstreamTraceIDHex)} {
-			t.Run(bad, func(t *testing.T) {
-				_, coll, ll := testTracer(t)
-				out := newOutboundCapture(t)
-				inbound := apmHeaders("_dd.p.llmobs_parent_id=111,_dd.p.llmobs_trace_id=" + upstreamTraceIDDecimal)
-				inbound.Set("Baggage", "llmobs.parent_id=111,llmobs.trace_id="+url.QueryEscape(bad))
-
-				serveInbound(t, inbound, serverToolThenCall(t, ll, out))
-
-				tool := coll.RequireSpan(t, "server_tool")
-				assert.Equal(t, "111", tool.ParentID)
-				assert.Equal(t, upstreamTraceIDHex, tool.TraceID)
-			})
-		}
-	})
-
-	t.Run("a-non-canonical-baggage-trace-id-without-tags-falls-back-to-the-apm-trace-id", func(t *testing.T) {
-		_, coll, ll := testTracer(t)
-		out := newOutboundCapture(t)
-		inbound := apmHeaders("")
-		inbound.Set("Baggage", "llmobs.parent_id=111,llmobs.trace_id=-1")
-
-		serveInbound(t, inbound, serverToolThenCall(t, ll, out))
-
-		tool := coll.RequireSpan(t, "server_tool")
-		assert.Equal(t, "111", tool.ParentID)
-		assert.Equal(t, "123456789", tool.TraceID)
-	})
-
-	t.Run("a-missing-llmobs-trace-id-falls-back-to-the-apm-trace-id", func(t *testing.T) {
-		// Same fallback as dd-trace-py: the caller's APM trace ID, here 64-bit, so decimal.
-		_, coll, ll := testTracer(t)
-		out := newOutboundCapture(t)
-
-		serveInbound(t, apmHeaders("_dd.p.llmobs_parent_id=111"), serverToolThenCall(t, ll, out))
-
-		tool := coll.RequireSpan(t, "server_tool")
-		assert.Equal(t, "111", tool.ParentID)
-		assert.Equal(t, "123456789", tool.TraceID)
-	})
-
-	t.Run("a-64-bit-decimal-baggage-trace-id-is-canonical", func(t *testing.T) {
-		_, coll, ll := testTracer(t)
-		out := newOutboundCapture(t)
-		inbound := http.Header{}
-		inbound.Set("Baggage", "llmobs.parent_id=111,llmobs.trace_id=12345")
-
-		serveInbound(t, inbound, serverToolThenCall(t, ll, out))
-
-		assert.Equal(t, "12345", coll.RequireSpan(t, "server_tool").TraceID)
-	})
-
-	t.Run("fields-missing-from-baggage-come-from-tags-that-name-the-same-parent", func(t *testing.T) {
-		_, coll, ll := testTracer(t)
-		out := newOutboundCapture(t)
-		inbound := apmHeaders("_dd.p.llmobs_parent_id=111,_dd.p.llmobs_trace_id=" + upstreamTraceIDDecimal + ",_dd.p.llmobs_sid=sess-tags,_dd.p.llmobs_ml_app=app-tags")
-		inbound.Set("Baggage", "llmobs.parent_id=111,llmobs.trace_id="+upstreamTraceIDHex+",llmobs.ml_app=app-baggage")
-
-		serveInbound(t, inbound, serverToolThenCall(t, ll, out))
-
-		tool := coll.RequireSpan(t, "server_tool")
-		assert.Equal(t, "sess-tags", tool.SessionID, "missing from baggage, so it comes from the tags")
-		assert.Equal(t, "app-baggage", findTag(tool.Tags, "ml_app"), "present in baggage, so baggage wins")
-	})
-
 	t.Run("restart-does-not-continue-the-llmobs-trace", func(t *testing.T) {
 		t.Setenv("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT", "restart")
 		_, coll, ll := testTracer(t)
@@ -523,25 +314,11 @@ func TestLLMObsBaggageRead(t *testing.T) {
 		assert.Equal(t, "acme", items["tenant"], "other baggage still propagates")
 		assert.Equal(t, tool.SpanID, items["llmobs.parent_id"])
 	})
-
-	t.Run("restart-drops-inbound-llmobs-baggage-on-a-pass-through-hop", func(t *testing.T) {
-		t.Setenv("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT", "restart")
-		_, _, _ = testTracer(t)
-		out := newOutboundCapture(t)
-		inbound := http.Header{}
-		inbound.Set("Baggage", "llmobs.parent_id=555,llmobs.trace_id="+upstreamTraceIDHex+",tenant=acme")
-
-		serveInbound(t, inbound, func(ctx context.Context) { out.get(t, ctx, nil) })
-
-		baggage, _ := out.last()
-		assert.Equal(t, map[string]string{"tenant": "acme"}, baggageItems(t, baggage))
-	})
-
 	t.Run("a-pass-through-hop-forwards-the-context-in-canonical-form", func(t *testing.T) {
 		// The server makes a request without an LLMObs span of its own.
 		_, _, _ = testTracer(t)
 		out := newOutboundCapture(t)
-		inbound := apmHeaders("_dd.p.llmobs_parent_id=555,_dd.p.llmobs_trace_id=" + upstreamTraceIDDecimal + ",_dd.p.llmobs_sid=sess-up")
+		inbound := apmHeaders("_dd.p.llmobs_parent_id=555,_dd.p.llmobs_trace_id=" + upstreamTraceIDDecimal + ",_dd.p.llmobs_sid=sess-up,_dd.p.llmobs_sd=1")
 
 		serveInbound(t, inbound, func(ctx context.Context) { out.get(t, ctx, nil) })
 
@@ -550,25 +327,25 @@ func TestLLMObsBaggageRead(t *testing.T) {
 		assert.Equal(t, "555", items["llmobs.parent_id"])
 		assert.Equal(t, upstreamTraceIDHex, items["llmobs.trace_id"])
 		assert.Equal(t, "sess-up", items["llmobs.session_id"])
+		assert.Equal(t, "1", items["llmobs.sampling_decision"], "dd-trace-py's decision is forwarded")
 	})
-
 	t.Run("a-pass-through-hop-after-a-baggage-only-hop-also-writes-the-tags", func(t *testing.T) {
 		// As in dd-trace-py, so that a downstream tracer that reads only the tags
 		// still continues the trace. The tag trace ID is decimal.
 		_, _, _ = testTracer(t)
 		out := newOutboundCapture(t)
 		inbound := http.Header{}
-		inbound.Set("Baggage", "llmobs.parent_id=555,llmobs.trace_id="+upstreamTraceIDHex+",llmobs.ml_app=upstream,llmobs.session_id=sess-up")
+		inbound.Set("Baggage", "llmobs.parent_id=555,llmobs.trace_id="+upstreamTraceIDHex+",llmobs.ml_app=upstream,llmobs.session_id=sess-up,llmobs.sampling_decision=0")
 
 		serveInbound(t, inbound, func(ctx context.Context) { out.get(t, ctx, nil) })
 
 		_, tags := out.last()
+		assert.Contains(t, tags, "_dd.p.llmobs_sd=0")
 		assert.Contains(t, tags, "_dd.p.llmobs_parent_id=555")
 		assert.Contains(t, tags, "_dd.p.llmobs_trace_id="+upstreamTraceIDDecimal)
 		assert.Contains(t, tags, "_dd.p.llmobs_ml_app=upstream")
 		assert.Contains(t, tags, "_dd.p.llmobs_sid=sess-up")
 	})
-
 	t.Run("inbound-llmobs-baggage-is-replaced-not-forwarded", func(t *testing.T) {
 		_, coll, ll := testTracer(t)
 		out := newOutboundCapture(t)
@@ -581,10 +358,9 @@ func TestLLMObsBaggageRead(t *testing.T) {
 		items := baggageItems(t, baggage)
 		assert.Equal(t, coll.RequireSpan(t, "server_tool").SpanID, items["llmobs.parent_id"])
 		assert.Equal(t, 1, strings.Count(baggage, "llmobs.parent_id="))
-		assert.Equal(t, "0", items["llmobs.sampling_decision"], "keys this tracer does not write pass through")
+		assert.Equal(t, "0", items["llmobs.sampling_decision"], "written from the continued context, not forwarded")
 	})
-
-	t.Run("the-carrier-is-counted-once-per-inbound-request", func(t *testing.T) {
+	t.Run("each-inbound-request-is-counted-once-with-its-carrier", func(t *testing.T) {
 		rec := new(telemetrytest.RecordClient)
 		defer telemetry.MockClient(rec)()
 		_, _, ll := testTracer(t)
@@ -597,6 +373,7 @@ func TestLLMObsBaggageRead(t *testing.T) {
 				return h
 			}(),
 			apmHeaders("_dd.p.llmobs_parent_id=222,_dd.p.llmobs_trace_id=" + upstreamTraceIDDecimal),
+			apmHeaders(""),
 			func() http.Header {
 				h := apmHeaders("_dd.p.llmobs_parent_id=222,_dd.p.llmobs_trace_id=" + upstreamTraceIDDecimal)
 				h.Set("Baggage", "llmobs.parent_id=111,llmobs.trace_id="+upstreamTraceIDHex)
@@ -613,9 +390,10 @@ func TestLLMObsBaggageRead(t *testing.T) {
 			}
 		}
 		assert.Equal(t, map[string]float64{
-			"carrier:baggage,error:0":       1,
-			"carrier:stale_baggage,error:0": 1,
-			"carrier:tags,error:0":          1,
+			"carrier:baggage,error:0":                           1,
+			"carrier:stale_baggage,error:0":                     1,
+			"carrier:tags,error:0":                              1,
+			"carrier:none,error:1,error_type:missing_parent_id": 1,
 		}, counts)
 	})
 }

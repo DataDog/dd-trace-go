@@ -1915,6 +1915,7 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 	// The llmobs.* items go first, so that they survive the item and byte caps,
 	// and replace any inbound copies of the same keys.
 	llmCtx, hasLLMObs := ctx.llmobsDistributedContext()
+	llmobsOn := hasLLMObs || internalconfig.Get().LLMObsEnabled()
 	if hasLLMObs {
 		for _, item := range llmobsBaggageItems(llmCtx) {
 			if item[1] != "" && !b.add(encodeKey(item[0]), encodeValue(item[1])) {
@@ -1923,17 +1924,16 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 		}
 	}
 	ctx.ForeachBaggageItem(func(k, v string) bool {
-		if hasLLMObs && isLLMObsBaggageKeyWritten(k) {
+		if llmobsOn && isLLMObsBaggageKey(k) {
 			return true
 		}
 		return b.add(encodeKey(k), encodeValue(v))
 	})
-	// Without LLMObs, a caller's baggage header is replaced as it always was.
-	// With LLMObs enabled, the caller's members are kept after ours, and members
-	// that belong to one request's LLMObs context are dropped, so a carrier reused
-	// for another request does not keep an earlier parent.
+	// Without LLMObs, a caller's baggage header is replaced as it always was. With
+	// LLMObs enabled, its members are kept after ours, except the llmobs.* members,
+	// so a carrier reused for another request does not keep an earlier parent.
 	callerHeader := false
-	if hasLLMObs || internalconfig.Get().LLMObsEnabled() {
+	if llmobsOn {
 		if reader, ok := writer.(TextMapReader); ok {
 			callerHeader = mergeCallerBaggage(&b, ctx, reader)
 		}
@@ -1946,13 +1946,8 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 	}
 	writer.Set("baggage", b.String())
 	if c, ok := writer.(TextMapCarrier); ok {
-		// Set stores the lowercase key. Remove a caller's "Baggage" so that the
-		// carrier does not hold two headers.
-		for k := range c {
-			if k != "baggage" && len(k) == baggageKeyLen && strings.EqualFold(k, "baggage") {
-				delete(c, k)
-			}
-		}
+		// Set stores the lowercase key, so remove a caller's "Baggage".
+		deleteBaggageKeys(c, "baggage")
 	}
 	return nil
 }
@@ -2004,7 +1999,7 @@ func mergeCallerBaggage(b *baggageHeaderBuilder, ctx *SpanContext, reader TextMa
 			continue
 		}
 		key, err := url.QueryUnescape(strings.TrimSpace(k))
-		if err != nil || key == "" || isLLMObsRequestScopedKey(key) || ctx.baggageItem(key) != "" {
+		if err != nil || key == "" || isLLMObsBaggageKey(key) || ctx.baggageItem(key) != "" {
 			continue
 		}
 		if !b.addMember(member) {
