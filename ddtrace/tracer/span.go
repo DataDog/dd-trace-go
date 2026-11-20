@@ -1422,10 +1422,20 @@ func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
 func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	llmSpan, ok := illmobs.ActiveLLMSpanFromContext(ctx)
 	if !ok {
+		// A service that forwards a request without an LLMObs span of its own
+		// still sends the inbound context on in baggage. The tags were written once
+		// at the local root (activateInboundLLMObsContext): rewriting the trace-wide
+		// tags here would reset them while an LLMObs span of this trace is open.
+		if p, ok := illmobs.PropagatedLLMSpanFromContext(ctx); ok {
+			spanCtx.llmobsSpan = nil
+			spanCtx.llmobsPropagated = p
+		}
 		return
 	}
+	spanCtx.llmobsSpan = llmSpan
+	spanCtx.llmobsPropagated = nil
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, llmSpan.SpanID())
-	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.TraceID())
+	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.WireTraceID())
 	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, llmSpan.MLApp())
 	// session_id is optional. Propagating tags are trace-scoped, so unset the key when the active
 	// span has no session; otherwise a predecessor's value lingers and propagates downstream.
@@ -1435,6 +1445,33 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSessionID)
 	}
 	setPropagatingParentAgentTags(spanCtx, llmSpan.PropagatedParentAgentSpanID(), llmSpan.PropagatedParentAgentName())
+}
+
+// setPropagatedLLMObsTags writes the inbound LLMObs context to the trace's
+// propagating tags, once, at the local root of an inbound request. It returns at
+// once when the inbound tags already name this parent. The session is written
+// only when the trace has none: it is trace-level, and the first writer wins.
+func setPropagatedLLMObsTags(spanCtx *SpanContext, p *illmobs.PropagatedLLMSpan) {
+	if spanCtx.trace.propagatingTag(keyPropagatedLLMObsParentID) == p.SpanID {
+		return
+	}
+	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, p.SpanID)
+	if p.WireTraceID != "" {
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, p.WireTraceID)
+	}
+	if p.MLApp != "" {
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, p.MLApp)
+	}
+	if p.SessionID != "" && spanCtx.trace.propagatingTag(keyPropagatedLLMObsSessionID) == "" {
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSessionID, p.SessionID)
+	}
+	if p.SampleRate != "" {
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSampleRate, p.SampleRate)
+	}
+	if p.SamplingDecision != "" {
+		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSamplingDecision, p.SamplingDecision)
+	}
+	setPropagatingParentAgentTags(spanCtx, p.ParentAgentSpanID, p.ParentAgentName)
 }
 
 // setPropagatingParentAgentTags writes the parent-agent attribution tags onto the trace's
@@ -1552,6 +1589,10 @@ const (
 	keyPropagatedLLMObsParentAgentSpanID = "_dd.p.llmobs_pagent_span_id"
 	// keyPropagatedLLMObsParentAgentName contains the propagated parent-agent name.
 	keyPropagatedLLMObsParentAgentName = "_dd.p.llmobs_pagent_name"
+	// keyPropagatedLLMObsSampleRate and keyPropagatedLLMObsSamplingDecision carry the
+	// LLMObs sampling values that dd-trace-py decides. This tracer only forwards them.
+	keyPropagatedLLMObsSampleRate       = "_dd.p.llmobs_sr"
+	keyPropagatedLLMObsSamplingDecision = "_dd.p.llmobs_sd"
 
 	// serviceSourceManual is the service source value used when the service name is set manually via SetTag.
 	serviceSourceManual = "m"

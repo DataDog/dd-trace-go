@@ -23,6 +23,7 @@ import (
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -140,6 +141,12 @@ type SpanContext struct {
 	bridgeState atomic.Uint32
 
 	trace *trace // reference to the trace that this span belongs too
+
+	// llmobsSpan, or else llmobsPropagated, is the LLMObs context that requests
+	// injected from this context carry in baggage. It is set at span start and
+	// inherited by child spans. Read-only after init.
+	llmobsSpan       *illmobs.Span
+	llmobsPropagated *illmobs.PropagatedLLMSpan
 
 	// The 16-character hex string of the last seen Datadog Span ID
 	// this value will be added as the _dd.parent_id tag to spans
@@ -306,6 +313,8 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 			context.trace = parent.trace
 			context.origin = parent.origin // +checklocksignore - Initialization time, not shared yet. Parent origin is read-only after init.
 			context.errors.Store(parent.errors.Load())
+			context.llmobsSpan = parent.llmobsSpan
+			context.llmobsPropagated = parent.llmobsPropagated
 		}
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
