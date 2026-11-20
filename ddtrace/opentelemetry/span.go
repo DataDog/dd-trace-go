@@ -216,8 +216,6 @@ func extractTraceData(ctx *tracer.SpanContext, c *oteltrace.SpanContextConfig) {
 			c.TraceFlags = oteltrace.TraceFlags(f)
 		}
 	}
-	// Remote indicates a remotely-created Span
-	c.Remote = true
 }
 
 func uint64ToByte(n uint64, b []byte) {
