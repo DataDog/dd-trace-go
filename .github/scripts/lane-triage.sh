@@ -126,11 +126,17 @@ issue_body() {
   local lane=$1 name=$2 attribution=''
   # The previous main-based run decides whether this failure is the first
   # red: a green previous run means the failing commit introduced it.
+  # Anchor to the triggering run: another run may have started before
+  # this one finished, so the second-newest entry is not reliably the
+  # predecessor — find this run, then take the one after it.
   local prev
   prev=$(gh run list --workflow "$lane" --branch main --limit 20 \
-    --json conclusion,headSha,event \
-    --jq '[.[] | select(.event != "pull_request")] | .[1] // empty' \
-    2>/dev/null) || prev=''
+    --json databaseId,conclusion,headSha,event 2>/dev/null \
+    | jq -c --argjson id "$RUN_ID" '
+      [.[] | select(.event != "pull_request")]
+      | (map(.databaseId) | index($id)) as $i
+      | if $i == null then empty else .[$i + 1] // empty end') \
+    || prev=''
   if [ -n "$prev" ]; then
     local prev_conclusion prev_sha
     prev_conclusion=$(printf '%s' "$prev" | jq -r '.conclusion')
