@@ -144,14 +144,15 @@ type LLMObs struct {
 	bufEvalMetricsSize int // cumulative JSON size of buffered eval metrics
 
 	// lifecycle
-	mu            sync.Mutex
-	running       bool
-	wg            sync.WaitGroup // tracks in-flight async batchSend goroutines only (not the main loop)
-	stopCh        chan struct{}  // signal stop
-	stoppedCh     chan struct{}  // closed when the main run loop exits
-	flushNowCh    chan struct{}
-	flushSyncCh   chan chan struct{} // synchronous flush: send a done channel, blocks until flush completes
-	flushInterval time.Duration
+	closeIdleConnections func() // only set for the client created by LLMObs
+	mu                   sync.Mutex
+	running              bool
+	wg                   sync.WaitGroup // tracks in-flight async batchSend goroutines only (not the main loop)
+	stopCh               chan struct{}  // signal stop
+	stoppedCh            chan struct{}  // closed when the main run loop exits
+	flushNowCh           chan struct{}
+	flushSyncCh          chan chan struct{} // synchronous flush: send a done channel, blocks until flush completes
+	flushInterval        time.Duration
 }
 
 func newLLMObs(cfg *config.Config, tracer Tracer) (*LLMObs, error) {
@@ -161,20 +162,23 @@ func newLLMObs(cfg *config.Config, tracer Tracer) (*LLMObs, error) {
 	if cfg.MLApp == "" {
 		return nil, errMLAppRequired
 	}
+	var closeIdleConnections func()
 	if cfg.TracerConfig.HTTPClient == nil {
 		cfg.TracerConfig.HTTPClient = cfg.DefaultHTTPClient()
+		closeIdleConnections = cfg.TracerConfig.HTTPClient.CloseIdleConnections
 	}
 	return &LLMObs{
-		Config:        cfg,
-		Transport:     transport.New(cfg),
-		Tracer:        tracer,
-		spanEventsCh:  make(chan *transport.LLMObsSpanEvent),
-		evalMetricsCh: make(chan *transport.LLMObsMetric),
-		stopCh:        make(chan struct{}),
-		stoppedCh:     make(chan struct{}),
-		flushNowCh:    make(chan struct{}, 1),
-		flushSyncCh:   make(chan chan struct{}),
-		flushInterval: defaultFlushInterval,
+		closeIdleConnections: closeIdleConnections,
+		Config:               cfg,
+		Transport:            transport.New(cfg),
+		Tracer:               tracer,
+		spanEventsCh:         make(chan *transport.LLMObsSpanEvent),
+		evalMetricsCh:        make(chan *transport.LLMObsMetric),
+		stopCh:               make(chan struct{}),
+		stoppedCh:            make(chan struct{}),
+		flushNowCh:           make(chan struct{}, 1),
+		flushSyncCh:          make(chan chan struct{}),
+		flushInterval:        defaultFlushInterval,
 	}, nil
 }
 
@@ -400,6 +404,9 @@ func (l *LLMObs) Stop() {
 	<-l.stoppedCh
 	// Wait for any async batchSend goroutines that were in flight when the loop stopped.
 	l.wg.Wait()
+	if l.closeIdleConnections != nil {
+		l.closeIdleConnections()
+	}
 }
 
 // drainChannels pulls everything currently buffered in the channels into our in-memory buffers.

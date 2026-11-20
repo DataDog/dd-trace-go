@@ -34,6 +34,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -63,6 +64,80 @@ func (r *agentInfoJSONRoundTripper) RoundTrip(*http.Request) (*http.Response, er
 		Header:     make(http.Header),
 		Body:       io.NopCloser(strings.NewReader(r.body)),
 	}, nil
+}
+
+func TestLLMObsClientWithUnixAgent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("requires Unix domain sockets")
+	}
+	// Keep the path below the Unix socket path limit on macOS.
+	dir, err := os.MkdirTemp("", "dd")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+	socket := filepath.Join(dir, "apm.sock")
+	t.Setenv("DD_TRACE_AGENT_URL", "unix://"+socket)
+	t.Setenv("DD_LLMOBS_AGENTLESS_ENABLED", "")
+
+	t.Setenv("DD_API_KEY", "0123456789abcdef0123456789abcdef")
+	cfg, err := newConfig(WithLLMObsMLApp("test"))
+	require.NoError(t, err)
+	llm, err := buildLLMObsConfig(cfg)
+	require.NoError(t, err)
+	require.True(t, llm.AgentlessEnabled)
+
+	// The agent starts after the tracer has selected agentless mode.
+	listener, err := net.Listen("unix", socket)
+	require.NoError(t, err)
+	agent := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/info" {
+			fmt.Fprint(w, `{"endpoints":["/evp_proxy/v2/"]}`)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	agent.Listener.Close()
+	agent.Listener = listener
+	agent.Start()
+	defer agent.Close()
+
+	intake := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	closed := make(chan struct{}, 1)
+	intake.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateClosed {
+			closed <- struct{}{}
+		}
+	}
+	intake.StartTLS()
+	defer intake.Close()
+	require.NoError(t, llmobs.Start(llm, &llmobsTracerAdapter{}, nil))
+	t.Cleanup(llmobs.Stop)
+	active, err := llmobs.ActiveLLMObs()
+	require.NoError(t, err)
+	client := active.Config.TracerConfig.HTTPClient
+	client.Transport.(*http.Transport).TLSClientConfig = intake.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
+	resp, err := client.Get(intake.URL)
+	require.NoError(t, err)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusAccepted, resp.StatusCode)
+	llmobs.Stop()
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("idle intake connection still open after LLMObs shutdown")
+	}
+
+	// A tracer starting after agent discovery should still use the socket.
+	cfg, err = newConfig()
+	require.NoError(t, err)
+	llm, err = buildLLMObsConfig(cfg)
+	require.NoError(t, err)
+	require.False(t, llm.AgentlessEnabled)
+	resp, err = llm.TracerConfig.HTTPClient.Get(cfg.internalConfig.AgentURL().String())
+	require.NoError(t, err)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 }
 
 func TestFetchAgentFeaturesTraceFilters(t *testing.T) {
