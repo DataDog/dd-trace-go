@@ -1865,13 +1865,18 @@ func encodeValue(value string) string {
 	return urlEncode(strings.TrimSpace(value), safeCharactersValue)
 }
 
-// urlEncode performs percent-encoding while respecting the safe characters
+// urlEncode performs percent-encoding while respecting the safe characters.
+// A space is written as %20: url.QueryEscape would write "+", which the W3C
+// baggage decoders of other tracers read as a literal plus sign.
 func urlEncode(input string, safeCharacters string) string {
 	var encoded strings.Builder
 	for _, c := range input {
-		if strings.ContainsRune(safeCharacters, c) {
+		switch {
+		case strings.ContainsRune(safeCharacters, c):
 			encoded.WriteRune(c)
-		} else {
+		case c == ' ':
+			encoded.WriteString("%20")
+		default:
 			encoded.WriteString(url.QueryEscape(string(c)))
 		}
 	}
