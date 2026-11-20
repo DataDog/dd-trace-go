@@ -1,0 +1,8 @@
+panic: runtime error: invalid memory address or nil pointer dereference
+[signal SIGSEGV: segmentation violation code=0x2 addr=0x0 pc=0x102c79cd0]
+
+goroutine 1 [running]:
+main.crash({0x16d23d553, 0x9}, {0x16d23d55d?, 0x102d5bb20?})
+	/app/generate.go:107 +0x270
+main.main()
+	/app/generate.go:29 +0x94
