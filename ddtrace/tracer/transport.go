@@ -214,9 +214,24 @@ func (t *httpTransport) sendStats(p *pb.ClientStatsPayload, tracerObfuscationVer
 	return nil
 }
 
+// newTraceRequestBody returns the request body for one HTTP request over p.
+// A v1 payload issues one body per request and registers it with the payload's
+// pool handoff: closing one body releases only that request, so the payload
+// returns to its pool only after the flush side is done and every request body
+// has closed. A v0.4 payload has no pool and serves as its own body, exactly
+// as before this wrapper existed.
+func newTraceRequestBody(p payload) io.ReadCloser {
+	if sp, ok := p.(*safePayload); ok {
+		if pv1, ok := sp.p.(*payloadV1); ok {
+			return pv1.handoff.newBody(sp)
+		}
+	}
+	return p
+}
+
 func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
 	protocol := p.protocol()
-	req, err := http.NewRequest("POST", t.traceURLFor(protocol), p)
+	req, err := http.NewRequest("POST", t.traceURLFor(protocol), newTraceRequestBody(p))
 	if err != nil {
 		return nil, fmt.Errorf("cannot create http request: %s", err)
 	}
@@ -225,14 +240,14 @@ func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
 	// Mark the POST replayable so net/http transparently retries on a fresh
 	// connection when an idle UDS conn was silently closed by the agent.
 	// http.NewRequest does not auto-populate GetBody for the custom payload
-	// type, so we set it explicitly. The payload is returned directly (not
-	// wrapped in io.NopCloser) so that the stdlib's request path calls
-	// req.Body.Close() on it: payloadV04.Close is a no-op, and
-	// payloadV1.Close signals the pool-return handoff via atomic.Or
-	// (idempotent), which is required for payloadV1 to return to its pool.
+	// type, so we set it explicitly. Each GetBody call rewinds the payload and
+	// issues a fresh request body through newTraceRequestBody: for a v1
+	// payload, every replayed body counts separately in the pool handoff, and
+	// net/http closes each body after its request, as the RoundTripper
+	// contract requires.
 	req.GetBody = func() (io.ReadCloser, error) {
 		p.reset()
-		return p, nil
+		return newTraceRequestBody(p), nil
 	}
 	for header, value := range t.headers {
 		req.Header.Set(header, value)

@@ -195,10 +195,9 @@ func (h *agentTraceWriter) newPayload(protocol float64, hint int) payload {
 // between the mismatch check and the push) since a non-empty payload cannot
 // switch protocol for free. The discarded payload was never handed to the
 // transport, so it is simply dropped rather than recycled through the
-// payloadV1 pool:
-// handoff(pv1StateFlushDone) alone would not return it (the two-party handoff
-// also needs the transport's bit), and forcing both bits risks a double pool
-// return.
+// payloadV1 pool. The body-counting handoff would safely take a payload back
+// that never issued a request body, but the code keeps the drop: an empty
+// payload costs one allocation, and the pool replaces it on the next flush.
 // +checklocks:h.mu
 func (h *agentTraceWriter) rotateStalePayload(protocol float64) {
 	if h.payload.itemCount() == 0 && h.payload.protocol() != protocol {
@@ -227,14 +226,13 @@ func (h *agentTraceWriter) flush() {
 }
 
 // retirePayload runs the cleanup a payload needs once it's done being sent:
-// v1 payloads hand off to their pool via the two-party bit, v0.4 payloads are
-// just cleared. Shared by sendAsync's deferred cleanup and by
-// downgradeAfterRejectedSend's caller, which retires the original v1 payload
-// early — before that deferred cleanup runs — because it replaces it with a
-// re-encoded v0.4 payload for the rest of the send loop.
+// v1 payloads mark their pool handoff's flush side done — the handoff itself
+// waits for every request body to close before returning the payload to its
+// pool — and v0.4 payloads are just cleared. Called by sendAsync's deferred
+// cleanup.
 func (h *agentTraceWriter) retirePayload(p payload) {
 	if p.protocol() == traceProtocolV1 {
-		p.(*safePayload).p.(*payloadV1).handoff(pv1StateFlushDone)
+		p.(*safePayload).p.(*payloadV1).handoff.markFlushed()
 	} else {
 		p.clear()
 	}

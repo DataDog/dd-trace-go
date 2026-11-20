@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"sync/atomic"
 	_ "unsafe"
@@ -124,27 +125,90 @@ type payloadV1 struct {
 	processTagsCached anyValue
 	processTagsStr    string
 
-	// poolState coordinates returning this payload to the pool after all HTTP
-	// activity is done. roundTrip() can return before writeLoop calls body.Close(),
-	// so we use two bits — whoever sets both is responsible for pool return.
-	poolState atomic.Uint32
+	// handoff tracks the request bodies that still reference this payload in
+	// the current pool cycle. It returns the payload to the pool when the flush
+	// side and every request body are done.
+	handoff *pv1Handoff
 }
 
-// Bits for payloadV1.poolState, used by handoff.
-const (
-	pv1StateFlushDone  uint32 = 1 << 0 // set by flush goroutine after all sends complete
-	pv1StateBodyClosed uint32 = 1 << 1 // set by payloadV1.Close() when HTTP is done
-)
+// pv1Handoff decides when a payloadV1 returns to its pool. One instance
+// covers one pool cycle: getPayloadV1 starts it, and the pool return ends it.
+// The flush goroutine and the request bodies share the instance, so a late
+// body Close acts on the cycle that issued the body, and never on a later
+// cycle of the same pooled payload.
+//
+// net/http requires a caller that reuses a body across requests to wait for
+// the Close of every earlier request (see the RoundTripper documentation in
+// GOROOT src/net/http/client.go). sendAsync and doWithStaleConnRetry issue
+// several bodies per flush, so the handoff counts open bodies. The two bits
+// it replaces could not tell which request a late Close belonged to, and one
+// late Close returned the payload to the pool while another body of the same
+// flush was still open.
+type pv1Handoff struct {
+	// p is the payload this handoff returns to the pool.
+	p *payloadV1
+	// open counts the request bodies issued for this cycle that have not
+	// closed yet. Only the flush goroutine issues bodies, so open stops
+	// growing before flushed is set.
+	open atomic.Int32
+	// flushed records that the flush goroutine finished its send loop.
+	flushed atomic.Bool
+	// put guards the single pool return of this cycle.
+	put atomic.Bool
+}
 
-// handoff signals that one side (flush or HTTP close) is done with the payload.
-// It sets own bit and returns the payload to the pool if the counterpart bit was
-// already set — i.e., both parties are done. Idempotent: repeated calls with the
-// same bit are no-ops after the first.
-func (p *payloadV1) handoff(ownBit uint32) {
-	counterpart := (pv1StateFlushDone | pv1StateBodyClosed) &^ ownBit
-	if old := p.poolState.Or(ownBit); old == counterpart { // both parties done
-		putPayloadV1(p)
+// newBody issues one request body that reads from p and registers it with
+// this handoff. Closing that body releases only that request.
+func (h *pv1Handoff) newBody(p io.Reader) io.ReadCloser {
+	h.open.Add(1)
+	return &pv1Body{p: p, h: h}
+}
+
+// closeBody records that one request body closed. The closer of the last
+// open body returns the payload to the pool when the flush side is done.
+func (h *pv1Handoff) closeBody() {
+	if h.open.Add(-1) == 0 {
+		h.tryPut()
 	}
+}
+
+// markFlushed records that the flush goroutine finished its send loop for
+// this cycle. Repeated calls change nothing: only the first tryPut that sees
+// every body closed wins the pool return.
+func (h *pv1Handoff) markFlushed() {
+	h.flushed.Store(true)
+	h.tryPut()
+}
+
+// tryPut returns the payload to the pool when the flush side is done and
+// every issued body has closed. The atomic operations are sequentially
+// consistent, so when closeBody and markFlushed race, at least one of them
+// observes both conditions and exactly one of them wins the put.
+func (h *pv1Handoff) tryPut() {
+	if !h.flushed.Load() || h.open.Load() != 0 {
+		return
+	}
+	if h.put.CompareAndSwap(false, true) {
+		putPayloadV1(h.p)
+	}
+}
+
+// pv1Body is the request body of one HTTP request. It reads from the payload
+// through the locked safePayload. Close releases only this request, so the
+// payload returns to its pool only after every request body has closed.
+type pv1Body struct {
+	p      io.Reader
+	h      *pv1Handoff
+	closed atomic.Bool
+}
+
+func (b *pv1Body) Read(bs []byte) (int, error) { return b.p.Read(bs) }
+
+func (b *pv1Body) Close() error {
+	if b.closed.CompareAndSwap(false, true) {
+		b.h.closeBody()
+	}
+	return nil
 }
 
 // Constant dummy value to represent a serialization failure. Used to prevent failures while
@@ -153,12 +217,14 @@ const serializationFailed string = "serialization_failed"
 
 // newPayloadV1 returns a ready to use payloadV1.
 func newPayloadV1() *payloadV1 {
-	return &payloadV1{
+	p := &payloadV1{
 		attributes: make(map[string]anyValue),
 		chunks:     make([]traceChunk, 0),
 		header:     make([]byte, 0, 8),
 		chunkAttr:  make(map[string]anyValue),
 	}
+	p.handoff = &pv1Handoff{p: p}
+	return p
 }
 
 var payloadV1Pool = sync.Pool{
@@ -360,8 +426,10 @@ func (p *payloadV1) clear() {
 	clear(p.attributes)
 	atomic.StoreUint32(&p.fields, 0)
 	atomic.StoreUint32(&p.count, 0)
-	p.poolState.Store(0)
 	p.sizeHint = 0
+	// Start a fresh pool cycle. Bodies of the previous cycle hold the old
+	// handoff, so their closes cannot act on this cycle.
+	p.handoff = &pv1Handoff{p: p}
 }
 
 // recordItem records that a new chunk was added to the payload.
@@ -425,8 +493,13 @@ func (p *payloadV1) setProcessTags() {
 	p.attributes[keyProcessTags] = p.processTagsCached
 }
 
+// Close implements io.Closer. The transport sends every request through its
+// own body (see newTraceRequestBody), so net/http closes that body and never
+// the payload itself. Transports that pass the payload itself as one request
+// body do not drive the pool return through Close either: the return waits
+// only for the flush side and for the bodies that newTraceRequestBody
+// issued.
 func (p *payloadV1) Close() error {
-	p.handoff(pv1StateBodyClosed)
 	return nil
 }
 
