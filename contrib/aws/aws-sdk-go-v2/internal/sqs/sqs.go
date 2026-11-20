@@ -7,6 +7,7 @@ package sqs
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"maps"
 	"slices"
@@ -34,16 +35,18 @@ const (
 
 var instr = internal.Instr
 
-// Enricher adds the Datadog trace context and the Data Streams checkpoint to SQS requests.
-// The zero value injects the trace context.
+// Enricher adds the Datadog trace context and the Data Streams checkpoints to SQS requests and responses.
+// The zero value injects the trace context and records no Data Streams checkpoints.
 type Enricher struct {
-	noInject bool
+	noInject    bool
+	dataStreams bool
 }
 
-// NewEnricher returns an enricher that writes the trace context into the request only if inject is true.
-// The span tags and the Data Streams checkpoint are recorded either way.
-func NewEnricher(inject bool) *Enricher {
-	return &Enricher{noInject: !inject}
+// NewEnricher returns an enricher that writes the trace context into the request only if inject is true,
+// and records Data Streams checkpoints only if dataStreams is true. The span tags and the produce
+// checkpoint do not depend on inject.
+func NewEnricher(inject, dataStreams bool) *Enricher {
+	return &Enricher{noInject: !inject, dataStreams: dataStreams}
 }
 
 func (e *Enricher) EnrichOperation(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, operation string) middleware.InitializeInput {
@@ -52,9 +55,31 @@ func (e *Enricher) EnrichOperation(ctx context.Context, span *tracer.Span, in mi
 		e.handleSendMessage(ctx, span, &in)
 	case "SendMessageBatch":
 		e.handleSendMessageBatch(ctx, span, &in)
+	case "ReceiveMessage":
+		e.handleReceiveMessage(&in)
 	}
 	span.SetTag(ext.MessagingSystem, ext.MessagingSystemSQS)
 	return in
+}
+
+// EnrichResponse sets a Data Streams consume checkpoint for each message a ReceiveMessage call returned,
+// and writes the resulting pathway back into the message's _datadog attribute.
+func (e *Enricher) EnrichResponse(in middleware.InitializeInput, out middleware.InitializeOutput, operation string) {
+	if !e.dataStreams || operation != "ReceiveMessage" {
+		return
+	}
+	params, ok := in.Parameters.(*sqs.ReceiveMessageInput)
+	if !ok {
+		return
+	}
+	resp, ok := out.Result.(*sqs.ReceiveMessageOutput)
+	if !ok || resp == nil {
+		return
+	}
+	queue := queueName(params.QueueUrl)
+	for i := range resp.Messages {
+		setConsumeCheckpoint(&resp.Messages[i], queue)
+	}
 }
 
 func (e *Enricher) handleSendMessage(ctx context.Context, span *tracer.Span, in *middleware.InitializeInput) {
@@ -65,7 +90,7 @@ func (e *Enricher) handleSendMessage(ctx context.Context, span *tracer.Span, in 
 	}
 
 	messageSize := sendMessageSize(params)
-	traceContext, err := getTraceContext(ctx, span, queueName(params.QueueUrl), messageSize)
+	traceContext, err := e.getTraceContext(ctx, span, queueName(params.QueueUrl), messageSize)
 	if err != nil {
 		instr.Logger().Debug("Unable to get trace context: %s", err.Error())
 		return
@@ -112,7 +137,7 @@ func (e *Enricher) handleSendMessageBatch(ctx context.Context, span *tracer.Span
 
 	original := params
 	for i := range params.Entries {
-		traceContext, err := getTraceContext(ctx, span, queueName(params.QueueUrl), sendMessageBatchEntrySize(&params.Entries[i]))
+		traceContext, err := e.getTraceContext(ctx, span, queueName(params.QueueUrl), sendMessageBatchEntrySize(&params.Entries[i]))
 		if err != nil {
 			instr.Logger().Debug("Unable to get trace context: %s", err.Error())
 			continue
@@ -132,22 +157,43 @@ func (e *Enricher) handleSendMessageBatch(ctx context.Context, span *tracer.Span
 	}
 }
 
-func getTraceContext(ctx context.Context, span *tracer.Span, queue string, payloadSize int64) (types.MessageAttributeValue, error) {
+func (e *Enricher) handleReceiveMessage(in *middleware.InitializeInput) {
+	if !e.dataStreams {
+		return
+	}
+	params, ok := in.Parameters.(*sqs.ReceiveMessageInput)
+	if !ok {
+		instr.Logger().Debug("Unable to read ReceiveMessage params")
+		return
+	}
+	for _, name := range params.MessageAttributeNames {
+		if name == "All" || name == ".*" || name == datadogKey {
+			return
+		}
+	}
+	receive := *params
+	receive.MessageAttributeNames = append(slices.Clip(params.MessageAttributeNames), datadogKey)
+	in.Parameters = &receive
+}
+
+func (e *Enricher) getTraceContext(ctx context.Context, span *tracer.Span, queue string, payloadSize int64) (types.MessageAttributeValue, error) {
 	carrier := tracer.TextMapCarrier{}
 	err := tracer.Inject(span.Context(), carrier)
 	if err != nil {
 		return types.MessageAttributeValue{}, err
 	}
 
-	checkpointCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
-		ctx,
-		options.CheckpointParams{PayloadSize: payloadSize},
-		"direction:out",
-		"type:sqs",
-		"topic:"+queue,
-	)
-	if ok {
-		datastreams.InjectToBase64Carrier(checkpointCtx, carrier)
+	if e.dataStreams {
+		checkpointCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
+			ctx,
+			options.CheckpointParams{PayloadSize: payloadSize},
+			"direction:out",
+			"type:sqs",
+			"topic:"+queue,
+		)
+		if ok {
+			datastreams.InjectToBase64Carrier(checkpointCtx, carrier)
+		}
 	}
 
 	jsonBytes, err := json.Marshal(carrier)
@@ -161,6 +207,104 @@ func getTraceContext(ctx context.Context, span *tracer.Span, queue string, paylo
 	}
 
 	return attribute, nil
+}
+
+func setConsumeCheckpoint(msg *types.Message, queue string) {
+	carrier, binary := datadogCarrier(msg)
+	parent := context.Background()
+	if carrier != nil {
+		parent = datastreams.ExtractFromBase64Carrier(parent, carrier)
+	}
+	checkpointCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
+		parent,
+		options.CheckpointParams{PayloadSize: receivedMessageSize(msg)},
+		"direction:in",
+		"type:sqs",
+		"topic:"+queue,
+	)
+	if !ok {
+		return
+	}
+	if carrier == nil {
+		carrier = tracer.TextMapCarrier{}
+	}
+	datastreams.InjectToBase64Carrier(checkpointCtx, carrier)
+	jsonBytes, err := json.Marshal(carrier)
+	if err != nil {
+		instr.Logger().Debug("Unable to encode _datadog message attribute: %s", err.Error())
+		return
+	}
+	attr := types.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String(string(jsonBytes))}
+	if binary {
+		attr = types.MessageAttributeValue{DataType: aws.String("Binary"), BinaryValue: jsonBytes}
+	}
+	if _, exists := msg.MessageAttributes[datadogKey]; !exists && len(msg.MessageAttributes) >= maxMessageAttributes {
+		return
+	}
+	if msg.MessageAttributes == nil {
+		msg.MessageAttributes = make(map[string]types.MessageAttributeValue, 1)
+	}
+	msg.MessageAttributes[datadogKey] = attr
+}
+
+func datadogCarrier(msg *types.Message) (carrier tracer.TextMapCarrier, binaryAttribute bool) {
+	if attr, ok := msg.MessageAttributes[datadogKey]; ok {
+		switch {
+		case attr.StringValue != nil:
+			return decodeCarrier([]byte(*attr.StringValue)), false
+		case attr.BinaryValue != nil:
+			return decodeCarrier(attr.BinaryValue), true
+		}
+		return nil, false
+	}
+	return snsNotificationCarrier(aws.ToString(msg.Body)), false
+}
+
+type snsNotification struct {
+	Type              string
+	MessageAttributes map[string]struct {
+		Type  string
+		Value string
+	}
+}
+
+func snsNotificationCarrier(body string) tracer.TextMapCarrier {
+	if !strings.HasPrefix(strings.TrimSpace(body), "{") || !strings.Contains(body, datadogKey) {
+		return nil
+	}
+	var notification snsNotification
+	if err := json.Unmarshal([]byte(body), &notification); err != nil || notification.Type != "Notification" {
+		return nil
+	}
+	attr, ok := notification.MessageAttributes[datadogKey]
+	if !ok {
+		return nil
+	}
+	switch attr.Type {
+	case "Binary":
+		raw, err := base64.StdEncoding.DecodeString(attr.Value)
+		if err != nil {
+			instr.Logger().Debug("Unable to decode SNS _datadog message attribute: %s", err.Error())
+			return nil
+		}
+		return decodeCarrier(raw)
+	case "String":
+		return decodeCarrier([]byte(attr.Value))
+	}
+	return nil
+}
+
+func decodeCarrier(raw []byte) tracer.TextMapCarrier {
+	var carrier tracer.TextMapCarrier
+	if err := json.Unmarshal(raw, &carrier); err != nil {
+		instr.Logger().Debug("Unable to decode _datadog message attribute: %s", err.Error())
+		return nil
+	}
+	return carrier
+}
+
+func receivedMessageSize(msg *types.Message) int64 {
+	return int64(len(aws.ToString(msg.Body))) + messageAttributesSize(msg.MessageAttributes)
 }
 
 // traceBudget starts with raw byte lengths. The SDK replaces each malformed UTF-8 byte
@@ -182,16 +326,13 @@ func newTraceBudget(originalSize int64, textExpansion func() int64) traceBudget 
 }
 
 func (budget *traceBudget) inject(traceContext types.MessageAttributeValue, messageAttributes map[string]types.MessageAttributeValue) map[string]types.MessageAttributeValue {
-	// SQS only allows a maximum of 10 message attributes.
-	// https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-message-metadata.html#sqs-message-attributes
-	// Only inject if there's room.
-	if len(messageAttributes) >= maxMessageAttributes {
+	old, replacing := messageAttributes[datadogKey]
+	if !replacing && len(messageAttributes) >= maxMessageAttributes {
 		instr.Logger().Info("Cannot inject trace context: message already has maximum allowed attributes")
 		return nil
 	}
 
 	added := attributeSize(datadogKey, traceContext)
-	old, replacing := messageAttributes[datadogKey]
 	if replacing {
 		added -= attributeSize(datadogKey, old)
 	}
