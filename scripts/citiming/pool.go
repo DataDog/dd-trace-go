@@ -118,13 +118,16 @@ type poolReport struct {
 }
 
 // goBuildKeyRe parses the cloudx save key
-// go-cache-<os>-<arch>-ddtg-cx1-<family>-<digest16>-<go>-<branch>-<hash>-<run_id>.
+// go-cache-<os>-<arch>-ddtg-cx<NN>-<family>-<digest16>-<go>-<branch>-<hash>-<run_id>.
 // Family and branch may contain dashes (the branch may contain slashes),
 // so the fixed-length hex segments and the numeric run ID anchor the
 // match from both ends. The version segment allows one prerelease
 // cluster (1.28.0-rc.1); a longer hyphen tail belongs to the branch.
+// cx1 keyed on the caller's raw go-version input; cx2 keys on the
+// resolved version class (resolve-version.sh). The pool holds entries
+// from both layouts for the migration window, so both markers parse.
 var goBuildKeyRe = regexp.MustCompile(
-	`^go-cache-(Linux|macOS|Windows)-(X64|ARM64)-ddtg-cx1-(.*)-([0-9a-f]{16})-` +
+	`^go-cache-(Linux|macOS|Windows)-(X64|ARM64)-ddtg-cx[0-9]+-(.*)-([0-9a-f]{16})-` +
 		`([0-9.]+[0-9A-Za-z.]*-[0-9A-Za-z.]+|[0-9.]+[0-9A-Za-z.]*)-(.*)-([0-9a-f]{40,64})-([0-9]+)$`)
 
 // toolsKeyRe parses the tools-cache key <os>-<arch>-go-<version>-tools-<hash>.
@@ -152,7 +155,7 @@ func poolOS(segment string) string {
 
 // classifyPoolKey classifies one cache key into cache_kind, workload and
 // os.platform. Workload is the cloudx family of a go_build entry in the
-// ddtg-cx1 layout; a go-cache key that predates the layout is still
+// ddtg-cx<NN> layout; a go-cache key that predates the layout is still
 // go_build but carries no workload.
 func classifyPoolKey(key string) (kind, workload, osPlatform string) {
 	switch {
