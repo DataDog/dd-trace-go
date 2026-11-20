@@ -195,7 +195,27 @@ jobs:
         runs-on: ${{ fromJSON(inputs.os-list) }}
         go-version: ${{ fromJSON(needs.go-versions-matrix.outputs.json) }}
     name: Integration Test (${{ matrix.runs-on }} | ${{ matrix.go-version }})
-    runs-on: ${{ matrix.runs-on == 'ubuntu' && fromJson('{"labels":"ubuntu-8-core-latest","group":"Large Runner Shared Public"}') || (matrix.runs-on == 'windows' && fromJson('{"labels":"windows-shared-8core","group":"LARGE WINDOWS SHARED"}')) || format('{0}-latest', matrix.runs-on) }}
+    # The macOS legs run only on main-based events (the PR callers pass
+    # ubuntu only), so they always land on the larger 12-core runner:
+    # their cold-cache median on the 3-vCPU standard runner is 32
+    # minutes (p90 66, max 96), and the lane exists to find
+    # platform-specific breakage after it lands, not to give quick PR
+    # feedback. The runner is Intel x64; arm64 coverage stays on the
+    # orchestrion lane and the AppSec macOS matrix, which keep the
+    # standard arm64 runners.
+    # BLOCKED until CI infra provisions the shared macOS larger runner
+    # (labels macos-shared-12core, group LARGE MACOS SHARED, see the
+    # follow-up request in the PR): the mac legs queue until it exists.
+    runs-on: ${{ matrix.runs-on == 'ubuntu' &&
+      fromJson('{"labels":"ubuntu-8-core-latest",
+      "group":"Large Runner Shared Public"}') ||
+      (matrix.runs-on == 'windows' &&
+      fromJson('{"labels":"windows-shared-8core",
+      "group":"LARGE WINDOWS SHARED"}')) ||
+      (matrix.runs-on == 'macos' &&
+      fromJson('{"labels":"macos-shared-12core",
+      "group":"LARGE MACOS SHARED"}')) ||
+      format('{0}-latest', matrix.runs-on) }}
     steps:
       - name: Checkout Code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
