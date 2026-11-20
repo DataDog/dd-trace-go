@@ -247,3 +247,33 @@ func TestToPayloadConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestSetFeatureFlagsBaseURL(t *testing.T) {
+	const baseURL = "DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL"
+	extension := t.TempDir() + "/datadog-agent"
+	assert.NoError(t, os.WriteFile(extension, nil, 0o600))
+
+	tests := []struct {
+		name      string
+		extension string
+		env       map[string]string
+		expected  string
+	}{
+		{"no api key", extension, nil, "http://127.0.0.1:8126"},
+		{"secret arn only", extension, map[string]string{"DD_API_KEY_SECRET_ARN": "arn"}, "http://127.0.0.1:8126"},
+		{"api key set", extension, map[string]string{"DD_API_KEY": "key"}, ""},
+		{"base url set", extension, map[string]string{baseURL: "http://custom"}, "http://custom"},
+		{"no extension", extension + "-missing", nil, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("DD_API_KEY", "")
+			t.Setenv(baseURL, "")
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+			setFeatureFlagsBaseURL(tt.extension)
+			assert.Equal(t, tt.expected, os.Getenv(baseURL))
+		})
+	}
+}
