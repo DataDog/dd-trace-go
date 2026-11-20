@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -1430,65 +1429,93 @@ func BenchmarkPayloads(b *testing.B) {
 }
 
 func TestPayloadV1Handoff(t *testing.T) {
-	// handoff must trigger a pool return exactly once regardless of ordering.
-	// wouldRelease mirrors handoff's Or+compare logic without the putPayloadV1
-	// side-effect, since putPayloadV1 isn't mockable.
-	wouldRelease := func(p *payloadV1, ownBit uint32) bool {
-		counterpart := (pv1StateFlushDone | pv1StateBodyClosed) &^ ownBit
-		return p.poolState.Or(ownBit) == counterpart
+	newHandoff := func() (*payloadV1, *pv1Handoff) {
+		p := getPayloadV1()
+		return p, p.handoff
+	}
+	newBodies := func(h *pv1Handoff, n int) []io.ReadCloser {
+		sp := &safePayload{p: h.p}
+		bodies := make([]io.ReadCloser, 0, n)
+		for range n {
+			bodies = append(bodies, h.newBody(sp))
+		}
+		return bodies
 	}
 
-	fresh := func() *payloadV1 {
-		// getPayloadV1 calls clear() which resets poolState to 0.
-		return getPayloadV1()
-	}
-
-	t.Run("flush first then close", func(t *testing.T) {
-		p := fresh()
-		assert.False(t, wouldRelease(p, pv1StateFlushDone), "flush alone must not release")
-		assert.True(t, wouldRelease(p, pv1StateBodyClosed), "close after flush must release")
-		putPayloadV1(p)
+	t.Run("flush before bodies close", func(t *testing.T) {
+		_, h := newHandoff()
+		bodies := newBodies(h, 2)
+		h.markFlushed()
+		assert.False(t, h.put.Load(), "flush alone must not release")
+		require.NoError(t, bodies[0].Close())
+		assert.False(t, h.put.Load(), "one open body must hold the payload")
+		require.NoError(t, bodies[1].Close())
+		assert.True(t, h.put.Load(), "the close of the last open body must release")
 	})
 
-	t.Run("close first then flush", func(t *testing.T) {
-		p := fresh()
-		assert.False(t, wouldRelease(p, pv1StateBodyClosed), "close alone must not release")
-		assert.True(t, wouldRelease(p, pv1StateFlushDone), "flush after close must release")
-		putPayloadV1(p)
+	t.Run("bodies close before flush", func(t *testing.T) {
+		_, h := newHandoff()
+		bodies := newBodies(h, 2)
+		require.NoError(t, bodies[0].Close())
+		require.NoError(t, bodies[1].Close())
+		assert.False(t, h.put.Load(), "closed bodies alone must not release")
+		h.markFlushed()
+		assert.True(t, h.put.Load(), "flush after every body closed must release")
 	})
 
-	t.Run("repeated close idempotent", func(t *testing.T) {
-		p := fresh()
-		assert.False(t, wouldRelease(p, pv1StateBodyClosed), "first close — flush not done")
-		assert.False(t, wouldRelease(p, pv1StateBodyClosed), "second close — bit already set, no-op")
-		assert.False(t, wouldRelease(p, pv1StateBodyClosed), "third close — still no-op")
-		// Flush must still release correctly after repeated closes.
-		assert.True(t, wouldRelease(p, pv1StateFlushDone), "flush after repeated closes must release")
-		putPayloadV1(p)
+	t.Run("repeated close of one body counts once", func(t *testing.T) {
+		_, h := newHandoff()
+		bodies := newBodies(h, 2)
+		require.NoError(t, bodies[0].Close())
+		require.NoError(t, bodies[0].Close())
+		h.markFlushed()
+		assert.False(t, h.put.Load(), "the repeated close must not release while one body is open")
+		require.NoError(t, bodies[1].Close())
+		assert.True(t, h.put.Load(), "the close of the last open body must release")
 	})
 
-	t.Run("concurrent flush and close", func(t *testing.T) {
+	t.Run("close after the pool return does not put again", func(t *testing.T) {
+		_, h := newHandoff()
+		bodies := newBodies(h, 1)
+		h.markFlushed()
+		require.NoError(t, bodies[0].Close())
+		require.True(t, h.put.Load(), "the pool return must happen once")
+		require.NoError(t, bodies[0].Close())
+	})
+
+	t.Run("late close of an old cycle does not touch the new cycle", func(t *testing.T) {
+		p, h1 := newHandoff()
+		bodies := newBodies(h1, 1)
+		h1.markFlushed()
+		require.NoError(t, bodies[0].Close())
+		require.True(t, h1.put.Load(), "the first cycle must release")
+
+		p.clear()
+		h2 := p.handoff
+		require.False(t, h2.put.Load(), "the new cycle must start unreleased")
+		require.NoError(t, bodies[0].Close())
+		assert.False(t, h2.put.Load(), "a close of the old cycle must not release the new cycle")
+	})
+
+	t.Run("concurrent flush and body close", func(t *testing.T) {
 		const iterations = 10000
 		for range iterations {
-			p := fresh()
+			_, h := newHandoff()
+			bodies := newBodies(h, 1)
 			var wg sync.WaitGroup
-			var released atomic.Int32
 			wg.Add(2)
 			go func() {
 				defer wg.Done()
-				if wouldRelease(p, pv1StateFlushDone) {
-					released.Add(1)
-				}
+				h.markFlushed()
 			}()
 			go func() {
 				defer wg.Done()
-				if wouldRelease(p, pv1StateBodyClosed) {
-					released.Add(1)
-				}
+				_ = bodies[0].Close()
 			}()
 			wg.Wait()
-			assert.Equal(t, int32(1), released.Load(), "exactly one release per iteration")
-			putPayloadV1(p)
+			if !assert.True(t, h.put.Load(), "the handoff must release after both sides are done") {
+				return
+			}
 		}
 	})
 }
