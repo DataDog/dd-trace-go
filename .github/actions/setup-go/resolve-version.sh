@@ -18,6 +18,20 @@
 # therefore hold their own keys — no prerelease workload seeds, so this
 # costs the pool nothing.
 #
+# A fully-specified request (e.g. "1.27.1") installs exactly that patch —
+# check-latest never upgrades a full version — but a minor key would let
+# the provider's nested installer resolve the range to the LATEST patch
+# and swap the toolchain out from under the "Verify" step. Exact-patch
+# requests therefore pass their exact version to the provider (and their
+# cache keys carry that patch, as they did before cx2); every other
+# spelling keeps the version class. The provider input and the
+# matched-key parsing below MUST stay the same string, so both read the
+# go-version-provider output, not go-version-key.
+#
+# Outputs: go-version-key (the cache-key version class; also the
+# tools-cache key) and go-version-provider (what the cloudx provider's
+# go-version input and the restore-source parsing use).
+#
 # Tested by scripts/actiontest.
 set -euo pipefail
 
@@ -45,5 +59,13 @@ else
   exit 1
 fi
 
+# The provider version: the exact installed version for a
+# fully-specified request, the version class for every other spelling.
+provider="$key"
+if [[ "${REQUESTED_VERSION:-}" =~ ^1\.[0-9]+\.[0-9]+$ ]]; then
+  provider="$version"
+fi
+
 printf 'go-version-key=%s\n' "$key" >> "$GITHUB_OUTPUT"
+printf 'go-version-provider=%s\n' "$provider" >> "$GITHUB_OUTPUT"
 printf 'Cache-key version: %s (from %s)\n' "$key" "$goversion"

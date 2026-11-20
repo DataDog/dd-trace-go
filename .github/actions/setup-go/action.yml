@@ -48,17 +48,22 @@
 #   2. Align GOROOT with the selected toolchain BEFORE any step asks `go env`
 #      for cache paths, so stale GOROOT values exported by earlier tools
 #      cannot redirect GOCACHE/GOMODCACHE.
-#   3. With caching enabled, hand the RESOLVED Go MINOR (e.g., "1.27",
-#      from resolve-version.sh) to the isolated-cache provider
+#   3. With caching enabled, hand the resolved version class (e.g.,
+#      "1.27", from resolve-version.sh) to the isolated-cache provider
 #      (cloudx-io/setup-go, pinned), never the caller's input string. The
 #      resolved minor keeps the key stable across Go patch releases AND
-#      rotates it the day a minor release lands, so `stable`, `oldstable`,
-#      `1.27` and `1.27.4` all share one key per minor and the pool holds
-#      one entry per (family, variant, minor) instead of one per spelling.
-#      The provider's nested installer resolves the minor and finds the
-#      exact binary the select-go step already installed on disk; if it
-#      ever downloads one, that is a bug to investigate, not normal
-#      behaviour.
+#      rotates it the day a minor release lands, so `stable`, `oldstable`
+#      and `1.27` all share one key per minor and the pool holds one
+#      entry per (family, variant, minor) instead of one per spelling.
+#      Fully-specified requests ("1.27.4") are the deliberate exception:
+#      check-latest never upgrades a full version, so the exact patch
+#      goes to the provider instead — its nested installer resolves a
+#      minor as a range and would otherwise select a different patch than
+#      the select-go step installed, and the exact request keys on its
+#      patch as it always did. The provider's nested installer resolves
+#      the version and finds the exact binary the select-go step already
+#      installed on disk; if it ever downloads one, that is a bug to
+#      investigate, not normal behaviour.
 #   4. With caching disabled, or with cache-provider github-cache, the cloudx
 #      provider is never invoked: no restore, no trimming, no save.
 #
@@ -231,6 +236,8 @@ runs:
     - name: Resolve cache-key version
       id: resolve-version
       shell: bash
+      env:
+        REQUESTED_VERSION: ${{ inputs.go-version }}
       run: bash "${GITHUB_ACTION_PATH}/resolve-version.sh"
 
     - name: Compute cache key prefix
@@ -315,14 +322,16 @@ runs:
       # Dependabot ignores cloudx-io/setup-go versions <= 1.0.0.
       uses: cloudx-io/setup-go@0bbd76c0381c065220668df9b6694845b937aaa0 # main (includes cloudx-io/setup-go#8)
       with:
-        # The resolved Go MINOR (e.g., "1.27"), never the caller's input
-        # string: the provider keys on the literal input, so the resolved
-        # minor keeps the key stable across patch releases, rotates it the
-        # day a minor release lands, and collapses `stable`, `oldstable`
-        # and `1.27` spellings into one entry per minor. The provider's
-        # nested installer resolves the minor and finds the exact binary
-        # the select-go step above just installed on disk.
-        go-version: ${{ steps.resolve-version.outputs.go-version-key }}
+        # The resolved version class (e.g., "1.27"), never the caller's
+        # input string: the provider keys on the literal input, so the
+        # resolved minor keeps the key stable across patch releases,
+        # rotates it the day a minor release lands, and collapses
+        # `stable`, `oldstable` and `1.27` spellings into one entry per
+        # minor. A fully-specified request ("1.27.1") passes its exact
+        # patch instead (go-version-provider): the nested installer
+        # resolves a minor as a range and would otherwise select the
+        # latest patch instead of the one select-go installed.
+        go-version: ${{ steps.resolve-version.outputs.go-version-provider }}
         cache-key-prefix: ${{ steps.cache-key.outputs.prefix }}
         max-staleness-hours: "2"
         # Verified to expand to go.mod, go.sum and go.work files only in this
@@ -353,14 +362,15 @@ runs:
         # The branch this run is on (the PR source branch for pull
         # requests), to tell a same-branch restore from a fallback.
         CURRENT_BRANCH: ${{ github.head_ref || github.ref_name }}
-        # The go version the cloudx provider keys on (the resolved minor
-        # from resolve-version.sh) and this job's cache-key prefix: both
-        # are embedded verbatim in every key the provider can match, so
-        # the branch is what follows them and no regex guessing is
-        # needed. It must stay the same expression the provider receives,
-        # or the branch parsing reintroduces the misclassification this
-        # wiring exists to prevent.
-        GO_VERSION: ${{ steps.resolve-version.outputs.go-version-key }}
+        # The go version the cloudx provider keys on (the resolved
+        # version class, or the exact patch for fully-specified requests
+        # — resolve-version.sh's go-version-provider output) and this
+        # job's cache-key prefix: both are embedded verbatim in every key
+        # the provider can match, so the branch is what follows them and
+        # no regex guessing is needed. It must stay the same expression
+        # the provider receives, or the branch parsing reintroduces the
+        # misclassification this wiring exists to prevent.
+        GO_VERSION: ${{ steps.resolve-version.outputs.go-version-provider }}
         CACHE_KEY_PREFIX: ${{ steps.cache-key.outputs.prefix }}
       run: |
         set -euo pipefail
