@@ -122,6 +122,54 @@ func TestUploadRepositoryChangesReusesInitialMissingCommitsWhenUnshallowIsUnavai
 	assert.Equal(t, []string{"remote-1"}, uploadedExcludes)
 }
 
+func TestUploadRepositoryChangesRecoversMissingSelectedCommit(t *testing.T) {
+	for _, recovery := range []string{"available", "unavailable", "still missing", "already known"} {
+		t.Run(recovery, func(t *testing.T) {
+			searchCalls, recoveryCalls, uploadCalls := 0, 0, 0
+			hooks := repositoryUploadHooks{
+				getSearchCommits: func() (*searchCommitsResponse, error) {
+					searchCalls++
+					if searchCalls == 1 || recovery == "still missing" {
+						return newSearchCommitsResponse(nil, nil, false), nil
+					}
+					var known []string
+					if recovery == "already known" {
+						known = []string{"selected"}
+					}
+					return newSearchCommitsResponse([]string{"selected"}, known, true), nil
+				},
+				unshallowGitRepository: func() (bool, error) {
+					recoveryCalls++
+					return recovery != "unavailable", nil
+				},
+				sendObjectsPackFile: func(sha string, included, excluded []string) (int64, error) {
+					uploadCalls++
+					assert.Equal(t, "selected", sha)
+					assert.Equal(t, []string{"selected"}, included)
+					assert.Empty(t, excluded)
+					return 42, nil
+				},
+			}
+
+			bytes, err := uploadRepositoryChangesWithHooks(hooks)
+			require.NoError(t, err)
+			assert.Equal(t, 1, recoveryCalls)
+			if recovery == "unavailable" {
+				assert.Equal(t, 1, searchCalls)
+			} else {
+				assert.Equal(t, 2, searchCalls)
+			}
+			if recovery == "available" {
+				assert.Equal(t, 1, uploadCalls)
+				assert.Equal(t, int64(42), bytes)
+			} else {
+				assert.Zero(t, uploadCalls)
+				assert.Zero(t, bytes)
+			}
+		})
+	}
+}
+
 func TestUploadRepositoryChangesUsesHookSnapshot(t *testing.T) {
 	resetCIVisibilityStateForTesting()
 	t.Cleanup(resetCIVisibilityStateForTesting)
