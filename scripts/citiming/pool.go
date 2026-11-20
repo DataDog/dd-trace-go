@@ -6,6 +6,7 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -460,23 +461,15 @@ func renderPoolText(r poolReport, repo string) string {
 		b.WriteString("  default-branch entries (newest per kind/workload/os/variant):\n")
 		for _, g := range r.defaultGroup {
 			fmt.Fprintf(&b, "    %-16s %-24s %-8s %-17s %10s old\n",
-				g.kind, g.workload, g.osPlatform, orDash(g.variant), fmtPoolAge(g.ageSeconds))
+				g.kind, g.workload, g.osPlatform, cmp.Or(g.variant, "-"), fmtPoolAge(g.ageSeconds))
 		}
 	}
 	b.WriteString("  by cache_kind/workload/os.platform/variant/ref_type:\n")
 	for _, g := range r.groups {
 		fmt.Fprintf(&b, "    %-16s %-24s %-8s %-17s %-8s %3d entries %8.2f GiB\n",
-			g.kind, g.workload, g.osPlatform, orDash(g.variant), g.refType, g.entries, float64(g.sizeBytes)/giB)
+			g.kind, g.workload, g.osPlatform, cmp.Or(g.variant, "-"), g.refType, g.entries, float64(g.sizeBytes)/giB)
 	}
 	return b.String()
-}
-
-// orDash renders an empty variant digest as a dash for the text report.
-func orDash(variant string) string {
-	if variant == "" {
-		return "-"
-	}
-	return variant
 }
 
 // fmtPoolAge renders a duration for the text report.
