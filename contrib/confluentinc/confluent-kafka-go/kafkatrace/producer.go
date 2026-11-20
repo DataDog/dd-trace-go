@@ -6,6 +6,8 @@
 package kafkatrace
 
 import (
+	"sync"
+
 	"math"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -101,6 +103,51 @@ func (tr *Tracer) StartProduceSpan(msg Message) *tracer.Span {
 }
 
 func WrapDeliveryChannel[E any, TE Event](tr *Tracer, deliveryChan chan E, span *tracer.Span, translateFn func(E) TE) (chan E, chan error) {
+	return WrapDeliveryChannelGuarded(tr, deliveryChan, nil, span, translateFn)
+}
+
+// DeliveryGuard coordinates delivery forwarders that send to a channel owned
+// by the producer (its Events channel) with the producer's Close, which
+// closes that channel. Without it, a forwarder blocked on its send can panic
+// with "send on closed channel" (see #5806).
+type DeliveryGuard struct {
+	mu     sync.Mutex
+	closed bool
+	done   chan struct{}
+	wg     sync.WaitGroup
+}
+
+// NewDeliveryGuard returns a DeliveryGuard ready to use.
+func NewDeliveryGuard() *DeliveryGuard {
+	return &DeliveryGuard{done: make(chan struct{})}
+}
+
+// Close stops all forwarding and waits for in-flight sends to give up. Call
+// it before the guarded channel is closed. Later delivery events are dropped.
+func (g *DeliveryGuard) Close() {
+	g.mu.Lock()
+	if !g.closed {
+		g.closed = true
+		close(g.done)
+	}
+	g.mu.Unlock()
+	g.wg.Wait()
+}
+
+// begin registers a send. It returns false when the guard is closed.
+func (g *DeliveryGuard) begin() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.closed {
+		return false
+	}
+	g.wg.Add(1)
+	return true
+}
+
+// WrapDeliveryChannelGuarded is like WrapDeliveryChannel, but if guard is
+// not nil, the forward to deliveryChan stops once guard is closed.
+func WrapDeliveryChannelGuarded[E any, TE Event](tr *Tracer, deliveryChan chan E, guard *DeliveryGuard, span *tracer.Span, translateFn func(E) TE) (chan E, chan error) {
 	// if the user has selected a delivery channel, we will wrap it and
 	// wait for the delivery event to finish the span
 	if deliveryChan == nil {
@@ -118,7 +165,15 @@ func WrapDeliveryChannel[E any, TE Event](tr *Tracer, deliveryChan chan E, span 
 				err = msg.GetTopicPartition().GetError()
 				tr.TrackProduceOffsets(msg)
 			}
-			deliveryChan <- evt
+			if guard == nil {
+				deliveryChan <- evt
+			} else if guard.begin() {
+				select {
+				case deliveryChan <- evt:
+				case <-guard.done:
+				}
+				guard.wg.Done()
+			}
 		case e := <-errChan:
 			err = e
 		}
