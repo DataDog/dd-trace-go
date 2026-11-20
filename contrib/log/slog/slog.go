@@ -10,6 +10,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"slices"
 	"strconv"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -107,7 +108,7 @@ func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	}
 	groups := append([]group{}, h.groups...)
 	curGroup := groups[len(groups)-1]
-	curGroup.attrs = append(curGroup.attrs, attrs...)
+	curGroup.attrs = append(slices.Clip(curGroup.attrs), attrs...)
 	groups[len(groups)-1] = curGroup
 
 	return &handler{
@@ -120,7 +121,7 @@ func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 func (h *handler) WithGroup(name string) slog.Handler {
 	return &handler{
 		wrapped: h.wrapped,
-		groups:  append(h.groups, group{name: name}),
+		groups:  append(slices.Clip(h.groups), group{name: name}),
 	}
 }
 
