@@ -8,6 +8,7 @@ package tree
 import (
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 )
@@ -44,7 +45,10 @@ type (
 		ServiceName  string `json:"service_name"`
 		ResourceName string `json:"resource_name"`
 
-		pathMatcher *regexp.Regexp
+		// pathMatcher compiles PathRegex on first use. The tree is shared by
+		// every request, so the compiled value is published through sync.OnceValue
+		// instead of being written to the endpoint from Get.
+		pathMatcher func() *regexp.Regexp
 	}
 )
 
@@ -66,6 +70,16 @@ func newTreeNode() *treeNode {
 // addEndpoints adds zero or more endpoints to the tree.
 func (t *Tree) addEndpoints(es ...*Endpoint) error {
 	for _, e := range es {
+		pathRegex := e.PathRegex
+		e.pathMatcher = sync.OnceValue(func() *regexp.Regexp {
+			pathMatcher, err := regexp.Compile(pathRegex)
+			if err != nil {
+				instr.Logger().Warn("contrib/google.golang.org/api: failed to create regex: %s: %v", pathRegex, err)
+				return nil
+			}
+			return pathMatcher
+		})
+
 		prefix := e.PathTemplate
 		if idx := strings.IndexByte(prefix, '{'); idx >= 0 {
 			prefix = prefix[:idx]
@@ -91,14 +105,10 @@ func (t *Tree) Get(hostname string, httpMethod string, httpPath string) (*Endpoi
 	endpoints := t.root.getLongestPrefixMatch(segments)
 	for _, e := range endpoints {
 		if e.pathMatcher == nil {
-			pathMatcher, err := regexp.Compile(e.PathRegex)
-			if err != nil {
-				instr.Logger().Warn("contrib/google.golang.org/api: failed to create regex: %s: %v", e.PathRegex, err)
-				continue
-			}
-			e.pathMatcher = pathMatcher
+			continue
 		}
-		if e.pathMatcher.MatchString(httpPath) {
+		pathMatcher := e.pathMatcher()
+		if pathMatcher != nil && pathMatcher.MatchString(httpPath) {
 			return e, true
 		}
 	}
