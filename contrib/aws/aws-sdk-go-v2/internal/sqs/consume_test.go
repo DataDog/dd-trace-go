@@ -340,3 +340,53 @@ func TestReceiveMessageAttributeLimit(t *testing.T) {
 	assert.Len(t, got[1].MessageAttributes, maxMessageAttributes)
 	assert.Equal(t, consumeHash(t, producerCtx, queue), pathwayHash(t, carrierFromAttribute(t, got[1].MessageAttributes[datadogKey])))
 }
+
+func TestForwardReplacesDatadogAtAttributeLimit(t *testing.T) {
+	const (
+		queue        = "consume-queue"
+		forwardQueue = "forward-queue"
+		forwardURL   = "https://sqs.us-east-1.amazonaws.com/1234567890/" + forwardQueue
+	)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	_, carrier := producerCarrier(t, queue)
+	raw, err := json.Marshal(carrier)
+	require.NoError(t, err)
+	attrs := make(map[string]types.MessageAttributeValue, maxMessageAttributes)
+	for i := range maxMessageAttributes - 1 {
+		attrs["attr"+strconv.Itoa(i)] = types.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String("v")}
+	}
+	attrs[datadogKey] = types.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String(string(raw))}
+	received := receive(t, true, types.Message{Body: aws.String("hello"), MessageAttributes: attrs})[0]
+	require.Len(t, received.MessageAttributes, maxMessageAttributes)
+
+	consumeCtx := datastreams.ExtractFromBase64Carrier(context.Background(), carrierFromAttribute(t, received.MessageAttributes[datadogKey]))
+	span, ctx := tracer.StartSpanFromContext(consumeCtx, "forward")
+	expectedCtx, ok := tracer.SetDataStreamsCheckpoint(ctx, "direction:out", "type:sqs", "topic:"+forwardQueue)
+	require.True(t, ok)
+	expected, ok := datastreams.PathwayFromContext(expectedCtx)
+	require.True(t, ok)
+	e := NewEnricher(true, true)
+
+	single := e.EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: &sqs.SendMessageInput{
+		QueueUrl:          aws.String(forwardURL),
+		MessageBody:       received.Body,
+		MessageAttributes: received.MessageAttributes,
+	}}, "SendMessage")
+	batch := e.EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: &sqs.SendMessageBatchInput{
+		QueueUrl: aws.String(forwardURL),
+		Entries: []types.SendMessageBatchRequestEntry{{
+			Id:                aws.String("1"),
+			MessageBody:       received.Body,
+			MessageAttributes: received.MessageAttributes,
+		}},
+	}}, "SendMessageBatch")
+
+	for _, sent := range []map[string]types.MessageAttributeValue{
+		single.Parameters.(*sqs.SendMessageInput).MessageAttributes,
+		batch.Parameters.(*sqs.SendMessageBatchInput).Entries[0].MessageAttributes,
+	} {
+		assert.Len(t, sent, maxMessageAttributes)
+		assertInjectedPathway(t, *sent[datadogKey].StringValue, expected, span)
+	}
+}

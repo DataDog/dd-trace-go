@@ -326,16 +326,13 @@ func newTraceBudget(originalSize int64, textExpansion func() int64) traceBudget 
 }
 
 func (budget *traceBudget) inject(traceContext types.MessageAttributeValue, messageAttributes map[string]types.MessageAttributeValue) map[string]types.MessageAttributeValue {
-	// SQS only allows a maximum of 10 message attributes.
-	// https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-message-metadata.html#sqs-message-attributes
-	// Only inject if there's room.
-	if len(messageAttributes) >= maxMessageAttributes {
+	old, replacing := messageAttributes[datadogKey]
+	if !replacing && len(messageAttributes) >= maxMessageAttributes {
 		instr.Logger().Info("Cannot inject trace context: message already has maximum allowed attributes")
 		return nil
 	}
 
 	added := attributeSize(datadogKey, traceContext)
-	old, replacing := messageAttributes[datadogKey]
 	if replacing {
 		added -= attributeSize(datadogKey, old)
 	}
