@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-var hashableEdgeTags = map[string]struct{}{"event_type": {}, "exchange": {}, "group": {}, "kafka_cluster_id": {}, "topic": {}, "type": {}, "direction": {}, "segment_name": {}}
+var hashableEdgeTags = map[string]struct{}{"event_type": {}, "exchange": {}, "group": {}, "kafka_cluster_id": {}, "subscription": {}, "topic": {}, "type": {}, "direction": {}, "segment_name": {}}
 
 func isWellFormedEdgeTag(t string) bool {
 	if before, _, ok := strings.Cut(t, ":"); ok {
