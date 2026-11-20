@@ -38,4 +38,3 @@ jobs:
     uses: ./.github/workflows/orchestrion-lane.yml
     with:
       os-list: '["ubuntu"]'
-    secrets: inherit

@@ -39,7 +39,9 @@ permissions:
 
 concurrency:
   # Cancel superseded runs to conserve resources.
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}${{ inputs.otelc-version && format('-{0}', inputs.otelc-version) }}
+  group: >-
+    ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}${{
+    inputs.otelc-version && format('-{0}', inputs.otelc-version) }}
   cancel-in-progress: true
 
 jobs:
@@ -50,4 +52,3 @@ jobs:
       # Windows coverage lives now that pull requests do not gate on it.
       os-list: '["ubuntu", "macos", "windows"]'
       otelc-version: ${{ inputs.otelc-version }}
-    secrets: inherit

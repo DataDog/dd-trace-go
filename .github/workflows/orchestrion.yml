@@ -49,7 +49,9 @@ permissions:
 
 concurrency:
   # Cancel superseded runs to conserve resources.
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}${{ inputs.orchestrion-version && format('-{0}', inputs.orchestrion-version) }}
+  group: >-
+    ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}${{
+    inputs.orchestrion-version && format('-{0}', inputs.orchestrion-version) }}
   cancel-in-progress: true
 
 jobs:
@@ -59,5 +61,8 @@ jobs:
       # Main-based events and the cross-repository call run every OS.
       os-list: '["ubuntu", "macos", "windows"]'
       orchestrion-version: ${{ inputs.orchestrion-version }}
-      collect-coverage: ${{ inputs.collect-coverage }}
-    secrets: inherit
+      # inputs.collect-coverage exists only for the workflow_call
+      # event: on push, schedule and dispatch it evaluates to an empty
+      # value, which a boolean-typed reusable input rejects. Default
+      # it so those events keep the full matrix.
+      collect-coverage: ${{ inputs.collect-coverage || false }}

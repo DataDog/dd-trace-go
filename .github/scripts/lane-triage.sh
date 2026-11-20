@@ -69,13 +69,57 @@ commit_line() {
   printf '%s — %s' "${sha:0:10}" "${subject:-<no subject>}"
 }
 
-# Legs of the lane run with the given conclusion, one job name per line.
-# gh api --jq is a fixed expression, so the conclusion goes through jq.
+# Legs of the lane run with any of the given conclusions, one job name
+# per line. Timed-out legs must join the failures: GitHub records a job
+# that exceeded its timeout as timed_out, not failure, and a hung
+# platform leg would otherwise open no issue at all. gh api --jq is a
+# fixed expression, so the conclusions go through jq as an array.
 legs_with_conclusion() {
-  local conclusion=$1
+  local conclusions
+  conclusions=$(printf '%s' "$*" | jq -R 'split(" ")')
   gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100" 2>/dev/null \
-    | jq -r --arg c "$conclusion" \
-      '.jobs[] | select(.conclusion == $c) | .name' || true
+    | jq -r --argjson c "$conclusions" \
+      '.jobs[] | select(.conclusion == $c[]) | .name' || true
+}
+
+# All open issues with the exact title and label, lowest number first.
+issues_with_title() {
+  local title=$1 label=$2
+  gh issue list --state open --label "$label" --repo "$REPO" \
+    --json number,title --limit 200 2>/dev/null \
+    | jq -r --arg t "$title" \
+      '[.[] | select(.title == $t) | .number] | sort | .[]' || true
+}
+
+# Two triage runs can race each other past the lookup: both see no
+# issue and both create one. Healing is cheaper than locking: keep the
+# lowest-numbered issue, close the rest as duplicates.
+collapse_duplicates() {
+  local title=$1 label=$2 first=1 issue
+  while IFS= read -r issue; do
+    [ -n "$issue" ] || continue
+    if [ "$first" -eq 1 ]; then
+      first=0
+      continue
+    fi
+    log "closing duplicate issue #$issue for '$title'"
+    gh issue close "$issue" --repo "$REPO" --comment \
+      'Closed as a duplicate created by a race between two triage
+runs; the lowest-numbered issue stays open.' \
+      >/dev/null
+  done < <(issues_with_title "$title" "$label")
+}
+
+# A green leg may only close its issue when this run is the lane's
+# latest on main: an older run triaged after a newer failure would
+# otherwise announce a recovery that never happened.
+is_latest_lane_run() {
+  local lane=$1 latest
+  latest=$(gh run list --workflow "$lane" --branch main --limit 20 \
+    --json databaseId,event \
+    --jq '[.[] | select(.event != "pull_request")] | .[0].databaseId // empty' \
+    2>/dev/null) || latest=''
+  [ -n "$latest" ] && [ "$latest" = "$RUN_ID" ]
 }
 
 issue_body() {
@@ -136,8 +180,19 @@ triage_run() {
       gh issue create --repo "$REPO" --title "lane: $lane — $name" \
         --label "$FAILURE_LABEL" \
         --body "$(issue_body "$lane" "$name")" >/dev/null
+      # A concurrent triage run may have created the same issue in the
+      # meantime: keep the lowest number.
+      collapse_duplicates "lane: $lane — $name" "$FAILURE_LABEL"
     fi
-  done < <(legs_with_conclusion 'failure')
+  done < <(legs_with_conclusion failure timed_out)
+
+  # Only the lane's latest run on main may announce a recovery: an older
+  # run whose triage finishes after a newer failure must not close the
+  # newer issue.
+  if ! is_latest_lane_run "$lane"; then
+    log "older run: not closing issues for green legs of $lane"
+    return 0
+  fi
 
   while IFS= read -r name; do
     [ -n "$name" ] || continue
@@ -213,6 +268,9 @@ refresh_tracking_issue() {
       --label "$DASHBOARD_LABEL" \
       --body "$(printf '%s\n\n%s\n' "$(tracking_body)" "$footer")" \
       >/dev/null
+    # A concurrent triage run may have created the same tracking issue:
+    # keep the lowest number.
+    collapse_duplicates "$TRACKING_TITLE" "$DASHBOARD_LABEL"
   fi
 }
 
