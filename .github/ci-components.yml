@@ -234,8 +234,12 @@ workflow-gates:
   main-branch-tests.yml: [ pull-request-tests ]
   system-tests.yml: [ system-tests ]
   orchestrion.yml: [ orchestrion ]
+  orchestrion-pr.yml: [ orchestrion ]
+  orchestrion-lane.yml: [ orchestrion ]
   benchmark-apps.yml: [ benchmark-apps ]
   otelc.yml: [ otelc ]
+  otelc-pr.yml: [ otelc ]
+  otelc-lane.yml: [ otelc ]
   parametric-tests.yml: [ parametric-tests ]
   codeql-analysis.yml: [ codeql ]
   generate.yml: [ generate ]
@@ -255,6 +259,7 @@ workflow-gates:
   appsec.yml: []
   build-metrics.yml: []
   cache-pool-metrics.yml: []
+  ci-lane-triage.yml: []
   code_freeze_check.yml: []
   code_freeze_end.yml: []
   code_freeze_start.yml: []
@@ -361,6 +366,15 @@ components:
       keeps the ciselect invariants that validate its own registration.
     paths: [ .github/scripts/update_reference.sh ]
     gates: [ static-actions ]
+
+  - id: lane-triage
+    why: >-
+      The issue-triage script executed only by the workflow_run and
+      scheduled triggers of ci-lane-triage.yml. It feeds no pull request
+      gate; static-actions keeps the ciselect invariants that validate
+      its own registration.
+    paths: [.github/scripts/lane-triage.sh]
+    gates: [static-actions]
 
   - id: github-meta
     paths:

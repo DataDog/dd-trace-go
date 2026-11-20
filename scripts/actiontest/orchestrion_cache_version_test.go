@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	orchestrionWorkflow  = "../../.github/workflows/orchestrion.yml"
+	orchestrionWorkflow  = "../../.github/workflows/orchestrion-lane.yml"
 	cacheVersionStepName = "Resolve Orchestrion cache version"
 	integrationGoMod     = "../../internal/orchestrion/_integration/go.mod"
 )
@@ -55,7 +55,7 @@ func cacheVersionAwk(t *testing.T) string {
 			return match[1]
 		}
 	}
-	t.Fatalf("orchestrion.yml has no step named %q", cacheVersionStepName)
+	t.Fatalf("orchestrion-lane.yml has no step named %q", cacheVersionStepName)
 	return ""
 }
 

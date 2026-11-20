@@ -1,0 +1,29 @@
+name: OTelc PR
+
+# The pull-request half of the otelc integration lane: ubuntu legs only,
+# gated by the changed-components classifier. The macOS and Windows legs
+# do not gate pull requests; they run on main-based events through
+# otelc.yml, where ci-lane-triage.yml turns their failures into issues.
+# The lane body lives in otelc-lane.yml.
+#
+# No push trigger at all: the merge queue deliberately skips this lane
+# (see .github/AGENTS.md), and a bare pull_request trigger cannot fire
+# for queue branches.
+
+on:
+  pull_request:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  # Cancel superseded runs of the same pull request.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lane:
+    uses: ./.github/workflows/otelc-lane.yml
+    with:
+      os-list: '["ubuntu"]'

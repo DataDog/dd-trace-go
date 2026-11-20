@@ -159,11 +159,12 @@ func expandImporters(set map[string]bool, importers map[string][]string, allowed
 	return out
 }
 
-// loadOtelcSuites reads OTELC_TEST_PACKAGES from .github/workflows/otelc.yml,
-// the single reviewable copy of the otelc lane's suite set. The folded scalar
+// loadOtelcSuites reads OTELC_TEST_PACKAGES from
+// .github/workflows/otelc-lane.yml, the single reviewable copy of the otelc
+// lane's suite set (the lane body every caller runs). The folded scalar
 // decodes to one whitespace-separated string, so Fields splits it into names.
 func loadOtelcSuites(root string) (map[string]bool, error) {
-	path := filepath.Join(root, workflowDir, "otelc.yml")
+	path := filepath.Join(root, workflowDir, "otelc-lane.yml")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
