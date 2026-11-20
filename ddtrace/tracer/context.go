@@ -13,7 +13,6 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
@@ -136,37 +135,19 @@ func contextWithPropagatedLLMSpan(ctx context.Context, s *Span) context.Context 
 	if s.context == nil || s.context.trace == nil {
 		return ctx
 	}
-	inbound := isInboundLocalRoot(s)
+	// The local root of an inbound request already decoded it.
+	if p := s.context.llmobsPropagated; p != nil {
+		return illmobs.ContextWithPropagatedLLMSpan(ctx, p)
+	}
 	// Fast path for the common span without LLMObs propagation: no baggage, and no tag.
 	if atomic.LoadUint32(&s.context.hasBaggage) == 0 && s.context.trace.propagatingTag(keyPropagatedLLMObsParentID) == "" {
-		if inbound {
-			illmobs.TrackDistributedContextCarrier(llmobsCarrierNone, llmobsErrMissingParentID)
-		}
 		return ctx
 	}
-	p, carrier, errType := propagatedLLMSpan(s.context)
-	if inbound {
-		illmobs.TrackDistributedContextCarrier(carrier, errType)
-	}
+	p, _, _ := propagatedLLMSpan(s.context)
 	if p == nil {
 		return ctx
 	}
 	return illmobs.ContextWithPropagatedLLMSpan(ctx, p)
-}
-
-// isInboundLocalRoot reports whether s is the first span of an inbound request
-// with LLMObs enabled, which is where dd-trace-py counts activation telemetry.
-// Later spans of the trace can find this process's own propagating tags.
-func isInboundLocalRoot(s *Span) bool {
-	if s.context.trace.root != s || !internalconfig.Get().LLMObsEnabled() {
-		return false
-	}
-	if atomic.LoadUint32(&s.context.hasBaggage) != 0 {
-		return true
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.parentID != 0
 }
 
 // SpanFromContext returns the span contained in the given context. A second return

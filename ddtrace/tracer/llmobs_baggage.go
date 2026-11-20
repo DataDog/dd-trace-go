@@ -132,6 +132,19 @@ func propagatedLLMSpan(spanCtx *SpanContext) (p *illmobs.PropagatedLLMSpan, carr
 	return p, carrier, errType
 }
 
+// activateInboundLLMObsContext reads the inbound LLMObs context once, at the local
+// root of an inbound request, and stores it on the span context. Injections from
+// the root itself or from any child then carry it, even when no context.Context
+// passes it on. This is also where dd-trace-py counts the activation telemetry.
+func activateInboundLLMObsContext(spanCtx *SpanContext) {
+	p, carrier, errType := propagatedLLMSpan(spanCtx)
+	illmobs.TrackDistributedContextCarrier(carrier, errType)
+	if p != nil {
+		spanCtx.llmobsPropagated = p
+		setPropagatedLLMObsTags(spanCtx, p)
+	}
+}
+
 // apmTraceID returns the APM trace ID of spanCtx in canonical form.
 func apmTraceID(spanCtx *SpanContext) string {
 	if spanCtx.TraceIDUpper() == 0 {

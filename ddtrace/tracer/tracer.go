@@ -1125,6 +1125,9 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	// context.trace.root = span, making the nil check unreliable afterward.
 	isRootSpan := context == nil || context.trace == nil || context.trace.root == nil
 	span.context = newSpanContext(span, context)
+	if isRootSpan && context != nil && internalconfig.Get().LLMObsEnabled() {
+		activateInboundLLMObsContext(span.context)
+	}
 	if pprofContext != nil {
 		setLLMObsPropagatingTags(pprofContext, span.context)
 	}

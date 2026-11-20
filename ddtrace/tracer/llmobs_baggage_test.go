@@ -149,6 +149,25 @@ func TestLLMObsBaggageInject(t *testing.T) {
 		assert.Equal(t, TextMapCarrier{"baggage": "tenant=acme"}, inject(sc, TextMapCarrier{}))
 	})
 
+	t.Run("the local root of an inbound request carries the inbound context", func(t *testing.T) {
+		// A proxy that injects its server span directly, with no child span and no
+		// context.Context to pass the LLMObs context on.
+		tr, err := newTracer()
+		require.NoError(t, err)
+		defer tr.Stop()
+		extracted, err := tr.Extract(TextMapCarrier{
+			"baggage": "llmobs.parent_id=555,llmobs.trace_id=" + testLLMObsHexTraceID + ",tenant=acme",
+		})
+		require.NoError(t, err)
+		root := tr.StartSpan("server", ChildOf(extracted))
+		defer root.Finish()
+
+		out := TextMapCarrier{}
+		require.NoError(t, tr.Inject(root.Context(), out))
+		assert.Equal(t, "llmobs.parent_id=555,llmobs.trace_id="+testLLMObsHexTraceID+",tenant=acme", out["baggage"])
+		assert.Contains(t, out["x-datadog-tags"], "_dd.p.llmobs_parent_id=555")
+	})
+
 	t.Run("a caller header under Baggage is merged into one key", func(t *testing.T) {
 		sc := &SpanContext{trace: newTrace()}
 		sc.llmobsPropagated = &illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: testLLMObsHexTraceID}
