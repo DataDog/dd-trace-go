@@ -246,6 +246,9 @@ type Span struct {
 	// reads (e.g. from Annotate) are safe without holding the mutex.
 	parentAgentName   string
 	parentAgentSpanID string
+
+	// sampling is set once in StartSpan and never mutated.
+	sampling samplingDecision
 }
 
 func (s *Span) Name() string {
@@ -279,6 +282,18 @@ func (s *Span) MLApp() string {
 // SessionID returns the resolved session ID for this span.
 func (s *Span) SessionID() string {
 	return s.sessionID
+}
+
+// SampleRate returns the rate the span's LLMObs trace was sampled at, or "" when
+// the span continues an upstream trace that carried no sampling decision.
+func (s *Span) SampleRate() string {
+	return s.sampling.rate
+}
+
+// SamplingDecision returns the span's LLMObs trace sampling decision
+// (SamplingDecisionKeep or SamplingDecisionDrop), or "" when undecided.
+func (s *Span) SamplingDecision() string {
+	return s.sampling.decision
 }
 
 // PropagatedParentAgentName returns the parent-agent name that a downstream

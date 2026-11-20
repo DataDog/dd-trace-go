@@ -1149,9 +1149,6 @@ const (
 	// tracestateMemberMaxSize bounds the length of a single non-dd list-member
 	// kept from an incoming tracestate, per the W3C recommendation.
 	tracestateMemberMaxSize = 512
-	// tracestateHeaderReserve is the byte budget consumed by the fixed dd= prefix
-	// (e.g. "dd=s:1;p:<16-hex-chars>") before any t.* tag entries are written.
-	tracestateHeaderReserve = 28
 )
 
 // propagatorW3c implements Propagator and injects/extracts span contexts
@@ -1444,23 +1441,30 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 		b.WriteString(ctx.reparentID)
 	}
 
-	ctx.trace.iteratePropagatingTags(func(k, v string) bool {
-		if !strings.HasPrefix(k, "_dd.p.") {
-			return true
+	// LLMObs tags are only usable downstream alongside the LLMObs parent ID, so a single
+	// lookup decides whether they get priority placement. Traces without LLMObs pay no
+	// more than that lookup. One snapshot serves both passes so they agree.
+	tags := ctx.trace.loadPropagatingTags()
+	_, hasLLMObs := tags[keyPropagatedLLMObsParentID]
+	for k, v := range tags {
+		if !strings.HasPrefix(k, "_dd.p.") || (hasLLMObs && isLLMObsPropagatingTag(k)) {
+			continue
 		}
 		// Datadog propagating tags must be appended to the tracestateHeader
 		// with the `t.` prefix. Tag value must have all `=` signs replaced with a tilde (`~`).
 		key := sanitizeTagKey(k[len("_dd.p."):])
 		value := sanitizeTagValue(v)
 		if b.Len()+len(key)+len(value)+4 > tracestateDDMaxSize { // the +4 here is to account for the `t.` prefix, the `;` needed between the tags, and the `:` between the key and value
-			return false
+			break
 		}
 		b.WriteString(";t.")
 		b.WriteString(key)
 		b.WriteString(":")
 		b.WriteString(value)
-		return true
-	})
+	}
+	if hasLLMObs {
+		appendLLMObsTracestateTags(&b, tags)
+	}
 	// Emit the OpenTelemetry `ot=` member as the second list-member (right
 	// after `dd=`), keeping both DD-managed members at the front so a crowded
 	// tracestate can't truncate them. An inherited value may be rv-only or
@@ -1509,6 +1513,66 @@ func composeTracestate(ctx *SpanContext, priority int, oldState string) string {
 		b.WriteString(s)
 	}
 	return b.String()
+}
+
+// llmobsTracestatePriority lists the LLMObs propagating tags in the order they claim
+// space in the 256-byte dd= tracestate member. Map iteration would otherwise drop an
+// arbitrary tag when the member is full; this way the optional agent attribution
+// gives way first, and the trace linkage and sampling decision give way last. Tags in
+// one group are written together or not at all, so a decision never travels without
+// its rate. x-datadog-tags is unaffected and carries every tag.
+//
+// The LLMObs tags are written after the other _dd.p.* tags, so an oversized tag such as
+// a long usr.id can still crowd them out; APM's own tags keep precedence in dd=.
+var llmobsTracestatePriority = [][]string{
+	{keyPropagatedLLMObsParentID},
+	{keyPropagatedLLMObsTraceID},
+	{keyPropagatedLLMObsSamplingDecision, keyPropagatedLLMObsSampleRate},
+	{keyPropagatedLLMObsMLAPP},
+	{keyPropagatedLLMObsSessionID},
+	{keyPropagatedLLMObsParentAgentSpanID},
+	{keyPropagatedLLMObsParentAgentName},
+}
+
+// isLLMObsPropagatingTag reports whether k is written by appendLLMObsTracestateTags.
+// Other _dd.p.llmobs_* tags (e.g. from a newer upstream SDK) keep the default handling.
+func isLLMObsPropagatingTag(k string) bool {
+	switch k {
+	case keyPropagatedLLMObsParentID, keyPropagatedLLMObsTraceID,
+		keyPropagatedLLMObsSamplingDecision, keyPropagatedLLMObsSampleRate,
+		keyPropagatedLLMObsMLAPP, keyPropagatedLLMObsSessionID,
+		keyPropagatedLLMObsParentAgentSpanID, keyPropagatedLLMObsParentAgentName:
+		return true
+	}
+	return false
+}
+
+// appendLLMObsTracestateTags appends the LLMObs propagating tags to a dd= tracestate
+// member in priority order, skipping any group that no longer fits.
+func appendLLMObsTracestateTags(b *strings.Builder, tags map[string]string) {
+	for _, group := range llmobsTracestatePriority {
+		var entries [2]struct{ key, value string }
+		n, size := 0, 0
+		for _, k := range group {
+			v, ok := tags[k]
+			if !ok {
+				continue
+			}
+			entries[n].key = sanitizeTagKey(k[len("_dd.p."):])
+			entries[n].value = sanitizeTagValue(v)
+			size += len(entries[n].key) + len(entries[n].value) + 4
+			n++
+		}
+		if n == 0 || b.Len()+size > tracestateDDMaxSize {
+			continue
+		}
+		for _, e := range entries[:n] {
+			b.WriteString(";t.")
+			b.WriteString(e.key)
+			b.WriteString(":")
+			b.WriteString(e.value)
+		}
+	}
 }
 
 func (p *propagatorW3c) Extract(carrier any) (*SpanContext, error) {

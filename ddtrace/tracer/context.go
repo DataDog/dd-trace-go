@@ -162,6 +162,10 @@ func propagatedLLMSpanFromTags(s *Span) *illmobs.PropagatedLLMSpan {
 	if sessionID := s.context.trace.propagatingTag(keyPropagatedLLMObsSessionID); sessionID != "" {
 		propagatedLLMObs.SessionID = sessionID
 	}
+	if decision := s.context.trace.propagatingTag(keyPropagatedLLMObsSamplingDecision); decision != "" {
+		propagatedLLMObs.SamplingDecision = decision
+		propagatedLLMObs.SampleRate = s.context.trace.propagatingTag(keyPropagatedLLMObsSampleRate)
+	}
 	if parentAgentID := s.context.trace.propagatingTag(keyPropagatedLLMObsParentAgentSpanID); parentAgentID != "" {
 		propagatedLLMObs.ParentAgentSpanID = parentAgentID
 		propagatedLLMObs.ParentAgentName = s.context.trace.propagatingTag(keyPropagatedLLMObsParentAgentName)

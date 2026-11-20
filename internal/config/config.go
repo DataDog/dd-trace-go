@@ -369,7 +369,9 @@ type Config struct {
 	// llmObsProjectName is the project name for LLM Observability
 	llmObsProjectName string
 	// llmObsAgentlessEnabled controls if LLM Observability is enabled in agentless mode
-	llmObsAgentlessEnabled        *bool
+	llmObsAgentlessEnabled *bool
+	// llmObsSampleRate is the proportion of LLM Observability traces to keep, in [0, 1]
+	llmObsSampleRate              float64
 	llmObsPromptsCacheTTL         time.Duration
 	llmObsPromptsFileCacheEnabled bool
 	llmObsPromptsCacheDir         string
@@ -716,6 +718,7 @@ func loadConfig() *Config {
 	if v, origin := p.GetBoolWithOrigin("DD_LLMOBS_AGENTLESS_ENABLED", false); origin != telemetry.OriginDefault {
 		cfg.llmObsAgentlessEnabled = &v
 	}
+	cfg.llmObsSampleRate = p.GetFloatWithValidator("DD_LLMOBS_SAMPLE_RATE", 1, validateLLMObsSampleRate)
 
 	return cfg
 }
@@ -2589,4 +2592,30 @@ func (c *Config) SetLLMObsAgentlessEnabled(v *bool, origin telemetry.Origin, pro
 	}
 	c.llmObsAgentlessEnabled = v
 	configtelemetry.Report("DD_LLMOBS_AGENTLESS_ENABLED", conflictValue, origin)
+}
+
+// LLMObsSampleRate returns DD_LLMOBS_SAMPLE_RATE.
+func (c *Config) LLMObsSampleRate() float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.llmObsSampleRate
+}
+
+// SetLLMObsSampleRate sets DD_LLMOBS_SAMPLE_RATE. Values outside [0, 1] are ignored.
+func (c *Config) SetLLMObsSampleRate(rate float64, origin telemetry.Origin, product ...Product) {
+	if !validateLLMObsSampleRate(rate) {
+		log.Warn("llmobs: ignoring invalid sample rate %g: must be between 0 and 1", rate) //errtrack:ignore invalid caller configuration
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.checkProductConflict("DD_LLMOBS_SAMPLE_RATE", origin, rate, product...) {
+		return
+	}
+	c.llmObsSampleRate = rate
+	configtelemetry.Report("DD_LLMOBS_SAMPLE_RATE", rate, origin)
+}
+
+func validateLLMObsSampleRate(rate float64) bool {
+	return rate >= 0 && rate <= 1
 }
