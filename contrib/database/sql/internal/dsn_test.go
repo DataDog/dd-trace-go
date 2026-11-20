@@ -73,6 +73,26 @@ func TestParseDSN(t *testing.T) {
 				ext.MicrosoftSQLServerInstanceName: "SQLExpress",
 			},
 		},
+		{
+			driverName: "mssql",
+			dsn:        "server=1.2.3.4,1433;User Id=dog;Password=secret;Database=mydb;",
+			expected: map[string]string{
+				ext.DBUser:     "dog",
+				ext.TargetHost: "1.2.3.4",
+				ext.TargetPort: "1433",
+				ext.DBName:     "mydb",
+			},
+		},
+		{
+			driverName: "sqlserver",
+			dsn:        "odbc:server=1.2.3.4,1433;user id=dog;password=secret;database=mydb",
+			expected: map[string]string{
+				ext.DBUser:     "dog",
+				ext.TargetHost: "1.2.3.4",
+				ext.TargetPort: "1433",
+				ext.DBName:     "mydb",
+			},
+		},
 	} {
 		m, err := ParseDSN(tt.driverName, tt.dsn)
 		assert.Equal(nil, err)
@@ -169,6 +189,26 @@ func TestParseSqlServerDSN(t *testing.T) {
 			expected: map[string]string{
 				"user":   "cat",
 				"host":   "1.2.3.4",
+				"dbname": "mydb",
+			},
+		},
+		{
+			name: "url_capitalized_parameter",
+			dsn:  "sqlserver://bob:secret@1.2.3.4:1433?Database=mydb",
+			expected: map[string]string{
+				"user":   "bob",
+				"host":   "1.2.3.4",
+				"port":   "1433",
+				"dbname": "mydb",
+			},
+		},
+		{
+			name: "odbc_prefix",
+			dsn:  "odbc:server=1.2.3.4,1444;user id=dog;password=secret;database=mydb",
+			expected: map[string]string{
+				"user":   "dog",
+				"host":   "1.2.3.4",
+				"port":   "1444",
 				"dbname": "mydb",
 			},
 		},
