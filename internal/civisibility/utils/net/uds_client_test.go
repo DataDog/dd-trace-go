@@ -270,6 +270,10 @@ func TestClientAgentModeUDSLogsEndpoint(t *testing.T) {
 	})
 }
 
+func resetTelemetryInitForTesting() {
+	telemetryInit = sync.Once{}
+}
+
 func runUDSAgentClientEndpointTest(
 	t *testing.T,
 	newClient func() Client,
@@ -297,12 +301,12 @@ func runUDSAgentClientEndpointTest(
 		require.NotNil(t, c)
 		handler(t, c, w, r)
 	}))
-	telemetryInit = sync.Once{}
+	resetTelemetryInitForTesting()
 	restoreTelemetry := telemetry.MockClient(&telemetrytest.RecordClient{})
 	t.Cleanup(func() {
 		telemetry.StopApp()
 		restoreTelemetry()
-		telemetryInit = sync.Once{}
+		resetTelemetryInitForTesting()
 	})
 
 	origEnv := saveEnv()

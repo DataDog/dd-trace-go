@@ -7,7 +7,6 @@ package telemetry
 
 import (
 	"log/slog"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -348,9 +347,9 @@ func TestWithCaptureStacktraceNow_CapturesEagerly(t *testing.T) {
 }
 
 func TestWithCaptureStacktraceNow_DisabledFallsBackToDeferred(t *testing.T) {
-	telemetryEnabledOnce = sync.Once{}
+	resetTelemetryEnabledOnceForTesting()
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "0")
-	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
+	t.Cleanup(resetTelemetryEnabledOnceForTesting)
 
 	opt := WithCaptureStacktraceNow()
 

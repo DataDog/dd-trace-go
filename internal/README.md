@@ -85,6 +85,10 @@ A `statsd`/telemetry **count** is the right tool when you want to know *how ofte
 
 Only the **first** error type seen per `(message, level, tags)` per flush window is transmitted, and only the error's *type* is ever sent — never its message. `errorType` reports the *outer* error's concrete type as-is (stripping only a pointer indirection, never unwrapping), so an error wrapped with `fmt.Errorf("...: %w", err)` reads as `fmt.wrapError` regardless of what `err` actually was, not the wrapped error's own type; so the message and stack trace carry the real signal; pick a message specific enough to stand on its own.
 
+### Lint
+
+[`lint/oncereset`](./lint/oncereset/) is a `go vet`-compatible analyzer, run by `make lint/errlog`, that rejects assigning `sync.Once{}` except inside `reset*ForTesting` or `mark*ForTesting` helpers. That keeps test-only Once resets on a named helper so they can share a mutex with `Once.Do`. Production singleton re-init may use `//nolint:oncereset`.
+
 ### Telemetry Errors
 
 [`apps/telemetry-errors`](./apps/telemetry-errors/) is a manual-only harness (not wired into `test-apps.cue`) for dogfooding `ReportError`/`ReportPanic`/`LogAndReportError`/`LogAndReportPanic` adoptions (see [Telemetry](#telemetry) above) against a real Datadog org before they ship. It documents and partly automates a three-tier verification process — offline wire-shape assertion, real intake acceptance, and product-landing confirmation — for any call site that adopts this API, not just the ones already covered. See its [README](./apps/telemetry-errors/README.md) for the process and the known pitfalls it surfaces.
