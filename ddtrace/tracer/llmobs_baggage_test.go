@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 )
 
@@ -120,9 +119,7 @@ func TestPropagatedLLMSpan(t *testing.T) {
 }
 
 func TestLLMObsBaggageInject(t *testing.T) {
-	t.Setenv("DD_LLMOBS_ENABLED", "true")
-	internalconfig.SetUseFreshConfig(true)
-	defer internalconfig.SetUseFreshConfig(false)
+	defer illmobs.SetEnabledForTesting(true)()
 	inject := func(sc *SpanContext, carrier TextMapCarrier) TextMapCarrier {
 		require.NoError(t, (&propagatorBaggage{}).Inject(sc, carrier))
 		return carrier
@@ -168,6 +165,32 @@ func TestLLMObsBaggageInject(t *testing.T) {
 		assert.Contains(t, out["x-datadog-tags"], "_dd.p.llmobs_parent_id=555")
 	})
 
+	t.Run("repeated HTTP baggage lines are all merged", func(t *testing.T) {
+		sc := &SpanContext{trace: newTrace()}
+		sc.llmobsPropagated = &illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: testLLMObsHexTraceID}
+		carrier := HTTPHeadersCarrier{"Baggage": {"tenant=acme", "region=us"}}
+
+		require.NoError(t, (&propagatorBaggage{}).Inject(sc, carrier))
+		assert.Equal(t, []string{"llmobs.parent_id=555,llmobs.trace_id=" + testLLMObsHexTraceID + ",tenant=acme,region=us"}, carrier["Baggage"])
+	})
+
+	t.Run("a reused pointer carrier drops stale llmobs items", func(t *testing.T) {
+		withLLMObs := &SpanContext{trace: newTrace()}
+		withLLMObs.llmobsPropagated = &illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: testLLMObsHexTraceID}
+		carrier := &TextMapCarrier{}
+		require.NoError(t, (&propagatorBaggage{}).Inject(withLLMObs, carrier))
+		require.Contains(t, (*carrier)["baggage"], "llmobs.parent_id=555")
+
+		require.NoError(t, (&propagatorBaggage{}).Inject(&SpanContext{trace: newTrace()}, carrier))
+		assert.Empty(t, *carrier)
+
+		*carrier = TextMapCarrier{"Baggage": "tenant=acme"}
+		require.NoError(t, (&propagatorBaggage{}).Inject(withLLMObs, carrier))
+		assert.Equal(t, TextMapCarrier{
+			"baggage": "llmobs.parent_id=555,llmobs.trace_id=" + testLLMObsHexTraceID + ",tenant=acme",
+		}, *carrier)
+	})
+
 	t.Run("a caller header under Baggage is merged into one key", func(t *testing.T) {
 		sc := &SpanContext{trace: newTrace()}
 		sc.llmobsPropagated = &illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: testLLMObsHexTraceID}
@@ -181,8 +204,7 @@ func TestLLMObsBaggageInject(t *testing.T) {
 func TestBaggageInjectWithoutLLMObsReplacesCallerHeader(t *testing.T) {
 	// With LLMObs disabled, the injector behaves as before: the context's items
 	// replace a header the caller set, and llmobs.* items are ordinary baggage.
-	internalconfig.SetUseFreshConfig(true)
-	defer internalconfig.SetUseFreshConfig(false)
+	defer illmobs.SetEnabledForTesting(false)()
 	sc := &SpanContext{trace: newTrace()}
 	sc.setBaggageItem(baggageKeyLLMObsParentID, "1")
 	carrier := TextMapCarrier{"baggage": "tenant=a"}
@@ -219,4 +241,29 @@ func TestLLMObsBaggageItemValues(t *testing.T) {
 	}
 	// Other tracers decode baggage with W3C percent-decoding, which reads "+" as a plus sign.
 	assert.Equal(t, "Research%20Agent", encodeValue("Research Agent"))
+}
+
+func TestLLMObsDisabledForwardsInboundContextUnchanged(t *testing.T) {
+	// A service without LLMObs must not read, rewrite, or add to LLMObs context:
+	// the added _dd.p.llmobs_* tags could push x-datadog-tags over its budget.
+	defer illmobs.SetEnabledForTesting(false)()
+	tr, err := newTracer()
+	require.NoError(t, err)
+	defer tr.Stop()
+	extracted, err := tr.Extract(TextMapCarrier{
+		"baggage": "llmobs.parent_id=555,llmobs.trace_id=" + testLLMObsHexTraceID + ",tenant=acme",
+	})
+	require.NoError(t, err)
+	root := tr.StartSpan("server", ChildOf(extracted))
+	defer root.Finish()
+	child := tr.StartSpan("client", ChildOf(root.Context()))
+	defer child.Finish()
+
+	assert.Nil(t, root.Context().llmobsPropagated)
+	out := TextMapCarrier{}
+	require.NoError(t, tr.Inject(child.Context(), out))
+	assert.ElementsMatch(t,
+		[]string{"llmobs.parent_id=555", "llmobs.trace_id=" + testLLMObsHexTraceID, "tenant=acme"},
+		strings.Split(out["baggage"], ","))
+	assert.NotContains(t, out["x-datadog-tags"], "llmobs")
 }

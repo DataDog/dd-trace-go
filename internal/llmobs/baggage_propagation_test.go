@@ -346,6 +346,30 @@ func TestLLMObsBaggageRead(t *testing.T) {
 		assert.Contains(t, tags, "_dd.p.llmobs_ml_app=upstream")
 		assert.Contains(t, tags, "_dd.p.llmobs_sid=sess-up")
 	})
+	t.Run("a-plain-span-does-not-reset-the-tags-while-an-llmobs-span-is-open", func(t *testing.T) {
+		// A goroutine starts an APM span from the request context while LLMObs span L
+		// is open. A request injected under L must still name L in both carriers.
+		_, _, ll := testTracer(t)
+		inbound := http.Header{}
+		inbound.Set("Baggage", "llmobs.parent_id=555,llmobs.trace_id="+upstreamTraceIDHex)
+		carrier := tracer.TextMapCarrier{}
+		var l *llmobs.Span
+
+		serveInbound(t, inbound, func(ctx context.Context) {
+			var lctx context.Context
+			l, lctx = ll.StartSpan(ctx, llmobs.SpanKindWorkflow, "l", llmobs.StartSpanConfig{})
+			underL, _ := tracer.StartSpanFromContext(lctx, "under-l")
+			plain, _ := tracer.StartSpanFromContext(ctx, "plain")
+			plain.Finish()
+			require.NoError(t, tracer.Inject(underL.Context(), carrier))
+			underL.Finish()
+			l.Finish(llmobs.FinishSpanConfig{})
+		})
+
+		assert.Equal(t, l.SpanID(), baggageItems(t, carrier["baggage"])["llmobs.parent_id"])
+		assert.Contains(t, carrier["x-datadog-tags"], "_dd.p.llmobs_parent_id="+l.SpanID())
+	})
+
 	t.Run("inbound-llmobs-baggage-is-replaced-not-forwarded", func(t *testing.T) {
 		_, coll, ll := testTracer(t)
 		out := newOutboundCapture(t)

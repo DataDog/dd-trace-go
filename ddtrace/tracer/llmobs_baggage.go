@@ -205,14 +205,57 @@ func truncateToEncodedBytes(s string, maxBytes int) string {
 	return s
 }
 
+// callerBaggageHeader returns the baggage header that the caller already set.
+// Repeated HTTP header lines form one comma-separated list (RFC 9110). Other
+// carriers keep lookupBaggageHeader's last-value rule.
+func callerBaggageHeader(reader TextMapReader) (string, error) {
+	var h HTTPHeadersCarrier
+	switch c := reader.(type) {
+	case HTTPHeadersCarrier:
+		h = c
+	case *HTTPHeadersCarrier:
+		if c != nil {
+			h = *c
+		}
+	default:
+		return lookupBaggageHeader(reader)
+	}
+	var vals []string
+	for k, vs := range h {
+		if len(k) == baggageKeyLen && strings.EqualFold(k, "baggage") {
+			vals = append(vals, vs...)
+		}
+	}
+	return strings.Join(vals, ","), nil
+}
+
 // deleteBaggageHeader removes the baggage header from the built-in carriers.
 // Other carriers cannot delete a key, so their header is left as it was.
-func deleteBaggageHeader(writer TextMapWriter) {
+func deleteBaggageHeader(writer TextMapWriter) { cleanBaggageKeys(writer, false) }
+
+// cleanBaggageKeys deletes every spelling of the baggage key from the built-in
+// carriers, by value or by pointer. With keepWritten, it keeps the key that the
+// carrier's Set writes.
+func cleanBaggageKeys(writer TextMapWriter, keepWritten bool) {
+	keep := func(k string) string {
+		if keepWritten {
+			return k
+		}
+		return ""
+	}
 	switch c := writer.(type) {
 	case HTTPHeadersCarrier:
-		deleteBaggageKeys(c, "")
+		deleteBaggageKeys(c, keep("Baggage"))
+	case *HTTPHeadersCarrier:
+		if c != nil {
+			deleteBaggageKeys(*c, keep("Baggage"))
+		}
 	case TextMapCarrier:
-		deleteBaggageKeys(c, "")
+		deleteBaggageKeys(c, keep("baggage"))
+	case *TextMapCarrier:
+		if c != nil {
+			deleteBaggageKeys(*c, keep("baggage"))
+		}
 	}
 }
 

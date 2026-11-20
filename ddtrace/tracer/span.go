@@ -1423,13 +1423,12 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	llmSpan, ok := illmobs.ActiveLLMSpanFromContext(ctx)
 	if !ok {
 		// A service that forwards a request without an LLMObs span of its own
-		// still sends the inbound context on, in both carriers, as dd-trace-py does.
-		// After a baggage-only hop the tags are otherwise missing, and a downstream
-		// tracer that reads only the tags would start a new trace.
+		// still sends the inbound context on in baggage. The tags were written once
+		// at the local root (activateInboundLLMObsContext): rewriting the trace-wide
+		// tags here would reset them while an LLMObs span of this trace is open.
 		if p, ok := illmobs.PropagatedLLMSpanFromContext(ctx); ok {
 			spanCtx.llmobsSpan = nil
 			spanCtx.llmobsPropagated = p
-			setPropagatedLLMObsTags(spanCtx, p)
 		}
 		return
 	}
@@ -1449,12 +1448,9 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 }
 
 // setPropagatedLLMObsTags writes the inbound LLMObs context to the trace's
-// propagating tags for a request this process forwards. The session is written
-// only when the trace has none yet: it is trace-level, and the first writer wins.
-//
-// It runs at every span start under a forwarded request, so it returns at once
-// when the tags already name this parent: the inbound tags did, or an earlier
-// span of this request wrote them.
+// propagating tags, once, at the local root of an inbound request. It returns at
+// once when the inbound tags already name this parent. The session is written
+// only when the trace has none: it is trace-level, and the first writer wins.
 func setPropagatedLLMObsTags(spanCtx *SpanContext, p *illmobs.PropagatedLLMSpan) {
 	if spanCtx.trace.propagatingTag(keyPropagatedLLMObsParentID) == p.SpanID {
 		return

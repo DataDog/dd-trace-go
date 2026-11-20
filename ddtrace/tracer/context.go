@@ -132,7 +132,7 @@ func contextWithPropagatedLLMSpan(ctx context.Context, s *Span) context.Context 
 	if _, ok := illmobs.PropagatedLLMSpanFromContext(ctx); ok {
 		return ctx
 	}
-	if s.context == nil || s.context.trace == nil {
+	if s.context == nil || s.context.trace == nil || !illmobs.Enabled() {
 		return ctx
 	}
 	// The local root of an inbound request already decoded it.

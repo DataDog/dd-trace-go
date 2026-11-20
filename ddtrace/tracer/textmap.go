@@ -18,8 +18,8 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
-	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -380,7 +380,7 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 			ctx.baggage = maps.Clone(baggage) // +checklocksignore - Initialization time, not shared yet.
 			atomic.StoreUint32(&ctx.hasBaggage, 1)
 		}
-		if internalconfig.Get().LLMObsEnabled() {
+		if illmobs.Enabled() {
 			deleteLLMObsBaggage(ctx)
 		}
 
@@ -389,7 +389,7 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 
 	// A baggage-only context under "restart" has no trace to restart, but its
 	// LLMObs context must still not be continued.
-	if p.propagationBehaviorExtract == propagationBehaviorExtractRestart && incomingCtx != nil && internalconfig.Get().LLMObsEnabled() {
+	if p.propagationBehaviorExtract == propagationBehaviorExtractRestart && incomingCtx != nil && illmobs.Enabled() {
 		deleteLLMObsBaggage(incomingCtx)
 	}
 
@@ -1915,7 +1915,7 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 	// The llmobs.* items go first, so that they survive the item and byte caps,
 	// and replace any inbound copies of the same keys.
 	llmCtx, hasLLMObs := ctx.llmobsDistributedContext()
-	llmobsOn := hasLLMObs || internalconfig.Get().LLMObsEnabled()
+	llmobsOn := hasLLMObs || illmobs.Enabled()
 	if hasLLMObs {
 		for _, item := range llmobsBaggageItems(llmCtx) {
 			if item[1] != "" && !b.add(encodeKey(item[0]), encodeValue(item[1])) {
@@ -1945,10 +1945,8 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 		return nil
 	}
 	writer.Set("baggage", b.String())
-	if c, ok := writer.(TextMapCarrier); ok {
-		// Set stores the lowercase key, so remove a caller's "Baggage".
-		deleteBaggageKeys(c, "baggage")
-	}
+	// Remove a caller's header under another spelling, so the carrier holds one.
+	cleanBaggageKeys(writer, true)
 	return nil
 }
 
@@ -1988,7 +1986,7 @@ func (b *baggageHeaderBuilder) addMember(member string) bool {
 // member whose key was already written loses: the span context wins, as in
 // dd-trace-py. Members keep their raw text, so W3C properties survive.
 func mergeCallerBaggage(b *baggageHeaderBuilder, ctx *SpanContext, reader TextMapReader) bool {
-	header, err := lookupBaggageHeader(reader)
+	header, err := callerBaggageHeader(reader)
 	if err != nil || header == "" {
 		return false
 	}
