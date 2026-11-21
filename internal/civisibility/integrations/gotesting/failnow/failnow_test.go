@@ -235,6 +235,8 @@ func runScenario(m *testing.M) int {
 		_ = os.Setenv(constants.CIVisibilityFlakyRetryCountEnvironmentVariable, "10")
 		_ = os.Setenv(constants.CIVisibilityTotalFlakyRetryCountEnvironmentVariable, "1")
 	}
+	resetReadCache := isolateReadCache()
+	defer resetReadCache()
 	server, restore := startManualMockServer(settings)
 	defer restore()
 	_ = server
@@ -277,6 +279,21 @@ func finishCleanupSpan(ctx context.Context, resource string) {
 	span, _ := tracer.StartSpanFromContext(ctx, "manual.cleanup", tracer.ResourceName(resource))
 	if span != nil {
 		span.Finish()
+	}
+}
+
+// isolateReadCache points the CI Visibility read cache at a per-process
+// directory. httptest ports can be reused between scenario subprocesses, so a
+// shared cache could serve one scenario the settings of an earlier one.
+func isolateReadCache() func() {
+	dir, err := os.MkdirTemp("", "dd-trace-go-civisibility-read-cache-*")
+	if err != nil {
+		panic("unable to isolate CI Visibility read cache: " + err.Error())
+	}
+	civisibilitynet.SetReadCacheHooksForTesting(dir, nil, nil, nil, nil)
+	return func() {
+		civisibilitynet.ResetReadCacheHooksForTesting()
+		_ = os.RemoveAll(dir)
 	}
 }
 
