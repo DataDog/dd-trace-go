@@ -93,6 +93,11 @@ type ProviderConfig struct {
 	// assignment are unchanged, so such a provider can look up the variant a
 	// subject would get before the subject experiences it.
 	//
+	// With span enrichment on, spans for these evaluations record the flag but
+	// not the subject. When this provider is the default OpenFeature provider,
+	// LLM Observability prompt flags are evaluated through it and are not
+	// exposures either.
+	//
 	// This differs from DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED=false,
 	// which keeps exposures for ExposureHook and deduplication and only stops
 	// sending them to Datadog.
@@ -165,6 +170,8 @@ type DatadogProvider struct {
 	source internalffe.Source
 	// agentless stays nil unless tryRegisterAgentless registered a poller. // +checklocks:mu
 	agentless *agentlessSource
+	// rcDetach detaches this provider from Remote Config; nil unless attached. // +checklocks:mu
+	rcDetach func()
 	// shutdownCalled reports whether ShutdownWithContext has already run. // +checklocks:mu
 	shutdownCalled bool
 	// teardownDone is closed when the teardown goroutine started by
@@ -327,7 +334,8 @@ func newDatadogProviderWithSourceAndEVP(
 	evaluationTelemetryEnabled := config.EvaluationTelemetryEnabled == nil || *config.EvaluationTelemetryEnabled
 	exposuresEnabled := config.ExposuresEnabled == nil || *config.ExposuresEnabled
 	if !evaluationTelemetryEnabled || !exposuresEnabled {
-		log.Info("openfeature: evaluation telemetry enabled=%t, exposures enabled=%t", evaluationTelemetryEnabled, exposuresEnabled)
+		log.Info("openfeature: %s provider created with evaluation telemetry %s and exposures %s (ProviderConfig)",
+			source.String(), enabledText(evaluationTelemetryEnabled), enabledText(exposuresEnabled))
 	}
 
 	// With exposures disabled, the provider has no exposure writer or hook, so
@@ -410,6 +418,13 @@ func newDatadogProviderWithSourceAndEVP(
 	}
 
 	return p
+}
+
+func enabledText(enabled bool) string {
+	if enabled {
+		return "enabled"
+	}
+	return "disabled"
 }
 
 // startWithAgentless registers an Agentless configuration source as the
@@ -675,7 +690,7 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 		// An agentless provider never registered an RC capability, so it
 		// must not unregister one.
 		if source == internalffe.SourceRemoteConfig {
-			err = stopRemoteConfig()
+			containLoggerPanic(p.stopRemoteConfig)
 		}
 		if agentless != nil {
 			if stopErr := agentless.Stop(ctx); stopErr != nil {

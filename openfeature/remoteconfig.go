@@ -31,21 +31,16 @@ func startWithRemoteConfig(config ProviderConfig) (*DatadogProvider, error) {
 	)
 
 	// Subscribe via the internal package, which serializes with tracer subscription
-	// and starts RC only if needed (slow path).
-	tracerOwnsSubscription, err := internalffe.SubscribeProvider(provider.rcCallback)
-	if err != nil {
+	// and starts RC only if needed (slow path). Every provider then attaches to the
+	// same subscription.
+	if err := internalffe.SubscribeProvider(); err != nil {
 		return nil, fmt.Errorf("failed to subscribe to Remote Config: %w", err)
 	}
-
-	if !tracerOwnsSubscription {
-		log.Debug("openfeature: successfully subscribed to Remote Config updates")
-		return provider, nil
-	}
 	if !attachProvider(provider) {
-		// This shouldn't happen since SubscribeProvider just told us tracer subscribed.
-		return nil, errors.New("failed to attach to tracer's RC subscription")
+		// This shouldn't happen since SubscribeProvider just ensured the subscription.
+		return nil, errors.New("failed to attach to the Remote Config subscription")
 	}
-	log.Debug("openfeature: attached to tracer's RC subscription")
+	log.Debug("openfeature: attached to the Remote Config subscription")
 	return provider, nil
 }
 
@@ -269,17 +264,15 @@ func validateFlag(flagKey string, flag *flag) error {
 	return nil
 }
 
-// stopRemoteConfig unsubscribes from Remote Config updates.
-// This should be called when shutting down the application or when
-// the OpenFeature provider is no longer needed.
-//
-// Note: In the slow path, this package discards the subscription token from
-// Subscribe(), so we cannot call Unsubscribe(). Instead we unregister the
-// capability which stops updates. In the fast path (tracer subscribed),
-// the subscription is owned by the tracer.
-func stopRemoteConfig() error {
-	// Called from the shutdown teardown goroutine.
-	containLoggerPanic(func() { log.Debug("openfeature: unregistered from Remote Config") })
-	_ = remoteconfig.UnregisterCapability(remoteconfig.FFEFlagEvaluation)
-	return nil
+// stopRemoteConfig detaches the provider from Remote Config updates. When the
+// last provider detaches, the FFE_FLAGS evaluation capability is unregistered;
+// the subscription itself stays, because the tracer may own it.
+func (p *DatadogProvider) stopRemoteConfig() {
+	p.mu.Lock()
+	detach := p.rcDetach
+	p.rcDetach = nil
+	p.mu.Unlock()
+	if detach != nil {
+		detach()
+	}
 }

@@ -60,8 +60,9 @@ func TestForwardingCallbackForwardsWhenCallbackAttached(t *testing.T) {
 
 	rcState.Lock()
 	rcState.subscribed = true
-	rcState.callback = cb
 	rcState.Unlock()
+	_, ok := AttachCallback(cb)
+	require.True(t, ok)
 
 	update := remoteconfig.ProductUpdate{"path/live": []byte(`live`)}
 	statuses := forwardingCallback(update)
@@ -69,16 +70,89 @@ func TestForwardingCallbackForwardsWhenCallbackAttached(t *testing.T) {
 	assert.Equal(t, rc.ApplyStateAcknowledged, statuses["path/live"].State)
 	assert.Contains(t, received, "path/live")
 
+	// The update is kept for providers that attach later.
 	rcState.Lock()
-	assert.Nil(t, rcState.buffered)
+	assert.Contains(t, rcState.buffered, "path/live")
 	rcState.Unlock()
+}
+
+func TestForwardingCallbackFansOutToEveryProvider(t *testing.T) {
+	ResetForTest()
+	defer ResetForTest()
+
+	rcState.Lock()
+	rcState.subscribed = true
+	rcState.Unlock()
+
+	var first, second []string
+	record := func(into *[]string, state rc.ApplyState) Callback {
+		return func(update remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+			statuses := make(map[string]rc.ApplyStatus, len(update))
+			for path := range update {
+				*into = append(*into, path)
+				statuses[path] = rc.ApplyStatus{State: state}
+			}
+			return statuses
+		}
+	}
+	detachFirst, ok := AttachCallback(record(&first, rc.ApplyStateAcknowledged))
+	require.True(t, ok)
+	_, ok = AttachCallback(record(&second, rc.ApplyStateError))
+	require.True(t, ok)
+
+	statuses := forwardingCallback(remoteconfig.ProductUpdate{"path/a": []byte(`a`)})
+	assert.Equal(t, []string{"path/a"}, first)
+	assert.Equal(t, []string{"path/a"}, second)
+	assert.Equal(t, rc.ApplyStateError, statuses["path/a"].State, "a provider's error is reported")
+
+	detachFirst()
+	detachFirst()
+	forwardingCallback(remoteconfig.ProductUpdate{"path/b": []byte(`b`)})
+	assert.Equal(t, []string{"path/a"}, first, "a detached provider gets no updates")
+	assert.Equal(t, []string{"path/a", "path/b"}, second)
+
+	// A provider attaching later starts from the latest update.
+	var late []string
+	_, ok = AttachCallback(record(&late, rc.ApplyStateAcknowledged))
+	require.True(t, ok)
+	assert.Equal(t, []string{"path/b"}, late)
+}
+
+func TestDetachLastCallbackUnregistersCapability(t *testing.T) {
+	ResetForTest()
+	defer ResetForTest()
+	defer remoteconfig.Reset()
+	require.NoError(t, remoteconfig.Start(remoteconfig.DefaultClientConfig()))
+	require.NoError(t, SubscribeRC())
+
+	noop := func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus { return nil }
+	detachFirst, ok := AttachCallback(noop)
+	require.True(t, ok)
+	detachSecond, ok := AttachCallback(noop)
+	require.True(t, ok)
+
+	detachFirst()
+	has, err := remoteconfig.HasCapability(remoteconfig.FFEFlagEvaluation)
+	require.NoError(t, err)
+	assert.True(t, has, "another provider is still attached")
+
+	detachSecond()
+	has, err = remoteconfig.HasCapability(remoteconfig.FFEFlagEvaluation)
+	require.NoError(t, err)
+	assert.False(t, has)
+
+	_, ok = AttachCallback(noop)
+	require.True(t, ok)
+	has, err = remoteconfig.HasCapability(remoteconfig.FFEFlagEvaluation)
+	require.NoError(t, err)
+	assert.True(t, has, "a new provider registers the capability again")
 }
 
 func TestAttachCallbackNotSubscribed(t *testing.T) {
 	ResetForTest()
 	defer ResetForTest()
 
-	got := AttachCallback(func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus { return nil })
+	_, got := AttachCallback(func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus { return nil })
 	assert.False(t, got)
 }
 
@@ -98,12 +172,12 @@ func TestAttachCallbackReplaysBuffer(t *testing.T) {
 		return nil
 	}
 
-	got := AttachCallback(cb)
+	_, got := AttachCallback(cb)
 	assert.True(t, got)
 	assert.Contains(t, received, "path/buf")
 
 	rcState.Lock()
-	assert.Nil(t, rcState.buffered)
+	assert.Contains(t, rcState.buffered, "path/buf", "the update is kept for later providers")
 	rcState.Unlock()
 }
 
@@ -116,7 +190,7 @@ func TestAttachCallbackNoBuffer(t *testing.T) {
 	rcState.Unlock()
 
 	called := false
-	got := AttachCallback(func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+	_, got := AttachCallback(func(remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
 		called = true
 		return nil
 	})
