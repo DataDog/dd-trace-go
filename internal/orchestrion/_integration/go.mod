@@ -115,6 +115,7 @@ require (
 	example.com/awsv1dep v0.0.0-00010101000000-000000000000
 	example.com/awsv2dep v0.0.0-00010101000000-000000000000
 	example.com/chidep v0.0.0-00010101000000-000000000000
+	example.com/ddspandep v0.0.0-00010101000000-000000000000
 	example.com/echodep v0.0.0-00010101000000-000000000000
 	example.com/fasthttpdep v0.0.0-00010101000000-000000000000
 	example.com/fiberdep v0.0.0-00010101000000-000000000000
@@ -656,3 +657,5 @@ replace example.com/k8sclientgodep => ./internal/k8sclientgodep
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../../contrib/aws/aws-sdk-go/otelc
 
 replace example.com/awsv1dep => ./internal/awsv1dep
+
+replace example.com/ddspandep => ./internal/ddspandep
