@@ -60,10 +60,19 @@ func (cfg *config) startSpanOptions(opts ...tracer.StartSpanOption) []tracer.Sta
 func startSpanFromContext(
 	ctx context.Context, method, operation string, serviceName string, serviceSource string, opts ...tracer.StartSpanOption,
 ) (*tracer.Span, context.Context) {
+	return startSpanWithResource(ctx, method, method, operation, serviceName, serviceSource, opts...)
+}
+
+// startSpanWithResource is startSpanFromContext with a resource name that may
+// differ from method. The resource must be set at span start: the tracer reads
+// it then for profiler endpoint labels and counts.
+func startSpanWithResource(
+	ctx context.Context, method, resource, operation string, serviceName string, serviceSource string, opts ...tracer.StartSpanOption,
+) (*tracer.Span, context.Context) {
 	methodElements := strings.SplitN(strings.TrimPrefix(method, "/"), "/", 2)
 	opts = append(opts,
 		instrumentation.ServiceNameWithSource(serviceName, serviceSource),
-		tracer.ResourceName(method),
+		tracer.ResourceName(resource),
 		tracer.Tag(tagMethodName, method),
 		spanTypeRPC,
 		tracer.Tag(ext.RPCSystem, ext.RPCSystemGRPC),
