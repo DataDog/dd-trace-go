@@ -10,9 +10,16 @@ import (
 )
 
 // attachProvider wires the given provider to the global RC subscription
-// managed by internal/openfeature. If the tracer already subscribed to
-// FFE_FLAGS, it replays any buffered config and returns true. Otherwise
-// returns false, meaning the caller should fall back to its own RC subscription.
+// managed by internal/openfeature. If FFE_FLAGS is subscribed, it replays the
+// latest config, keeps the detach function for Shutdown, and returns true.
+// Otherwise it returns false.
 func attachProvider(p *DatadogProvider) bool {
-	return internalffe.AttachCallback(p.rcCallback)
+	detach, ok := internalffe.AttachCallback(p.rcCallback)
+	if !ok {
+		return false
+	}
+	p.mu.Lock()
+	p.rcDetach = detach
+	p.mu.Unlock()
+	return true
 }

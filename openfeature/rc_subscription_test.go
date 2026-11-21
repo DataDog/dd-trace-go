@@ -76,8 +76,8 @@ func TestAttachProviderReplaysBufferedConfig(t *testing.T) {
 	require.NotNil(t, cfg, "provider should have configuration after replay")
 	assert.Contains(t, cfg.Flags, "test-flag")
 
-	// Buffer should be cleared.
-	assert.Nil(t, internalffe.GetBufferedForTest(), "buffer should be nil after replay")
+	// The update is kept for providers that attach later.
+	assert.Contains(t, internalffe.GetBufferedForTest(), "path/config")
 }
 
 func TestAttachProviderNoBuffer(t *testing.T) {
@@ -121,9 +121,7 @@ func TestStartWithRemoteConfigFastPath(t *testing.T) {
 	// without touching global remoteconfig state.
 	provider := newDatadogProvider(ProviderConfig{})
 	cleanupProvider(t, provider)
-	tracerOwnsSubscription, err := internalffe.SubscribeProvider(provider.rcCallback)
-	require.NoError(t, err)
-	require.True(t, tracerOwnsSubscription, "SubscribeProvider should report tracer subscribed")
+	require.NoError(t, internalffe.SubscribeProvider())
 
 	// Attach the provider, which replays the buffered config.
 	attached := attachProvider(provider)
@@ -153,4 +151,46 @@ func TestStartWithRemoteConfig_ConfiguresAgentEVP(t *testing.T) {
 	assert.Empty(t, evp.apiKey)
 	assert.Nil(t, evp.directURL)
 	assert.Nil(t, evp.directClient)
+}
+
+// An application can register a second provider, for example one with exposures off
+// under its own OpenFeature domain, while Remote Config delivers the flags.
+func TestStartWithRemoteConfigSeveralProviders(t *testing.T) {
+	internalffe.ResetForTest()
+	defer internalffe.ResetForTest()
+	internalffe.SetSubscribedForTest(true)
+
+	encode := func(key string) []byte {
+		data, err := json.Marshal(&universalFlagsConfiguration{
+			Format: "SERVER",
+			Flags: map[string]*flag{key: {
+				Key: key, Enabled: true, VariationType: valueTypeBoolean,
+				Variations:  map[string]*variant{"on": {Key: "on", Value: true}},
+				Allocations: []*allocation{},
+			}},
+		})
+		require.NoError(t, err)
+		return data
+	}
+	internalffe.SetBufferedForTest(remoteconfig.ProductUpdate{"path/config": encode("first")})
+
+	live, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+	cleanupProvider(t, live)
+	peek, err := startWithRemoteConfig(ProviderConfig{ExposuresEnabled: new(false)})
+	require.NoError(t, err, "a second provider attaches to the same subscription")
+	cleanupProvider(t, peek)
+	for _, p := range []*DatadogProvider{live, peek} {
+		require.NotNil(t, p.getConfiguration())
+		assert.Contains(t, p.getConfiguration().Flags, "first")
+	}
+
+	internalffe.ForwardForTest(remoteconfig.ProductUpdate{"path/config": encode("second")})
+	for _, p := range []*DatadogProvider{live, peek} {
+		assert.Contains(t, p.getConfiguration().Flags, "second", "every provider gets each update")
+	}
+
+	shutdownAndWait(t, peek)
+	internalffe.ForwardForTest(remoteconfig.ProductUpdate{"path/config": encode("third")})
+	assert.Contains(t, live.getConfiguration().Flags, "third", "shutting one provider down keeps the other attached")
 }

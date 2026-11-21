@@ -13,6 +13,7 @@ package openfeature
 import (
 	"bytes"
 	"fmt"
+	"slices"
 	"sync"
 
 	rc "github.com/DataDog/datadog-agent/pkg/remoteconfig/state"
@@ -31,12 +32,21 @@ const (
 type Callback func(update remoteconfig.ProductUpdate) map[string]rc.ApplyStatus
 
 // rcState bridges the tracer's early RC subscription (during tracer.Start)
-// with the late-created DatadogProvider (during NewDatadogProvider).
+// with the late-created DatadogProviders (during NewDatadogProvider). One
+// forwarding subscription serves every provider in the process, so an
+// application can register several providers, for example under different
+// OpenFeature domains.
 var rcState struct {
 	sync.Mutex
 	subscribed bool
-	callback   Callback
-	buffered   remoteconfig.ProductUpdate // latest snapshot; RC sends full state each time
+	callbacks  map[uint64]Callback
+	nextID     uint64
+	// buffered is the latest snapshot; RC sends full state each time. It is
+	// replayed to each provider that attaches after it arrived.
+	buffered remoteconfig.ProductUpdate
+	// capabilityUnregistered records that the last provider detached and
+	// unregistered FFE_FLAGS evaluation, so the next one registers it again.
+	capabilityUnregistered bool
 }
 
 // SubscribeRC subscribes to the FFE_FLAGS RC product using a forwarding
@@ -52,9 +62,9 @@ func SubscribeRC() error {
 		if has, _ := remoteconfig.HasProduct(FFEProductName); has {
 			return nil
 		}
+		// Attached providers stay attached and receive the new client's updates.
 		log.Debug("openfeature: RC subscription for %s was lost (tracer restart?), re-subscribing", FFEProductName)
 		rcState.subscribed = false
-		rcState.callback = nil
 	}
 
 	if has, _ := remoteconfig.HasProduct(FFEProductName); has {
@@ -67,90 +77,125 @@ func SubscribeRC() error {
 	}
 
 	rcState.subscribed = true
+	rcState.capabilityUnregistered = false
 	log.Debug("openfeature: subscribed to RC product %s via tracer", FFEProductName)
 	return nil
 }
 
-// forwardingCallback is the RC callback registered by SubscribeRC. If a
-// provider callback is attached, it forwards directly. Otherwise, it buffers
-// the latest update for replay when the provider attaches.
+// forwardingCallback is the RC callback registered by SubscribeRC or
+// SubscribeProvider. It keeps the latest update for providers that attach
+// later and forwards it to every attached provider. A path is acknowledged
+// unless a provider reports another state for it.
 func forwardingCallback(update remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
 	rcState.Lock()
 	defer rcState.Unlock()
 
-	if rcState.callback != nil {
-		return rcState.callback(update)
-	}
-
-	// Buffer the latest update for replay.
 	cpy := make(remoteconfig.ProductUpdate, len(update))
 	for k, v := range update {
 		cpy[k] = bytes.Clone(v)
 	}
 	rcState.buffered = cpy
 
-	// Acknowledge all paths so RC doesn't consider them errored.
 	statuses := make(map[string]rc.ApplyStatus, len(update))
 	for path := range update {
 		statuses[path] = rc.ApplyStatus{State: rc.ApplyStateAcknowledged}
 	}
+	for _, id := range attachedIDs() {
+		for path, status := range rcState.callbacks[id](update) {
+			if status.State != rc.ApplyStateAcknowledged {
+				statuses[path] = status
+			}
+		}
+	}
 	return statuses
 }
 
+// attachedIDs returns the attached callback IDs in attachment order.
+// The caller holds rcState.
+func attachedIDs() []uint64 {
+	ids := make([]uint64, 0, len(rcState.callbacks))
+	for id := range rcState.callbacks {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
+}
+
 // AttachCallback wires the given callback to the global RC subscription.
-// If SubscribeRC() was called (i.e. the tracer subscribed), it replays any
-// buffered config and returns true. Otherwise returns false, meaning the
-// caller should fall back to its own RC subscription.
-func AttachCallback(cb Callback) bool {
+// If SubscribeRC() or SubscribeProvider() subscribed, it replays the latest
+// update and returns a function that detaches the callback, and true.
+// Otherwise it returns false. Detaching the last callback unregisters the
+// FFE_FLAGS evaluation capability.
+func AttachCallback(cb Callback) (detach func(), ok bool) {
 	rcState.Lock()
 	defer rcState.Unlock()
 
 	if !rcState.subscribed {
-		return false
+		return nil, false
 	}
 
-	if rcState.callback != nil {
-		log.Warn("openfeature: callback already attached, multiple providers are not supported") //errtrack:ignore caller initialized multiple providers
-		return false
+	if rcState.callbacks == nil {
+		rcState.callbacks = make(map[uint64]Callback)
 	}
-
-	rcState.callback = cb
+	if len(rcState.callbacks) == 0 && rcState.capabilityUnregistered {
+		if err := remoteconfig.RegisterCapability(remoteconfig.FFEFlagEvaluation); err == nil {
+			rcState.capabilityUnregistered = false
+		}
+	}
+	id := rcState.nextID
+	rcState.nextID++
+	rcState.callbacks[id] = cb
 
 	if rcState.buffered != nil {
 		log.Debug("openfeature: replaying buffered RC config to provider")
 		// Apply statuses are intentionally discarded: the RC client already received
-		// ApplyStateAcknowledged from forwardingCallback when this update was buffered.
+		// statuses for this update from forwardingCallback.
 		// This call only initializes the provider's in-memory state.
 		cb(rcState.buffered)
-		rcState.buffered = nil
 	}
 
-	return true
+	return sync.OnceFunc(func() { detachCallback(id) }), true
 }
 
-// SubscribeProvider attempts to subscribe a provider callback to RC.
+func detachCallback(id uint64) {
+	rcState.Lock()
+	defer rcState.Unlock()
+
+	delete(rcState.callbacks, id)
+	if len(rcState.callbacks) == 0 {
+		_ = remoteconfig.UnregisterCapability(remoteconfig.FFEFlagEvaluation)
+		rcState.capabilityUnregistered = true
+		log.Debug("openfeature: unregistered from Remote Config")
+	}
+}
+
+// SubscribeProvider ensures the FFE_FLAGS subscription exists for a provider
+// that will attach with AttachCallback. When the tracer has not subscribed, it
+// starts RC and subscribes the forwarding callback itself (slow path).
 // It holds the subscription mutex to prevent races with SubscribeRC.
-func SubscribeProvider(cb remoteconfig.ProductCallback) (tracerOwnsSubscription bool, err error) {
+func SubscribeProvider() error {
 	rcState.Lock()
 	defer rcState.Unlock()
 
 	if rcState.subscribed {
-		return true, nil
+		return nil
 	}
 
 	// Slow path: tracer didn't subscribe, so we need to start RC and subscribe ourselves.
 	if err := remoteconfig.Start(remoteconfig.DefaultClientConfig()); err != nil {
-		return false, fmt.Errorf("failed to start Remote Config: %w", err)
+		return fmt.Errorf("failed to start Remote Config: %w", err)
 	}
 
 	if has, _ := remoteconfig.HasProduct(FFEProductName); has {
-		return false, fmt.Errorf("RC product %s already subscribed", FFEProductName)
+		return fmt.Errorf("RC product %s already subscribed", FFEProductName)
 	}
 
-	if _, err := remoteconfig.Subscribe(FFEProductName, cb, remoteconfig.FFEFlagEvaluation); err != nil {
-		return false, err
+	if _, err := remoteconfig.Subscribe(FFEProductName, forwardingCallback, remoteconfig.FFEFlagEvaluation); err != nil {
+		return err
 	}
 
+	rcState.subscribed = true
+	rcState.capabilityUnregistered = false
 	log.Debug("openfeature: provider subscribed to RC product %s", FFEProductName)
-	return false, nil
+	return nil
 }
