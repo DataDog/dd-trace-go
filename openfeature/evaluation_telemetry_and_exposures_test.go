@@ -185,6 +185,28 @@ func TestExposuresDisabledKeepsEvaluationTelemetry(t *testing.T) {
 	assert.False(t, h.customer[0].IsExposure())
 	assert.False(t, h.customer[0].ShouldSend())
 	assert.False(t, h.customer[0].IsCacheHit())
+	// Span enrichment records the flag but not the subject, which only exposures carry.
+	spans := h.tracer.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Contains(t, spans[0].Tags(), "ffe_flags_enc")
+	assert.NotContains(t, spans[0].Tags(), "ffe_subjects_enc")
+}
+
+func TestExposuresDisabledErrorResults(t *testing.T) {
+	h := newSwitchesHarness(t)
+	client := h.register(t, "peek", ProviderConfig{ExposuresEnabled: new(false)})
+	evalCtx := of.NewEvaluationContext("user-1", nil)
+
+	missing, err := client.BooleanValueDetails(context.Background(), "missing", true, evalCtx)
+	require.Error(t, err)
+	assert.True(t, missing.Value)
+	assert.Equal(t, of.FlagNotFoundCode, missing.ErrorCode)
+	assert.NotContains(t, missing.FlagMetadata, metadataDoLogKey)
+
+	mismatch, err := client.StringValueDetails(context.Background(), "experiment", "fallback", evalCtx)
+	require.Error(t, err)
+	assert.Equal(t, "fallback", mismatch.Value)
+	assert.Empty(t, h.exposures(t))
 }
 
 // An inspection through a provider with exposures disabled must not mark the
@@ -237,12 +259,9 @@ func TestEvaluationTelemetryAndExposuresDisabledRegisterNoHooks(t *testing.T) {
 	assert.Nil(t, p.exposureWriter)
 	assert.Nil(t, p.flagEvalMetricsHook)
 	assert.Nil(t, p.flagEvalLoggingWriter)
-	for _, hook := range p.Hooks() {
-		switch hook.(type) {
-		case *exposureHook, *flagEvalMetricsHook, *flagEvalLoggingHook, *spanEnrichmentHook, *evaluationTelemetryOptOutHook:
-			t.Errorf("unexpected provider hook %T", hook)
-		}
-	}
+	hooks := p.Hooks()
+	require.Len(t, hooks, 1, "only local debug logging remains")
+	assert.IsType(t, &debugLoggingHook{}, hooks[0])
 }
 
 func TestEvaluationTelemetryAndExposuresCopiedAtConstruction(t *testing.T) {
@@ -279,5 +298,9 @@ func TestExposuresDisabledKeepsExperimentationOptOutAssignment(t *testing.T) {
 	assert.Equal(t, "fallback", inspected.FlagMetadata[metadataAllocationKey])
 	assert.Equal(t, exposed.Variant, inspected.Variant)
 	assert.Equal(t, exposed.FlagMetadata[metadataAllocationKey], inspected.FlagMetadata[metadataAllocationKey])
-	assert.Empty(t, h.exposures(t))
+	assert.Empty(t, h.exposures(t), "the fallback allocation logs no exposures")
+
+	// Positive control: a subject that has not opted out is exposed through the live provider.
+	h.evaluate(t, live, "user-2", nil)
+	assert.Len(t, h.exposures(t), 1)
 }

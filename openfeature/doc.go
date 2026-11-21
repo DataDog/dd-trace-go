@@ -109,8 +109,12 @@
 //	    ExposuresEnabled:           new(false),
 //	})
 //	// Handle err.
-//	of.SetNamedProviderAndWait("live", live)
-//	of.SetNamedProviderAndWait("peek", peek)
+//	if err := of.SetNamedProviderAndWait("live", live); err != nil {
+//	    log.Printf("live provider not ready: %v", err)
+//	}
+//	if err := of.SetNamedProviderAndWait("peek", peek); err != nil {
+//	    log.Printf("peek provider not ready: %v", err)
+//	}
 //
 //	evalCtx := of.NewEvaluationContext("user-123", nil)
 //	// At send time: the variant, with no exposure or evaluation telemetry.
@@ -122,6 +126,11 @@
 // providers return the same variant. An inspection does not mark the subject
 // as exposed, so the later live evaluation still sends the exposure. Hooks that
 // the application registers itself, at the API or client level, still run.
+//
+// With Remote Config, every provider receives the same configuration updates.
+// With the agentless source, each provider polls Datadog on its own schedule, so
+// right after a configuration change the two providers can briefly hold
+// different configurations.
 //
 // ExposuresEnabled differs from DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED=false,
 // which keeps exposures for ExposureHook and deduplication and only stops
