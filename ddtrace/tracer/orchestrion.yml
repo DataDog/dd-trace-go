@@ -58,7 +58,14 @@ aspects:
           # that it will be executed last (tracing contents of previous init functions will not be possible).
           template: func init() { tracer.Start() }
       # We need to stop the tracer at the end of `main` to ensure all spans are properly flushed.
+      #
+      # The advice applied last ends up first in main, and advice is applied in
+      # ascending order. This order is higher than the default 0 of the //dd:span
+      # aspect, so on an annotated main the span finishes before the tracer
+      # stops, and lower than the 100 of crashtracker and errortrace, which stay
+      # first.
       - prepend-statements:
+          order: 50
           imports:
             tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
           template: |-
