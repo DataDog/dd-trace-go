@@ -605,8 +605,14 @@ func TestConvertSpanAttributesKeepsDatadogKeysAtLimit(t *testing.T) {
 			}
 			s.meta.Set("_dd.appsec.json", `{"triggers":[]}`)
 			s.meta.Set("_dd.p.dm", "-4")
+			s.meta.Set(ext.AppSecEvent, "true")
 			s.metrics["_dd.appsec.enabled"] = 1
 			s.metrics[keySamplingPriority] = 2
+			s.metrics[ext.EventSampleRate] = 0.5
+			s.metaStruct = map[string]any{
+				"_dd.stack":   map[string]any{"e": []any{map[string]any{"k": "v"}}},
+				"user.struct": map[string]any{"x": "y"},
+			}
 
 			// Map iteration order is random; repeat to make a regression likely to surface.
 			for range 20 {
@@ -616,8 +622,12 @@ func TestConvertSpanAttributesKeepsDatadogKeysAtLimit(t *testing.T) {
 				assert.Len(t, m, maxAttributesCount, "no key should be emitted twice")
 				assert.Equal(t, `{"triggers":[]}`, m["_dd.appsec.json"])
 				assert.Equal(t, "-4", m["_dd.p.dm"])
+				assert.Equal(t, "true", m[ext.AppSecEvent])
 				assert.EqualValues(t, 1, m["_dd.appsec.enabled"])
 				assert.EqualValues(t, 2, m[keySamplingPriority])
+				assert.EqualValues(t, 0.5, m[ext.EventSampleRate])
+				assert.Contains(t, m, "_dd.stack", "reserved meta_struct key should survive the cap")
+				assert.NotContains(t, m, "user.struct", "user meta_struct keys should only be emitted in the second pass")
 			}
 		})
 	}

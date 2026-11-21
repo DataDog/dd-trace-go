@@ -298,11 +298,13 @@ var ddOnlyAttributeKeys = map[string]struct{}{
 }
 
 // isDatadogIngestionKey reports whether key carries Datadog data that ingestion
-// depends on (_dd.* tags such as _dd.appsec.json and _dd.p.dm, and the sampling
-// priority). These are emitted before any other attribute so that the
-// maxAttributesCount cap drops user tags first.
+// depends on (_dd.* tags such as _dd.appsec.json and _dd.p.dm, the sampling
+// priority, the appsec.event marker and the APM-event sample rate). These are
+// emitted before any other attribute so that the maxAttributesCount cap drops
+// user tags first.
 func isDatadogIngestionKey(key string) bool {
-	return key == keySamplingPriority || strings.HasPrefix(key, "_dd.")
+	return key == keySamplingPriority || strings.HasPrefix(key, "_dd.") ||
+		key == ext.AppSecEvent || key == ext.EventSampleRate
 }
 
 // +checklocksignore — Post-finish: reads finished span fields during payload encoding.
@@ -331,10 +333,12 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 	}
 	// Two passes over meta, metrics and metaStruct: Datadog ingestion keys
 	// first, then everything else. Map iteration order is random, so without
-	// this the cap could drop required keys in favor of user tags.
+	// this the cap could drop required keys in favor of user tags. Below the
+	// cap no drop is possible, so a single pass is enough.
+	twoPass := n > maxAttributesCount
 	for _, ddPass := range [...]bool{true, false} {
 		for key, value := range s.meta.All() {
-			if isDatadogIngestionKey(key) != ddPass {
+			if twoPass && isDatadogIngestionKey(key) != ddPass {
 				continue
 			}
 			if v, ok := resourceAttrs[key]; ok && v == value {
@@ -358,7 +362,7 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 			}
 		}
 		for key, value := range s.metrics {
-			if isDatadogIngestionKey(key) != ddPass {
+			if twoPass && isDatadogIngestionKey(key) != ddPass {
 				continue
 			}
 			if otelSemantics {
@@ -380,12 +384,15 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 			}
 		}
 		for key, value := range s.metaStruct {
-			if isDatadogIngestionKey(key) != ddPass {
+			if twoPass && isDatadogIngestionKey(key) != ddPass {
 				continue
 			}
 			if !addAttribute(&attrs, key, anyToOTLPValue(value)) {
 				return attrs
 			}
+		}
+		if !twoPass {
+			break
 		}
 	}
 	return attrs
