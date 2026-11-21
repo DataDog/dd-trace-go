@@ -504,14 +504,21 @@ func (s *Span) setTags(tags map[string]any) {
 	if len(tags) == 0 {
 		return
 	}
+	// An explicit ext.ServiceName wins over a ServiceOverride under
+	// ext.KeyServiceSource, so the result does not depend on map order (#5807).
+	_, hasService := tags[ext.ServiceName]
 	s.mu.Lock()
 	for k, v := range tags {
 		if k == ext.ServiceName {
 			continue
 		}
+		if hasService && k == ext.KeyServiceSource {
+			if _, ok := v.(sharedinternal.ServiceOverride); ok {
+				continue
+			}
+		}
 		s.setTagLocked(k, v)
 	}
-	// An explicit service name takes precedence over an integration's service override.
 	if service, ok := tags[ext.ServiceName]; ok {
 		s.setTagLocked(ext.ServiceName, service)
 	}
