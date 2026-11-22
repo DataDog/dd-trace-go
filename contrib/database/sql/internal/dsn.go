@@ -129,9 +129,14 @@ func parseSQLServerDSN(dsn string) (map[string]string, error) {
 		if err != nil {
 			return nil, err
 		}
+	} else if strings.HasPrefix(dsn, "odbc:") {
+		// odbc form
+		meta, err = parseSQLServerODBC(strings.TrimPrefix(dsn, "odbc:"))
+		if err != nil {
+			return nil, err
+		}
 	} else {
-		// go-mssqldb accepts the same ADO style pairs behind an odbc: prefix.
-		meta, err = parseSQLServerADO(strings.TrimPrefix(dsn, "odbc:"))
+		meta, err = parseSQLServerADO(dsn)
 		if err != nil {
 			return nil, err
 		}

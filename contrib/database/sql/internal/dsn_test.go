@@ -85,7 +85,7 @@ func TestParseDSN(t *testing.T) {
 		},
 		{
 			driverName: "sqlserver",
-			dsn:        "odbc:server=1.2.3.4,1433;user id=dog;password=secret;database=mydb",
+			dsn:        "odbc:server=1.2.3.4;port=1433;user id=dog;password=secret;database=mydb",
 			expected: map[string]string{
 				ext.DBUser:     "dog",
 				ext.TargetHost: "1.2.3.4",
@@ -204,11 +204,103 @@ func TestParseSqlServerDSN(t *testing.T) {
 		},
 		{
 			name: "odbc_prefix",
-			dsn:  "odbc:server=1.2.3.4,1444;user id=dog;password=secret;database=mydb",
+			dsn:  "odbc:server=1.2.3.4;port=1444;user id=dog;password=secret;database=mydb",
 			expected: map[string]string{
 				"user":   "dog",
 				"host":   "1.2.3.4",
 				"port":   "1444",
+				"dbname": "mydb",
+			},
+		},
+		{
+			name: "odbc_spaces_and_empty_fields",
+			dsn:  "odbc: server = 1.2.3.4 ;; User Id = dog ; database = mydb ; encrypt",
+			expected: map[string]string{
+				"user":    "dog",
+				"host":    "1.2.3.4",
+				"dbname":  "mydb",
+				"encrypt": "",
+			},
+		},
+		{
+			name: "odbc_braced_password_with_semicolon",
+			dsn:  "odbc:server=1.2.3.4;database=mydb;user id=dog;password={prefix;database=secret}",
+			expected: map[string]string{
+				"user":   "dog",
+				"host":   "1.2.3.4",
+				"dbname": "mydb",
+			},
+		},
+		{
+			name: "odbc_braced_password_only_database",
+			dsn:  "odbc:server=1.2.3.4;user id=dog;password={prefix;database=secret}",
+			expected: map[string]string{
+				"user": "dog",
+				"host": "1.2.3.4",
+			},
+		},
+		{
+			name: "odbc_braced_password_with_escaped_brace",
+			dsn:  "odbc:server=1.2.3.4;user id=dog;password={a}};database=secret} ;database=mydb",
+			expected: map[string]string{
+				"user":   "dog",
+				"host":   "1.2.3.4",
+				"dbname": "mydb",
+			},
+		},
+		{
+			name: "odbc_braced_database",
+			dsn:  "odbc:server=1.2.3.4;user id=dog;database={my;db}}}",
+			expected: map[string]string{
+				"user":   "dog",
+				"host":   "1.2.3.4",
+				"dbname": "my;db}",
+			},
+		},
+		{
+			name: "odbc_literal_braces_in_bare_value",
+			dsn:  "odbc:server=1.2.3.4;user id=dog;password=foo{bar;database=my}db",
+			expected: map[string]string{
+				"user":   "dog",
+				"host":   "1.2.3.4",
+				"dbname": "my}db",
+			},
+		},
+		{
+			name: "ado_quoted_password_with_semicolon",
+			dsn:  `server=1.2.3.4;user id=dog;password="my;complex;password";database=mydb`,
+			expected: map[string]string{
+				"user":   "dog",
+				"host":   "1.2.3.4",
+				"dbname": "mydb",
+			},
+		},
+		{
+			name: "ado_quoted_password_holding_a_parameter",
+			dsn:  `server=1.2.3.4;user id=dog;password="prefix;database=secret"`,
+			expected: map[string]string{
+				"user": "dog",
+				"host": "1.2.3.4",
+			},
+		},
+		{
+			name: "ado_quoted_password_with_escaped_quote",
+			dsn:  `server=1.2.3.4;user id=dog;password="a"";database=secret";database=mydb`,
+			expected: map[string]string{
+				"user":   "dog",
+				"host":   "1.2.3.4",
+				"dbname": "mydb",
+			},
+		},
+		{
+			// Read by a driver that cuts at every semicolon, the password
+			// here is s3"cret. Read by one that honors quotes, the user runs
+			// up to the second quote. Neither reading may put the password in
+			// a tag.
+			name: "ado_quote_in_user_and_password",
+			dsn:  `server=1.2.3.4;user id=o"brien;password=s3"cret;database=mydb`,
+			expected: map[string]string{
+				"host":   "1.2.3.4",
 				"dbname": "mydb",
 			},
 		},
@@ -217,6 +309,34 @@ func TestParseSqlServerDSN(t *testing.T) {
 			m, err := parseSQLServerDSN(tt.dsn)
 			assert.Equal(t, nil, err)
 			assert.Equal(t, tt.expected, m)
+		})
+	}
+}
+
+func TestParseSqlServerDSNMalformedODBC(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		dsn  string
+	}{
+		{
+			name: "unclosed_brace",
+			dsn:  "odbc:server=1.2.3.4;user id=dog;password={prefix;database=secret",
+		},
+		{
+			name: "text_after_closing_brace",
+			dsn:  "odbc:server=1.2.3.4;user id=dog;password={prefix}tail;database=secret",
+		},
+		{
+			name: "value_without_key",
+			dsn:  "odbc:server=1.2.3.4;=secret",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			// go-mssqldb refuses these strings, so there is no connection to tag.
+			m, err := parseSQLServerDSN(tt.dsn)
+			assert.Error(t, err)
+			assert.Nil(t, m)
+			assert.NotContains(t, err.Error(), "secret")
 		})
 	}
 }
