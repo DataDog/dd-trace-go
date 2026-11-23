@@ -49,6 +49,7 @@ lint_go_files() {
   export PATH="$gopath_bin:$PATH"
   run "golangci-lint run ./..."
   run "(cd internal/orchestrion/_integration && golangci-lint run --disable=gocritic ./...)"
+  run "./scripts/lint_go_modules.sh origin/main"
   run "./scripts/checklocks.sh --ignore-known-issues ./ddtrace/tracer"
 }
 
@@ -61,6 +62,11 @@ lint_misc_files() {
   message "Running miscellaneous linters..."
   run "go run ./scripts/check_copyright.go"
   run "go run ./scripts/check_codeowners.go"
+  # Keeps .github/ci-components.yml in step with the tree. Like CODEOWNERS, it
+  # has no catch-all entry, so a new top-level directory is a lint failure until
+  # someone classifies it.
+  run "go test ./scripts/ciselect/"
+  run "go test ./scripts/citiming/ ./scripts/actiontest/"
   run "checkmake --config=.checkmake Makefile scripts/autoreleasetagger/Makefile profiler/internal/fastdelta/Makefile"
 }
 

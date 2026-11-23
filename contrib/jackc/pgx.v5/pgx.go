@@ -3,6 +3,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2022 Datadog, Inc.
 
+// Package pgx provides tracing for pgx v5 connections and pools. When AppSec
+// and RASP are enabled, it also monitors SQL for SQL injection, but it cannot
+// block it. See the README of this package for details and limitations.
 package pgx
 
 import (

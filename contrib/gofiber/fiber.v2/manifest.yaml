@@ -1,0 +1,11 @@
+_v: 1
+name: github.com/gofiber/fiber/v2
+display_name: Fiber v2
+description: Instruments inbound Fiber v2 HTTP requests through Wrap, Middleware, or Orchestrion, creating server spans with
+  trace-context extraction and optional AppSec WAF monitoring and blocking.
+packages:
+- name: github.com/gofiber/fiber/v2
+category:
+- http.server
+systems: []
+creation_date: '2020-12-23'

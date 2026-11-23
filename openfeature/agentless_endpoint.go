@@ -58,11 +58,8 @@ func buildManagedAgentlessEndpoint(site, env, apiKey string) (agentlessEndpoint,
 		return agentlessEndpoint{}, errAgentlessNoAPIKey
 	}
 
-	s := strings.ToLower(strings.TrimSpace(site))
-	if s == "" {
-		s = agentlessDefaultSite
-	}
-	if containsWhitespace(s) || strings.ContainsAny(s, "/?#@:") || strings.Contains(s, "://") {
+	s, ok := normalizeAgentlessSite(site)
+	if !ok {
 		return agentlessEndpoint{}, errAgentlessInvalidSite
 	}
 
@@ -76,6 +73,23 @@ func buildManagedAgentlessEndpoint(site, env, apiKey string) (agentlessEndpoint,
 	}
 
 	return agentlessEndpoint{url: u.String(), managed: true}, nil
+}
+
+func normalizeAgentlessSite(site string) (string, bool) {
+	site = strings.TrimSpace(site)
+	if site == "" {
+		site = agentlessDefaultSite
+	}
+	for i := 0; i < len(site); i++ {
+		if site[i] > 0x7f {
+			return "", false
+		}
+	}
+	site = strings.ToLower(site)
+	if containsWhitespace(site) || strings.ContainsAny(site, "/\\?#@:") {
+		return "", false
+	}
+	return site, true
 }
 
 func buildCustomAgentlessEndpoint(baseURL string) (agentlessEndpoint, error) {

@@ -18,8 +18,8 @@ import (
 
 // TestSignal tests that the GLS is correctly set even when the code comes from a signal handler.
 func TestSignal(t *testing.T) {
-	if !orchestrionEnabled {
-		t.Skip("Orchestrion is not enabled")
+	if !glsWoven {
+		t.Skip("the GLS is not woven into this build")
 	}
 
 	expected := "I am inside a signal handler"

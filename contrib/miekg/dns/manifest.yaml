@@ -1,0 +1,11 @@
+_v: 1
+name: github.com/miekg/dns
+display_name: miekg/dns
+description: Instruments miekg/dns client exchanges and server request handling, creating spans with DNS operation names and
+  recording client and response errors.
+packages:
+- name: github.com/miekg/dns
+category:
+- other
+systems: []
+creation_date: '2018-09-12'

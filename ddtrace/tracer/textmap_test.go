@@ -2871,6 +2871,7 @@ func BenchmarkExtractW3C(b *testing.B) {
 		tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 	})
 	b.ResetTimer()
+	defer log.SetLevel(log.GetLevel())
 	log.SetLevel(log.LevelError)
 	for b.Loop() {
 		propagator.Extract(carrier)
@@ -2888,6 +2889,7 @@ func BenchmarkExtractW3CUppercase(b *testing.B) {
 		tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 	})
 	b.ResetTimer()
+	defer log.SetLevel(log.GetLevel())
 	log.SetLevel(log.LevelError)
 	for b.Loop() {
 		propagator.Extract(carrier)
@@ -3034,6 +3036,11 @@ func FuzzComposeTracestate(f *testing.F) {
 			k2: "KeyTwo", v2: "123123",
 			k3: "table", v3: "chair",
 			oldState: "dd=s:-2;o:synthetics___web"},
+		{priority: 1,
+			k1: "0", v1: "0",
+			k2: "0", v2: "=",
+			k3: "1", v3: "0",
+			oldState: "0"},
 	}
 	for _, tc := range testCases {
 		f.Add(tc.priority, tc.k1, tc.v1, tc.k2, tc.v2, tc.k3, tc.v3, tc.oldState)
@@ -3050,7 +3057,14 @@ func FuzzComposeTracestate(f *testing.F) {
 		totalLen := 0
 		for key, val := range tags {
 			k := "_dd.p." + sanitizeTagKey(key)
-			v := sanitizeTagValue(val)
+			// '~' only exists on the wire as the encoding of '=', so a value
+			// survives the round trip once sanitized and decoded back.
+			v := strings.ReplaceAll(sanitizeTagValue(val), "~", "=")
+			// parseTracestate maps any t.dm* key to the decision maker and may
+			// drop it based on the traceparent priority, which isn't set here.
+			if strings.HasPrefix(k, "_dd.p.dm") {
+				t.Skipf("Skipping decision maker tags")
+			}
 			if strings.ContainsAny(k, ":;") {
 				t.Skipf("Skipping invalid tags")
 			}
@@ -3109,6 +3123,36 @@ func TestParseTraceparentCaseInsensitive(t *testing.T) {
 	assert.Equal(t, "4bf92f3577b34da6a3ce929d0e0e4736", upperCtx.TraceID())
 }
 
+func TestParseTraceparentHighFlagBits(t *testing.T) {
+	// Only the lowest flag bit is defined, the rest must be ignored by the
+	// parser instead of failing the whole header.
+	for flags, want := range map[string]int{
+		"80": 0,
+		"81": 1,
+		"ff": 1,
+		"fe": 0,
+		"FF": 1,
+	} {
+		t.Run(flags, func(t *testing.T) {
+			ctx := new(SpanContext)
+			ctx.trace = newTrace()
+			header := "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-" + flags
+			require.NoError(t, parseTraceparent(ctx, header))
+			p, ok := ctx.SamplingPriority()
+			require.True(t, ok)
+			assert.Equal(t, want, p)
+		})
+	}
+	for _, flags := range []string{"+1", "-1"} {
+		t.Run("signed "+flags, func(t *testing.T) {
+			ctx := new(SpanContext)
+			ctx.trace = newTrace()
+			err := parseTraceparent(ctx, "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-"+flags)
+			assert.Equal(t, ErrSpanContextCorrupted, err)
+		})
+	}
+}
+
 func FuzzParseTraceparent(f *testing.F) {
 	testCases := []struct {
 		version, traceID, spanID, flags string
@@ -3138,7 +3182,7 @@ func FuzzParseTraceparent(f *testing.F) {
 		if err != nil {
 			t.Skipf("Error parsing span ID")
 		}
-		expectedFlag, err := strconv.ParseInt(flags, 16, 8)
+		expectedFlag, err := strconv.ParseUint(flags, 16, 8)
 		if err != nil {
 			t.Skipf("Error parsing flag")
 		}
@@ -3970,8 +4014,10 @@ func TestSpanContextDebugLoggingSecurity(t *testing.T) {
 // It covers both hex-cache states a shared SpanContext can be in when injected
 // concurrently:
 //
-//   - cold cache: a locally started span. newSpanContext does not populate
-//     hexEncoded, so every UpperHex() takes the non-caching fallback.
+//   - cold cache: a locally started span. newSpanContext leaves hexEncoded empty
+//     unless AppSec is enabled, so every UpperHex() takes the non-caching
+//     fallback. AppSec must be off here, otherwise the cache is finalized at
+//     construction and this subtest would no longer exercise that path.
 //   - hot cache: an extracted context. extractTextMap finalizes the traceID via
 //     cacheHex, so UpperHex() returns the cached string.
 //
@@ -3983,7 +4029,10 @@ func TestConcurrentInjectTraceIDHex(t *testing.T) {
 	t.Setenv(envPropagationStyleExtract, "datadog")
 	t.Setenv("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", "true")
 
-	tracer, _, _, stop, err := startTestTracer(t)
+	// Disable AppSec because it precomputes the trace ID hex cache when a span is
+	// created. Otherwise the "cold cache" case below would not test concurrent
+	// Inject's read-only fallback for an empty cache.
+	tracer, _, _, stop, err := startTestTracer(t, WithAppSecEnabled(false))
 	require.NoError(t, err)
 	defer stop()
 
@@ -4014,10 +4063,6 @@ func TestConcurrentInjectTraceIDHex(t *testing.T) {
 		spanCtx := span.Context()
 
 		require.True(t, spanCtx.traceID.HasUpper(), "test requires a 128-bit traceID so injectTextMap calls UpperHex()")
-		// A locally started span is never finalized via cacheHex, so the cache
-		// is already empty and every concurrent UpperHex() exercises the
-		// non-caching fallback. Assert the precondition rather than forcing it,
-		// so the test fails loudly if newSpanContext ever starts caching.
 		require.Empty(t, spanCtx.traceID.hexEncoded, "local span is expected to have a cold hex cache")
 
 		fanOutInject(t, spanCtx)

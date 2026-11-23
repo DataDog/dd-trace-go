@@ -11,9 +11,18 @@ set -euo pipefail
 # custom measures and tags on the current CI job span using datadog-ci.
 #
 # Environment variables:
-#   METRICS_FILE        Path to metrics JSON file (required)
-#   DATADOG_API_KEY     Datadog API key (required)
-#   DATADOG_SITE        Datadog site (default: datadoghq.com)
+#   METRICS_FILE         Path to metrics JSON file (required)
+#   DATADOG_API_KEY      Datadog API key (required)
+#   DATADOG_SITE         Datadog site (default: datadoghq.com)
+# Cache utilization flags (optional; prefixes GO_MOD_, GSA_, DATADOG_CI_):
+#   <prefix>CACHE_OUTCOME  outcome of this job's actions/cache step ('skipped'
+#                          or empty means the step did not run)
+#   <prefix>CACHE_HIT      its cache-hit output: 'true' exact match, 'false'
+#                          restore-key match, empty on a miss
+#
+# Each cache whose step ran is published as a ci.cache.<name>.hit measure
+# (1 = exact hit, no network; 0 = miss or partial restore) so utilization
+# can be tracked in CI Visibility.
 #
 # Usage: scripts/publish_build_metrics.sh
 
@@ -50,6 +59,7 @@ MODE=$(jq -r '.mode' "$METRICS_FILE")
 SIZE=$(jq -r '.metrics.binary_size_bytes' "$METRICS_FILE")
 GO_VERSION=$(jq -r '.go_version' "$METRICS_FILE")
 ORCHESTRION_VERSION=$(jq -r '.orchestrion_version // empty' "$METRICS_FILE")
+OTELC_VERSION=$(jq -r '.otelc_version // empty' "$METRICS_FILE")
 
 # Read all duration samples into a bash array
 mapfile -t DURATIONS < <(jq -r '.metrics.build_duration_samples[]' "$METRICS_FILE")
@@ -71,6 +81,9 @@ message "  Go version: $GO_VERSION"
 if [[ -n "$ORCHESTRION_VERSION" ]]; then
   message "  Orchestrion version: $ORCHESTRION_VERSION"
 fi
+if [[ -n "$OTELC_VERSION" ]]; then
+  message "  Otelc version: $OTELC_VERSION"
+fi
 
 # Publish measures to CI Visibility — one indexed measure per duration
 # sample plus a flat mean duration measure (repeated samples of the same
@@ -78,24 +91,68 @@ fi
 # dependency attributed by gsa, named after the dependency for historical,
 # per-dependency trend queries.
 message "Publishing measures to Datadog CI Visibility..."
-MEAN_DURATION=$(mean "${DURATIONS[@]}")
-message "  Mean duration: ${MEAN_DURATION}s"
-MEASURE_ARGS=(
-  --measures "go.build.binary_size_bytes:${SIZE}"
-  --measures "go.build.duration_seconds:${MEAN_DURATION}"
-)
+# Skip null entries so only real measurements are published
+MEASURE_ARGS=()
+BUILD_FAILED=false
+
+if [[ "$SIZE" != "null" ]]; then
+  MEASURE_ARGS+=(--measures "go.build.binary_size_bytes:${SIZE}")
+else
+  BUILD_FAILED=true
+fi
+
+# Indexed per-sample durations, plus a flat mean over the numeric samples only
+# (repeated samples of the same build, so a mean is meaningful).
+NUMERIC_DURATIONS=()
 for i in "${!DURATIONS[@]}"; do
-  MEASURE_ARGS+=(--measures "go.build.duration_seconds.${i}:${DURATIONS[$i]}")
+  if [[ "${DURATIONS[$i]}" != "null" ]]; then
+    MEASURE_ARGS+=(--measures "go.build.duration_seconds.${i}:${DURATIONS[$i]}")
+    NUMERIC_DURATIONS+=("${DURATIONS[$i]}")
+  else
+    BUILD_FAILED=true
+  fi
 done
+if [[ "${#NUMERIC_DURATIONS[@]}" -gt 0 ]]; then
+  MEAN_DURATION=$(mean "${NUMERIC_DURATIONS[@]}")
+  message "  Mean duration: ${MEAN_DURATION}s"
+  MEASURE_ARGS+=(--measures "go.build.duration_seconds:${MEAN_DURATION}")
+fi
+
 for i in "${!DEP_KEYS[@]}"; do
+  [[ "$SIZE" != "null" ]] || break
   MEASURE_ARGS+=(--measures "go.build.dependency_size_bytes.${DEP_KEYS[$i]}:${DEP_SIZES[$i]}")
   # Publish dependency size bytes by rank (0 = single largest dependency in this build)
   MEASURE_ARGS+=(--measures "go.build.top_dependency_size_bytes.${i}:${DEP_SIZES[$i]}")
 done
 
-DATADOG_SITE="${DATADOG_SITE:-datadoghq.com}" datadog-ci measure --level job \
-  "${MEASURE_ARGS[@]}" ||
-  die "Failed to publish measures"
+# Cache utilization: 1 = exact actions/cache hit (no network), 0 = miss or
+# partial restore (network needed). actions/cache emits 'true' only on an
+# exact match, 'false' on a restore-key match, and an empty string on a miss,
+# so the workflow passes the cache step's outcome alongside to tell a miss
+# apart from a cache step that did not run (gsa in orchestrion mode): only a
+# cache whose step ran publishes a measure.
+publish_cache_measure() {
+  # $1: measure suffix, $2: step outcome, $3: cache-hit output
+  local hit
+  [[ -z "$2" || "$2" == "skipped" ]] && return 0
+  if [[ "$3" == "true" ]]; then hit=1; else hit=0; fi
+  MEASURE_ARGS+=(--measures "ci.cache.${1}.hit:${hit}")
+  CACHE_REPORTS+=("${1}=${hit}")
+}
+
+CACHE_REPORTS=()
+publish_cache_measure go_modules "${GO_MOD_CACHE_OUTCOME:-}" "${GO_MOD_CACHE_HIT:-}"
+publish_cache_measure gsa "${GSA_CACHE_OUTCOME:-}" "${GSA_CACHE_HIT:-}"
+publish_cache_measure datadog_ci "${DATADOG_CI_CACHE_OUTCOME:-}" "${DATADOG_CI_CACHE_HIT:-}"
+message "  Cache utilization: ${CACHE_REPORTS[*]:-none reported}"
+
+if [[ "${#MEASURE_ARGS[@]}" -gt 0 ]]; then
+  DATADOG_SITE="${DATADOG_SITE:-datadoghq.com}" datadog-ci measure --level job \
+    "${MEASURE_ARGS[@]}" ||
+    die "Failed to publish measures"
+else
+  message "No numeric measures to publish (all builds failed); skipping measure publish"
+fi
 
 # Publish tags
 message "Publishing tags to Datadog CI Visibility..."
@@ -104,10 +161,15 @@ TAGS=(
   "build.sample:${SAMPLE}"
   "build.cache:cold"
   "go.version:${GO_VERSION}"
+  "build.failed:${BUILD_FAILED}"
 )
 
 if [[ -n "$ORCHESTRION_VERSION" ]]; then
   TAGS+=("orchestrion.version:${ORCHESTRION_VERSION}")
+fi
+
+if [[ -n "$OTELC_VERSION" ]]; then
+  TAGS+=("otelc.version:${OTELC_VERSION}")
 fi
 
 for i in "${!DEP_NAMES[@]}"; do

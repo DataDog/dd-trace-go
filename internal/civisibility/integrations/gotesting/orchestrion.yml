@@ -105,6 +105,25 @@ aspects:
           template: |-
             {{ .Function.Argument 0 }}, {{ .Function.Argument 1 }} = __dd_civisibility_instrumentTestingBFunc({{ .Function.Receiver }}, {{ .Function.Argument 0 }}, {{ .Function.Argument 1 }})
 
+  - id: F.Fuzz
+    join-point:
+      all-of:
+        - import-path: testing
+        - function-body:
+            function:
+              - name: Fuzz
+              - receiver: '*testing.F'
+    advice:
+      - inject-declarations:
+          links:
+            - github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting
+          template: |-
+            //go:linkname __dd_civisibility_instrumentTestingFuzzFunc github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingFuzzFunc
+            func __dd_civisibility_instrumentTestingFuzzFunc(any) any
+      - prepend-statements:
+          template: |-
+            {{ .Function.Argument 0 }} = __dd_civisibility_instrumentTestingFuzzFunc({{ .Function.Argument 0 }})
+
   - id: common.Fail
     join-point:
       all-of:

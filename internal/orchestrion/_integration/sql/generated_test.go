@@ -16,3 +16,11 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestOpenInit(t *testing.T) {
+	harness.Run(t, new(TestCaseOpenInit))
+}
+
+func TestRegisterInit(t *testing.T) {
+	harness.Run(t, new(TestCaseRegisterInit))
+}

@@ -20,7 +20,7 @@ import (
 type ExecFeature struct{}
 
 func (*ExecFeature) String() string {
-	return "CMDi Protection"
+	return listener.FeatureCMDi
 }
 
 func (*ExecFeature) Stop() {}

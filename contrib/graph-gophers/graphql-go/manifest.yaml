@@ -1,0 +1,11 @@
+_v: 1
+name: github.com/graph-gophers/graphql-go
+display_name: graph-gophers/graphql-go
+description: Instruments GraphQL query execution and field resolution, recording errors as span events and supporting optional
+  variable capture and application security monitoring.
+packages:
+- name: github.com/graph-gophers/graphql-go
+category:
+- graphql.server
+systems: []
+creation_date: '2018-08-01'

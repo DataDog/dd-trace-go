@@ -795,6 +795,102 @@ func TestReadCacheGetSkippableTestsCachesCoverageMetadata(t *testing.T) {
 	require.Equal(t, int64(1), requestCount.Load())
 }
 
+func TestReadCacheGetSkippableTestsIgnoresPreviousCacheVersion(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	root := t.TempDir()
+	var requestCount atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requestCount.Add(1)
+		w.Header().Set(HeaderContentType, ContentTypeJSON)
+		require.NoError(t, json.NewEncoder(w).Encode(skippableResponse{
+			Meta: skippableResponseMeta{
+				CorrelationID: "live-correlation-id",
+			},
+			Data: []skippableResponseData{
+				{Attributes: SkippableResponseDataAttributes{
+					Suite:                   "suite",
+					Name:                    "test",
+					MissingLineCodeCoverage: true,
+				}},
+			},
+		}))
+	}))
+	defer server.Close()
+	setupReadCacheEndpointEnv(t, server.URL, root, &now)
+
+	c := NewClient().(*client)
+	semanticRequest := skippableRequest{
+		Data: skippableRequestHeader{
+			Type: skippableRequestType,
+			Attributes: skippableRequestData{
+				TestLevel:      "test",
+				Configurations: c.testConfigurations,
+				Service:        c.serviceName,
+				Env:            c.environment,
+				RepositoryURL:  c.repositoryURL,
+				Sha:            c.commitSha,
+			},
+		},
+	}
+	requestHash, err := readCacheHashJSON(semanticRequest)
+	require.NoError(t, err)
+	v2Scope := readCacheEndpointScope{
+		Endpoint:        readCacheEndpointSkippableTests,
+		EndpointVersion: 2,
+		RequestHash:     requestHash,
+	}
+	v2Key, err := readCacheKey(c.readCacheBaseScope(), v2Scope)
+	require.NoError(t, err)
+	v2Paths, err := readCachePathsForKey(v2Key)
+	require.NoError(t, err)
+
+	type legacySkippableAttributes struct {
+		Suite                   string             `json:"suite"`
+		Name                    string             `json:"name"`
+		Parameters              string             `json:"parameters"`
+		Configurations          testConfigurations `json:"configurations"`
+		MissingLineCodeCoverage bool               `json:"_missing_line_code_coverage"`
+	}
+	type legacyCachedSkippableTests struct {
+		CorrelationID      string                                            `json:"correlation_id"`
+		Skippables         map[string]map[string][]legacySkippableAttributes `json:"skippables"`
+		Coverage           map[string]string                                 `json:"coverage,omitempty"`
+		CoveragePresent    bool                                              `json:"coverage_present"`
+		CoverageSafe       bool                                              `json:"coverage_backfill_safe"`
+		CoverageReason     string                                            `json:"coverage_backfill_reason"`
+		ResponseTestsCount int                                               `json:"response_tests_count"`
+	}
+
+	legacyValue := legacyCachedSkippableTests{
+		CorrelationID: "cached-v2-correlation-id",
+		Skippables: map[string]map[string][]legacySkippableAttributes{
+			"suite": {
+				"test": {{
+					Suite:                   "suite",
+					Name:                    "test",
+					MissingLineCodeCoverage: true,
+				}},
+			},
+		},
+		ResponseTestsCount: 1,
+	}
+	legacyEntry := readCacheEntry[legacyCachedSkippableTests]{
+		CacheKey:          v2Key,
+		CreatedAtUnixNano: now.UnixNano(),
+		TTLSeconds:        int64(c.readCacheScopeIdentity.TTL.Seconds()),
+		BaseScope:         c.readCacheBaseScope(),
+		EndpointScope:     v2Scope,
+		Response:          legacyValue,
+	}
+	writeReadCacheTestEntry(t, v2Paths.CacheFile, legacyEntry)
+
+	response, err := c.GetSkippableTests()
+	require.NoError(t, err)
+	require.Equal(t, "live-correlation-id", response.CorrelationID)
+	require.Equal(t, int64(1), requestCount.Load())
+	require.True(t, response.Skippables["suite"]["test"][0].MissingLineCodeCoverage)
+}
+
 func TestReadCacheGetTestManagementCachesWithoutNewCommitPrecondition(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	root := t.TempDir()

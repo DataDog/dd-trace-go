@@ -10,12 +10,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"reflect"
 
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/extension"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
 	"github.com/aws/aws-lambda-go/lambda"
-
-	"reflect"
 )
 
 var (
@@ -26,7 +26,7 @@ var (
 type (
 	// HandlerListener is a point where listener logic can be injected into a handler
 	HandlerListener interface {
-		HandlerStarted(ctx context.Context, msg json.RawMessage) context.Context
+		HandlerStarted(ctx context.Context, msg json.RawMessage) (context.Context, json.RawMessage)
 		HandlerFinished(ctx context.Context, err error)
 	}
 
@@ -52,7 +52,7 @@ func WrapHandlerWithListeners(handler interface{}, listeners ...HandlerListener)
 		//nolint
 		ctx = context.WithValue(ctx, "cold_start", coldStart)
 		for _, listener := range listeners {
-			ctx = listener.HandlerStarted(ctx, msg)
+			ctx, msg = listener.HandlerStarted(ctx, msg)
 		}
 		CurrentContext = ctx
 		result, err := callHandler(ctx, msg, handler)
@@ -69,18 +69,15 @@ func WrapHandlerWithListeners(handler interface{}, listeners ...HandlerListener)
 func (h *DatadogHandler) Invoke(ctx context.Context, payload []byte) ([]byte, error) {
 	//nolint
 	ctx = context.WithValue(ctx, "cold_start", h.coldStart)
-	msg := json.RawMessage{}
-	err := msg.UnmarshalJSON(payload)
-	if err != nil {
-		logger.Error(fmt.Errorf("couldn't load handler payload: %v", err))
-	}
+	msg := json.RawMessage(payload)
 
 	for _, listener := range h.listeners {
-		ctx = listener.HandlerStarted(ctx, msg)
+		ctx, msg = listener.HandlerStarted(ctx, msg)
 	}
 
 	CurrentContext = ctx
-	result, err := h.handler.Invoke(ctx, payload)
+
+	result, err := h.handler.Invoke(ctx, []byte(msg))
 	for _, listener := range h.listeners {
 		listener.HandlerFinished(ctx, err)
 	}
@@ -95,6 +92,56 @@ func WrapHandlerInterfaceWithListeners(handler lambda.Handler, listeners ...Hand
 		handler:   handler,
 		listeners: listeners,
 	}
+}
+
+// HandlerFunc is the function aws-lambda-go calls for each invocation, after
+// it has applied the handler options: the raw event in, and the encoded
+// response out.
+type HandlerFunc = func(ctx context.Context, payload []byte) (io.Reader, error)
+
+// WrapHandlerFuncWithListeners wraps a HandlerFunc, and calls listeners before
+// and after every invocation. Orchestrion uses it to wrap aws-lambda-go's
+// handler.
+func WrapHandlerFuncWithListeners(handler HandlerFunc, listeners ...HandlerListener) HandlerFunc {
+	coldStart := true
+
+	return func(ctx context.Context, payload []byte) (io.Reader, error) {
+		//nolint
+		ctx = context.WithValue(ctx, "cold_start", coldStart)
+		msg := json.RawMessage(payload)
+		for _, listener := range listeners {
+			ctx, msg = listener.HandlerStarted(ctx, msg)
+		}
+		CurrentContext = ctx
+		reader, err := handler(ctx, msg)
+		ctx = withLambdaResponse(ctx, reader)
+		for _, listener := range listeners {
+			listener.HandlerFinished(ctx, err)
+		}
+		coldStart = false
+		CurrentContext = nil
+		return reader, err
+	}
+}
+
+// byteBuffer is implemented by the buffer Lambda uses for an ordinary JSON
+// response. Bytes does not advance the reader, so the runtime can still send it.
+type byteBuffer interface {
+	Bytes() []byte
+}
+
+// withLambdaResponse stores a copy of a buffered JSON response for the
+// extension's end-invocation POST. A streaming reader is left unread, and the
+// extension receives an empty object, matching WrapHandlerWithListeners.
+func withLambdaResponse(ctx context.Context, reader io.Reader) context.Context {
+	if reader == nil {
+		return ctx
+	}
+	if buf, ok := reader.(byteBuffer); ok {
+		raw := append([]byte(nil), buf.Bytes()...)
+		return context.WithValue(ctx, extension.DdLambdaResponse, json.RawMessage(raw))
+	}
+	return context.WithValue(ctx, extension.DdLambdaResponse, struct{}{})
 }
 
 func validateHandler(handler interface{}) error {

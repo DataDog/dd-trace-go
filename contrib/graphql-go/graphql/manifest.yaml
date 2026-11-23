@@ -1,0 +1,11 @@
+_v: 1
+name: github.com/graphql-go/graphql
+display_name: graphql-go/graphql
+description: Instruments GraphQL server requests, parsing, validation, execution, and field resolution, with error span events
+  and optional application security monitoring.
+packages:
+- name: github.com/graphql-go/graphql
+category:
+- graphql.server
+systems: []
+creation_date: '2023-12-19'

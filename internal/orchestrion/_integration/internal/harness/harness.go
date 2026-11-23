@@ -18,6 +18,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/agenttest"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/x/tracertest"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
 )
 
 // TestCasePreBootstrap is an optional interface for test cases that need to
@@ -56,9 +57,18 @@ type TestCase interface {
 	ExpectedTraces() trace.Traces
 }
 
+// TestCaseExpectedSpanCount is an optional interface for test cases that need
+// to assert the total number of spans produced during Run.
+type TestCaseExpectedSpanCount interface {
+	ExpectedSpanCount() int
+}
+
 func Run(t *testing.T, tc TestCase) {
 	t.Helper()
-	require.True(t, built.WithOrchestrion, "this test suite must be run with orchestrion enabled")
+	// Both tools weave the same instrumentation, so either one satisfies these
+	// shared suites.
+	require.True(t, built.WithOrchestrion || otelc.Enabled(),
+		"this test suite must be run with either orchestrion or otelc enabled")
 
 	ctx := context.Background()
 	if deadline, ok := t.Deadline(); ok {
@@ -96,7 +106,11 @@ func Run(t *testing.T, tc TestCase) {
 
 	tr.Stop()
 
-	t.Logf("Received %d spans", agent.CountSpans())
+	spanCount := agent.CountSpans()
+	t.Logf("Received %d spans", spanCount)
+	if expected, ok := tc.(TestCaseExpectedSpanCount); ok {
+		require.Equal(t, expected.ExpectedSpanCount(), spanCount)
+	}
 	requireTraceMatch(t, agent, tc.ExpectedTraces())
 }
 
@@ -156,6 +170,12 @@ func traceToMatcher(tr *trace.Trace) *agenttest.SpanMatch {
 	}
 	for k, v := range tr.Meta {
 		m = m.Tag(k, v)
+	}
+	for _, k := range tr.MetaAbsent {
+		m = m.Condition(fmt.Sprintf("no Tags[%q]", k), func(s *agenttest.Span) bool {
+			_, ok := s.Tags[k]
+			return !ok
+		})
 	}
 	for k, v := range tr.Metrics {
 		m = m.Tag(k, v)

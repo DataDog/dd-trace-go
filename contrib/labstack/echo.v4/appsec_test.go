@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	pappsec "github.com/DataDog/dd-trace-go/v2/appsec"
@@ -702,4 +703,31 @@ func TestOnAddRouteHandler(t *testing.T) {
 		}}
 		assert.Equal(t, map[string]map[string][]instrumentation.AppEndpointAttributes{"http.request": expectedRoutes}, telemetry.AppEndpoints)
 	})
+}
+
+// TestAppSecRequestLocalHandler checks that the AppSec wrapper the middleware
+// adds to the handler stays local to each request. echo runs the middleware
+// again on each request, so this calls the handler it returns directly, the
+// way a caller that reuses it would. Adding the wrapper to that shared handler
+// makes concurrent requests race on it, which -race reports.
+func TestAppSecRequestLocalHandler(t *testing.T) {
+	testutils.StartAppSec(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	e := echo.New()
+	h := Middleware()(func(c echo.Context) error {
+		return c.String(http.StatusOK, "ok")
+	})
+
+	var wg sync.WaitGroup
+	for range 50 {
+		wg.Go(func() {
+			rec := httptest.NewRecorder()
+			assert.NoError(t, h(e.NewContext(httptest.NewRequest(http.MethodGet, "/hello", nil), rec)))
+			assert.Equal(t, http.StatusOK, rec.Code)
+		})
+	}
+	wg.Wait()
+	assert.Len(t, mt.FinishedSpans(), 50)
 }

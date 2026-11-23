@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/cloudevents/sdk-go/v2
+display_name: CloudEvents Go SDK v2
+description: Instruments CloudEvents Go SDK event sends, request/reply operations, and receiver processing, with trace-context
+  propagation, consumer span links, and malformed-event error tracing.
+packages:
+- name: github.com/cloudevents/sdk-go/v2
+category:
+- messaging.consumer
+- messaging.producer
+systems: []
+creation_date: '2026-09-15'

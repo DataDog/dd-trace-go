@@ -1,0 +1,38 @@
+{
+  "version": "2.2",
+  "metadata": { "rules_version": "1.0" },
+  "rules": [
+    {
+      "id": "fiber-block-cookie",
+      "name": "Block a malicious token cookie",
+      "tags": { "type": "security_scanner", "category": "attack_attempt" },
+      "conditions": [
+        {
+          "operator": "match_regex",
+          "parameters": {
+            "inputs": [{ "address": "server.request.cookies", "key_path": ["token"] }],
+            "regex": "evil"
+          }
+        }
+      ],
+      "transformers": [],
+      "on_match": ["block"]
+    },
+    {
+      "id": "fiber-block-query",
+      "name": "Block a malicious q query parameter",
+      "tags": { "type": "security_scanner", "category": "attack_attempt" },
+      "conditions": [
+        {
+          "operator": "match_regex",
+          "parameters": {
+            "inputs": [{ "address": "server.request.query", "key_path": ["q"] }],
+            "regex": "evil"
+          }
+        }
+      ],
+      "transformers": [],
+      "on_match": ["block"]
+    }
+  ]
+}

@@ -13,8 +13,6 @@ import (
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
-
-	"github.com/DataDog/dd-trace-go/v2/internal/hostname"
 )
 
 const (
@@ -85,10 +83,11 @@ func Initialize(serviceName string) {
 	}
 
 	servName = serviceName
-	host = hostname.Get()
-	if host == "" {
-		host, _ = os.Hostname()
-	}
+	// Nothing fills hostname.Get's cache before CI Visibility starts, so here it
+	// would return "" and start cloud-metadata and hostname -f probes in a
+	// goroutine whose result nothing reads. The OS hostname is the value used
+	// after that empty result, without the probes.
+	host, _ = os.Hostname()
 	logsWriterInstance = newLogsWriter()
 }
 

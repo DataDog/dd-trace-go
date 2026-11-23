@@ -13,6 +13,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -29,12 +30,22 @@ func init() {
 
 type datadogHook struct {
 	*params
+	// replaced is set in an otelc build when the application wraps the client
+	// again, so that only the newer hook traces it.
+	replaced atomic.Bool
 }
 
 // params holds the tracer and a set of parameters which are recorded with every trace.
 type params struct {
-	config         *clientConfig
-	additionalTags []tracer.StartSpanOption
+	config *clientConfig
+	// spanCfg holds the tags that are constant for every dial/command/
+	// pipeline traced through this client (service name, analytics rate, and
+	// the additionalTagOptions tags: component, span kind, db system, and
+	// the host/port/db or cluster addrs tags). It is built once in
+	// WrapClient and merged into each request via WithStartSpanConfig,
+	// instead of rebuilding ServiceNameWithSource and re-appending
+	// additionalTags on every call.
+	spanCfg *tracer.StartSpanConfig
 }
 
 // NewClient returns a new Client that is traced with the default tracer under
@@ -55,11 +66,27 @@ func WrapClient(client redis.UniversalClient, opts ...ClientOption) {
 	}
 
 	hookParams := &params{
-		additionalTags: additionalTagOptions(client),
-		config:         cfg,
+		config: cfg,
 	}
+	hookParams.spanCfg = newSpanConfig(cfg, additionalTagOptions(client))
 
-	client.AddHook(&datadogHook{params: hookParams})
+	h := &datadogHook{params: hookParams}
+	replaceHook(client, h)
+	client.AddHook(h)
+}
+
+// newSpanConfig builds the base StartSpanConfig holding the tags that stay
+// constant for every dial/command/pipeline traced through a client with the
+// given config and additional (component/span kind/db system plus host/
+// port/db or cluster addrs) tags, so per-call hooks don't need to rebuild
+// them.
+func newSpanConfig(cfg *clientConfig, additionalTags []tracer.StartSpanOption) *tracer.StartSpanConfig {
+	opts := []tracer.StartSpanOption{instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource)}
+	opts = append(opts, additionalTags...)
+	if !math.IsNaN(cfg.analyticsRate) {
+		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	}
+	return tracer.NewStartSpanConfig(opts...)
 }
 
 type clientOptions interface {
@@ -110,14 +137,13 @@ func additionalTagOptions(client redis.UniversalClient) []tracer.StartSpanOption
 
 func (ddh *datadogHook) DialHook(hook redis.DialHook) redis.DialHook {
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
-		p := ddh.params
-		startOpts := make([]tracer.StartSpanOption, 0, 1+len(ddh.additionalTags)+1) // serviceName + ddh.additionalTags + analyticsRate
-		startOpts = append(startOpts, instrumentation.ServiceNameWithSource(p.config.serviceName, p.config.serviceSource))
-		startOpts = append(startOpts, ddh.additionalTags...)
-		if !math.IsNaN(p.config.analyticsRate) {
-			startOpts = append(startOpts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
+		if ddh.replaced.Load() {
+			return hook(ctx, network, addr)
 		}
-		span, ctx := tracer.StartSpanFromContext(ctx, "redis.dial", startOpts...)
+		// Every tag DialHook sets is static (constant for the client's
+		// lifetime), so the span can start from spanCfg alone, with no
+		// per-call tag map.
+		span, ctx := tracer.StartSpanFromContext(ctx, "redis.dial", tracer.WithStartSpanConfig(ddh.spanCfg))
 
 		conn, err := hook(ctx, network, addr)
 
@@ -132,23 +158,27 @@ func (ddh *datadogHook) DialHook(hook redis.DialHook) redis.DialHook {
 
 func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 	return func(ctx context.Context, cmd redis.Cmder) error {
+		ctx, skip := markOrSkip(ctx, ddh, cmd)
+		if skip {
+			return hook(ctx, cmd)
+		}
 		raw := cmd.String()
+		// Preserve the formatted command's casing and first-word resource, but
+		// allow argument-free generic commands whose String contains no space.
+		resource, _, _ := strings.Cut(raw, " ")
 		length := strings.Count(raw, " ")
 		p := ddh.params
-		startOpts := make([]tracer.StartSpanOption, 0, 3+1+len(ddh.additionalTags)+1) // 3 options below + redis.raw_command + ddh.additionalTags + analyticsRate
-		startOpts = append(startOpts,
-			instrumentation.ServiceNameWithSource(p.config.serviceName, p.config.serviceSource),
-			tracer.ResourceName(raw[:strings.IndexByte(raw, ' ')]),
-			tracer.Tag("redis.args_length", strconv.Itoa(length)),
-		)
+		tags := map[string]any{
+			ext.ResourceName:    resource,
+			"redis.args_length": strconv.Itoa(length),
+		}
 		if !p.config.skipRaw {
-			startOpts = append(startOpts, tracer.Tag("redis.raw_command", raw))
+			tags["redis.raw_command"] = raw
 		}
-		startOpts = append(startOpts, ddh.additionalTags...)
-		if !math.IsNaN(p.config.analyticsRate) {
-			startOpts = append(startOpts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
-		}
-		span, ctx := tracer.StartSpanFromContext(ctx, p.config.spanName, startOpts...)
+		span, ctx := tracer.StartSpanFromContext(ctx, p.config.spanName,
+			tracer.WithTags(tags),
+			tracer.WithStartSpanConfig(p.spanCfg),
+		)
 
 		err := hook(ctx, cmd)
 
@@ -163,22 +193,22 @@ func (ddh *datadogHook) ProcessHook(hook redis.ProcessHook) redis.ProcessHook {
 
 func (ddh *datadogHook) ProcessPipelineHook(hook redis.ProcessPipelineHook) redis.ProcessPipelineHook {
 	return func(ctx context.Context, cmds []redis.Cmder) error {
+		ctx, skip := markOrSkipPipeline(ctx, ddh, cmds)
+		if skip {
+			return hook(ctx, cmds)
+		}
 		p := ddh.params
-		startOpts := make([]tracer.StartSpanOption, 0, 3+1+len(ddh.additionalTags)+1) // 3 options below + redis.raw_command + ddh.additionalTags + analyticsRate
-		startOpts = append(startOpts,
-			instrumentation.ServiceNameWithSource(p.config.serviceName, p.config.serviceSource),
-			tracer.ResourceName("redis.pipeline"),
-			tracer.Tag("redis.pipeline_length", strconv.Itoa(len(cmds))),
-		)
+		tags := map[string]any{
+			ext.ResourceName:        "redis.pipeline",
+			"redis.pipeline_length": strconv.Itoa(len(cmds)),
+		}
 		if !p.config.skipRaw {
-			raw := commandsToString(cmds)
-			startOpts = append(startOpts, tracer.Tag("redis.raw_command", raw))
+			tags["redis.raw_command"] = commandsToString(cmds)
 		}
-		startOpts = append(startOpts, ddh.additionalTags...)
-		if !math.IsNaN(p.config.analyticsRate) {
-			startOpts = append(startOpts, tracer.Tag(ext.EventSampleRate, p.config.analyticsRate))
-		}
-		span, ctx := tracer.StartSpanFromContext(ctx, p.config.spanName, startOpts...)
+		span, ctx := tracer.StartSpanFromContext(ctx, p.config.spanName,
+			tracer.WithTags(tags),
+			tracer.WithStartSpanConfig(p.spanCfg),
+		)
 
 		err := hook(ctx, cmds)
 

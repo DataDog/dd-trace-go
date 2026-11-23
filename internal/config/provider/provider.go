@@ -15,6 +15,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	configtelemetry "github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
 
@@ -47,6 +48,11 @@ func New() *Provider {
 			newDeclarativeConfigSource(localFilePath, telemetry.OriginLocalStableConfig),
 		},
 	}
+}
+
+// NewEnvironment resolves existing environment-only consumers without enabling declarative sources.
+func NewEnvironment() *Provider {
+	return &Provider{sources: []configSource{new(envConfigSource)}}
 }
 
 // get is the core resolution helper shared by all typed getters.
@@ -131,9 +137,16 @@ func (p *Provider) GetInt(key string, def int) int {
 	})
 }
 
-func (p *Provider) GetIntWithValidator(key string, def int, validate func(int) bool) int {
-	return get(p, key, def, func(v string) (int, bool) {
-		intVal, err := strconv.Atoi(v)
+func (p *Provider) GetInt64(key string, def int64) int64 {
+	return get(p, key, def, func(v string) (int64, bool) {
+		intVal, err := strconv.ParseInt(v, 10, 64)
+		return intVal, err == nil
+	})
+}
+
+func (p *Provider) GetInt64WithValidator(key string, def int64, validate func(int64) bool) int64 {
+	return get(p, key, def, func(v string) (int64, bool) {
+		intVal, err := strconv.ParseInt(v, 10, 64)
 		if err == nil {
 			if validate != nil && !validate(intVal) {
 				return 0, false
@@ -144,9 +157,27 @@ func (p *Provider) GetIntWithValidator(key string, def int, validate func(int) b
 	})
 }
 
-func (p *Provider) GetMap(key string, def map[string]string, delimiter string) map[string]string {
+func (p *Provider) GetIntWithValidator(key string, def int, validate func(int) bool) int {
+	return get(p, key, def, func(v string) (int, bool) {
+		intVal, err := strconv.Atoi(v)
+		if err != nil {
+			// A lower-priority source may still supply a valid value, so the
+			// warning must not claim the default is used.
+			log.Warn("ignoring %s: value %q is not a valid integer", key, v)
+			return 0, false
+		}
+		if validate != nil && !validate(intVal) {
+			return 0, false
+		}
+		return intVal, true
+	})
+}
+
+// GetMap parses each source with parse. A source whose value parses to an empty
+// map is skipped.
+func (p *Provider) GetMap(key string, def map[string]string, parse func(string) map[string]string) map[string]string {
 	return get(p, key, def, func(v string) (map[string]string, bool) {
-		m := parseMapString(v, delimiter)
+		m := parse(v)
 		return m, len(m) > 0
 	})
 }
@@ -207,11 +238,11 @@ func normalizeKey(key string) string {
 	return "DD_" + strings.ToUpper(key)
 }
 
-// parseMapString parses a string containing key-value pairs separated by comma or space.
+// ParseDDMap parses a string containing key-value pairs separated by comma or space.
 // It prioritizes the Datadog delimiter (:) over the OTel delimiter (=)
-func parseMapString(str string, delimiter string) map[string]string {
+func ParseDDMap(str string) map[string]string {
 	result := make(map[string]string)
-	internal.ForEachStringTag(str, delimiter, func(key, val string) {
+	internal.ForEachStringTag(str, internal.DDTagsDelimiter, func(key, val string) {
 		result[key] = val
 	})
 	return result

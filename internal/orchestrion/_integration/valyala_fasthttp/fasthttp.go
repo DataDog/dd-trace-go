@@ -57,6 +57,11 @@ func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
+// ExpectedSpanCount pins the client span and a single fasthttp server span.
+func (*TestCase) ExpectedSpanCount() int {
+	return 2
+}
+
 func (tc *TestCase) ExpectedTraces() trace.Traces {
 	httpURL := "http://" + tc.Addr + "/ping"
 	return trace.Traces{

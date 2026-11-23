@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"cmp"
 	"fmt"
-	"log/slog"
 	"os"
 	"reflect"
 	"sort"
@@ -32,8 +31,8 @@ const (
 	// Dedicated 10 s timer; separate from exposureWriter's 1 s interval.
 	defaultFlagEvalFlushInterval = 10 * time.Second
 
-	// flagEvalLoggingEndpoint is the EVP proxy endpoint for flag evaluation events.
-	flagEvalLoggingEndpoint = "/evp_proxy/v2/api/v2/flagevaluation"
+	// flagEvalLoggingEndpoint is the direct EVP intake path for flag evaluation events.
+	flagEvalLoggingEndpoint = "/api/v2/flagevaluation"
 
 	// Context pruning limits — mirror worker.ts MAX_EVALUATION_CONTEXT_FIELDS / MAX_FIELD_LENGTH
 	// and align with the cross-SDK RFC (see Java DDEvaluator.copyPrunedContext caps).
@@ -138,6 +137,7 @@ const (
 // bounded by the number of full-tier buckets (globalCap) and the pruned context size
 // (256 fields × 256 chars), and measured in BenchmarkFlagEvaluationOTelPlusEVPParallel.
 type evaluationAggregationKey struct {
+	environment    environment
 	flagKey        string
 	variant        string
 	allocationKey  string
@@ -145,6 +145,7 @@ type evaluationAggregationKey struct {
 	errorMessage   string
 	targetingKey   string
 	contextKey     string // exact canonical encoding of the pruned context; comparable, not a digest
+	featuresKey    string
 	// observeFullEvaluationData keeps consent-on and consent-off traffic in separate buckets.
 	// When false, contextKey is always empty (enforced in add) — the key must only carry
 	// dimensions that survive serialization, or one context field would inflate cardinality
@@ -160,11 +161,13 @@ type evaluationAggregationKey struct {
 // Consent is intentionally not a dimension: the degraded payload emits neither targeting_key
 // nor context, so consent-differing rows would be byte-identical on the wire.
 type evaluationDegradedKey struct {
+	environment    environment
 	flagKey        string
 	variant        string
 	allocationKey  string
 	runtimeDefault bool
 	errorMessage   string
+	featuresKey    string
 }
 
 // evaluationEntry holds per-window counts and time bounds for one aggregation bucket.
@@ -177,6 +180,7 @@ type evaluationEntry struct {
 	targetingKey string
 	contextAttrs map[string]any
 	errorMessage string
+	features     map[string]any
 	// observeFullEvaluationData drives serialization: raw targeting_key + context, or hashed
 	// key with no context. Duplicates the key field on purpose — add AND-folds it, so any
 	// drift from the key still forces the whole bucket to the privacy-protected path.
@@ -212,14 +216,15 @@ func newEvaluationEntry(evaluationTimeMs int64) *evaluationEntry {
 
 // flagEvalLoggingAggregator holds the two-tier aggregation maps (full → degraded → drop).
 type flagEvalLoggingAggregator struct {
-	mu          sync.Mutex
-	full        map[evaluationAggregationKey]*evaluationEntry
-	degraded    map[evaluationDegradedKey]*evaluationEntry
-	perFlagFull map[string]int // flagKey → count of full-fidelity entries for this flag
-	globalCount int
-	globalCap   int
-	perFlagCap  int
-	degradedCap int
+	mu            sync.Mutex
+	full          map[evaluationAggregationKey]*evaluationEntry
+	degraded      map[evaluationDegradedKey]*evaluationEntry
+	perFlagFull   map[string]int // flagKey → count of full-fidelity entries for this flag
+	globalCount   int
+	globalCap     int
+	perFlagCap    int
+	degradedCap   int
+	featureValues featureValuesCache // shared immutable maps for this flush window
 	// dropped counts evaluations whose count was lost because a NEW degraded bucket would have
 	// exceeded degradedCap. It is the observable signal that legitimate counts are being
 	// dropped and that degradedCap should be raised. It is distinct from flagEvalLoggingWriter.dropped
@@ -234,6 +239,7 @@ type flagEvalLoggingAggregator struct {
 // flagEvalLoggingEvent matches flagevaluation.json — required fields always present;
 // optional fields use omitempty (absent = schema-valid for the degraded tier).
 type flagEvalLoggingEvent struct {
+	Environment     *environment          `json:"environment,omitempty"`
 	Timestamp       int64                 `json:"timestamp"`
 	Flag            flagEvalFlag          `json:"flag"`
 	FirstEvaluation int64                 `json:"first_evaluation"`
@@ -245,6 +251,7 @@ type flagEvalLoggingEvent struct {
 	Allocation      *flagEvalAllocation   `json:"allocation,omitempty"`
 	Error           *flagEvalError        `json:"error,omitempty"`
 	Context         *flagEvalEventContext `json:"context,omitempty"`
+	Features        map[string]any        `json:"features,omitempty"`
 }
 
 // flagEvalFlag holds the flag key.
@@ -337,6 +344,7 @@ type evalEvent struct {
 // evalDetails holds extracted flag evaluation fields for EVP aggregation.
 // Used only by flagEvalLoggingHook; does NOT replace extraction in flageval_metrics.go.
 type evalDetails struct {
+	environment    environment
 	flagKey        string
 	variant        string
 	allocationKey  string
@@ -344,6 +352,7 @@ type evalDetails struct {
 	errorMessage   string
 	runtimeDefault bool
 	evalTimeMs     int64
+	featuresKey    string // canonical JSON prepared on the configuration split
 	// observeFullEvaluationData is the consent the evaluator stamped onto this evaluation's
 	// metadata. Read only from there — never from live configuration.
 	observeFullEvaluationData bool
@@ -388,14 +397,7 @@ func (w *flagEvalLoggingWriter) start() {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Error("openfeature: flag evaluation writer recovered panic: %s", r)
-				var errAttr slog.Attr
-				if err, ok := r.(error); ok {
-					errAttr = slog.Any("panic", telemetrylog.NewSafeError(err))
-				} else {
-					errAttr = slog.Any("panic", r)
-				}
-				telemetrylog.Error("openfeature: flag evaluation writer recovered panic", errAttr)
+				containLoggerPanic(func() { telemetrylog.LogAndReportPanic("openfeature: flag evaluation writer recovered panic", r) })
 			}
 			// Always signal completion so stop() unblocks, even on panic.
 			close(w.workerDone)
@@ -437,10 +439,16 @@ func (w *flagEvalLoggingWriter) stop() {
 		w.ticker.Stop()
 	}
 
-	log.Debug("openfeature: flag evaluation writer stopped")
+	containLoggerPanic(func() { log.Debug("openfeature: flag evaluation writer stopped") })
 }
 
 // flush drains the aggregator, assembles per-tier events, and sends them to the agent.
+func reportFlagEvalPayloadEncodingError(err error) {
+	containLoggerPanic(func() {
+		telemetrylog.LogAndReportError("openfeature: failed to encode flag evaluation payload", err)
+	})
+}
+
 func (w *flagEvalLoggingWriter) flush() {
 	// Drain the backpressure counters and surface them as telemetry metrics + best-effort debug
 	// logs. Each counter maps to a Java metric (FlagEvaluationWriterImpl) so Go's counts are
@@ -448,20 +456,28 @@ func (w *flagEvalLoggingWriter) flush() {
 	// tag matching Java's countMetric(reason) convention.
 	if d := w.preQueueOverflow.Swap(0); d > 0 {
 		countMetric(metricFlagEvalDropped, d, dropReasonQueueOverflow)
-		log.Debug("openfeature: flag evaluation queue full at hook time — dropped %d evaluation(s) before copy (best-effort telemetry)", d)
+		containLoggerPanic(func() {
+			log.Debug("openfeature: flag evaluation queue full at hook time — dropped %d evaluation(s) before copy (best-effort telemetry)", d)
+		})
 	}
 	if d := w.enqueueDropped.Swap(0); d > 0 {
 		countMetric(metricFlagEvalDropped, d, dropReasonQueueOverflow)
-		log.Debug("openfeature: flag evaluation queue full at send — dropped %d evaluation(s) after copy (best-effort telemetry)", d)
+		containLoggerPanic(func() {
+			log.Debug("openfeature: flag evaluation queue full at send — dropped %d evaluation(s) after copy (best-effort telemetry)", d)
+		})
 	}
 	if d := w.closedDrop.Swap(0); d > 0 {
 		countMetric(metricFlagEvalDropped, d, dropReasonClosed)
-		log.Debug("openfeature: flag evaluation writer closed — dropped %d evaluation(s) after stop (best-effort telemetry)", d)
+		containLoggerPanic(func() {
+			log.Debug("openfeature: flag evaluation writer closed — dropped %d evaluation(s) after stop (best-effort telemetry)", d)
+		})
 	}
 	w.contextTruncatedByReason.Range(func(k, v any) bool {
 		if c := v.(*atomic.Int64).Swap(0); c > 0 {
 			countMetric(metricFlagEvalContextTruncated, c, k.(string))
-			log.Debug("openfeature: flag evaluation context truncated by %s on %d evaluation(s) (best-effort telemetry)", k, c)
+			containLoggerPanic(func() {
+				log.Debug("openfeature: flag evaluation context truncated by %s on %d evaluation(s) (best-effort telemetry)", k, c)
+			})
 		}
 		return true
 	})
@@ -480,16 +496,20 @@ func (w *flagEvalLoggingWriter) flush() {
 
 	payloads, droppedPayloadLimit, degradedPayloadLimit, err := w.buildFlagEvalPayloads(events)
 	if err != nil {
-		log.Error("openfeature: failed to encode flag evaluation payload: %v", err.Error())
+		reportFlagEvalPayloadEncodingError(err)
 		return
 	}
 	if degradedPayloadLimit > 0 {
 		countMetric(metricFlagEvalDegraded, degradedPayloadLimit, degradedReasonPayloadLimit)
-		log.Warn("openfeature: flag evaluation payload too large — degraded %d evaluation(s) to fit (best-effort telemetry)", degradedPayloadLimit)
+		containLoggerPanic(func() {
+			log.Warn("openfeature: flag evaluation payload too large — degraded %d evaluation(s) to fit (best-effort telemetry)", degradedPayloadLimit) //errtrack:ignore expected payload capacity fallback
+		})
 	}
 	if droppedPayloadLimit > 0 {
 		countMetric(metricFlagEvalDropped, droppedPayloadLimit, dropReasonPayloadLimit)
-		log.Warn("openfeature: flag evaluation payload too large — dropped %d evaluation(s) (best-effort telemetry)", droppedPayloadLimit)
+		containLoggerPanic(func() {
+			log.Warn("openfeature: flag evaluation payload too large — dropped %d evaluation(s) (best-effort telemetry)", droppedPayloadLimit) //errtrack:ignore expected payload capacity limit
+		})
 	}
 	if len(payloads) > 1 {
 		countMetric(metricFlagEvalSplits, int64(len(payloads)-1), "")
@@ -498,12 +518,16 @@ func (w *flagEvalLoggingWriter) flush() {
 	sent := 0
 	for _, body := range payloads {
 		if err := w.evp.postRaw(flagEvalLoggingEndpoint, "flag evaluation", body); err != nil {
-			log.Error("openfeature: failed to send flag evaluation events: %v", err.Error())
+			containLoggerPanic(func() {
+				log.Error("openfeature: failed to send flag evaluation events: %v", err.Error()) //errtrack:ignore remote request failure
+			})
 			return
 		}
 		sent++
 	}
-	log.Debug("openfeature: successfully sent %d flag evaluation event(s) in %d payload(s)", len(events), sent)
+	containLoggerPanic(func() {
+		log.Debug("openfeature: successfully sent %d flag evaluation event(s) in %d payload(s)", len(events), sent)
+	})
 }
 
 // buildFlushEvents drains both tiers and renders them as wire events stamped with flushTimeMs.
@@ -524,7 +548,9 @@ func (w *flagEvalLoggingWriter) buildFlushEvents(flushTimeMs int64) []flagEvalLo
 		w.aggregator.droppedDegradedOverflow = 0
 		w.aggregator.mu.Unlock()
 		if degradedOverflow > 0 {
-			log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow)
+			containLoggerPanic(func() {
+				log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow) //errtrack:ignore expected aggregation capacity limit
+			})
 		}
 		return nil
 	}
@@ -533,13 +559,16 @@ func (w *flagEvalLoggingWriter) buildFlushEvents(flushTimeMs int64) []flagEvalLo
 	w.aggregator.full = make(map[evaluationAggregationKey]*evaluationEntry)
 	w.aggregator.degraded = make(map[evaluationDegradedKey]*evaluationEntry)
 	w.aggregator.perFlagFull = make(map[string]int)
+	w.aggregator.featureValues = nil
 	w.aggregator.globalCount = 0
 	w.aggregator.droppedDegradedOverflow = 0
 
 	w.aggregator.mu.Unlock()
 
 	if degradedOverflow > 0 {
-		log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow)
+		containLoggerPanic(func() {
+			log.Warn("openfeature: degraded aggregation tier full — dropped %d evaluation(s); raise degradedCap (best-effort telemetry)", degradedOverflow) //errtrack:ignore expected aggregation capacity limit
+		})
 	}
 
 	var events []flagEvalLoggingEvent
@@ -548,6 +577,10 @@ func (w *flagEvalLoggingWriter) buildFlushEvents(flushTimeMs int64) []flagEvalLo
 	// runtime_default_used decorates this tier when the caller default was returned.
 	for key, e := range full {
 		ev := baseFlagEvalLoggingEvent(key.flagKey, e, flushTimeMs)
+		if key.environment != (environment{}) {
+			identity := key.environment
+			ev.Environment = &identity
+		}
 		ev.RuntimeDefault = e.runtimeDefault
 		// Consent-on emits raw targeting_key + context; consent-off emits the hashed key and
 		// omits context (absent, not empty). Consent is read from the bucket snapshot, never
@@ -576,6 +609,10 @@ func (w *flagEvalLoggingWriter) buildFlushEvents(flushTimeMs int64) []flagEvalLo
 	// runtime_default_used decorates this tier when the caller default was returned.
 	for key, e := range degraded {
 		ev := baseFlagEvalLoggingEvent(key.flagKey, e, flushTimeMs)
+		if key.environment != (environment{}) {
+			identity := key.environment
+			ev.Environment = &identity
+		}
 		ev.RuntimeDefault = e.runtimeDefault
 		if key.variant != "" {
 			ev.Variant = &flagEvalVariant{Key: key.variant}
@@ -603,6 +640,7 @@ func baseFlagEvalLoggingEvent(flagKey string, e *evaluationEntry, flushTimeMs in
 		FirstEvaluation: e.firstEvaluation,
 		LastEvaluation:  e.lastEvaluation,
 		EvaluationCount: e.count,
+		Features:        e.features,
 	}
 }
 
@@ -797,6 +835,10 @@ func copyPrunedValue(out map[string]any, key string, val any, seen map[uintptr]s
 		}
 		out[key] = string(v)
 	case fmt.Stringer:
+		// A typed nil pointer may have a value-receiver String method that panics.
+		if rv := reflect.ValueOf(v); rv.Kind() == reflect.Pointer && rv.IsNil() {
+			return
+		}
 		s := v.String()
 		if len(s) > maxFieldLength {
 			mask.add(bitMaxValueLength)
@@ -1152,18 +1194,19 @@ func envelopeFraming(envelope []byte) (opener, closer []byte) {
 // follows the degraded path — keeping the per-flag overflow path alive even after the
 // global full-tier cap is exhausted.
 func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]any, evaluationTimeMs int64) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	// Enforce the consent-off invariant for every caller: no context on the wire → no context
 	// in the key (see evaluationAggregationKey).
 	if !d.observeFullEvaluationData {
 		contextAttrs = nil
 	}
+	// Reuse the split's immutable feature encoding in both tiers. Decode once per
+	// distinct feature set in this flush window, only if a new bucket is admitted.
+	featuresKey := d.featuresKey
 
 	// Build the full key from schema-visible dimensions including the canonical context encoding.
 	// No hash, so distinct contexts get distinct buckets.
 	fullKey := evaluationAggregationKey{
+		environment:               d.environment,
 		flagKey:                   d.flagKey,
 		variant:                   d.variant,
 		allocationKey:             d.allocationKey,
@@ -1171,8 +1214,11 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 		errorMessage:              d.errorMessage,
 		targetingKey:              d.targetingKey,
 		contextKey:                canonicalContextKey(contextAttrs),
+		featuresKey:               featuresKey,
 		observeFullEvaluationData: d.observeFullEvaluationData,
 	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
 	// Fast path: this exact full-tier bucket already exists → increment its count. Because
 	// contextKey is the full canonical encoding (not a digest), this fast path is hit only by a
@@ -1188,7 +1234,7 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 	// Check per-flag cap.
 	if a.perFlagFull[d.flagKey] >= a.perFlagCap {
 		// perFlagCap exceeded — route to degraded tier.
-		a.addToDegraded(d, evaluationTimeMs)
+		a.addToDegraded(d, featuresKey, evaluationTimeMs)
 		return
 	}
 
@@ -1204,7 +1250,7 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 		// cardinality at the target scale. The per-flag attempt counter was
 		// already incremented above; once it reaches perFlagCap this flag routes through
 		// addToDegraded directly as well.
-		a.addToDegraded(d, evaluationTimeMs)
+		a.addToDegraded(d, featuresKey, evaluationTimeMs)
 		return
 	}
 
@@ -1216,6 +1262,7 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 		runtimeDefault:            d.runtimeDefault,
 		targetingKey:              d.targetingKey,
 		contextAttrs:              contextAttrs,
+		features:                  a.featureValues.values(featuresKey),
 		errorMessage:              d.errorMessage,
 		observeFullEvaluationData: d.observeFullEvaluationData,
 	}
@@ -1228,13 +1275,15 @@ func (a *flagEvalLoggingAggregator) add(d evalDetails, contextAttrs map[string]a
 // sized (defaultEvalDegradedCap) to hold the legitimate degraded cardinality at the target
 // scale, so this drop only fires under cardinality far beyond that target (e.g. an unbounded
 // dynamic/abusive flag key) and the dropped counter makes such overflow observable.
-func (a *flagEvalLoggingAggregator) addToDegraded(d evalDetails, evaluationTimeMs int64) {
+func (a *flagEvalLoggingAggregator) addToDegraded(d evalDetails, featuresKey string, evaluationTimeMs int64) {
 	degKey := evaluationDegradedKey{
+		environment:    d.environment,
 		flagKey:        d.flagKey,
 		variant:        d.variant,
 		allocationKey:  d.allocationKey,
 		runtimeDefault: d.runtimeDefault,
 		errorMessage:   d.errorMessage,
+		featuresKey:    featuresKey,
 	}
 
 	// Count every evaluation routed into the degraded tier (cardinality-cap pressure) so the
@@ -1258,6 +1307,7 @@ func (a *flagEvalLoggingAggregator) addToDegraded(d evalDetails, evaluationTimeM
 	e := newEvaluationEntry(evaluationTimeMs)
 	e.runtimeDefault = d.runtimeDefault
 	e.errorMessage = d.errorMessage
+	e.features = a.featureValues.values(featuresKey)
 	a.degraded[degKey] = e
 }
 
@@ -1409,6 +1459,8 @@ func pruneContext(raw map[string]any) map[string]any {
 func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluationDetails) evalDetails {
 	allocationKey, _ := details.FlagMetadata[metadataAllocationKey].(string)
 	evalTimeMs, _ := details.FlagMetadata[metadataEvalTimeKey].(int64)
+	environmentID, _ := details.FlagMetadata[metadataEnvironmentIDKey].(string)
+	environmentName, _ := details.FlagMetadata[metadataEnvironmentNameKey].(string)
 	// Fail closed: a missing or non-bool consent stamp yields false, so an evaluation that
 	// never passed through the evaluator cannot emit raw PII.
 	observeFullEvaluationData, _ := details.FlagMetadata[metadataObserveFullEvaluationDataKey].(bool)
@@ -1430,6 +1482,7 @@ func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluati
 		errMsg = string(details.ErrorCode)
 	}
 	return evalDetails{
+		environment:               environment{ID: environmentID, Name: environmentName},
 		flagKey:                   hookContext.FlagKey(),
 		variant:                   details.Variant,
 		allocationKey:             allocationKey,
@@ -1437,6 +1490,7 @@ func extractEvalDetails(hookContext of.HookContext, details of.InterfaceEvaluati
 		errorMessage:              errMsg,
 		runtimeDefault:            isRuntimeDefault(details),
 		evalTimeMs:                evalTimeMs,
+		featuresKey:               featureValuesKey(details.FlagMetadata, metadataEvaluationFeaturesKey),
 		observeFullEvaluationData: observeFullEvaluationData,
 	}
 }

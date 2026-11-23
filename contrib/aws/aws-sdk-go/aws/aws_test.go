@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/eventbridge"
 	"github.com/aws/aws-sdk-go/service/iam"
 	"github.com/aws/aws-sdk-go/service/kinesis"
+	"github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sfn"
 	"github.com/aws/aws-sdk-go/service/sns"
@@ -37,6 +39,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
@@ -371,6 +374,7 @@ func TestExtraTagsForService(t *testing.T) {
 		accountID := urlParts[len(urlParts)-2]
 		expectedARN := "arn:aws:sqs:us-east-1:" + accountID + ":test-queue-name"
 		assert.Equal(t, expectedARN, s0.Tag("cloud.resource_id"))
+		assert.Equal(t, sqsQueueURL, s0.Tag(ext.SQSQueueURL))
 	})
 	t.Run("S3", func(t *testing.T) {
 		mt := mocktracer.Start()
@@ -405,11 +409,13 @@ func TestExtraTagsForService(t *testing.T) {
 		assert.Equal(t, "sns", s0.Tag("aws_service"))
 		assert.Equal(t, "Publish", s0.Tag("aws.operation"))
 		assert.Equal(t, snsTopicName, s0.Tag("topicname"))
+		assert.Equal(t, snsTopicARN, s0.Tag(ext.SNSTopicARN))
 
 		s1 := spans[1]
 		assert.Equal(t, "sns", s1.Tag("aws_service"))
 		assert.Equal(t, "Publish", s1.Tag("aws.operation"))
 		assert.Equal(t, snsTopicName, s1.Tag("targetname"))
+		assert.Nil(t, s1.Tag(ext.SNSTopicARN))
 	})
 	t.Run("DynamoDB", func(t *testing.T) {
 		mt := mocktracer.Start()
@@ -538,6 +544,688 @@ func TestExtraTagsForService(t *testing.T) {
 		assert.Equal(t, "DescribeInstances", s0.Tag("aws.operation"))
 		// no extra tags set at this point for EC2
 	})
+}
+
+func TestKinesisTags(t *testing.T) {
+	const (
+		streamName       = "test-stream-name"
+		streamARN        = "arn:aws:kinesis:us-east-1:111111111111:stream/test-stream-name"
+		namedStream      = "named"
+		invalidStreamARN = "not-an-arn"
+		emptyStream      = ""
+	)
+
+	tests := []struct {
+		name   string
+		params any
+		want   map[string]any
+	}{
+		{
+			name:   "PutRecordInput stream name",
+			params: &kinesis.PutRecordInput{StreamName: aws.String(streamName)},
+			want:   map[string]any{ext.KinesisStreamName: streamName},
+		},
+		{
+			name:   "PutRecordInput stream ARN only",
+			params: &kinesis.PutRecordInput{StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: streamName, ext.KinesisStreamARN: streamARN},
+		},
+		{
+			name:   "PutRecordInput stream name takes precedence over ARN",
+			params: &kinesis.PutRecordInput{StreamName: aws.String(namedStream), StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: namedStream, ext.KinesisStreamARN: streamARN},
+		},
+		{
+			name:   "PutRecordInput no stream identifier",
+			params: &kinesis.PutRecordInput{},
+			want:   nil,
+		},
+		{
+			name:   "PutRecordsInput stream ARN only",
+			params: &kinesis.PutRecordsInput{StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: streamName, ext.KinesisStreamARN: streamARN},
+		},
+		{
+			name:   "PutRecordsInput no stream identifier",
+			params: &kinesis.PutRecordsInput{},
+			want:   nil,
+		},
+		{
+			name:   "AddTagsToStreamInput stream ARN only",
+			params: &kinesis.AddTagsToStreamInput{StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: streamName, ext.KinesisStreamARN: streamARN},
+		},
+		{
+			name:   "AddTagsToStreamInput no stream identifier",
+			params: &kinesis.AddTagsToStreamInput{},
+			want:   nil,
+		},
+		{
+			name:   "RemoveTagsFromStreamInput stream ARN only",
+			params: &kinesis.RemoveTagsFromStreamInput{StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: streamName, ext.KinesisStreamARN: streamARN},
+		},
+		{
+			name:   "RemoveTagsFromStreamInput no stream identifier",
+			params: &kinesis.RemoveTagsFromStreamInput{},
+			want:   nil,
+		},
+		{
+			name:   "CreateStreamInput stream name",
+			params: &kinesis.CreateStreamInput{StreamName: aws.String(streamName)},
+			want:   map[string]any{ext.KinesisStreamName: streamName},
+		},
+		{
+			// CreateStreamInput has no StreamARN field to fall back on.
+			name:   "CreateStreamInput no stream name",
+			params: &kinesis.CreateStreamInput{},
+			want:   nil,
+		},
+		{
+			name:   "DeleteStreamInput stream ARN only",
+			params: &kinesis.DeleteStreamInput{StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: streamName, ext.KinesisStreamARN: streamARN},
+		},
+		{
+			name:   "DeleteStreamInput no stream identifier",
+			params: &kinesis.DeleteStreamInput{},
+			want:   nil,
+		},
+		{
+			name:   "DescribeStreamInput stream ARN only",
+			params: &kinesis.DescribeStreamInput{StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: streamName, ext.KinesisStreamARN: streamARN},
+		},
+		{
+			name:   "DescribeStreamInput no stream identifier",
+			params: &kinesis.DescribeStreamInput{},
+			want:   nil,
+		},
+		{
+			name:   "DescribeStreamSummaryInput stream ARN only",
+			params: &kinesis.DescribeStreamSummaryInput{StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: streamName, ext.KinesisStreamARN: streamARN},
+		},
+		{
+			name:   "DescribeStreamSummaryInput no stream identifier",
+			params: &kinesis.DescribeStreamSummaryInput{},
+			want:   nil,
+		},
+		{
+			name:   "GetShardIteratorInput stream ARN only",
+			params: &kinesis.GetShardIteratorInput{StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: streamName, ext.KinesisStreamARN: streamARN},
+		},
+		{
+			name:   "GetShardIteratorInput no stream identifier",
+			params: &kinesis.GetShardIteratorInput{},
+			want:   nil,
+		},
+		{
+			name:   "GetRecordsInput stream ARN",
+			params: &kinesis.GetRecordsInput{StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamName: streamName, ext.KinesisStreamARN: streamARN},
+		},
+		{
+			name:   "GetRecordsInput no stream identifier",
+			params: &kinesis.GetRecordsInput{},
+			want:   nil,
+		},
+		{
+			name:   "ARN without a resource separator",
+			params: &kinesis.DescribeStreamInput{StreamARN: aws.String(invalidStreamARN)},
+			want:   map[string]any{ext.KinesisStreamName: invalidStreamARN, ext.KinesisStreamARN: invalidStreamARN},
+		},
+		{
+			// Only the trailing segment is reported, as in the v2 integration.
+			name:   "ARN with several resource segments",
+			params: &kinesis.DescribeStreamInput{StreamARN: aws.String(streamARN + "/consumer/test-consumer")},
+			want:   map[string]any{ext.KinesisStreamName: "test-consumer", ext.KinesisStreamARN: streamARN + "/consumer/test-consumer"},
+		},
+		{
+			// The ARN is reported as sent, even when no stream name can be
+			// derived from it.
+			name:   "ARN with an empty trailing segment",
+			params: &kinesis.DescribeStreamInput{StreamARN: aws.String(streamARN + "/")},
+			want:   map[string]any{ext.KinesisStreamARN: streamARN + "/"},
+		},
+		{
+			name:   "empty stream ARN",
+			params: &kinesis.DescribeStreamInput{StreamARN: aws.String(emptyStream)},
+			want:   nil,
+		},
+		{
+			// An explicitly empty stream name does not fall back to the ARN.
+			name:   "empty stream name alongside an ARN",
+			params: &kinesis.DescribeStreamInput{StreamName: aws.String(emptyStream), StreamARN: aws.String(streamARN)},
+			want:   map[string]any{ext.KinesisStreamARN: streamARN},
+		},
+		{
+			name:   "unhandled input type",
+			params: &kinesis.ListStreamsInput{},
+			want:   nil,
+		},
+		{
+			name:   "nil params",
+			params: nil,
+			want:   nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := kinesisTags(tc.params)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// TestKinesisSpanStreamName covers the panic path: the Send handler reads the
+// stream name off the request parameters, so a request that identifies its
+// stream by ARN only must not dereference a nil StreamName.
+func TestSQSTags(t *testing.T) {
+	const (
+		queueURL = "https://sqs.us-east-1.amazonaws.com/111111111111/test-queue-name"
+		queueARN = "arn:aws:sqs:us-east-1:111111111111:test-queue-name"
+	)
+
+	tests := []struct {
+		name    string
+		params  any
+		want    map[string]any
+		wantErr bool
+	}{
+		{
+			name:   "SendMessageInput",
+			params: &sqs.SendMessageInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
+			name:   "SendMessageBatchInput",
+			params: &sqs.SendMessageBatchInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
+			name:   "ReceiveMessageInput",
+			params: &sqs.ReceiveMessageInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
+			name:   "DeleteMessageInput",
+			params: &sqs.DeleteMessageInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
+			name:   "DeleteMessageBatchInput",
+			params: &sqs.DeleteMessageBatchInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
+			name:   "ChangeMessageVisibilityInput",
+			params: &sqs.ChangeMessageVisibilityInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
+			name:   "ChangeMessageVisibilityBatchInput",
+			params: &sqs.ChangeMessageVisibilityBatchInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
+			name:   "GetQueueAttributesInput",
+			params: &sqs.GetQueueAttributesInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
+			name:   "PurgeQueueInput",
+			params: &sqs.PurgeQueueInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
+			name:   "SetQueueAttributesInput",
+			params: &sqs.SetQueueAttributesInput{QueueUrl: aws.String(queueURL)},
+			want:   map[string]any{ext.SQSQueueName: "test-queue-name", ext.CloudResourceID: queueARN, ext.SQSQueueURL: queueURL},
+		},
+		{
+			name:   "no queue URL",
+			params: &sqs.SendMessageInput{},
+			want:   nil,
+		},
+		{
+			name:   "empty queue URL",
+			params: &sqs.SendMessageInput{QueueUrl: new("")},
+			want:   nil,
+		},
+		{
+			name:    "unexpected queue URL format",
+			params:  &sqs.SendMessageInput{QueueUrl: new("not-a-url")},
+			wantErr: true,
+		},
+		{
+			name:   "unhandled input type",
+			params: &sqs.ListQueuesInput{},
+			want:   nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := sqsTags(tc.params, "us-east-1", "aws")
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestSNSTags(t *testing.T) {
+	const (
+		topicName = "test-topic-name"
+		topicARN  = "arn:aws:sns:us-east-1:111111111111:test-topic-name"
+		targetARN = "arn:aws:sns:us-east-1:111111111111:endpoint/APNS/app/test-target"
+	)
+
+	tests := []struct {
+		name    string
+		params  any
+		want    map[string]any
+		wantErr bool
+	}{
+		{
+			name:   "PublishInput topic ARN",
+			params: &sns.PublishInput{TopicArn: aws.String(topicARN)},
+			want:   map[string]any{ext.SNSTopicName: topicName, ext.SNSTopicARN: topicARN},
+		},
+		{
+			// A TargetArn is not a topic ARN.
+			name:   "PublishInput target ARN",
+			params: &sns.PublishInput{TargetArn: aws.String(targetARN)},
+			want:   map[string]any{ext.SNSTargetName: "endpoint/APNS/app/test-target"},
+		},
+		{
+			name:   "PublishInput no destination",
+			params: &sns.PublishInput{},
+			want:   nil,
+		},
+		{
+			name:   "PublishBatchInput",
+			params: &sns.PublishBatchInput{TopicArn: aws.String(topicARN)},
+			want:   map[string]any{ext.SNSTopicName: topicName, ext.SNSTopicARN: topicARN},
+		},
+		{
+			name:   "GetTopicAttributesInput",
+			params: &sns.GetTopicAttributesInput{TopicArn: aws.String(topicARN)},
+			want:   map[string]any{ext.SNSTopicName: topicName, ext.SNSTopicARN: topicARN},
+		},
+		{
+			name:   "ListSubscriptionsByTopicInput",
+			params: &sns.ListSubscriptionsByTopicInput{TopicArn: aws.String(topicARN)},
+			want:   map[string]any{ext.SNSTopicName: topicName, ext.SNSTopicARN: topicARN},
+		},
+		{
+			name:   "RemovePermissionInput",
+			params: &sns.RemovePermissionInput{TopicArn: aws.String(topicARN)},
+			want:   map[string]any{ext.SNSTopicName: topicName, ext.SNSTopicARN: topicARN},
+		},
+		{
+			name:   "SetTopicAttributesInput",
+			params: &sns.SetTopicAttributesInput{TopicArn: aws.String(topicARN)},
+			want:   map[string]any{ext.SNSTopicName: topicName, ext.SNSTopicARN: topicARN},
+		},
+		{
+			name:   "SubscribeInput",
+			params: &sns.SubscribeInput{TopicArn: aws.String(topicARN)},
+			want:   map[string]any{ext.SNSTopicName: topicName, ext.SNSTopicARN: topicARN},
+		},
+		{
+			name:   "SubscribeInput no topic ARN",
+			params: &sns.SubscribeInput{},
+			want:   nil,
+		},
+		{
+			// CreateTopicInput only carries the name of the topic to create.
+			name:   "CreateTopicInput",
+			params: &sns.CreateTopicInput{Name: aws.String(topicName)},
+			want:   map[string]any{ext.SNSTopicName: topicName},
+		},
+		{
+			name:   "CreateTopicInput no name",
+			params: &sns.CreateTopicInput{},
+			want:   nil,
+		},
+		{
+			name:    "unexpected ARN format",
+			params:  &sns.GetTopicAttributesInput{TopicArn: new("not-an-arn")},
+			wantErr: true,
+		},
+		{
+			name:   "unhandled input type",
+			params: &sns.ListTopicsInput{},
+			want:   nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := snsTags(tc.params)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestDynamoDBTags(t *testing.T) {
+	const tableARN = "arn:aws:dynamodb:eu-west-1:123456789012:table/MyTableName"
+	for _, tc := range []struct {
+		name   string
+		params any
+		want   map[string]any
+	}{
+		{
+			name:   "GetItemInput name",
+			params: &dynamodb.GetItemInput{TableName: new("MyTableName")},
+			want:   map[string]any{ext.DynamoDBTableName: "MyTableName"},
+		},
+		{
+			name:   "GetItemInput ARN",
+			params: &dynamodb.GetItemInput{TableName: new(tableARN)},
+			want:   map[string]any{ext.DynamoDBTableName: tableARN, ext.DynamoDBTableARN: tableARN},
+		},
+		{
+			name:   "PutItemInput ARN",
+			params: &dynamodb.PutItemInput{TableName: new(tableARN)},
+			want:   map[string]any{ext.DynamoDBTableName: tableARN, ext.DynamoDBTableARN: tableARN},
+		},
+		{
+			name:   "QueryInput ARN",
+			params: &dynamodb.QueryInput{TableName: new(tableARN)},
+			want:   map[string]any{ext.DynamoDBTableName: tableARN, ext.DynamoDBTableARN: tableARN},
+		},
+		{
+			name:   "ScanInput ARN",
+			params: &dynamodb.ScanInput{TableName: new(tableARN)},
+			want:   map[string]any{ext.DynamoDBTableName: tableARN, ext.DynamoDBTableARN: tableARN},
+		},
+		{
+			name:   "UpdateItemInput ARN",
+			params: &dynamodb.UpdateItemInput{TableName: new(tableARN)},
+			want:   map[string]any{ext.DynamoDBTableName: tableARN, ext.DynamoDBTableARN: tableARN},
+		},
+		{
+			name:   "GetItemInput no table",
+			params: &dynamodb.GetItemInput{},
+			want:   nil,
+		},
+		{
+			name:   "unhandled input type",
+			params: &dynamodb.ListTablesInput{},
+			want:   nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := dynamoDBTags(tc.params)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestLambdaTags(t *testing.T) {
+	const functionARN = "arn:aws:lambda:eu-west-1:123456789012:function:my-function"
+	for _, tc := range []struct {
+		name   string
+		params any
+		want   map[string]any
+	}{
+		{
+			name:   "InvokeInput ARN",
+			params: &lambda.InvokeInput{FunctionName: new(functionARN)},
+			want:   map[string]any{ext.LambdaFunctionARN: functionARN},
+		},
+		{
+			name:   "InvokeInput qualified ARN",
+			params: &lambda.InvokeInput{FunctionName: new(functionARN + ":prod")},
+			want:   map[string]any{ext.LambdaFunctionARN: functionARN + ":prod"},
+		},
+		{
+			name:   "InvokeAsyncInput ARN",
+			params: &lambda.InvokeAsyncInput{FunctionName: new(functionARN)},
+			want:   map[string]any{ext.LambdaFunctionARN: functionARN},
+		},
+		{
+			name:   "GetFunctionInput ARN",
+			params: &lambda.GetFunctionInput{FunctionName: new(functionARN)},
+			want:   map[string]any{ext.LambdaFunctionARN: functionARN},
+		},
+		{
+			name:   "InvokeInput name",
+			params: &lambda.InvokeInput{FunctionName: new("my-function")},
+			want:   nil,
+		},
+		{
+			name:   "InvokeInput partial ARN",
+			params: &lambda.InvokeInput{FunctionName: new("123456789012:function:my-function")},
+			want:   nil,
+		},
+		{
+			name:   "InvokeInput no function",
+			params: &lambda.InvokeInput{},
+			want:   nil,
+		},
+		{
+			name:   "unhandled input type",
+			params: &lambda.ListFunctionsInput{},
+			want:   nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := lambdaTags(tc.params)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestDynamoDBTableARN(t *testing.T) {
+	for _, tc := range []struct {
+		tableName string
+		want      string
+	}{
+		{tableName: "arn:aws:dynamodb:eu-west-1:123456789012:table/MyTableName", want: "arn:aws:dynamodb:eu-west-1:123456789012:table/MyTableName"},
+		{tableName: "arn:aws-cn:dynamodb:cn-north-1:123456789012:table/MyTableName", want: "arn:aws-cn:dynamodb:cn-north-1:123456789012:table/MyTableName"},
+		{tableName: "MyTableName"},
+		{tableName: ""},
+		{tableName: "arn:aws:dynamodb:eu-west-1:123456789012:table/MyTableName/index/MyIndex"},
+		{tableName: "arn:aws:dynamodb:eu-west-1:123456789012:table/"},
+		{tableName: "arn:aws:dynamodb:eu-west-1::table/MyTableName"},
+		{tableName: "arn:aws:dynamodb::123456789012:table/MyTableName"},
+		{tableName: "arn:aws:lambda:eu-west-1:123456789012:table/MyTableName"},
+		{tableName: "arn:aws:dynamodb:eu-west-1:123456789012:MyTableName"},
+	} {
+		t.Run(tc.tableName, func(t *testing.T) {
+			assert.Equal(t, tc.want, dynamoDBTableARN(tc.tableName))
+		})
+	}
+}
+
+func TestLambdaFunctionARN(t *testing.T) {
+	for _, tc := range []struct {
+		functionName string
+		want         string
+	}{
+		{functionName: "arn:aws:lambda:eu-west-1:123456789012:function:my-function", want: "arn:aws:lambda:eu-west-1:123456789012:function:my-function"},
+		// The qualifier is kept, as dd-trace-java does.
+		{functionName: "arn:aws:lambda:eu-west-1:123456789012:function:my-function:prod", want: "arn:aws:lambda:eu-west-1:123456789012:function:my-function:prod"},
+		{functionName: "arn:aws:lambda:eu-west-1:123456789012:function:my-function:7", want: "arn:aws:lambda:eu-west-1:123456789012:function:my-function:7"},
+		{functionName: "arn:aws-us-gov:lambda:us-gov-west-1:123456789012:function:my-function", want: "arn:aws-us-gov:lambda:us-gov-west-1:123456789012:function:my-function"},
+		// A partial ARN has no partition and region.
+		{functionName: "123456789012:function:my-function"},
+		{functionName: "my-function"},
+		{functionName: "my-function:prod"},
+		{functionName: ""},
+	} {
+		t.Run(tc.functionName, func(t *testing.T) {
+			assert.Equal(t, tc.want, lambdaFunctionARN(tc.functionName))
+		})
+	}
+}
+
+func TestSFNTags(t *testing.T) {
+	const (
+		stateMachineName = "test-state-machine-name"
+		stateMachineARN  = "arn:aws:states:us-east-1:111111111111:stateMachine:test-state-machine-name"
+		executionARN     = "arn:aws:states:us-east-1:111111111111:execution:test-state-machine-name:test-execution"
+	)
+
+	tests := []struct {
+		name    string
+		params  any
+		want    map[string]any
+		wantErr bool
+	}{
+		{
+			name:   "CreateStateMachineInput",
+			params: &sfn.CreateStateMachineInput{Name: aws.String(stateMachineName)},
+			want:   map[string]any{ext.SFNStateMachineName: stateMachineName},
+		},
+		{
+			name:   "DescribeStateMachineInput",
+			params: &sfn.DescribeStateMachineInput{StateMachineArn: aws.String(stateMachineARN)},
+			want:   map[string]any{ext.SFNStateMachineName: stateMachineName, ext.SFNStateMachineARN: stateMachineARN},
+		},
+		{
+			name:   "StartExecutionInput",
+			params: &sfn.StartExecutionInput{StateMachineArn: aws.String(stateMachineARN)},
+			want:   map[string]any{ext.SFNStateMachineName: stateMachineName, ext.SFNStateMachineARN: stateMachineARN},
+		},
+		{
+			name:   "StartSyncExecutionInput",
+			params: &sfn.StartSyncExecutionInput{StateMachineArn: aws.String(stateMachineARN)},
+			want:   map[string]any{ext.SFNStateMachineName: stateMachineName, ext.SFNStateMachineARN: stateMachineARN},
+		},
+		{
+			name:   "ListExecutionsInput",
+			params: &sfn.ListExecutionsInput{StateMachineArn: aws.String(stateMachineARN)},
+			want:   map[string]any{ext.SFNStateMachineName: stateMachineName, ext.SFNStateMachineARN: stateMachineARN},
+		},
+		{
+			name:   "UpdateStateMachineInput",
+			params: &sfn.UpdateStateMachineInput{StateMachineArn: aws.String(stateMachineARN)},
+			want:   map[string]any{ext.SFNStateMachineName: stateMachineName, ext.SFNStateMachineARN: stateMachineARN},
+		},
+		{
+			name:   "DeleteStateMachineInput",
+			params: &sfn.DeleteStateMachineInput{StateMachineArn: aws.String(stateMachineARN)},
+			want:   map[string]any{ext.SFNStateMachineName: stateMachineName, ext.SFNStateMachineARN: stateMachineARN},
+		},
+		{
+			// The state machine ARN is not derived from the execution ARN.
+			name:   "DescribeExecutionInput",
+			params: &sfn.DescribeExecutionInput{ExecutionArn: aws.String(executionARN)},
+			want:   map[string]any{ext.SFNStateMachineName: stateMachineName},
+		},
+		{
+			name:   "StopExecutionInput",
+			params: &sfn.StopExecutionInput{ExecutionArn: aws.String(executionARN)},
+			want:   map[string]any{ext.SFNStateMachineName: stateMachineName},
+		},
+		{
+			name:    "StopExecutionInput no execution ARN",
+			params:  &sfn.StopExecutionInput{},
+			wantErr: true,
+		},
+		{
+			name:   "StartExecutionInput no state machine ARN",
+			params: &sfn.StartExecutionInput{},
+			want:   nil,
+		},
+		{
+			name:   "unhandled input type",
+			params: &sfn.ListStateMachinesInput{},
+			want:   nil,
+		},
+		{
+			name:   "CreateStateMachineInput no name",
+			params: &sfn.CreateStateMachineInput{},
+			want:   nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := sfnTags(tc.params)
+			if tc.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestKinesisSpanStreamName(t *testing.T) {
+	const (
+		streamARN    = "arn:aws:kinesis:us-west-2:111111111111:stream/test-stream-name"
+		partitionKey = "1"
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-Amz-RequestId", "test_req")
+			w.WriteHeader(200)
+			w.Write([]byte(`{}`))
+		}))
+	defer server.Close()
+
+	cfg := aws.NewConfig().
+		WithRegion("us-west-2").
+		WithDisableSSL(true).
+		WithCredentials(credentials.AnonymousCredentials).
+		WithEndpoint(server.URL)
+	sess := WrapSession(session.Must(session.NewSession(cfg)))
+
+	for _, tc := range []struct {
+		name  string
+		input *kinesis.PutRecordInput
+		want  any
+	}{
+		{
+			name: "stream ARN only",
+			input: &kinesis.PutRecordInput{
+				StreamARN: aws.String(streamARN),
+			},
+			want: "test-stream-name",
+		},
+		{
+			name:  "no stream identifier",
+			input: &kinesis.PutRecordInput{},
+			want:  nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			tc.input.Data = []byte("data")
+			tc.input.PartitionKey = aws.String(partitionKey)
+			_, err := kinesis.New(sess).PutRecord(tc.input)
+			require.NoError(t, err)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			assert.Equal(t, "kinesis", spans[0].Tag("aws_service"))
+			assert.Equal(t, "PutRecord", spans[0].Tag("aws.operation"))
+			assert.Equal(t, tc.want, spans[0].Tag(ext.KinesisStreamName))
+		})
+	}
 }
 
 func TestExtractSQSMetadata(t *testing.T) {
@@ -780,4 +1468,235 @@ func prepareTestRole(t *testing.T, sess *session.Session) string {
 		assert.NoError(t, err)
 	})
 	return *resp.Role.Arn
+}
+
+// queryStringEnv are the environment variables that change the query string
+// in the http.url tag.
+var queryStringEnv = []string{
+	"DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP",
+	"DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED",
+	"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST",
+	"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT",
+	"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER",
+}
+
+// setQueryStringEnv sets the query string environment variables to env, and
+// unsets the others. It also resets the httptrace configuration, before and
+// after the test.
+func setQueryStringEnv(t *testing.T, env map[string]string) {
+	t.Helper()
+	t.Cleanup(httptrace.ResetCfg) // Runs after the environment is restored.
+	for _, k := range queryStringEnv {
+		t.Setenv(k, "") // Restores the original value at the end of the test.
+		if v, ok := env[k]; ok {
+			t.Setenv(k, v)
+		} else {
+			require.NoError(t, os.Unsetenv(k))
+		}
+	}
+	httptrace.ResetCfg()
+}
+
+// TestHTTPURLQueryString checks that the query string in the http.url tag is
+// obfuscated, and that it is removed when the configured obfuscation regexp is
+// not valid.
+func TestHTTPURLQueryString(t *testing.T) {
+	var gotQuery atomic.Pointer[string]
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			q := r.URL.RawQuery
+			gotQuery.Store(&q)
+			w.Header().Set("X-Amz-RequestId", "test_req")
+			w.WriteHeader(200)
+			w.Write([]byte(`{}`))
+		}))
+	defer server.Close()
+
+	for _, tc := range []struct {
+		name  string
+		env   map[string]string
+		check func(t *testing.T, url string)
+	}{
+		{
+			name: "obfuscated",
+			check: func(t *testing.T, url string) {
+				assert.Contains(t, url, "<redacted>")
+			},
+		},
+		{
+			name: "invalid regexp fails closed",
+			env:  map[string]string{"DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP": `(?<=x)a`},
+			check: func(t *testing.T, url string) {
+				assert.Equal(t, server.URL+"/BUCKET", url)
+			},
+		},
+		{
+			// DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED only applies to server spans.
+			name: "query string disabled for server spans",
+			env:  map[string]string{"DD_TRACE_HTTP_URL_QUERY_STRING_DISABLED": "true"},
+			check: func(t *testing.T, url string) {
+				assert.Contains(t, url, "<redacted>")
+			},
+		},
+		{
+			name: "client allowlist",
+			env: map[string]string{
+				"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_CLIENT": "list-type",
+				"DD_TRACE_HTTP_URL_QUERY_STRING_ALLOWLIST_SERVER": "continuation-token",
+			},
+			check: func(t *testing.T, url string) {
+				assert.Equal(t, server.URL+"/BUCKET?list-type=2", url)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setQueryStringEnv(t, tc.env)
+			gotQuery.Store(nil)
+
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			resolver := endpoints.ResolverFunc(func(_, _ string, _ ...func(*endpoints.Options)) (endpoints.ResolvedEndpoint, error) {
+				return endpoints.ResolvedEndpoint{
+					PartitionID:   "aws",
+					URL:           server.URL,
+					SigningRegion: "eu-west-1",
+				}, nil
+			})
+			region := "eu-west-1"
+			awsCfg := aws.Config{
+				Region:           &region,
+				Credentials:      credentials.AnonymousCredentials,
+				EndpointResolver: resolver,
+				MaxRetries:       aws.Int(0),
+			}
+			session := WrapSession(session.Must(session.NewSession(&awsCfg)))
+			req, _ := s3.New(session).ListObjectsV2Request(&s3.ListObjectsV2Input{
+				Bucket:            aws.String("BUCKET"),
+				ContinuationToken: aws.String("supersecret"),
+			})
+			req.SetContext(context.Background())
+			_ = req.Send() // The mock response is not valid XML.
+
+			// The outgoing request is not changed.
+			q := gotQuery.Load()
+			require.NotNil(t, q, "the server did not get a request")
+			assert.Contains(t, *q, "supersecret")
+			spans := mt.FinishedSpans()
+			require.NotEmpty(t, spans)
+			url, _ := spans[0].Tag(ext.HTTPURL).(string)
+			assert.NotContains(t, url, "supersecret")
+			tc.check(t, url)
+		})
+	}
+}
+
+func TestRedactURLQuery(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		env  map[string]string
+		url  url.URL
+		want string
+	}{
+		{name: "raw query", url: url.URL{Scheme: "https", Host: "h", Path: "/p", RawQuery: "token=secret&a=1"}, want: "https://h/p?<redacted>&a=1"},
+		{name: "opaque query", url: url.URL{Scheme: "https", Opaque: "//h/p?token=secret", RawQuery: "a=1"}, want: "https://h/p?<redacted>&a=1"},
+		{name: "opaque query fails closed", env: map[string]string{"DD_TRACE_OBFUSCATION_QUERY_STRING_REGEXP": `(?<=x)a`}, url: url.URL{Scheme: "https", Opaque: "//h/p?token=secret"}, want: "https://h/p"},
+		{name: "opaque user information", url: url.URL{Scheme: "https", Opaque: "//user:password@h/p?a=1"}, want: "https://h/p?a=1"},
+		{name: "opaque user information without path", url: url.URL{Scheme: "https", Opaque: "//user:password@h"}, want: "https://h"},
+		{name: "force query", url: url.URL{Scheme: "https", Host: "h", Path: "/p", ForceQuery: true}, want: "https://h/p"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setQueryStringEnv(t, tc.env)
+			u := tc.url
+			redactURLQuery(&u)
+			assert.Equal(t, tc.want, u.String())
+		})
+	}
+}
+
+func TestWrapSessionTwice(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/x-amz-json-1.0")
+			w.Write([]byte(`{"TableNames":[]}`))
+		}))
+	defer server.Close()
+
+	cfg := aws.NewConfig().
+		WithRegion("us-west-2").
+		WithDisableSSL(true).
+		WithCredentials(credentials.AnonymousCredentials).
+		WithEndpoint(server.URL)
+	base := session.Must(session.NewSession(cfg))
+	sendLen, completeLen := base.Handlers.Send.Len(), base.Handlers.Complete.Len()
+
+	for _, tc := range []struct {
+		name    string
+		opts    [][]Option
+		service string
+	}{
+		{name: "once", opts: [][]Option{nil}, service: "aws.dynamodb"},
+		{name: "twice with defaults", opts: [][]Option{nil, nil}, service: "aws.dynamodb"},
+		{name: "defaults then service", opts: [][]Option{nil, {WithService("second")}}, service: "second"},
+		{name: "service twice", opts: [][]Option{{WithService("first")}, {WithService("second")}}, service: "second"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			sess := base
+			for _, opts := range tc.opts {
+				sess = WrapSession(sess, opts...)
+			}
+			_, err := dynamodb.New(sess).ListTables(&dynamodb.ListTablesInput{})
+			require.NoError(t, err)
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			assert.Equal(t, tc.service, spans[0].Tag(ext.ServiceName))
+			assert.Equal(t, sendLen+1, sess.Handlers.Send.Len())
+			assert.Equal(t, completeLen+1, sess.Handlers.Complete.Len())
+		})
+	}
+
+	// WrapSession works on a copy.
+	assert.Equal(t, sendLen, base.Handlers.Send.Len())
+	assert.Equal(t, completeLen, base.Handlers.Complete.Len())
+}
+
+func TestWrapSessionAgainAfterUserHandlers(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "application/x-amz-json-1.0")
+			w.Write([]byte(`{"TableNames":[]}`))
+		}))
+	defer server.Close()
+
+	cfg := aws.NewConfig().
+		WithRegion("us-west-2").
+		WithDisableSSL(true).
+		WithCredentials(credentials.AnonymousCredentials).
+		WithEndpoint(server.URL)
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	// The first wrap stands for the one otelc adds. The application then adds
+	// a Complete handler and wraps the session itself.
+	sess := WrapSession(session.Must(session.NewSession(cfg)))
+	userErr := errors.New("set by a user handler")
+	sess.Handlers.Complete.PushBackNamed(request.NamedHandler{
+		Name: "user.Complete",
+		Fn:   func(r *request.Request) { r.Error = userErr },
+	})
+	sess = WrapSession(sess, WithService("user-service"))
+
+	// The error a Complete handler sets is not returned by the call, but the
+	// tracing Complete handler reads it when it runs after the user's.
+	_, _ = dynamodb.New(sess).ListTables(&dynamodb.ListTablesInput{})
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	assert.Equal(t, "user-service", spans[0].Tag(ext.ServiceName))
+	assert.Equal(t, userErr.Error(), spans[0].Tag(ext.ErrorMsg), "the tracing Complete handler must run after the user's")
 }

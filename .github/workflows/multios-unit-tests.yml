@@ -58,12 +58,45 @@ jobs:
           ref: ${{ github.sha }}
           clean: false
           submodules: recursive
-      - name: Setup Go and development tools
+      - name: Setup Go
+        id: setup-go
         uses: ./.github/actions/setup-go
         with:
           go-version: ${{ inputs.go-version }}
-          tools-dir: ${{ env.normalized_workspace }}/_tools
-          tools-bin: ${{ env.normalized_workspace }}/bin
+          check-latest: "true"
+          workload: multi-os
+          variant: |-
+            {"runner":${{ toJSON(inputs.runs-on) }},
+             "modules":["core","contrib"]}
+          # Seed set: all six multi-OS strata (both Go versions on
+          # Linux, macOS and Windows), about 2.5 GiB compressed each —
+          # roughly 15 GiB — against the 100 GiB cache quota (2026-10-28).
+          # The nightly default-branch seeds total well under half that
+          # quota: these six, the unit-integration keys (the standard
+          # variant on both nightly Go versions, and the debug and
+          # deadlock families on Go 1.27 through the nightly
+          # dynamic-checks runs), and the four smoke keys. The
+          # `ci.cache.pool.*`
+          # gauges watch the fill. Nightly schedules and default-branch
+          # dispatches save these keys; every other run of them,
+          # including all PR and merge-queue runs, restores only. To
+          # drop a stratum that does not pay for its restore cost,
+          # replace the literal with a contains() list of the
+          # runs-on/go-version pairs to keep.
+          seed: "true"
+
+      - name: Restore and install development tools
+        id: tools
+        uses: ./.github/actions/tools-cache
+        with:
+          go-version: ${{ steps.setup-go.outputs.go-version }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+
+      # The gotesting fixture tests invoke this binary directly; without it
+      # they pay `go run` module resolution inside their per-test timeouts.
+      - name: Install orchestrion binary
+        uses: ./.github/actions/install-orchestrion
+
       - name: Mac OS Coreutils
         if: inputs.runs-on == 'macos-latest'
         run: brew install coreutils
@@ -77,6 +110,7 @@ jobs:
 
       - name: Get Datadog credentials
         id: dd-sts
+        if: always()
         continue-on-error: true
         uses: DataDog/dd-sts-action@639d841c72f15e4e77747bd726ef8105ce971da2
         with:
@@ -90,6 +124,17 @@ jobs:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ./
           tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
+
+      - name: Report cache metrics to Datadog
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/cache-metrics
+        with:
+          cache-metrics: ${{ steps.tools.outputs.cache-metrics }}
+          dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
+          # Walking GOMODCACHE/GOCACHE costs tens of seconds on Windows, so only do it
+          # where no pull request is waiting on the result.
+          measure-sizes: ${{ github.event_name != 'pull_request' }}
 
       - name: Upload Coverage to Datadog
         if: always()

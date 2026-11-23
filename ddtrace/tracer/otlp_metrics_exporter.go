@@ -7,9 +7,7 @@ package tracer
 
 import (
 	"encoding/json"
-	"fmt"
 
-	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	otlpmetrics "go.opentelemetry.io/proto/otlp/metrics/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -39,9 +37,8 @@ func newOTLPMetricsExporter(cfg *internalconfig.Config) *otlpMetricsExporter {
 	}
 }
 
-// export converts payload to an OTLP ExportMetricsServiceRequest and sends it.
-func (e *otlpMetricsExporter) export(payload *pb.ClientStatsPayload) error {
-	rms := buildOTLPMetricsRequest(payload, e.cfg)
+// export sends the OTLP ResourceMetrics built for one stats flush.
+func (e *otlpMetricsExporter) export(rms []*otlpmetrics.ResourceMetrics) error {
 	if len(rms) == 0 {
 		return nil
 	}
@@ -50,7 +47,7 @@ func (e *otlpMetricsExporter) export(payload *pb.ClientStatsPayload) error {
 	var contentType string
 	var err error
 
-	// e.protocol is validated at config load time (validateOTLPProtocol) to be exactly
+	// e.protocol is validated at config load time to be exactly
 	// "http/json" or "http/protobuf", so the else branch below is not an independent
 	// default — it's the only other value config can hand us.
 	if e.protocol == "http/json" {
@@ -61,13 +58,13 @@ func (e *otlpMetricsExporter) export(payload *pb.ClientStatsPayload) error {
 		contentType = otlpContentTypeProto
 	}
 	if err != nil {
-		return fmt.Errorf("otlp_metrics_exporter: marshal failed: %w", err)
+		return &statsSerializationError{format: "otlp", prefix: "otlp_metrics_exporter: marshal failed", err: err}
 	}
 
 	// No retry: a failed metrics interval is dropped rather than retried.
 	// Span metrics are lossy by design — the next flush interval replaces the lost window.
 	if sendErr := e.transport.send(body, contentType); sendErr != nil {
-		log.Error("otlp_metrics_exporter: export to %s failed: %v", e.transport.endpoint, sendErr.Error())
+		log.Error("otlp_metrics_exporter: export to %s failed: %v", e.transport.endpoint, sendErr.Error()) //errtrack:ignore exporter or network failure
 		return sendErr
 	}
 	log.Debug("otlp_metrics_exporter: exported %d bytes (%s) to %s", len(body), e.protocol, e.transport.endpoint)

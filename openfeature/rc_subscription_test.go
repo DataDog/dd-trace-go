@@ -22,6 +22,7 @@ func TestAttachProviderNotSubscribed(t *testing.T) {
 	defer internalffe.ResetForTest()
 
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	got := attachProvider(provider)
 	assert.False(t, got, "attachProvider should return false when not subscribed")
 }
@@ -33,6 +34,7 @@ func TestAttachProviderSubscribed(t *testing.T) {
 	internalffe.SetSubscribedForTest(true)
 
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	got := attachProvider(provider)
 	assert.True(t, got, "attachProvider should return true when subscribed")
 }
@@ -57,7 +59,7 @@ func TestAttachProviderReplaysBufferedConfig(t *testing.T) {
 			},
 		},
 	}
-	data, err := json.Marshal(config)
+	data, err := json.Marshal(&config)
 	require.NoError(t, err)
 
 	// Simulate SubscribeRC + a buffered update arriving before provider exists.
@@ -65,6 +67,7 @@ func TestAttachProviderReplaysBufferedConfig(t *testing.T) {
 	internalffe.SetBufferedForTest(remoteconfig.ProductUpdate{"path/config": data})
 
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	got := attachProvider(provider)
 	assert.True(t, got)
 
@@ -84,6 +87,7 @@ func TestAttachProviderNoBuffer(t *testing.T) {
 	internalffe.SetSubscribedForTest(true)
 
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	got := attachProvider(provider)
 	assert.True(t, got)
 
@@ -107,7 +111,7 @@ func TestStartWithRemoteConfigFastPath(t *testing.T) {
 			},
 		},
 	}
-	data, err := json.Marshal(config)
+	data, err := json.Marshal(&config)
 	require.NoError(t, err)
 
 	internalffe.SetSubscribedForTest(true)
@@ -116,6 +120,7 @@ func TestStartWithRemoteConfigFastPath(t *testing.T) {
 	// Verify SubscribeProvider returns fast path (tracer subscribed)
 	// without touching global remoteconfig state.
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	tracerOwnsSubscription, err := internalffe.SubscribeProvider(provider.rcCallback)
 	require.NoError(t, err)
 	require.True(t, tracerOwnsSubscription, "SubscribeProvider should report tracer subscribed")
@@ -127,4 +132,25 @@ func TestStartWithRemoteConfigFastPath(t *testing.T) {
 	cfg := provider.getConfiguration()
 	require.NotNil(t, cfg, "provider should have config from fast path replay")
 	assert.Contains(t, cfg.Flags, "fast-flag")
+}
+
+func TestStartWithRemoteConfig_ConfiguresAgentEVP(t *testing.T) {
+	t.Setenv(flagEvalCountsEnabledEnvVar, "true")
+	internalffe.ResetForTest()
+	defer internalffe.ResetForTest()
+	internalffe.SetSubscribedForTest(true)
+
+	provider, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+	require.NotNil(t, provider.exposureWriter)
+	require.NotNil(t, provider.flagEvalLoggingWriter)
+	require.Same(t, provider.exposureWriter.evp, provider.flagEvalLoggingWriter.evp)
+
+	evp := provider.exposureWriter.evp
+	assert.True(t, evp.fixedLocalRoute)
+	assert.Equal(t, evpRouteLocal, evp.routeMode)
+	assert.Equal(t, evpProxyV2Path, evp.localBase)
+	assert.Empty(t, evp.apiKey)
+	assert.Nil(t, evp.directURL)
+	assert.Nil(t, evp.directClient)
 }

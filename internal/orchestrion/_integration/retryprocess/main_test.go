@@ -506,6 +506,7 @@ func runOrchestrionRetryProcessDeferredOrdering(m *testing.M) int {
 
 	exitCode := m.Run()
 	if exitCode != 0 {
+		dumpOrchestrionRetryProcessDeferredOrdering(harness)
 		return exitCode
 	}
 	data, err := os.ReadFile(orchestrionRetryProcessEnv(orchestrionRetryProcessDeferredOrderingPathEnv))
@@ -543,6 +544,38 @@ func runOrchestrionRetryProcessDeferredOrdering(m *testing.M) int {
 	}
 	harness.assertRequests("deferred ordering")
 	return 0
+}
+
+// dumpOrchestrionRetryProcessDeferredOrdering prints failure evidence after a
+// non-zero exit code. The controller shows this output only when its
+// subprocess fails, so green runs stay clean. An order file without retry
+// entries means the process retry group never launched. A retry entry recorded
+// before B:first means the deferral guarantee was violated. A span with
+// process retry execution mode means the child ran even without an
+// annotation.
+func dumpOrchestrionRetryProcessDeferredOrdering(harness *orchestrionRetryProcessParentHarness) {
+	fmt.Fprintln(os.Stderr, "deferred ordering fixture diagnostics:")
+	if data, err := os.ReadFile(orchestrionRetryProcessEnv(orchestrionRetryProcessDeferredOrderingPathEnv)); err != nil {
+		fmt.Fprintf(os.Stderr, "  order file: read error: %v\n", err)
+	} else {
+		fmt.Fprintf(os.Stderr, "  order file: %q\n", strings.TrimSpace(string(data)))
+	}
+	fmt.Fprintf(os.Stderr, "  requests: settings=%d known_tests=%d management=%d child=%d unknown=%d\n",
+		harness.settingsRequests.Load(),
+		harness.knownTestsRequests.Load(),
+		harness.managementRequests.Load(),
+		harness.childRequests.Load(),
+		harness.unknownRequests.Load(),
+	)
+	const resourcePrefix = "main_test.go.TestOrchestrionRetryProcessDeferredOrdering"
+	for _, span := range harness.tracer.FinishedSpans() {
+		resource, _ := span.Tag(ext.ResourceName).(string)
+		if resource != resourcePrefix+"A" && resource != resourcePrefix+"B" {
+			continue
+		}
+		executionMode, _ := span.Tag(constants.TestRetryExecutionMode).(string)
+		fmt.Fprintf(os.Stderr, "  span: resource=%s retry_execution_mode=%s\n", resource, executionMode)
+	}
 }
 
 type orchestrionRetryProcessHarnessConfig struct {

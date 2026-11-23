@@ -35,15 +35,23 @@
 // defer here would disable reporting for the most common crash: an
 // unrecovered panic.
 //
-// Start is idempotent: subsequent calls after the first are no-ops. A
-// companion Orchestrion integration (not part of this package) can inject a
-// Start call as the first statement of main using DD_* environment
-// configuration; where that integration is built in, it wins the race to be
-// the first Start call, so a later programmatic Start call with options in
-// main is a no-op and those options are silently dropped — not applied, not
-// merged, and not reported as ignored. Do not rely on programmatic options to
-// control startup in that build; use the DD_* environment configuration the
-// integration reads instead.
+// Start is idempotent: subsequent calls after the first are no-ops.
+//
+// # Orchestrion
+//
+// The Orchestrion integration in this package injects a Start call as the
+// first statement of main, using DD_* environment configuration. It is opt-in:
+// the github.com/DataDog/dd-trace-go/orchestrion/all package does not include
+// it. To enable it, import this package in your orchestrion.tool.go file:
+//
+//	import _ "github.com/DataDog/dd-trace-go/v2/crashtracker" // integration
+//
+// Where the integration is built in, it wins the race to be the first Start
+// call, so a later programmatic Start call with options in main is a no-op and
+// those options are silently dropped — not applied, not merged, and not
+// reported as ignored. Do not rely on programmatic options to control startup
+// in that build; use the DD_* environment configuration the integration reads
+// instead.
 //
 // # Configuration
 //

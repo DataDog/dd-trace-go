@@ -28,16 +28,28 @@ const (
 
 var instr = internal.Instr
 
-func EnrichOperation(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, operation string) {
+// enricher adds the Datadog trace context and the Data Streams checkpoint to Kinesis requests.
+// The zero value injects the trace context.
+type enricher struct {
+	noInject bool
+}
+
+// NewEnricher returns an enricher that writes the trace context into the request only if inject is true.
+// The span tags and the Data Streams checkpoint are recorded either way.
+func NewEnricher(inject bool) *enricher {
+	return &enricher{noInject: !inject}
+}
+
+func (e *enricher) EnrichOperation(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, operation string) {
 	switch operation {
 	case "PutRecord":
-		handlePutRecord(ctx, span, in)
+		e.handlePutRecord(ctx, span, in)
 	case "PutRecords":
-		handlePutRecords(ctx, span, in)
+		e.handlePutRecords(ctx, span, in)
 	}
 }
 
-func handlePutRecord(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
+func (e *enricher) handlePutRecord(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*kinesis.PutRecordInput)
 	if !ok {
 		instr.Logger().Debug("Unable to read PutRecord params")
@@ -49,11 +61,14 @@ func handlePutRecord(ctx context.Context, span *tracer.Span, in middleware.Initi
 		instr.Logger().Debug("Unable to build trace context: %s", err.Error())
 		return
 	}
+	if e.noInject {
+		return
+	}
 
 	params.Data = injectTraceContext(carrier, params.Data, params.PartitionKey)
 }
 
-func handlePutRecords(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
+func (e *enricher) handlePutRecords(ctx context.Context, span *tracer.Span, in middleware.InitializeInput) {
 	params, ok := in.Parameters.(*kinesis.PutRecordsInput)
 	if !ok {
 		instr.Logger().Debug("Unable to read PutRecords params")
@@ -65,6 +80,9 @@ func handlePutRecords(ctx context.Context, span *tracer.Span, in middleware.Init
 		carrier, err := getTraceContext(ctx, span, stream, int64(putRecordsEntrySize(&params.Records[i])))
 		if err != nil {
 			instr.Logger().Debug("Unable to build trace context: %s", err.Error())
+			continue
+		}
+		if e.noInject {
 			continue
 		}
 		params.Records[i].Data = injectTraceContext(carrier, params.Records[i].Data, params.Records[i].PartitionKey)

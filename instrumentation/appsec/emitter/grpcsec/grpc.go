@@ -91,6 +91,9 @@ func StartHandlerOperation(ctx context.Context, span trace.TagSetter, args Handl
 	var block atomic.Pointer[actions.BlockGRPC]
 	dyngo.OnData(op, func(err *actions.BlockGRPC) {
 		block.Store(err)
+		// The gRPC integration always replaces the returned status when it
+		// receives a blocking action.
+		op.ContextOperation.SetRequestBlocked()
 	})
 
 	return dyngo.StartAndRegisterOperation(ctx, op, args), op, &block

@@ -28,8 +28,10 @@
 //   - [contrib/bradfitz/gomemcache/v2]
 //   - [contrib/cloud.google.com/go/pubsub.v1/v2]
 //   - [contrib/cloud.google.com/go/pubsub.v2/v2]
+//   - [contrib/cloudevents/sdk-go.v2/v2]
 //   - [contrib/confluentinc/confluent-kafka-go/kafka.v2/v2]
 //   - [contrib/confluentinc/confluent-kafka-go/kafka/v2]
+//   - [contrib/connectrpc.com/connect/v2]
 //   - [contrib/database/sql/v2]
 //   - [contrib/dimfeld/httptreemux.v5/v2]
 //   - [contrib/elastic/go-elasticsearch.v6/v2]
@@ -71,6 +73,7 @@
 //   - [contrib/modelcontextprotocol/go-sdk/v2]
 //   - [contrib/net/http/v2]
 //   - [contrib/olivere/elastic.v5/v2]
+//   - [contrib/opensearch-project/opensearch-go.v4/v2]
 //   - [contrib/redis/go-redis.v9/v2]
 //   - [contrib/redis/rueidis/v2]
 //   - [contrib/rs/zerolog/v2]
@@ -96,8 +99,10 @@
 // [contrib/bradfitz/gomemcache/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/bradfitz/gomemcache/v2
 // [contrib/cloud.google.com/go/pubsub.v1/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2
 // [contrib/cloud.google.com/go/pubsub.v2/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2
+// [contrib/cloudevents/sdk-go.v2/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/cloudevents/sdk-go.v2/v2
 // [contrib/confluentinc/confluent-kafka-go/kafka.v2/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2
 // [contrib/confluentinc/confluent-kafka-go/kafka/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2
+// [contrib/connectrpc.com/connect/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/connectrpc.com/connect/v2
 // [contrib/database/sql/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/database/sql/v2
 // [contrib/dimfeld/httptreemux.v5/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/dimfeld/httptreemux.v5/v2
 // [contrib/elastic/go-elasticsearch.v6/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2
@@ -139,6 +144,7 @@
 // [contrib/modelcontextprotocol/go-sdk/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/modelcontextprotocol/go-sdk/v2
 // [contrib/net/http/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/net/http/v2
 // [contrib/olivere/elastic.v5/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2
+// [contrib/opensearch-project/opensearch-go.v4/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2
 // [contrib/redis/go-redis.v9/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2
 // [contrib/redis/rueidis/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2
 // [contrib/rs/zerolog/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2

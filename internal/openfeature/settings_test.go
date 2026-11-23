@@ -141,3 +141,9 @@ func TestRemoteConfigSourceSelected(t *testing.T) {
 		assert.False(t, RemoteConfigSourceSelected(cfg))
 	})
 }
+
+func TestSourceString(t *testing.T) {
+	assert.Equal(t, "agentless", SourceAgentless.String())
+	assert.Equal(t, "remote_config", SourceRemoteConfig.String())
+	assert.Equal(t, "disabled", SourceDisabled.String())
+}

@@ -13,6 +13,9 @@ import (
 	"os"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/payload"
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/trace"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -200,4 +203,47 @@ func TestCalculateFipsMode(t *testing.T) {
 // Helper function to create bool pointers
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+// TestInitializeListeners_payloadRunsAfterTrace verifies the payload strip listener is
+// registered after the trace listener. Trace context extraction reads _datadog from the
+// raw payload, so if payload stripping ran first, trace propagation would break.
+func TestInitializeListeners_payloadRunsAfterTrace(t *testing.T) {
+	t.Setenv(DatadogTraceEnabledEnvVar, "false") // avoid starting a real tracer in this test
+
+	listeners := initializeListeners(&Config{})
+	assert.Len(t, listeners, 3)
+
+	_, firstIsTrace := listeners[0].(*trace.Listener)
+	assert.True(t, firstIsTrace, "trace listener must be registered first")
+
+	_, lastIsPayload := listeners[len(listeners)-1].(*payload.Listener)
+	assert.True(t, lastIsPayload, "payload listener must be registered last")
+}
+
+func TestToPayloadConfig(t *testing.T) {
+	tests := []struct {
+		name     string
+		cfg      *Config
+		env      map[string]string
+		expected bool
+	}{
+		{name: "disabled by default", expected: false},
+		{name: "config field", cfg: &Config{StripInjectedContext: true}, expected: true},
+		{name: "new env var", env: map[string]string{StripContextEnabledEnvVar: "true"}, expected: true},
+		{name: "legacy env var", env: map[string]string{StripInjectedContextEnvVar: "true"}, expected: true},
+		{name: "invalid value", env: map[string]string{StripContextEnabledEnvVar: "yes"}, expected: false},
+		{name: "both set, conflicting", env: map[string]string{StripContextEnabledEnvVar: "false", StripInjectedContextEnvVar: "true"}, expected: false},
+		{name: "invalid new value falls back to legacy", env: map[string]string{StripContextEnabledEnvVar: "yes", StripInjectedContextEnvVar: "true"}, expected: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(StripContextEnabledEnvVar, "")
+			t.Setenv(StripInjectedContextEnvVar, "")
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+			assert.Equal(t, tt.expected, tt.cfg.toPayloadConfig().StripInjectedContext)
+		})
+	}
 }

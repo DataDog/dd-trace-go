@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/jackc/pgx/v5
+display_name: pgx v5
+description: Instruments pgx v5 PostgreSQL queries, batches, bulk copies, statement preparation, connections, and pool acquisition,
+  with optional pool metrics and SQL injection monitoring.
+packages:
+- name: github.com/jackc/pgx/v5
+category:
+- db.client
+systems:
+- postgresql
+creation_date: '2024-02-07'

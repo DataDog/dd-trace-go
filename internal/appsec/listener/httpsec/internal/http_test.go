@@ -44,9 +44,11 @@ func TestFeature_headerCollection(t *testing.T) {
 
 	blockingRulesWAFManager, err := config.NewWAFManagerWithStaticRules(config.ObfuscatorConfig{}, blockingRules)
 	require.NoError(t, err)
+	defer blockingRulesWAFManager.Close()
 
 	irrelevantRulesWAFManager, err := config.NewWAFManagerWithStaticRules(config.ObfuscatorConfig{}, irrelevantRules)
 	require.NoError(t, err)
+	defer irrelevantRulesWAFManager.Close()
 
 	requestHeaders := map[string][]string{"X-Forwarded": {"127.0.0.1"}, "X-Forwarded-For": {"4.5.6.7", "9.8.7.6"}}
 	_, clientIP := clientip.Resolve(requestHeaders, true, "1.2.3.4")
@@ -128,6 +130,11 @@ func TestFeature_headerCollection(t *testing.T) {
 			span := mt.StartSpan("test")
 			req, _, _ := emitter.StartOperation(ctx, request, span)
 			assert.Equal(t, tc.ExpectedBlocked, blocked)
+			if blocked {
+				// Stand in for the integration applying the blocking response,
+				// which is what marks the request as blocked.
+				req.ContextOperation.SetRequestBlocked()
+			}
 			req.Finish(response)
 			span.Finish()
 

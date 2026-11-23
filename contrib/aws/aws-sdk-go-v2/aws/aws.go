@@ -9,6 +9,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/eventbridge"
 	"github.com/aws/aws-sdk-go-v2/service/kinesis"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sfn"
 	"github.com/aws/aws-sdk-go-v2/service/sns"
@@ -36,6 +39,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
 const componentName = "aws/aws-sdk-go-v2/aws"
@@ -50,9 +54,7 @@ var tagMapPool = sync.Pool{
 
 type spanTimestampKey struct{}
 
-// AppendMiddleware takes the aws.Config and adds the Datadog tracing middleware into the APIOptions middleware stack.
-// See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
-func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
+func prepConfig(opts ...Option) *config {
 	cfg := &config{}
 
 	defaults(cfg)
@@ -60,16 +62,84 @@ func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
 		opt.apply(cfg)
 	}
 
-	tm := traceMiddleware{cfg: cfg}
-	awsCfg.APIOptions = append(awsCfg.APIOptions, tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware)
+	return cfg
+}
+
+func newTraceMiddleware(cfg *config, autoInstrumented bool) traceMiddleware {
+	return traceMiddleware{
+		cfg:              cfg,
+		sqs:              sqsTracer.NewEnricher(cfg.injectSQS),
+		sns:              snsTracer.NewEnricher(cfg.injectSNS),
+		kinesis:          kinesisTracer.NewEnricher(cfg.injectKinesis),
+		eventBridge:      eventBridgeTracer.NewEnricher(cfg.injectEventBridge),
+		sfn:              sfnTracer.NewEnricher(cfg.injectSFN),
+		autoInstrumented: autoInstrumented,
+	}
+}
+
+func appendMiddleware(cfg *config, apiOptions *[]func(*middleware.Stack) error) {
+	tm := newTraceMiddleware(cfg, false)
+	*apiOptions = append(*apiOptions, tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware)
+}
+
+// AppendMiddleware takes the aws.Config and adds the Datadog tracing middleware into the APIOptions middleware stack.
+// A request that gets the middleware more than once is traced once, with the options of the first AppendMiddleware
+// call.
+//
+// To instrument an aws.Config that isn't directly accessible (e.g. it is built by
+// (github.com/aws/aws-sdk-go-v2/config).LoadDefaultConfig), use
+// (github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws/awsconfig).WithDataDogTracer instead.
+// See https://aws.github.io/aws-sdk-go-v2/docs/middleware for more information.
+func AppendMiddleware(awsCfg *aws.Config, opts ...Option) {
+	appendMiddleware(prepConfig(opts...), &awsCfg.APIOptions)
+}
+
+// APIOptionsWithTracing returns a copy of apiOptions with the Datadog tracing
+// middleware added, with the default options. It is meant for compile-time
+// instrumentation (Orchestrion and otelc), which calls it for every aws.Config
+// the application builds and for the API options config.LoadDefaultConfig reads
+// from its options. Applications should use AppendMiddleware or
+// awsconfig.WithDataDogTracer instead.
+//
+// When the application also adds the middleware with AppendMiddleware or
+// awsconfig.WithDataDogTracer, before or after this call, each request is
+// traced once, with the options passed there.
+func APIOptionsWithTracing(apiOptions []func(*middleware.Stack) error) []func(*middleware.Stack) error {
+	tm := newTraceMiddleware(prepConfig(), true)
+	return append(slices.Clip(apiOptions), tm.initTraceMiddleware, tm.startTraceMiddleware, tm.deserializeTraceMiddleware)
+}
+
+// enricher adds the Datadog trace context and the Data Streams checkpoint to the request of one AWS service.
+type enricher interface {
+	EnrichOperation(ctx context.Context, span *tracer.Span, in middleware.InitializeInput, operation string)
 }
 
 type traceMiddleware struct {
-	cfg *config
+	cfg         *config
+	sqs         *sqsTracer.Enricher
+	sns         enricher
+	kinesis     enricher
+	eventBridge enricher
+	sfn         enricher
+	// autoInstrumented is set for the middleware that compile-time
+	// instrumentation adds through APIOptionsWithTracing. A middleware the
+	// application adds replaces it.
+	autoInstrumented bool
 }
 
+const (
+	initTraceMiddlewareID        = "InitTraceMiddleware"
+	startTraceMiddlewareID       = "StartTraceMiddleware"
+	deserializeTraceMiddlewareID = "DeserializeTraceMiddleware"
+)
+
 func (mw *traceMiddleware) initTraceMiddleware(stack *middleware.Stack) error {
-	return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("InitTraceMiddleware", func(
+	if existing, ok := stack.Initialize.Get(initTraceMiddlewareID); ok {
+		if _, ours := existing.(*initMiddleware); ours {
+			return nil
+		}
+	}
+	return stack.Initialize.Add(&initMiddleware{middleware.InitializeMiddlewareFunc(initTraceMiddlewareID, func(
 		ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
 	) (
 		out middleware.InitializeOutput, metadata middleware.Metadata, err error,
@@ -77,11 +147,22 @@ func (mw *traceMiddleware) initTraceMiddleware(stack *middleware.Stack) error {
 		// Bind the timestamp to the context so that we can use it when we have enough information to start the trace.
 		ctx = context.WithValue(ctx, spanTimestampKey{}, time.Now())
 		return next.HandleInitialize(ctx, in)
-	}), middleware.Before)
+	})}, middleware.Before)
+}
+
+// initMiddleware and deserializeMiddleware mark the middleware this package
+// adds, so a stack that already has one of ours skips adding it again, while a
+// foreign middleware with the same ID still fails to add.
+type initMiddleware struct {
+	middleware.InitializeMiddleware
+}
+
+type deserializeMiddleware struct {
+	middleware.DeserializeMiddleware
 }
 
 func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
-	return stack.Initialize.Add(middleware.InitializeMiddlewareFunc("StartTraceMiddleware", func(
+	return mw.addStart(stack, func(
 		ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler,
 	) (
 		out middleware.InitializeOutput, metadata middleware.Metadata, err error,
@@ -131,15 +212,15 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		// Inject trace context
 		switch serviceID {
 		case "SQS":
-			sqsTracer.EnrichOperation(spanctx, span, in, operation)
+			in = mw.sqs.EnrichOperation(spanctx, span, in, operation)
 		case "SNS":
-			snsTracer.EnrichOperation(spanctx, span, in, operation)
+			mw.sns.EnrichOperation(spanctx, span, in, operation)
 		case "Kinesis":
-			kinesisTracer.EnrichOperation(spanctx, span, in, operation)
+			mw.kinesis.EnrichOperation(spanctx, span, in, operation)
 		case "EventBridge":
-			eventBridgeTracer.EnrichOperation(spanctx, span, in, operation)
+			mw.eventBridge.EnrichOperation(spanctx, span, in, operation)
 		case "SFN":
-			sfnTracer.EnrichOperation(span, in, operation)
+			mw.sfn.EnrichOperation(spanctx, span, in, operation)
 		case "DynamoDB":
 			spanctx = spanpointers.SetDynamoDbParamsOnContext(spanctx, in.Parameters)
 		}
@@ -152,7 +233,39 @@ func (mw *traceMiddleware) startTraceMiddleware(stack *middleware.Stack) error {
 		span.Finish()
 
 		return out, metadata, err
-	}), middleware.After)
+	})
+}
+
+type initializeFunc = func(context.Context, middleware.InitializeInput, middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error)
+
+// startMiddleware is the middleware that starts the span. It records who added
+// it, so a stack that gets the middleware twice can keep the right one.
+type startMiddleware struct {
+	fn               initializeFunc
+	autoInstrumented bool
+}
+
+func (*startMiddleware) ID() string { return startTraceMiddlewareID }
+
+func (m *startMiddleware) HandleInitialize(ctx context.Context, in middleware.InitializeInput, next middleware.InitializeHandler) (middleware.InitializeOutput, middleware.Metadata, error) {
+	return m.fn(ctx, in, next)
+}
+
+// addStart adds the middleware that starts the span, unless the stack already
+// has one. One added by AppendMiddleware replaces one added by
+// APIOptionsWithTracing, so the options the application passed win.
+func (mw *traceMiddleware) addStart(stack *middleware.Stack, fn initializeFunc) error {
+	start := &startMiddleware{fn: fn, autoInstrumented: mw.autoInstrumented}
+	if existing, ok := stack.Initialize.Get(startTraceMiddlewareID); ok {
+		if prev, ours := existing.(*startMiddleware); ours {
+			if prev.autoInstrumented && !start.autoInstrumented {
+				_, err := stack.Initialize.Swap(startTraceMiddlewareID, start)
+				return err
+			}
+			return nil
+		}
+	}
+	return stack.Initialize.Add(start, middleware.After)
 }
 
 func awsPartition(region string) string {
@@ -178,20 +291,29 @@ func resourceTagsFromParams(requestInput middleware.InitializeInput, awsService 
 			queueName, arn := extractSQSMetadata(url, region, partition)
 			tags[ext.SQSQueueName] = queueName
 			tags[ext.CloudResourceID] = arn
+			tags[ext.SQSQueueURL] = url
 		}
 	case "S3":
 		tags[ext.S3BucketName] = bucketName(requestInput)
 	case "SNS":
 		k, v := destinationTagValue(requestInput)
 		tags[k] = v
+		tags[ext.SNSTopicARN] = topicARN(requestInput)
 	case "DynamoDB":
-		tags[ext.DynamoDBTableName] = tableName(requestInput)
+		name := tableName(requestInput)
+		tags[ext.DynamoDBTableName] = name
+		tags[ext.DynamoDBTableARN] = dynamoDBTableARN(name)
+	case "Lambda":
+		tags[ext.LambdaFunctionARN] = lambdaFunctionARN(functionName(requestInput))
 	case "Kinesis":
-		tags[ext.KinesisStreamName] = streamName(requestInput)
+		name, arn := streamIdentifiers(requestInput)
+		tags[ext.KinesisStreamName] = coalesceNameOrArnResource(name, arn)
+		tags[ext.KinesisStreamARN] = aws.ToString(arn)
 	case "EventBridge":
 		tags[ext.EventBridgeRuleName] = ruleName(requestInput)
 	case "SFN":
 		tags[ext.SFNStateMachineName] = stateMachineName(requestInput)
+		tags[ext.SFNStateMachineARN] = stateMachineARN(requestInput)
 	default:
 		tagMapPool.Put(tags)
 		return nil, false
@@ -203,15 +325,25 @@ func resourceTagsFromParams(requestInput middleware.InitializeInput, awsService 
 func queueURL(requestInput middleware.InitializeInput) string {
 	switch params := requestInput.Parameters.(type) {
 	case *sqs.SendMessageInput:
-		return *params.QueueUrl
+		return aws.ToString(params.QueueUrl)
 	case *sqs.DeleteMessageInput:
-		return *params.QueueUrl
+		return aws.ToString(params.QueueUrl)
 	case *sqs.DeleteMessageBatchInput:
-		return *params.QueueUrl
+		return aws.ToString(params.QueueUrl)
 	case *sqs.ReceiveMessageInput:
-		return *params.QueueUrl
+		return aws.ToString(params.QueueUrl)
 	case *sqs.SendMessageBatchInput:
-		return *params.QueueUrl
+		return aws.ToString(params.QueueUrl)
+	case *sqs.ChangeMessageVisibilityInput:
+		return aws.ToString(params.QueueUrl)
+	case *sqs.ChangeMessageVisibilityBatchInput:
+		return aws.ToString(params.QueueUrl)
+	case *sqs.GetQueueAttributesInput:
+		return aws.ToString(params.QueueUrl)
+	case *sqs.PurgeQueueInput:
+		return aws.ToString(params.QueueUrl)
+	case *sqs.SetQueueAttributesInput:
+		return aws.ToString(params.QueueUrl)
 	}
 	return ""
 }
@@ -267,71 +399,144 @@ func destinationTagValue(requestInput middleware.InitializeInput) (tag string, v
 		default:
 			return "destination", "empty"
 		}
-	case *sns.PublishBatchInput:
-		s = *params.TopicArn
-	case *sns.GetTopicAttributesInput:
-		s = *params.TopicArn
-	case *sns.ListSubscriptionsByTopicInput:
-		s = *params.TopicArn
-	case *sns.RemovePermissionInput:
-		s = *params.TopicArn
-	case *sns.SetTopicAttributesInput:
-		s = *params.TopicArn
-	case *sns.SubscribeInput:
-		s = *params.TopicArn
 	case *sns.CreateTopicInput:
-		return tag, *params.Name
+		return tag, aws.ToString(params.Name)
+	default:
+		s = topicARN(requestInput)
 	}
 	parts := strings.Split(s, ":")
 	return tag, parts[len(parts)-1]
 }
 
+// topicARN returns the TopicArn of an SNS request, or the empty string if the
+// request does not carry one. TargetArn is not a topic ARN and is not returned.
+func topicARN(requestInput middleware.InitializeInput) string {
+	switch params := requestInput.Parameters.(type) {
+	case *sns.PublishInput:
+		return aws.ToString(params.TopicArn)
+	case *sns.PublishBatchInput:
+		return aws.ToString(params.TopicArn)
+	case *sns.GetTopicAttributesInput:
+		return aws.ToString(params.TopicArn)
+	case *sns.ListSubscriptionsByTopicInput:
+		return aws.ToString(params.TopicArn)
+	case *sns.RemovePermissionInput:
+		return aws.ToString(params.TopicArn)
+	case *sns.SetTopicAttributesInput:
+		return aws.ToString(params.TopicArn)
+	case *sns.SubscribeInput:
+		return aws.ToString(params.TopicArn)
+	}
+	return ""
+}
+
 func tableName(requestInput middleware.InitializeInput) string {
 	switch params := requestInput.Parameters.(type) {
 	case *dynamodb.GetItemInput:
-		return *params.TableName
+		return aws.ToString(params.TableName)
 	case *dynamodb.PutItemInput:
-		return *params.TableName
+		return aws.ToString(params.TableName)
 	case *dynamodb.QueryInput:
-		return *params.TableName
+		return aws.ToString(params.TableName)
 	case *dynamodb.ScanInput:
-		return *params.TableName
+		return aws.ToString(params.TableName)
 	case *dynamodb.UpdateItemInput:
-		return *params.TableName
+		return aws.ToString(params.TableName)
 	case *dynamodb.DeleteItemInput:
-		return *params.TableName
+		return aws.ToString(params.TableName)
+	}
+	return ""
+}
+
+// dynamoDBTableARN returns tableName if it is a DynamoDB table ARN,
+// arn:<partition>:dynamodb:<region>:<account>:table/<name>, and "" otherwise.
+func dynamoDBTableARN(tableName string) string {
+	parts := strings.SplitN(tableName, ":", 6)
+	if len(parts) != 6 || parts[0] != "arn" || parts[1] == "" || parts[2] != "dynamodb" ||
+		parts[3] == "" || parts[4] == "" {
+		return ""
+	}
+	name, ok := strings.CutPrefix(parts[5], "table/")
+	if !ok || name == "" || strings.Contains(name, "/") {
+		return ""
+	}
+	return tableName
+}
+
+// lambdaFunctionARN returns functionName if it is a full function ARN, and ""
+// otherwise. Like dd-trace-java, it is tagged as sent, including a version or
+// alias qualifier, and a partial ARN (account:function:name) or a name is
+// not, because its partition and region are unknown.
+func lambdaFunctionARN(functionName string) string {
+	if strings.HasPrefix(functionName, "arn:") {
+		return functionName
+	}
+	return ""
+}
+
+// functionName returns the FunctionName of a Lambda request, which can be a
+// name, a partial ARN or a full ARN, or "" if the request has none.
+func functionName(requestInput middleware.InitializeInput) string {
+	switch params := requestInput.Parameters.(type) {
+	case *lambda.InvokeInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.InvokeAsyncInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.InvokeWithResponseStreamInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.GetFunctionInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.GetFunctionConfigurationInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.DeleteFunctionInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.UpdateFunctionCodeInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.UpdateFunctionConfigurationInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.PublishVersionInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.AddPermissionInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.RemovePermissionInput:
+		return aws.ToString(params.FunctionName)
+	case *lambda.GetPolicyInput:
+		return aws.ToString(params.FunctionName)
 	}
 	return ""
 }
 
 func streamName(requestInput middleware.InitializeInput) string {
+	return coalesceNameOrArnResource(streamIdentifiers(requestInput))
+}
+
+// streamIdentifiers returns the StreamName and StreamARN of a Kinesis request.
+// Either may be nil: a request can identify a stream by name, by ARN or both.
+func streamIdentifiers(requestInput middleware.InitializeInput) (name *string, arn *string) {
 	switch params := requestInput.Parameters.(type) {
 	case *kinesis.PutRecordInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return params.StreamName, params.StreamARN
 	case *kinesis.PutRecordsInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return params.StreamName, params.StreamARN
 	case *kinesis.AddTagsToStreamInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return params.StreamName, params.StreamARN
 	case *kinesis.RemoveTagsFromStreamInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return params.StreamName, params.StreamARN
 	case *kinesis.CreateStreamInput:
-		if params.StreamName != nil {
-			return *params.StreamName
-		}
+		// CreateStreamInput has no StreamARN: the stream does not exist yet.
+		return params.StreamName, nil
 	case *kinesis.DeleteStreamInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return params.StreamName, params.StreamARN
 	case *kinesis.DescribeStreamInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return params.StreamName, params.StreamARN
 	case *kinesis.DescribeStreamSummaryInput:
-		return coalesceNameOrArnResource(params.StreamName, params.StreamARN)
+		return params.StreamName, params.StreamARN
+	case *kinesis.GetShardIteratorInput:
+		return params.StreamName, params.StreamARN
 	case *kinesis.GetRecordsInput:
-		if params.StreamARN != nil {
-			streamArnValue := *params.StreamARN
-			parts := strings.Split(streamArnValue, "/")
-			return parts[len(parts)-1]
-		}
+		return nil, params.StreamARN
 	}
-	return ""
+	return nil, nil
 }
 
 func ruleName(requestInput middleware.InitializeInput) string {
@@ -359,11 +564,7 @@ func stateMachineName(requestInput middleware.InitializeInput) string {
 
 	switch params := requestInput.Parameters.(type) {
 	case *sfn.CreateStateMachineInput:
-		return *params.Name
-	case *sfn.DescribeStateMachineInput:
-		stateMachineArn = *params.StateMachineArn
-	case *sfn.StartExecutionInput:
-		stateMachineArn = *params.StateMachineArn
+		return aws.ToString(params.Name)
 	case *sfn.StopExecutionInput:
 		if params.ExecutionArn != nil {
 			executionArnValue := *params.ExecutionArn
@@ -376,19 +577,40 @@ func stateMachineName(requestInput middleware.InitializeInput) string {
 			parts := strings.Split(executionArnValue, ":")
 			return parts[len(parts)-2]
 		}
-	case *sfn.ListExecutionsInput:
-		stateMachineArn = *params.StateMachineArn
-	case *sfn.UpdateStateMachineInput:
-		stateMachineArn = *params.StateMachineArn
-	case *sfn.DeleteStateMachineInput:
-		stateMachineArn = *params.StateMachineArn
+	default:
+		stateMachineArn = stateMachineARN(requestInput)
 	}
 	parts := strings.Split(stateMachineArn, ":")
 	return parts[len(parts)-1]
 }
 
+// stateMachineARN returns the StateMachineArn of a Step Functions request, or
+// the empty string if the request does not carry one.
+func stateMachineARN(requestInput middleware.InitializeInput) string {
+	switch params := requestInput.Parameters.(type) {
+	case *sfn.DescribeStateMachineInput:
+		return aws.ToString(params.StateMachineArn)
+	case *sfn.StartExecutionInput:
+		return aws.ToString(params.StateMachineArn)
+	case *sfn.StartSyncExecutionInput:
+		return aws.ToString(params.StateMachineArn)
+	case *sfn.ListExecutionsInput:
+		return aws.ToString(params.StateMachineArn)
+	case *sfn.UpdateStateMachineInput:
+		return aws.ToString(params.StateMachineArn)
+	case *sfn.DeleteStateMachineInput:
+		return aws.ToString(params.StateMachineArn)
+	}
+	return ""
+}
+
 func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) error {
-	return stack.Deserialize.Add(middleware.DeserializeMiddlewareFunc("DeserializeTraceMiddleware", func(
+	if existing, ok := stack.Deserialize.Get(deserializeTraceMiddlewareID); ok {
+		if _, ours := existing.(*deserializeMiddleware); ours {
+			return nil
+		}
+	}
+	return stack.Deserialize.Add(&deserializeMiddleware{middleware.DeserializeMiddlewareFunc(deserializeTraceMiddlewareID, func(
 		ctx context.Context, in middleware.DeserializeInput, next middleware.DeserializeHandler,
 	) (
 		out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
@@ -400,6 +622,9 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 			// Make a copy of the URL so we don't modify the outgoing request
 			url := *req.URL
 			url.User = nil // Do not include userinfo in the HTTPURL tag.
+			// Obfuscate the query string (for example, a presigned URL signature),
+			// or remove it when it must not be reported.
+			redactURLQuery(&url)
 			span.SetTag(ext.HTTPMethod, req.Method)
 			span.SetTag(ext.HTTPURL, url.String())
 			span.SetTag(ext.AWSAgent, req.Header.Get("User-Agent"))
@@ -422,7 +647,7 @@ func (mw *traceMiddleware) deserializeTraceMiddleware(stack *middleware.Stack) e
 		spanpointers.AddSpanPointers(ctx, in, out, span)
 
 		return out, metadata, err
-	}), middleware.Before)
+	})}, middleware.Before)
 }
 
 func spanName(awsService, awsOperation string) string {
@@ -455,4 +680,30 @@ func coalesceNameOrArnResource(name *string, arnVal *string) string {
 	}
 
 	return ""
+}
+
+// redactURLQuery obfuscates the query string of u for the http.url tag (for
+// example, a presigned URL signature), or removes it when it must not be
+// reported. u must be a copy of the request URL. An opaque URL can also
+// contain user information and a query string: the user information is
+// removed, and the query string is moved to RawQuery before the obfuscation.
+func redactURLQuery(u *url.URL) {
+	if rest, ok := strings.CutPrefix(u.Opaque, "//"); ok {
+		authority, path := rest, ""
+		if i := strings.IndexAny(rest, "/?#"); i >= 0 {
+			authority, path = rest[:i], rest[i:]
+		}
+		if i := strings.LastIndexByte(authority, '@'); i >= 0 {
+			u.Opaque = "//" + authority[i+1:] + path
+		}
+	}
+	if opaque, query, ok := strings.Cut(u.Opaque, "?"); ok {
+		u.Opaque = opaque
+		if u.RawQuery != "" {
+			query += "&" + u.RawQuery
+		}
+		u.RawQuery = query
+	}
+	u.RawQuery = httptrace.ObfuscateQueryString(u.RawQuery, httptrace.ForClientSpan())
+	u.ForceQuery = false
 }

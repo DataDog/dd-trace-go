@@ -1,0 +1,3 @@
+# One-pipeline template include for the shared config-registry jobs.
+include:
+  - remote: https://gitlab-templates.ddbuild.io/libdatadog/include/versions/1.16.0/one-pipeline.yml

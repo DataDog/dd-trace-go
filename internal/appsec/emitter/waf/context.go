@@ -33,7 +33,8 @@ type (
 		// context is an atomic pointer to the current WAF context.
 		// Makes sure the calls to context.Run are safe.
 		context atomic.Pointer[libddwaf.Context]
-		// limiter comes from the WAF feature and is used to limit the number of events as a whole.
+		// limiter comes from the WAF feature and is used to limit the number of WAF keep requests as a whole.
+		// It never limits the events: only [ContextOperation.allowKeep] calls it.
 		limiter limiter.Limiter
 		// events is where we store WAF events received from the WAF over the course of the request.
 		events []any
@@ -47,11 +48,20 @@ type (
 		stackTrace config.StackTraceConfig
 		// metrics the place that manages reporting for the current execution
 		metrics *ContextMetrics
+		// blockingUnavailable is true when the active integration cannot enforce blocks.
+		blockingUnavailable atomic.Bool
 		// requestBlocked is used to track if the request has been requestBlocked by the WAF or not.
 		requestBlocked bool
+		// wafKeepAdmitted is true when the limiter admitted 1 WAF keep request for this context.
+		// It does not tell the current sampling priority. Another source can keep the trace, and user
+		// code can drop it later (ext.ManualDrop).
+		// Only [ContextOperation.allowKeep] sets it, and only while it holds mu. It is atomic so that
+		// the common case (a request that is already admitted) reads it without taking mu.
+		wafKeepAdmitted atomic.Bool
 		// mu protects the events, stacks, and derivatives, supportedAddresses, eventRulesetVersion slices, and requestBlocked.
+		// It also serializes the limiter call and the admission in [ContextOperation.allowKeep].
 		mu sync.Mutex
-		// logOnce is used to log a warning once when a request has too many WAF events via the built-in limiter or the max value.
+		// logOnce is used to log a warning once when a request reaches the per-request cap of 10 stored events.
 		logOnce sync.Once
 	}
 
@@ -72,11 +82,24 @@ type (
 func (ContextArgs) IsArgOf(*ContextOperation)   {}
 func (ContextRes) IsResultOf(*ContextOperation) {}
 
+// The WAF emits API Security response schema derivatives under this tag prefix.
+const responseSchemaDerivativePrefix = "_dd.appsec.s.res."
+
+type blockingUnavailableContextKey struct{}
+
+// ContextWithBlockingUnavailable marks ctx as belonging to an integration that cannot enforce blocks.
+func ContextWithBlockingUnavailable(ctx context.Context) context.Context {
+	return context.WithValue(ctx, blockingUnavailableContextKey{}, true)
+}
+
 func StartContextOperation(ctx context.Context, span trace.TagSetter) (*ContextOperation, context.Context) {
 	entrySpanOp, ctx := trace.StartServiceEntrySpanOperation(ctx, span)
 	op := &ContextOperation{
 		Operation:                 dyngo.NewOperation(entrySpanOp),
 		ServiceEntrySpanOperation: entrySpanOp,
+	}
+	if unavailable, _ := ctx.Value(blockingUnavailableContextKey{}).(bool); unavailable {
+		op.blockingUnavailable.Store(true)
 	}
 	return op, dyngo.StartAndRegisterOperation(ctx, op, ContextArgs{})
 }
@@ -123,36 +146,69 @@ func (op *ContextOperation) GetMetricsInstance() *ContextMetrics {
 	return op.metrics
 }
 
-func (op *ContextOperation) SetRequestBlocked() {
-	op.mu.Lock()
-	defer op.mu.Unlock()
-	op.requestBlocked = true
+// SetBlockingUnavailable records that the active integration cannot enforce blocks.
+func (op *ContextOperation) SetBlockingUnavailable() {
+	op.blockingUnavailable.Store(true)
 }
 
-// AddEvents adds WAF events to the operation and returns true if the operation has reached the maximum number of events, by the limiter or the max value.
-func (op *ContextOperation) AddEvents(events ...any) bool {
+// BlockingUnavailable reports whether the active integration can enforce blocks.
+func (op *ContextOperation) BlockingUnavailable() bool {
+	return op.blockingUnavailable.Load()
+}
+
+func (op *ContextOperation) SetRequestBlocked() {
+	op.mu.Lock()
+	op.requestBlocked = true
+	op.mu.Unlock()
+	op.SetTag("appsec.blocked", true)
+}
+
+// maxWAFEventsPerRequest is the number of stored events after which a request accepts no new batch.
+const maxWAFEventsPerRequest = 10
+
+// AddEvents stores WAF events on the operation. It accepts no new batch once the request has 10 stored
+// events. It never calls the limiter.
+func (op *ContextOperation) AddEvents(events ...any) {
 	if len(events) == 0 {
-		return false
+		return
 	}
 
-	if !op.limiter.Allow() {
-		log.Error("appsec: too many WAF events, stopping further reporting")
+	op.mu.Lock()
+	capReached := len(op.events) >= maxWAFEventsPerRequest
+	if !capReached {
+		op.events = append(op.events, events...)
+	}
+	op.mu.Unlock()
+
+	if capReached {
+		op.logOnce.Do(func() {
+			log.Warn("appsec: ignoring new WAF event due to the maximum number of security events per request was reached") //errtrack:ignore expected per-request capacity limit
+		})
+	}
+}
+
+// allowKeep tells if the trace can be force-kept for a WAF or RASP result with keep=true.
+// While the request has no WAF keep admission, it calls the limiter 1 time and records a success.
+// After the first success, it returns true and does not call the limiter again.
+// An admitted request returns from a lock-free read of the flag. Otherwise, the flag check, the
+// limiter call and the flag set are in one op.mu section, so concurrent runs of the same request
+// make only 1 limiter call as long as the limiter allows.
+func (op *ContextOperation) allowKeep() bool {
+	if op.wafKeepAdmitted.Load() {
 		return true
 	}
 
 	op.mu.Lock()
 	defer op.mu.Unlock()
 
-	const maxWAFEventsPerRequest = 10
-	if len(op.events) >= maxWAFEventsPerRequest {
-		op.logOnce.Do(func() {
-			log.Warn("appsec: ignoring new WAF event due to the maximum number of security events per request was reached")
-		})
+	if op.wafKeepAdmitted.Load() {
 		return true
 	}
-
-	op.events = append(op.events, events...)
-	return false
+	if !op.limiter.Allow() {
+		return false
+	}
+	op.wafKeepAdmitted.Store(true)
+	return true
 }
 
 func (op *ContextOperation) AddStackTraces(stacks ...*stacktrace.Event) {
@@ -177,11 +233,6 @@ func (op *ContextOperation) AbsorbDerivatives(derivatives map[string]any) {
 	}
 
 	for k, v := range derivatives {
-		// If the request has been blocked, we don't want to report any derivatives representing the response schema.
-		if op.requestBlocked && strings.HasPrefix(k, "_dd.appsec.s.res.") {
-			continue
-		}
-
 		// First-write-wins, intentionally: ephemeral subcontexts (e.g. per-hop downstream
 		// evaluation of a redirect chain) don't share the WAF's in-context attribute dedup, so
 		// without this guard the last hop would overwrite the first. Keeping the first value makes
@@ -197,7 +248,15 @@ func (op *ContextOperation) AbsorbDerivatives(derivatives map[string]any) {
 func (op *ContextOperation) Derivatives() map[string]any {
 	op.mu.Lock()
 	defer op.mu.Unlock()
-	return maps.Clone(op.derivatives)
+	derivatives := maps.Clone(op.derivatives)
+	if op.requestBlocked {
+		// Blocking responses contain a fixed SDK payload, not application data.
+		// Filter at read time because a block can happen after schema collection.
+		maps.DeleteFunc(derivatives, func(key string, _ any) bool {
+			return strings.HasPrefix(key, responseSchemaDerivativePrefix)
+		})
+	}
+	return derivatives
 }
 
 func (op *ContextOperation) Events() []any {

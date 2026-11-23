@@ -27,3 +27,7 @@ func TestCoversOtherLib(t *testing.T) {
 func TestRunsNormally(t *testing.T) {
 	t.Log("normal test")
 }
+
+func TestProductionHelperSubtestModule(t *testing.T) {
+	lib.RunSubtest(t)
+}

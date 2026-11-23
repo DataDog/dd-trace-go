@@ -50,8 +50,9 @@ func tracingMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 
 func traceToolCallRequest(next mcp.MethodHandler, ctx context.Context, method string, req *mcp.CallToolRequest) (mcp.Result, error) {
 	toolSpan, ctx := llmobs.StartToolSpan(ctx, req.Params.Name, llmobs.WithIntegration(string(instrumentation.PackageModelContextProtocolGoSDK)))
+	annotateTags(toolSpan, toolCallClientInfoTags(req))
 
-	var result *mcp.CallToolResult
+	var res mcp.Result
 	var err error
 
 	defer func() {
@@ -61,12 +62,11 @@ func traceToolCallRequest(next mcp.MethodHandler, ctx context.Context, method st
 			instrmcp.MCPToolKindTag: "server",
 			instrmcp.MCPMethodTag:   method,
 		}))
-		finishSpanWithIO(toolSpan, method, req, result, err)
+		finishSpanWithIO(toolSpan, method, req, res, err)
 	}()
 
-	res, err := next(ctx, method, req)
-	result, ok := res.(*mcp.CallToolResult)
-	if !ok {
+	res, err = next(ctx, method, req)
+	if _, ok := res.(*mcp.CallToolResult); !ok {
 		instr.Logger().Warn("go-sdk: unexpected result type: %T", res)
 	}
 
@@ -78,13 +78,15 @@ func traceInitializeRequest(next mcp.MethodHandler, ctx context.Context, method 
 
 	// Extract client info from params if available
 	if params := req.GetParams(); params != nil {
-		if initParams, ok := params.(*mcp.InitializeParams); ok {
+		if initParams, ok := params.(*mcp.InitializeParams); ok && initParams != nil && initParams.ClientInfo != nil {
 			clientName := initParams.ClientInfo.Name
 			clientVersion := initParams.ClientInfo.Version
 			taskSpan.Annotate(llmobs.WithAnnotatedTags(map[string]string{
 				instrmcp.MCPClientNameTag:    clientName,
 				instrmcp.MCPClientVersionTag: clientName + "_" + clientVersion,
 			}))
+			info := initParams.ClientInfo
+			annotateTags(taskSpan, instrmcp.ClientInfoTags(info.Name, info.Title, info.Version))
 		}
 	}
 
@@ -101,6 +103,29 @@ func traceInitializeRequest(next mcp.MethodHandler, ctx context.Context, method 
 
 	res, err = next(ctx, method, req)
 	return res, err
+}
+
+// toolCallClientInfoTags reads the client's identity from the request's _meta
+// (2026-07-28 protocol), falling back to the session's initialize handshake.
+func toolCallClientInfoTags(req *mcp.CallToolRequest) map[string]string {
+	if req.Params != nil {
+		if tags := instrmcp.ClientInfoTagsFromValue(req.Params.Meta[instrmcp.MetaKeyClientInfo]); len(tags) > 0 {
+			return tags
+		}
+	}
+	if req.Session == nil {
+		return nil
+	}
+	if params := req.Session.InitializeParams(); params != nil && params.ClientInfo != nil {
+		return instrmcp.ClientInfoTags(params.ClientInfo.Name, params.ClientInfo.Title, params.ClientInfo.Version)
+	}
+	return nil
+}
+
+func annotateTags(span llmobs.Span, tags map[string]string) {
+	if len(tags) > 0 {
+		span.Annotate(llmobs.WithAnnotatedTags(tags))
+	}
 }
 
 func tagWithSessionID(req mcp.Request, span llmobs.Span) {
@@ -152,10 +177,19 @@ func finishSpanWithIO[S textIOSpan](span S, method string, req mcp.Request, outp
 
 	if err != nil {
 		span.Finish(llmobs.WithError(err))
-	} else if toolResult, ok := output.(*mcp.CallToolResult); ok && toolResult.IsError {
-		// Use generic error message since details are already in the output field
-		span.Finish(llmobs.WithError(errors.New("tool resulted in an error")))
+	} else if toolResult, ok := output.(*mcp.CallToolResult); ok && toolResult != nil && toolResult.IsError {
+		span.Finish(llmobs.WithError(toolResultError(toolResult)))
 	} else {
 		span.Finish()
 	}
+}
+
+// toolResultError uses the result's first text content as the error message.
+func toolResultError(result *mcp.CallToolResult) error {
+	for _, c := range result.Content {
+		if tc, ok := c.(*mcp.TextContent); ok && tc != nil && tc.Text != "" {
+			return errors.New(tc.Text)
+		}
+	}
+	return errors.New("tool resulted in an error")
 }

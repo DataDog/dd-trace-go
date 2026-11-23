@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 )
 
 // assertContentLength verifies that the Content-Length header is present and
@@ -24,6 +26,42 @@ func assertContentLength(t *testing.T, recorder *httptest.ResponseRecorder) {
 	expected := strconv.Itoa(recorder.Body.Len())
 	if cl != expected {
 		t.Errorf("Content-Length mismatch: header=%q, body length=%q", cl, expected)
+	}
+}
+
+func TestSendActionEventsBlockOutcome(t *testing.T) {
+	op := dyngo.NewRootOperation()
+	var action *BlockHTTP
+	dyngo.OnData(op, func(got *BlockHTTP) { action = got })
+
+	if blocked := SendActionEvents(op, map[string]any{
+		"block_request": map[string]any{"status_code": uint64(http.StatusForbidden)},
+	}); !blocked {
+		t.Fatal("valid block action did not request interruption")
+	}
+	if action == nil || action.Handler == nil {
+		t.Fatal("block_request did not emit BlockHTTP")
+	}
+
+	// An action that cannot be built must not claim it can interrupt the request,
+	// so the caller can report the block as failed.
+	if blocked := SendActionEvents(op, map[string]any{
+		"block_request": map[string]any{"status_code": "invalid"},
+	}); blocked {
+		t.Fatal("invalid block action reported that it could interrupt the request")
+	}
+
+	action = nil
+	if blocked := SendActionEvents(op, map[string]any{
+		"redirect_request": map[string]any{
+			"status_code": uint64(http.StatusFound),
+			"location":    "/redirected",
+		},
+	}); blocked {
+		t.Fatal("redirect_request must not be reported as a block")
+	}
+	if action == nil || action.Handler == nil {
+		t.Fatal("redirect_request did not emit BlockHTTP")
 	}
 }
 

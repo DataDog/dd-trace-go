@@ -34,6 +34,11 @@ const (
 	MinIdleConns            = tracerPrefix + "pgx.pool.connections.min_idle_conns"
 	HealthCheckPeriod       = tracerPrefix + "pgx.pool.connections.health_check_period"
 	EmptyAcquireWaitTime    = tracerPrefix + "pgx.pool.connections.empty_acquire_wait_time"
+
+	// ConnectionUseTime is how long the caller holds a pooled connection, from acquire to
+	// release. pgxpool.Stat does not report use time, so TraceRelease measures it directly.
+	// The name follows the OpenTelemetry metric db.client.connection.use_time.
+	ConnectionUseTime = tracerPrefix + "pgx.pool.connections.use_time"
 )
 
 var interval = 10 * time.Second

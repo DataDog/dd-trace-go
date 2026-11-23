@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/gocql/gocql
+display_name: gocql
+description: Instruments Cassandra queries, result scanning, batch execution, and connection attempts through gocql, capturing
+  operation timing, errors, and database metadata.
+packages:
+- name: github.com/gocql/gocql
+category:
+- db.client
+systems:
+- cassandra
+creation_date: '2017-05-24'

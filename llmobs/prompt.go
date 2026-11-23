@@ -1,0 +1,321 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
+
+package llmobs
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"maps"
+	"reflect"
+	"regexp"
+	"slices"
+	"strings"
+
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+)
+
+// ErrPromptAuth is returned when HTTP retrieval requires DD_API_KEY and none is configured.
+var ErrPromptAuth = errors.New("llmobs: DD_API_KEY is required for prompt operations")
+
+// ChatMessage is an authored text message.
+type ChatMessage = illmobs.ChatMessage
+
+// MessagePlaceholder inserts a named list of runtime messages into a template.
+type MessagePlaceholder = illmobs.MessagePlaceholder
+
+// ChatTemplateItem contains exactly one authored message or placeholder.
+type ChatTemplateItem = illmobs.ChatTemplateItem
+
+// PromptTemplate is either text or chat content. A non-nil Messages slice,
+// including an empty slice, identifies a chat template.
+type PromptTemplate struct {
+	Text     string
+	Messages []ChatTemplateItem
+}
+
+// FormattedPrompt contains text or typed provider messages ready for use.
+// Messages preserve provider extensions and omit empty content on tool messages.
+type FormattedPrompt struct {
+	Text     string
+	Messages []FormattedMessage
+}
+
+// PromptFallback is used when a managed prompt cannot be fetched.
+type PromptFallback struct {
+	Template PromptTemplate
+	Version  string
+	Config   map[string]any
+}
+
+// PromptSource identifies where a managed prompt came from.
+type PromptSource string
+
+const (
+	PromptSourceRegistry    PromptSource = "registry"
+	PromptSourceCache       PromptSource = "cache"
+	PromptSourceFallback    PromptSource = "fallback"
+	PromptSourceFeatureFlag PromptSource = "ff"
+	PromptSourceResolve     PromptSource = "resolve"
+)
+
+// ManagedPrompt is an immutable prompt retrieved from the Datadog Prompt Registry.
+type ManagedPrompt struct {
+	id                string
+	version           string
+	source            PromptSource
+	template          PromptTemplate
+	config            map[string]any
+	promptUUID        string
+	promptVersionUUID string
+}
+
+// ID returns the prompt identifier.
+func (p *ManagedPrompt) ID() string { return p.id }
+
+// Version returns the prompt version.
+func (p *ManagedPrompt) Version() string { return p.version }
+
+// Source returns the source used to retrieve the prompt.
+func (p *ManagedPrompt) Source() PromptSource { return p.source }
+
+// Template returns an unrendered copy of the prompt template.
+func (p *ManagedPrompt) Template() PromptTemplate { return copyPromptTemplate(p.template) }
+
+// Config returns a copy of the application-consumed configuration stored with this prompt version.
+func (p *ManagedPrompt) Config() map[string]any {
+	config, _ := normalizePromptConfig(p.config)
+	return config
+}
+
+// Match double braces first; preserve surrounding braces such as the closing object in {"age": {age}}.
+var promptVariablePattern = regexp.MustCompile(`\{\{\s*(\w+)\s*\}\}|\{\s*(\w+)\s*\}`)
+
+// Format renders supplied variables. Missing text variables remain unchanged;
+// missing or malformed message-placeholder values return an error.
+// Placeholder values accept slices or arrays that JSON-encode as text/tool messages;
+// nil slices expand to no messages. Provider-specific schemas are not converted.
+func (p *ManagedPrompt) Format(variables map[string]any) (FormattedPrompt, error) {
+	render := func(s string) string {
+		var rendered strings.Builder
+		last := 0
+		for _, match := range promptVariablePattern.FindAllStringSubmatchIndex(s, -1) {
+			start, end := match[2], match[3]
+			if start == -1 {
+				start, end = match[4], match[5]
+			}
+			value, ok := variables[s[start:end]]
+			if !ok {
+				continue
+			}
+			rendered.WriteString(s[last:match[0]])
+			rendered.WriteString(fmt.Sprint(value))
+			last = match[1]
+		}
+		if last == 0 {
+			return s
+		}
+		rendered.WriteString(s[last:])
+		return rendered.String()
+	}
+	if p.template.Messages == nil {
+		return FormattedPrompt{Text: render(p.template.Text)}, nil
+	}
+	messages := make([]FormattedMessage, 0, len(p.template.Messages))
+	for _, item := range p.template.Messages {
+		if message := item.Message; message != nil {
+			messages = append(messages, FormattedMessage{Role: message.Role, Content: render(message.Content)})
+			continue
+		}
+		name := item.Placeholder.Name
+		value, ok := variables[name]
+		if !ok {
+			return FormattedPrompt{}, fmt.Errorf("llmobs: missing message placeholder variable %q", name)
+		}
+		inserted, err := runtimePromptMessages(value)
+		if err != nil {
+			return FormattedPrompt{}, fmt.Errorf("llmobs: invalid message placeholder variable %q: %w", name, err)
+		}
+		messages = append(messages, inserted...)
+	}
+	return FormattedPrompt{Messages: messages}, nil
+}
+
+// Annotation converts the managed prompt to the existing explicit span annotation shape.
+// Pass the result to WithAnnotatedPrompt; formatting never tracks prompts automatically.
+// Templates containing placeholders use ChatTemplateItems instead of ChatTemplate.
+func (p *ManagedPrompt) Annotation(variables map[string]any) Prompt {
+	annotation := Prompt{
+		ID:                p.id,
+		Version:           p.version,
+		PromptUUID:        p.promptUUID,
+		PromptVersionUUID: p.promptVersionUUID,
+		Variables:         make(map[string]string, len(variables)),
+	}
+	placeholderNames := make(map[string]struct{})
+	for _, message := range p.template.Messages {
+		if message.Placeholder != nil {
+			placeholderNames[message.Placeholder.Name] = struct{}{}
+		}
+	}
+	for name, value := range variables {
+		if _, structural := placeholderNames[name]; structural {
+			continue
+		}
+		annotation.Variables[name] = fmt.Sprint(value)
+	}
+	if p.template.Messages == nil {
+		annotation.Template = p.template.Text
+	} else if len(placeholderNames) > 0 {
+		annotation.ChatTemplateItems = p.Template().Messages
+	} else {
+		annotation.ChatTemplate = make([]LLMMessage, len(p.template.Messages))
+		for i, item := range p.template.Messages {
+			annotation.ChatTemplate[i] = LLMMessage{Role: item.Message.Role, Content: item.Message.Content}
+		}
+	}
+	return annotation
+}
+
+// GetPrompt retrieves a managed prompt by ID.
+// Options may select an exact version, provide targeting context, or define a fallback.
+func GetPrompt(ctx context.Context, promptID string, opts ...GetPromptOption) (*ManagedPrompt, error) {
+	config := getPromptConfig{}
+	for _, option := range opts {
+		option(&config)
+	}
+	return globalPromptManager().get(ctx, promptID, config)
+}
+
+// GetPromptOption configures GetPrompt.
+type GetPromptOption func(*getPromptConfig)
+
+type getPromptConfig struct {
+	version      *int
+	targetingKey string
+	attributes   map[string]any
+	fallback     *PromptFallback
+	fallbackFunc func() (PromptFallback, error)
+}
+
+// WithPromptVersion selects one exact registry version and ignores targeting options.
+func WithPromptVersion(version int) GetPromptOption {
+	return func(config *getPromptConfig) { config.version = &version }
+}
+
+// WithPromptTargetingKey sets the OpenFeature and /resolve targeting key.
+// OpenFeature evaluation and exposure reporting require a side-effect import of
+// github.com/DataDog/dd-trace-go/v2/openfeature and DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED=true.
+func WithPromptTargetingKey(targetingKey string) GetPromptOption {
+	return func(config *getPromptConfig) { config.targetingKey = targetingKey }
+}
+
+// WithPromptTargetingAttributes sets a shallow snapshot of flat targeting attributes.
+func WithPromptTargetingAttributes(attributes map[string]any) GetPromptOption {
+	return func(config *getPromptConfig) {
+		config.attributes = maps.Clone(attributes)
+	}
+}
+
+// WithPromptFallback sets a static fallback.
+func WithPromptFallback(fallback PromptFallback) GetPromptOption {
+	return func(config *getPromptConfig) {
+		copy := fallback
+		copy.Template = copyPromptTemplate(fallback.Template)
+		if config, err := normalizePromptConfig(fallback.Config); err == nil {
+			copy.Config = config
+		}
+		config.fallback = &copy
+		config.fallbackFunc = nil
+	}
+}
+
+// WithPromptFallbackFunc sets a fallback evaluated only after retrieval and cache failure.
+func WithPromptFallbackFunc(fallback func() (PromptFallback, error)) GetPromptOption {
+	return func(config *getPromptConfig) {
+		config.fallback = nil
+		config.fallbackFunc = fallback
+	}
+}
+
+func copyPromptTemplate(template PromptTemplate) PromptTemplate {
+	copy := template
+	copy.Messages = slices.Clone(template.Messages)
+	for i := range copy.Messages {
+		if message := copy.Messages[i].Message; message != nil {
+			value := *message
+			copy.Messages[i].Message = &value
+		}
+		if placeholder := copy.Messages[i].Placeholder; placeholder != nil {
+			value := *placeholder
+			copy.Messages[i].Placeholder = &value
+		}
+	}
+	return copy
+}
+
+func runtimePromptMessages(value any) ([]FormattedMessage, error) {
+	kind := reflect.ValueOf(value).Kind()
+	if kind != reflect.Slice && kind != reflect.Array {
+		return nil, errors.New("expected a message list")
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var messages []FormattedMessage
+	if err := json.Unmarshal(data, &messages); err != nil {
+		return nil, err
+	}
+	for _, message := range messages {
+		var kind string
+		_ = json.Unmarshal(message.ExtraFields["type"], &kind)
+		if kind == "placeholder" {
+			return nil, errors.New("runtime messages cannot contain placeholders")
+		}
+	}
+	return messages, nil
+}
+
+func newManagedPrompt(id, version string, source PromptSource, template PromptTemplate, config map[string]any, promptUUID, versionUUID string) (*ManagedPrompt, error) {
+	if template.Text != "" && template.Messages != nil {
+		return nil, errors.New("llmobs: prompt template cannot contain both text and messages")
+	}
+	for _, message := range template.Messages {
+		if err := illmobs.ValidateChatTemplateItem(message); err != nil {
+			return nil, fmt.Errorf("llmobs: invalid prompt template: %w", err)
+		}
+	}
+	config, err := normalizePromptConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	return &ManagedPrompt{id: id, version: version, source: source, template: copyPromptTemplate(template), config: config, promptUUID: promptUUID, promptVersionUUID: versionUUID}, nil
+}
+
+func (p *ManagedPrompt) withSource(source PromptSource) *ManagedPrompt {
+	copy := *p
+	copy.source = source
+	copy.template = copyPromptTemplate(p.template)
+	copy.config = p.Config()
+	return &copy
+}
+
+func normalizePromptConfig(config map[string]any) (map[string]any, error) {
+	if config == nil {
+		return map[string]any{}, nil
+	}
+	encoded, err := json.Marshal(config)
+	if err != nil {
+		return nil, fmt.Errorf("llmobs: prompt config must contain JSON values: %w", err)
+	}
+	var copy map[string]any
+	if err := json.Unmarshal(encoded, &copy); err != nil {
+		return nil, fmt.Errorf("llmobs: prompt config must be a JSON object: %w", err)
+	}
+	return copy, nil
+}

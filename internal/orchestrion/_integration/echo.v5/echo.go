@@ -46,6 +46,11 @@ func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
+func (*TestCase) ExpectedSpanCount() int {
+	// The HTTP client and server spans, and one Echo middleware span.
+	return 3
+}
+
 func (tc *TestCase) ExpectedTraces() trace.Traces {
 	httpURL := tc.srv.URL + "/ping"
 	return trace.Traces{

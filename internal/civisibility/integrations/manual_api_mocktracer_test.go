@@ -216,6 +216,50 @@ func sessionAssertions(assert *assert.Assertions, now time.Time, sessionSpan *mo
 	commonAssertions(assert, sessionSpan)
 }
 
+func TestTestSessionSkipIfEmpty(t *testing.T) {
+	tests := []struct {
+		name        string
+		skipIfEmpty bool
+		withModule  bool
+		exitCode    int
+		wantStatus  string
+	}{
+		{name: "empty", skipIfEmpty: true, wantStatus: constants.TestStatusSkip},
+		{name: "empty without option", wantStatus: constants.TestStatusPass},
+		{name: "empty with failure", skipIfEmpty: true, exitCode: 1, wantStatus: constants.TestStatusFail},
+		{name: "with module", skipIfEmpty: true, withModule: true, wantStatus: constants.TestStatusPass},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockTracer.Reset()
+			assert := assert.New(t)
+
+			session := createDDTestSession(time.Now())
+			if tt.withModule {
+				session.GetOrCreateModule("my-module")
+			}
+			var options []TestSessionCloseOption
+			if tt.skipIfEmpty {
+				options = append(options, WithTestSessionSkipIfEmpty())
+			}
+			session.Close(tt.exitCode, options...)
+
+			finishedSpans := mockTracer.FinishedSpans()
+			require.NotEmpty(t, finishedSpans)
+			sessionSpan := finishedSpans[len(finishedSpans)-1]
+			assert.Equal(constants.SpanTypeTestSession, sessionSpan.Tag(ext.SpanType))
+			assert.Equal(tt.wantStatus, sessionSpan.Tag(constants.TestStatus))
+			if tt.wantStatus == constants.TestStatusSkip {
+				assert.Equal(constants.TestSessionEmptySkipReason, sessionSpan.Tag(constants.TestSkipReason))
+				assert.Equal(constants.TestSessionEmptyReasonZeroTests, sessionSpan.Tag(constants.TestSessionEmptyReason))
+			} else {
+				assert.Nil(sessionSpan.Tag(constants.TestSkipReason))
+				assert.Nil(sessionSpan.Tag(constants.TestSessionEmptyReason))
+			}
+		})
+	}
+}
+
 func TestTestModule(t *testing.T) {
 	mockTracer.Reset()
 	assert := assert.New(t)

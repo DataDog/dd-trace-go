@@ -37,7 +37,7 @@ func mustMarshalJSONMap(t *testing.T, payload any) map[string]any {
 }
 
 func TestFlagEvaluationEndpointUsesTrackName(t *testing.T) {
-	const want = "/evp_proxy/v2/api/v2/flagevaluation"
+	const want = "/api/v2/flagevaluation"
 	if flagEvalLoggingEndpoint != want {
 		t.Fatalf("flagEvalLoggingEndpoint = %q, want %q", flagEvalLoggingEndpoint, want)
 	}
@@ -1176,6 +1176,7 @@ func TestBuildFlagEvalPayloads(t *testing.T) {
 		big := strings.Repeat("y", payloadSizeLimitBytes) // ~5 MiB context value
 		events := []flagEvalLoggingEvent{{
 			Flag:            flagEvalFlag{Key: "big-flag"},
+			Environment:     &environment{ID: testEnvironmentID, Name: "Production"},
 			EvaluationCount: 7,
 			TargetingKey:    "user-oversized",
 			Context:         &flagEvalEventContext{Evaluation: map[string]any{"blob": big}},
@@ -1196,6 +1197,9 @@ func TestBuildFlagEvalPayloads(t *testing.T) {
 		var p flagEvalLoggingPayload
 		if err := json.Unmarshal(payloads[0], &p); err != nil {
 			t.Fatalf("payload is not valid JSON: %v", err)
+		}
+		if len(p.FlagEvaluations) == 1 && (p.FlagEvaluations[0].Environment == nil || *p.FlagEvaluations[0].Environment != *events[0].Environment) {
+			t.Error("payload degradation lost environment identity")
 		}
 		if len(p.FlagEvaluations) != 1 || p.FlagEvaluations[0].TargetingKey != "" || p.FlagEvaluations[0].Context != nil {
 			t.Errorf("degraded event must have no targeting_key/context, got %+v", p.FlagEvaluations)
@@ -1231,8 +1235,9 @@ func TestStopDrainsAndFlushesQueuedFlagEvaluations(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 
-		if r.URL.Path != flagEvalLoggingEndpoint {
-			t.Errorf("unexpected EVP path: got %q, want %q", r.URL.Path, flagEvalLoggingEndpoint)
+		wantPath := joinEVPPath(evpProxyV2Path, flagEvalLoggingEndpoint)
+		if r.URL.Path != wantPath {
+			t.Errorf("unexpected EVP path: got %q, want %q", r.URL.Path, wantPath)
 		}
 
 		var payload flagEvalLoggingPayload

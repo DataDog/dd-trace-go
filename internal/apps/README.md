@@ -17,6 +17,13 @@ This directory contains a collection of apps that can be used for such purposes.
 * Define your test scenarios [scenario_test.go](./scenario_test.go).
 * Update [/.github/workflows/test-apps.cue](/.github/workflows/test-apps.cue) to register the new scenarios and run `make test-apps.yml`.
 
+A scenario can instead be **manual-only**: registered in `scenario_test.go` and runnable by name, but
+deliberately left out of `test-apps.cue` so it never runs in CI (nightly, weekly, or on demand). This
+fits a harness meant to be run and inspected by hand rather than asserted on automatically — for example
+[`gc-overhead/v1`](./gc-overhead) and [`telemetry-errors/v1`](./telemetry-errors), the latter documented
+in its own [README](./telemetry-errors/README.md). The tradeoff: nothing detects if a manual-only
+scenario breaks, since it never runs unattended.
+
 ## Run the apps
 
 ### Manually via CI

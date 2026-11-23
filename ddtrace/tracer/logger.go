@@ -34,7 +34,9 @@ func (l loggerAdapter) LogL(lvl LogLevel, msg string) {
 }
 
 // AdaptLogger adapts a function to the Logger interface to adapt any logger
-// to the Logger interface.
+// to the Logger interface. The tracer calls fn with the level of each message.
+// Calling Log directly on the returned Logger calls fn with the tracer's current
+// log level threshold, which callers can use to read the effective level.
 func AdaptLogger(fn func(lvl LogLevel, msg string, a ...any)) Logger {
 	return loggerAdapter{
 		fn: fn,

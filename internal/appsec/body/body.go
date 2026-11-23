@@ -48,20 +48,29 @@ func NewEncodable(contentType string, reader *io.ReadCloser, limit int) (libddwa
 		return nil, errors.New("reader is nil")
 	}
 
+	// Read one byte past the limit so we can distinguish a body that is exactly `limit` bytes
+	// (complete, not truncated) from one that is larger than `limit` (truncated).
 	limitedReader := io.LimitedReader{
 		R: *reader,
-		N: int64(limit),
+		N: int64(limit) + 1,
 	}
 
 	data, err := io.ReadAll(&limitedReader)
 	if err != nil {
+		// Preserve the stream contract even on a read error: a size-limited reader such as
+		// http.MaxBytesReader returns the consumed prefix alongside its error, so replay those bytes
+		// before returning to avoid handing the caller an already-drained body.
+		*reader = &readerAndCloser{
+			Reader: io.MultiReader(bytes.NewReader(data), *reader),
+			Closer: *reader,
+		}
 		return nil, fmt.Errorf("failed to read data: %w", err)
 	}
 
 	var newReader io.Reader = bytes.NewReader(data)
 
 	truncated := false
-	if len(data) >= limit {
+	if len(data) > limit {
 		data = data[:limit]
 		newReader = io.MultiReader(newReader, *reader)
 		truncated = true

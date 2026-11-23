@@ -118,7 +118,7 @@ func (s *Span) spanEventsAsJSONString() string {
 	}
 	events, err := json.Marshal(s.spanEvents)
 	if err != nil {
-		log.Error("failed to marshal span events: %s", err.Error())
+		log.Error("failed to marshal span events: %s", err.Error()) //errtrack:ignore unsupported user-provided span event value
 		return ""
 	}
 	return string(events)
@@ -440,6 +440,32 @@ func safeStringerValue(v fmt.Stringer, original any) (result string) {
 	return v.String()
 }
 
+// safeErrorMessage returns err.Error(). If Error panics, for example on a
+// typed-nil pointer or a struct with a nil field, it returns a placeholder
+// naming the error type, so the span lock is not left held and the trace is
+// not lost. Unlike safeStringerValue, every panic is recovered on purpose: a
+// re-raised panic would skip finishing the span, and the trace would be lost.
+func safeErrorMessage(err error) (msg string) {
+	defer func() {
+		if recover() != nil {
+			msg = fmt.Sprintf("<error message unavailable: %T.Error panicked>", err)
+		}
+	}()
+	return err.Error()
+}
+
+// safeErrorDetails returns fmt.Sprintf("%+v", err). fmt recovers panics in
+// Format, but re-panics when rendering the panic value itself panics. In that
+// case it returns a placeholder naming the error type.
+func safeErrorDetails(err error) (details string) {
+	defer func() {
+		if recover() != nil {
+			details = fmt.Sprintf("<error details unavailable: %T formatting panicked>", err)
+		}
+	}()
+	return fmt.Sprintf("%+v", err)
+}
+
 // SetTag adds a set of key/value metadata to the span.
 func (s *Span) SetTag(key string, value any) {
 	if s == nil {
@@ -460,7 +486,7 @@ func (s *Span) SetMetaStruct(key string, value msgp.Marshaler) bool {
 		return false
 	}
 
-	tracer, hasTracer := getGlobalTracer().(*tracer)
+	tracer, hasTracer := concreteTracerForSpan(getGlobalTracer(), s).(*tracer)
 	if !hasTracer || !tracer.config.agent.load().metaStructAvailable {
 		return false
 	}
@@ -480,7 +506,14 @@ func (s *Span) setTags(tags map[string]any) {
 	}
 	s.mu.Lock()
 	for k, v := range tags {
+		if k == ext.ServiceName {
+			continue
+		}
 		s.setTagLocked(k, v)
+	}
+	// An explicit service name takes precedence over an integration's service override.
+	if service, ok := tags[ext.ServiceName]; ok {
+		s.setTagLocked(ext.ServiceName, service)
 	}
 	s.mu.Unlock()
 }
@@ -530,9 +563,13 @@ func (s *Span) setTagLocked(key string, value any) {
 		return
 	}
 	if v, ok := value.(string); ok {
-		if key == ext.ResourceName && s.pprofCtxActive != nil && spanResourcePIISafe(s) {
+		if key == ext.ResourceName && s.pprofCtxActive != nil && spanResourcePIISafe(s) && hasEndpointLabel(s.pprofCtxActive) {
 			// If the user overrides the resource name for the span,
 			// update the endpoint label for the runtime profilers.
+			//
+			// Only spans that already carry an endpoint label are updated:
+			// AppSec also populates pprofCtxActive, and endpoint labels must
+			// stay tied to endpoint profiling.
 			//
 			// We don't change s.pprofCtxRestore since that should
 			// stay as the original parent span context regardless
@@ -775,14 +812,14 @@ func (s *Span) setTagErrorLocked(value any, cfg errorConfig) {
 		// if anyone sets an error value as the tag, be nice here
 		// and provide all the benefits.
 		s.setErrorFlagLocked(true)
-		s.setMetaLocked(ext.ErrorMsg, v.Error())
+		s.setMetaLocked(ext.ErrorMsg, safeErrorMessage(v))
 		s.setMetaLocked(ext.ErrorType, reflect.TypeOf(v).String())
 		if cfg.noDebugStack {
 			return
 		}
 		switch v.(type) {
 		case xerrors.Formatter, fmt.Formatter, *errortrace.TracerError:
-			s.setMetaLocked(ext.ErrorStack, fmt.Sprintf("%+v", v))
+			s.setMetaLocked(ext.ErrorStack, safeErrorDetails(v))
 		}
 		handlingStack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
 		s.setMetaLocked(ext.ErrorHandlingStack, handlingStack)
@@ -1010,6 +1047,18 @@ func (s *Span) serializeSpanEvents() {
 	s.meta.Set("events", string(b))
 }
 
+// spanFinished reports whether s finished. It is used by github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry
+// via go:linkname, because a borrowed OpenTelemetry span must stop recording when the
+// integration that owns it finishes it.
+func spanFinished(s *Span) bool {
+	if s == nil {
+		return true
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.finished
+}
+
 // recordFFEEvaluation records a feature flag evaluation for FFE span enrichment.
 // Used by github.com/DataDog/dd-trace-go/v2/openfeature via go:linkname.
 //
@@ -1101,7 +1150,7 @@ func (s *Span) Finish(opts ...FinishOption) {
 	}
 
 	if s.Root() == s {
-		if tr, ok := getGlobalTracer().(*tracer); ok && tr.rulesSampling.traces.enabled() {
+		if tr, ok := concreteTracerForSpan(getGlobalTracer(), s).(*tracer); ok && tr.rulesSampling.traces.enabled() {
 			if !s.context.trace.isLocked() && s.context.trace.propagatingTag(keyDecisionMaker) != "-4" {
 				tr.rulesSampling.SampleTrace(s)
 			}
@@ -1168,9 +1217,11 @@ func (s *Span) finish(finishTime int64) {
 	}
 
 	keep := true
-	tracer, hasTracer := getGlobalTracer().(*tracer)
+	tracer, hasTracer := concreteTracerForTrace(getGlobalTracer(), s.context.trace, s.spanType).(*tracer)
 	if hasTracer {
 		if !tracer.config.internalConfig.TracingEnabled() {
+			// The tracer drops the span, but the span is finished.
+			s.finished = true
 			return
 		}
 		if tracer.config.canDropP0s() {
@@ -1218,7 +1269,7 @@ func obfuscatedResource(o *obfuscate.Obfuscator, typ, resource string) string {
 	case "sql", "cassandra":
 		oq, err := o.ObfuscateSQLString(resource)
 		if err != nil {
-			log.Error("Error obfuscating stats group resource %q: %v", resource, err.Error())
+			log.Error("Error obfuscating stats group resource %q: %v", resource, err.Error()) //errtrack:ignore unparseable user-provided resource
 			return textNonParsable
 		}
 		return oq.Query
@@ -1308,7 +1359,7 @@ func (s *Span) Format(f fmt.State, c rune) {
 		if svc := globalconfig.ServiceName(); svc != "" {
 			fmt.Fprintf(f, "dd.service=%s ", svc)
 		}
-		if tr := getGlobalTracer(); tr != nil {
+		if tr := concreteTracerForSpanContext(getGlobalTracer(), s.context); tr != nil {
 			tc := tr.TracerConf()
 			if tc.EnvTag != "" {
 				fmt.Fprintf(f, "dd.env=%s ", tc.EnvTag)
@@ -1481,6 +1532,10 @@ const (
 	keyBaseService = "_dd.base_service"
 	// keyProcessTags contains a list of process tags to identify the service.
 	keyProcessTags = "_dd.tags.process"
+	// keySDKOTLPExport declares whether traces were exported over OTLP ("true", as a resource
+	// attribute) or the native Datadog encoding ("false": on the first span of each chunk, and
+	// as a v1 payload attribute).
+	keySDKOTLPExport = "_dd.sdk.otlp_export"
 	// keyKnuthSamplingRate holds the propagated Knuth-based sampling rate applied by agent or trace sampling rules.
 	// Value is a string with up to 6 decimal digits and is forwarded unchanged.
 	keyKnuthSamplingRate = "_dd.p.ksr"

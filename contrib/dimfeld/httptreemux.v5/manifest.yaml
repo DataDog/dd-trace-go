@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/dimfeld/httptreemux/v5
+display_name: httptreemux v5
+description: Instruments httptreemux v5 TreeMux and ContextMux routers, tracing inbound HTTP requests as route-named server
+  spans with distributed context extraction, optional AppSec monitoring, and optional inferred API Gateway proxy or Pub/Sub
+  push-delivery parent spans (with optional Pub/Sub producer span links) via shared HTTP tracing.
+packages:
+- name: github.com/dimfeld/httptreemux/v5
+category:
+- http.server
+systems: []
+creation_date: '2023-03-23'

@@ -540,7 +540,7 @@ func TestInvalidSemverComparandReturnsParseError(t *testing.T) {
 	require.NotContains(t, config.Flags, "invalid-semver")
 	require.ErrorIs(t, config.invalidFlags["invalid-semver"], errInvalidSemverComparand)
 
-	result := evaluateConfiguredFlag(&config, "invalid-semver", false, map[string]any{"version": "1.2.3"}, time.Now())
+	result := evaluateConfiguredFlag(&config, "invalid-semver", false, map[string]any{"version": "1.2.3"}, time.Now(), experimentationExclusion{})
 	require.Equal(t, false, result.Value)
 	require.Equal(t, "ERROR", string(result.Reason))
 	require.ErrorIs(t, result.Error, errParseError)
@@ -550,6 +550,7 @@ func TestInvalidSemverComparandReturnsParseError(t *testing.T) {
 func TestProcessConfigUpdate(t *testing.T) {
 	t.Run("valid configuration update", func(t *testing.T) {
 		provider := newDatadogProvider(ProviderConfig{})
+		cleanupProvider(t, provider)
 
 		config := universalFlagsConfiguration{
 			CreatedAt: time.Now(),
@@ -570,7 +571,7 @@ func TestProcessConfigUpdate(t *testing.T) {
 			},
 		}
 
-		data, err := json.Marshal(config)
+		data, err := json.Marshal(&config)
 		if err != nil {
 			t.Fatalf("failed to marshal config: %v", err)
 		}
@@ -592,6 +593,7 @@ func TestProcessConfigUpdate(t *testing.T) {
 
 	t.Run("nil shard range does not reject valid flags", func(t *testing.T) {
 		provider := newDatadogProvider(ProviderConfig{})
+		cleanupProvider(t, provider)
 		data := []byte(`{
 			"format": "SERVER",
 			"flags": {
@@ -632,11 +634,11 @@ func TestProcessConfigUpdate(t *testing.T) {
 		require.NotContains(t, updatedConfig.Flags, "invalid-flag")
 		require.Contains(t, updatedConfig.invalidFlags, "invalid-flag")
 
-		validResult := evaluateConfiguredFlag(updatedConfig, "valid-flag", false, nil, time.Now())
+		validResult := evaluateConfiguredFlag(updatedConfig, "valid-flag", false, nil, time.Now(), experimentationExclusion{})
 		require.Equal(t, true, validResult.Value)
 		require.Equal(t, "STATIC", string(validResult.Reason))
 
-		invalidResult := evaluateConfiguredFlag(updatedConfig, "invalid-flag", false, nil, time.Now())
+		invalidResult := evaluateConfiguredFlag(updatedConfig, "invalid-flag", false, nil, time.Now(), experimentationExclusion{})
 		require.Equal(t, false, invalidResult.Value)
 		require.Equal(t, "ERROR", string(invalidResult.Reason))
 		require.ErrorIs(t, invalidResult.Error, errParseError)
@@ -644,6 +646,7 @@ func TestProcessConfigUpdate(t *testing.T) {
 
 	t.Run("configuration deletion", func(t *testing.T) {
 		provider := newDatadogProvider(ProviderConfig{})
+		cleanupProvider(t, provider)
 
 		// First set a configuration
 		config := &universalFlagsConfiguration{
@@ -676,6 +679,7 @@ func TestProcessConfigUpdate(t *testing.T) {
 
 	t.Run("invalid JSON", func(t *testing.T) {
 		provider := newDatadogProvider(ProviderConfig{})
+		cleanupProvider(t, provider)
 
 		invalidJSON := []byte("{invalid json")
 		status := processConfigUpdate(provider, "test-path", invalidJSON)
@@ -690,13 +694,14 @@ func TestProcessConfigUpdate(t *testing.T) {
 
 	t.Run("invalid configuration", func(t *testing.T) {
 		provider := newDatadogProvider(ProviderConfig{})
+		cleanupProvider(t, provider)
 
 		config := universalFlagsConfiguration{
 			Format: "INVALID",
 			Flags:  map[string]*flag{},
 		}
 
-		data, _ := json.Marshal(config)
+		data, _ := json.Marshal(&config)
 		status := processConfigUpdate(provider, "test-path", data)
 
 		if status.State != rc.ApplyStateError {
@@ -710,6 +715,7 @@ func TestProcessConfigUpdate(t *testing.T) {
 
 func TestCreateRemoteConfigCallback(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 	callback := provider.rcCallback
 
 	// Create a valid configuration
@@ -741,7 +747,7 @@ func TestCreateRemoteConfigCallback(t *testing.T) {
 		},
 	}
 
-	data, _ := json.Marshal(config)
+	data, _ := json.Marshal(&config)
 
 	// Simulate Remote Config update with multiple paths
 	update := remoteconfig.ProductUpdate{
@@ -768,6 +774,7 @@ func TestRemoteConfigIntegration(t *testing.T) {
 
 	t.Run("callback handles multiple updates", func(t *testing.T) {
 		provider := newDatadogProvider(ProviderConfig{})
+		cleanupProvider(t, provider)
 		callback := provider.rcCallback
 
 		// Create two different configurations
@@ -801,8 +808,8 @@ func TestRemoteConfigIntegration(t *testing.T) {
 			},
 		}
 
-		data1, _ := json.Marshal(config1)
-		data2, _ := json.Marshal(config2)
+		data1, _ := json.Marshal(&config1)
+		data2, _ := json.Marshal(&config2)
 
 		// First update
 		update1 := remoteconfig.ProductUpdate{
@@ -834,6 +841,7 @@ func TestRemoteConfigIntegration(t *testing.T) {
 
 	t.Run("callback handles mixed success and failure", func(t *testing.T) {
 		provider := newDatadogProvider(ProviderConfig{})
+		cleanupProvider(t, provider)
 		callback := provider.rcCallback
 
 		validConfig := universalFlagsConfiguration{
@@ -851,7 +859,7 @@ func TestRemoteConfigIntegration(t *testing.T) {
 			},
 		}
 
-		validData, _ := json.Marshal(validConfig)
+		validData, _ := json.Marshal(&validConfig)
 		invalidData := []byte("{invalid")
 
 		update := remoteconfig.ProductUpdate{
@@ -872,6 +880,7 @@ func TestRemoteConfigIntegration(t *testing.T) {
 
 func TestConfigurationPersistence(t *testing.T) {
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
 
 	// Simulate multiple Remote Config updates
 	callback := provider.rcCallback
@@ -908,8 +917,8 @@ func TestConfigurationPersistence(t *testing.T) {
 	}
 
 	// Apply configurations sequentially
-	for i, config := range configs {
-		data, _ := json.Marshal(config)
+	for i := range configs {
+		data, _ := json.Marshal(&configs[i])
 		update := remoteconfig.ProductUpdate{
 			"config": data,
 		}

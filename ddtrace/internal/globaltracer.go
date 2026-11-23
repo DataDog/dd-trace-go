@@ -43,6 +43,29 @@ func GetGlobalTracer[T tracerLike]() T {
 	return *globalTracer.Load().(*T)
 }
 
+// GlobalTracerSnapshot identifies one publication, including its interface
+// pointer. Comparing that pointer avoids overwriting a newer publication, even
+// when it happens to contain the same tracer again.
+type GlobalTracerSnapshot[T tracerLike] struct {
+	value *T
+}
+
+func SnapshotGlobalTracer[T tracerLike]() GlobalTracerSnapshot[T] {
+	return GlobalTracerSnapshot[T]{value: globalTracer.Load().(*T)}
+}
+
+func (s GlobalTracerSnapshot[T]) Tracer() T { return *s.value }
+
+// Replace publishes next only while this snapshot is current. It does not stop
+// the previous tracer: the caller must distinguish adopted from displaced
+// resources and close only the latter, after the publication succeeds.
+func (s GlobalTracerSnapshot[T]) Replace(next T) bool {
+	if (tracerLike)(next) == nil {
+		panic("ddtrace/internal: Replace called with nil")
+	}
+	return globalTracer.CompareAndSwap(s.value, &next)
+}
+
 // mockTracerLike is an interface to restrict the types that can be stored in `globalTracer`.
 // This represents the mock tracer type used in tests. And prevent calling the StoreGlobalTracer
 // function with a normal tracer.Tracer.

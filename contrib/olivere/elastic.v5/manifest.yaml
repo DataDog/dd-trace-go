@@ -1,0 +1,12 @@
+_v: 1
+name: gopkg.in/olivere/elastic.v5
+display_name: Elastic (olivere) v5
+description: Instruments Elasticsearch requests made by olivere/elastic v5 through a traced HTTP client, capturing request
+  details, response status, errors, and parent context.
+packages:
+- name: gopkg.in/olivere/elastic.v5
+category:
+- db.client
+systems:
+- elasticsearch
+creation_date: '2017-05-14'

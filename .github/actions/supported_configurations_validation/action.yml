@@ -8,4 +8,4 @@ runs:
       shell: bash
       run: |-
         git diff internal/env/supported_configurations.json
-        go run ./scripts/configinverter/main.go check
+        GOWORK=off go -C scripts/configinverter run . -input ../../internal/env/supported_configurations.json check

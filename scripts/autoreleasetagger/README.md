@@ -12,6 +12,12 @@ The repository has a structure consisting of nested modules for all the contribs
 
 You must be on a `release-v<MAJOR>.<MINOR>.x` branch. The tool will refuse to run on `main`, feature branches, or a detached HEAD.
 
+Any directory below `--root` that is itself a separate git checkout — a nested
+git worktree or a submodule, identified by a `.git` entry — is skipped
+entirely. This keeps module discovery scoped to the checkout being released,
+even if the release manager's machine has other worktrees nested inside the
+repository tree.
+
 ## 🛠️ Usage
 
 Run the following command to tag the release:

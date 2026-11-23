@@ -13,14 +13,20 @@ import (
 
 	"github.com/DataDog/orchestrion/runtime/built"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
 )
 
 // orchestrionEnabled is flipped to true by orchestrion at build time via the
-// //dd:orchestrion-enabled directive, so the gate below only asserts on builds
-// where the GLS feature actually exists.
+// //dd:orchestrion-enabled directive. It is the orchestrion-specific signal, kept
+// so TestBuiltWithOrchestrion can cross-check it against the runtime one.
 //
 //dd:orchestrion-enabled
 const orchestrionEnabled = false
+
+// glsWoven reports whether the GLS exists in this build, under either tool. Both
+// weave the same reclaim path, so the assertions below have to hold for both.
+var glsWoven = built.WithOrchestrion || otelc.Enabled()
 
 func TestBuiltWithOrchestrion(t *testing.T) {
 	require.Equal(t, built.WithOrchestrion, orchestrionEnabled)
@@ -37,10 +43,9 @@ func TestBuiltWithOrchestrion(t *testing.T) {
 // built without orchestrion, so the leak (which only exists under orchestrion)
 // cannot be exercised there — only this _integration lane runs woven.
 func TestGLSNoHeapLeak(t *testing.T) {
-	if !orchestrionEnabled {
-		t.Skip("GLS only exists in orchestrion builds")
+	if !glsWoven {
+		t.Skip("the GLS only exists in woven builds")
 	}
-	require.True(t, built.WithOrchestrion)
 
 	// WithSpanPool(false) is explicit rather than assumed. This test finishes the
 	// span before handing it to the worker, which is a deliberate use-after-Finish
@@ -75,10 +80,9 @@ func TestGLSNoHeapLeak(t *testing.T) {
 // a deliberate use-after-Finish that the pool would legitimately recycle, so it is
 // not run pooled.
 func TestGLSNoHeapLeakWithSpanPool(t *testing.T) {
-	if !orchestrionEnabled {
-		t.Skip("GLS only exists in orchestrion builds")
+	if !glsWoven {
+		t.Skip("the GLS only exists in woven builds")
 	}
-	require.True(t, built.WithOrchestrion)
 
 	require.NoError(t, tracer.Start(tracer.WithLogStartup(false), tracer.WithSpanPool(true)))
 	defer tracer.Stop()

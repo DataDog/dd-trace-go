@@ -29,6 +29,11 @@ func main() {
 		if err != nil {
 			return err
 		}
+		// .otelc-build holds post-instrumentation copies of source that otelc
+		// writes during a build, including Go standard library files.
+		if info.IsDir() && info.Name() == ".otelc-build" {
+			return filepath.SkipDir
+		}
 		if filepath.Ext(path) != ".go" || info.IsDir() || strings.Contains(path, "vendor") {
 			return nil
 		}

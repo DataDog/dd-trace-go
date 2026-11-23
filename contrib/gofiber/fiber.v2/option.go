@@ -30,7 +30,7 @@ type Option interface {
 	apply(*config)
 }
 
-// OptionFn represents options applicable to Middleware.
+// OptionFn represents options applicable to Middleware and Wrap.
 type OptionFn func(*config)
 
 func (fn OptionFn) apply(cfg *config) {

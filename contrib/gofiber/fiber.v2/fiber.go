@@ -30,12 +30,31 @@ func init() {
 }
 
 // Middleware returns middleware that will trace incoming requests.
+// With AppSec enabled, pending blocks take priority over the error handler.
+// Other returned errors are rendered through the application's error handler
+// before the WAF inspects the response. Handled errors are not returned to
+// earlier middleware. The original error is recorded on the span unless the
+// response is blocked; then the block is reported instead.
+//
+// Register panic-recovery middleware immediately after this middleware, before
+// other middleware and routes, so it runs inside the monitored handler chain.
+// Recovery outside it happens too late for
+// AppSec to inspect the rendered error response or preserve a pending block.
+// This middleware does not recover panics itself.
+//
+// Use [Wrap] for whole-app instrumentation. A global Middleware runs before
+// Fiber matches the endpoint and can only check its path parameters afterward;
+// it cannot prevent handler side effects from a path-parameter attack.
 func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 	cfg := new(config)
 	defaults(cfg)
 	for _, fn := range opts {
 		fn.apply(cfg)
 	}
+	return middleware(cfg)
+}
+
+func middleware(cfg *config) fiber.Handler {
 	instr.Logger().Debug("gofiber/fiber.v2: Middleware: %#v", cfg)
 	return func(c *fiber.Ctx) error {
 		if cfg.ignoreRequest(c) {
@@ -89,7 +108,13 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		c.SetUserContext(ctx)
 
 		// pass the execution down the line
-		err := c.Next()
+		var err error
+		var handledResponse bool
+		if instr.AppSecEnabled() {
+			err, handledResponse = useAppSec(c, span, c.Next)
+		} else {
+			err = c.Next()
+		}
 
 		span.SetTag(ext.ResourceName, cfg.resourceNamer(c))
 		span.SetTag(ext.HTTPRoute, c.Route().Path)
@@ -108,6 +133,9 @@ func Middleware(opts ...Option) func(c *fiber.Ctx) error {
 		} else if cfg.isStatusError(status) {
 			// mark 5xx server error
 			span.SetTag(ext.ErrorNoStackTrace, fmt.Errorf("%d: %s", status, http.StatusText(status)))
+		}
+		if handledResponse {
+			return nil
 		}
 		return err
 	}

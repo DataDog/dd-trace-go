@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/mark3labs/mcp-go
+display_name: mcp-go
+description: Instruments mcp-go server session initialization and tool execution with LLM Observability spans, input/output
+  and error annotations, and optional intent capture and output redaction.
+packages:
+- name: github.com/mark3labs/mcp-go
+category:
+- gen_ai
+- mcp.server
+systems: []
+creation_date: '2025-11-13'

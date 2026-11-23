@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package ext // import "github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+package ext
 
 // App types determine how to categorize a trace in the Datadog application.
 // For more fine-grained behaviour, use the SpanType* constants.
@@ -58,6 +58,10 @@ const (
 	// SpanTypeElasticSearch marks a span as an ElasticSearch operation.
 	// These spans may also have an "elasticsearch.body" tag.
 	SpanTypeElasticSearch = "elasticsearch"
+
+	// SpanTypeOpenSearch marks a span as an OpenSearch operation.
+	// These spans may also have an "opensearch.body" tag.
+	SpanTypeOpenSearch = "opensearch"
 
 	// SpanTypeLevelDB marks a span as a leveldb operation
 	SpanTypeLevelDB = "leveldb"

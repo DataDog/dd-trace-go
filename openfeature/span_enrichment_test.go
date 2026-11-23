@@ -192,6 +192,11 @@ func TestSpanEnrichment_Integration(t *testing.T) {
 	defer mt.Stop()
 
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
+	// The SDK has no API to unregister a named provider; without this, its
+	// background exposure/flag-evaluation writers keep running for the rest
+	// of the test process.
+	t.Cleanup(provider.Shutdown)
 	status := processConfigUpdate(provider, "datadog/2/ASM_FEATURES/test/config", []byte(`{
 		"createdAt":"2026-01-01T00:00:00Z",
 		"format":"SERVER",
@@ -299,6 +304,11 @@ func TestSpanEnrichment_Integration(t *testing.T) {
 func setupEnrichmentProvider(t *testing.T, domain string) *of.Client {
 	t.Helper()
 	provider := newDatadogProvider(ProviderConfig{})
+	cleanupProvider(t, provider)
+	// The SDK has no API to unregister a named provider; without this, its
+	// background exposure/flag-evaluation writers keep running for the rest
+	// of the test process.
+	t.Cleanup(provider.Shutdown)
 	status := processConfigUpdate(provider, "datadog/2/ASM_FEATURES/test/config", []byte(`{
 		"createdAt":"2026-01-01T00:00:00Z",
 		"format":"SERVER",

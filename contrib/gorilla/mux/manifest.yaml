@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/gorilla/mux
+display_name: gorilla/mux
+description: Instruments gorilla/mux routers, through wrappers or Orchestrion, tracing inbound HTTP requests with route-template
+  resources and propagated context, plus optional App and API Protection monitoring and optional inferred AWS API Gateway
+  and Google Cloud Pub/Sub push spans.
+packages:
+- name: github.com/gorilla/mux
+category:
+- http.server
+systems: []
+creation_date: '2016-10-06'

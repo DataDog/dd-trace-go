@@ -39,6 +39,7 @@ type (
 		RepositoryURL  string             `json:"repository_url,omitempty"`
 		Branch         string             `json:"branch,omitempty"`
 		Sha            string             `json:"sha,omitempty"`
+		TestLevel      string             `json:"test_level,omitempty"`
 		Configurations testConfigurations `json:"configurations"`
 	}
 
@@ -102,6 +103,7 @@ func (c *client) GetSettings() (*SettingsResponseData, error) {
 				RepositoryURL:  c.repositoryURL,
 				Branch:         c.branchName,
 				Sha:            c.commitSha,
+				TestLevel:      "test",
 				Configurations: c.testConfigurations,
 			},
 		},

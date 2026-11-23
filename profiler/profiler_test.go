@@ -174,6 +174,17 @@ func TestStart(t *testing.T) {
 		defer Stop()
 		assert.ErrorIs(t, err, errProfilingNotSupportedInAWSLambda)
 	})
+
+	t.Run("restart-disabled-clears-enabled-flag", func(t *testing.T) {
+		require.NoError(t, Start())
+		require.True(t, traceprof.ProfilerEnabled())
+
+		t.Setenv("DD_PROFILING_ENABLED", "false")
+		require.NoError(t, Start())
+		defer Stop()
+
+		assert.False(t, traceprof.ProfilerEnabled())
+	})
 }
 
 // TestStartWithoutStopReconfigures verifies that calling Start while the
@@ -548,6 +559,33 @@ func TestEnabledFalse(t *testing.T) {
 		// This test might succeed incorrectly on an overloaded
 		// CI server, but is very likely to fail locally given a
 		// buggy implementation
+	}
+}
+
+func TestCPUProfileAppsecEnabled(t *testing.T) {
+	originalAppSecEnabled := appsecEnabled
+	t.Cleanup(func() { appsecEnabled = originalAppSecEnabled })
+	// This is here so pprofile can parse the profile. We could also
+	// decompress it ourselves from zstd first and then give the data to
+	// pprofile.
+	t.Setenv("DD_PROFILING_DEBUG_COMPRESSION_SETTINGS", "gzip")
+
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("appsec-enabled=%t", enabled), func(t *testing.T) {
+			appsecEnabled = func() bool { return enabled }
+			profile := startTestProfiler(t, 1,
+				WithPeriod(10*time.Millisecond),
+				WithProfileTypes(CPUProfile),
+			).ReceiveProfile(t)
+
+			// Label stripping logic should still leave us with a
+			// valid profile.
+			// TODO: do some work so there are actually samples?
+			// Gives us more assurance that the profile is still
+			// valid, or at least parseable.
+			_, err := pprofile.ParseData(profile.attachments["cpu.pprof"])
+			require.NoError(t, err)
+		})
 	}
 }
 

@@ -77,7 +77,7 @@ func toSpanEventAttributeMsg(attrs map[string]any) map[string]*spanEventAttribut
 		if msgVal := toSpanEventAttributeValueMsg(val); msgVal != nil {
 			res[key] = msgVal
 		} else {
-			log.Warn("dropped unsupported span event attribute %s (unsupported type: %T)", key, val)
+			log.Warn("dropped unsupported span event attribute %s (unsupported type: %T)", key, val) //errtrack:ignore unsupported user-provided attribute
 		}
 	}
 	return res

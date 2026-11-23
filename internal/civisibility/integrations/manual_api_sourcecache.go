@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/codeownership"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils/impactedtests"
 )
 
@@ -162,7 +163,7 @@ func loadSourceFunctionCodeOwnerWithLookup(metadata sourceFunctionMetadata, look
 }
 
 type codeOwnerMatcher interface {
-	Match(string) (*utils.Entry, bool)
+	Match(string) (*codeownership.Ownership, bool)
 }
 
 func loadSourceFileCodeOwner(slot *sourceFileCacheSlot, codeOwners codeOwnerMatcher, lookupComplete bool, sourceFile string) (string, bool) {
@@ -184,7 +185,7 @@ func resolveSourceFileCodeOwner(slot *sourceFileCacheSlot, codeOwners codeOwnerM
 		return
 	}
 	if match, found := codeOwners.Match("/" + sourceFile); found {
-		slot.codeOwner = match.GetOwnersString()
+		slot.codeOwner = match.Tag()
 		slot.codeOwnerFound = true
 	}
 }
@@ -318,7 +319,10 @@ func resolveSourceLocation(metadata sourceFileMetadata, shortName string, runtim
 	functions := metadata.namedFunctions[shortName]
 
 	if matchedDeclaration, ok := findLineConfirmedDeclaration(functions, runtimeStartLine); ok {
-		// Named declarations keep the runtime-derived start line for compatibility with the old implementation.
+		// Entry PCs may point at any surviving instruction, including the
+		// closing brace of an optimized-away body. The matched declaration
+		// owns the source range; the runtime line only identifies it.
+		resolution.startLine = matchedDeclaration.declStartLine
 		resolution.endLine = matchedDeclaration.endLine
 		resolution.functionUnskippable = matchedDeclaration.testUnskippable
 		resolution.matchedDeclaration = &matchedDeclaration

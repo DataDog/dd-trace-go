@@ -18,9 +18,8 @@ import (
 )
 
 type Encodable struct {
-	truncated  bool
-	data       []byte
-	parsedJSON *json.ParsedJson
+	truncated bool
+	data      []byte
 }
 
 var (
@@ -28,29 +27,30 @@ var (
 )
 
 func NewEncodableFromData(data []byte, truncated bool) libddwaf.Encodable {
-	parsedJSON, _ := parsedJSONPool.Get().(*json.ParsedJson)
-	pj, err := json.Parse(data, parsedJSON, json.WithCopyStrings(false))
-	if err != nil {
-		// This can happen if a trivial JSON type is found like a string or number, in this case simply return a
-		// simpler encoder where performance is not critical.
-		return newJSONIterEncodableFromData(data, truncated)
-	}
-
 	return &Encodable{
-		truncated:  truncated,
-		data:       data,
-		parsedJSON: pj,
+		truncated: truncated,
+		data:      data,
 	}
 }
 
 func (e *Encodable) Encode(enc *libddwaf.Encoder, obj *libddwaf.WAFObject, remainingDepth int) error {
+	// Parse here rather than in NewEncodableFromData, so the pooled ParsedJson is borrowed and returned by the same
+	// call and an Encodable that is never encoded holds nothing from the pool.
+	reuse, _ := parsedJSONPool.Get().(*json.ParsedJson)
+	pj, err := json.Parse(e.data, reuse, json.WithCopyStrings(false))
+	if err != nil {
+		// This can happen if a trivial JSON type is found like a string or number, if the input is truncated, or if
+		// the CPU is not supported by simdjson. In these cases, fall back to the jsoniter encoder.
+		return newJSONIterEncodableFromData(e.data, e.truncated).Encode(enc, obj, remainingDepth)
+	}
+	defer parsedJSONPool.Put(pj)
+
 	encoder := &encoder{
 		Encodable: e,
 		enc:       enc,
 	}
-	defer parsedJSONPool.Put(encoder.parsedJSON)
 
-	iter := encoder.parsedJSON.Iter()
+	iter := pj.Iter()
 	if err := encoder.Encode(obj, iter.Advance(), &iter, remainingDepth); err != nil && (errors.Is(err, waferrors.ErrTimeout) || !e.truncated) {
 		// Return an error if a waf timeout error occurred, or we are in normal parsing mode
 		return err

@@ -43,6 +43,7 @@ const orchestrionToolGo = "orchestrion.tool.go"
 
 var optionalIntegrations = map[string]struct{}{
 	"instrumentation/errortrace": {},
+	"crashtracker":               {},
 }
 
 var (

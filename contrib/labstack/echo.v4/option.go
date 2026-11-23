@@ -16,8 +16,16 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// envServerErrorStatuses is the name of the env var used to specify error status codes on http server spans
-const envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
+const (
+	// envServerErrorStatuses is the name of the env var used to specify error status codes on http server spans.
+	envServerErrorStatuses = "DD_TRACE_HTTP_SERVER_ERROR_STATUSES"
+	// envIgnoredRoutes is the name of the env var used to skip spans for routes.
+	// The value holds comma-separated entries in the form "METHOD /pattern".
+	// Example: "GET /ready,POST /health".
+	// The middleware matches each entry against the request method and the route
+	// pattern that Echo registered. It does not match the request URL.
+	envIgnoredRoutes = "DD_TRACE_ECHO_IGNORED_ROUTES"
+)
 
 type config struct {
 	serviceName       string
@@ -30,6 +38,8 @@ type config struct {
 	headerTags        instrumentation.HeaderTags
 	errCheck          func(error) bool
 	tags              map[string]interface{}
+	otelEnabled       bool
+	ignoredRoutes     map[string]struct{}
 }
 
 // Option describes options for the Echo.v4 integration.
@@ -58,6 +68,8 @@ func defaults(cfg *config) {
 	}
 	cfg.headerTags = instr.HTTPHeadersAsTags()
 	cfg.tags = make(map[string]interface{})
+	cfg.otelEnabled = instr.OTelSemanticsEnabled()
+	cfg.ignoredRoutes = parseIgnoredRoutes(env.Get(envIgnoredRoutes))
 	cfg.translateError = func(err error) (*echo.HTTPError, bool) {
 		var echoErr *echo.HTTPError
 		if errors.As(err, &echoErr) {
@@ -155,8 +167,9 @@ func WithErrorCheck(errCheck func(error) bool) OptionFn {
 	}
 }
 
-// WithCustomTag will attach the value to the span tagged by the key. Standard
-// span tags cannot be replaced.
+// WithCustomTag adds a tag to each request span. A string value for "service.name"
+// overrides the middleware's service name. The middleware sets tags such as
+// "component", "span.kind", and "resource.name" after applying custom tags.
 func WithCustomTag(key string, value interface{}) OptionFn {
 	return func(cfg *config) {
 		if cfg.tags == nil {

@@ -105,6 +105,16 @@ type fakeResponseWriter struct {
 	status  int
 	body    []byte
 	headers http.Header
+
+	// sendBlock delivers a staged block response to the gateway. It is only armed
+	// while a gateway message is in flight: outside of one there is nothing to
+	// respond on, and integrations resolve the target message from sendBlockCtx.
+	sendBlock    func(context.Context, BlockActionOptions) error
+	sendBlockCtx context.Context
+	blockArmed   bool
+	// blockSent and blockErr record the outcome of the single sendBlock call.
+	blockSent bool
+	blockErr  error
 }
 
 // Reset resets the fakeResponseWriter to its initial state
@@ -114,6 +124,8 @@ func (w *fakeResponseWriter) Reset() {
 	w.status = 0
 	w.body = nil
 	w.headers = make(http.Header)
+	w.blockSent = false
+	w.blockErr = nil
 }
 
 // Status is not in the [http.ResponseWriter] interface, but it is cast into it by the tracing code
@@ -140,6 +152,63 @@ func (w *fakeResponseWriter) Write(b []byte) (int, error) {
 	defer w.mu.Unlock()
 	w.body = append(w.body, b...)
 	return len(b), nil
+}
+
+// errBlockResponseNotSent reports a block decision that never reached the gateway.
+var errBlockResponseNotSent = errors.New("proxy block response was not sent")
+
+// armBlockDelivery allows one block response to be delivered on the gateway
+// message that ctx identifies, and returns the matching disarm function.
+func (w *fakeResponseWriter) armBlockDelivery(ctx context.Context, send func(context.Context, BlockActionOptions) error) func() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.sendBlock, w.sendBlockCtx, w.blockArmed = send, ctx, true
+	return w.disarmBlockDelivery
+}
+
+func (w *fakeResponseWriter) disarmBlockDelivery() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.blockArmed = false
+}
+
+// AppSecCommitBlockResponse delivers the staged block response exactly once. AppSec
+// calls it right after the block handler wrote to this writer, so the delivery
+// outcome is known before the request telemetry is submitted.
+func (w *fakeResponseWriter) AppSecCommitBlockResponse() error {
+	w.mu.Lock()
+	if w.blockSent || !w.blockArmed || w.sendBlock == nil {
+		defer w.mu.Unlock()
+		if !w.blockSent {
+			w.blockErr = errBlockResponseNotSent
+		}
+		return w.blockErr
+	}
+
+	w.blockSent = true
+	send, ctx := w.sendBlock, w.sendBlockCtx
+	opts := BlockActionOptions{StatusCode: w.status, Headers: w.headers, Body: w.body}
+	w.mu.Unlock()
+
+	err := send(ctx, opts)
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.blockErr = err
+	return err
+}
+
+// blockResponseError reports why the staged block response did not reach the gateway.
+func (w *fakeResponseWriter) blockResponseError() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.blockErr != nil {
+		return fmt.Errorf("error creating block message: %w", w.blockErr)
+	}
+	if !w.blockSent {
+		return errBlockResponseNotSent
+	}
+	return nil
 }
 
 var _ http.ResponseWriter = &fakeResponseWriter{}

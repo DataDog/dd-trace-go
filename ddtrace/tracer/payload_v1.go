@@ -232,6 +232,11 @@ func (p *payloadV1) push(t spanList) (stats payloadStats, err error) {
 		attributes:        p.chunkAttr,
 	}
 
+	// First push into this payload: set the payload-level native export marker.
+	// The chunk-level marker on each chunk's first span is set in setTraceTagsLocked.
+	if atomic.LoadUint32(&p.count) == 0 {
+		p.attributes[keySDKOTLPExport] = anyValue{valueType: StringValueType, value: "false"}
+	}
 	// Append process tags to the payload attributes
 	// if there are attributes available, set them in our bitmap and increment
 	// the number of fields.
@@ -687,7 +692,7 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 			var err error
 			scratch, err = msgp.AppendIntf(scratch[:0], v)
 			if err != nil {
-				log.Warn("failed to serialize meta_struct value for key %s: %s", k, err.Error())
+				log.Warn("failed to serialize meta_struct value for key %s: %s", k, err.Error()) //errtrack:ignore per-span payload encoding; report only an aggregate at a non-hot boundary
 				scratch, _ = msgp.AppendIntf(nil, []byte(serializationFailed))
 			}
 			count++
@@ -1819,5 +1824,5 @@ func decodeAttributes(b []byte, strings *stringTable) (map[string]anyValue, []by
 
 //go:noinline
 func warnUnsupportedValue(t uint32) {
-	log.Warn("failed to serialize unsupported type: %d", t)
+	log.Warn("failed to serialize unsupported type: %d", t) //errtrack:ignore per-span payload encoding; report only an aggregate at a non-hot boundary
 }

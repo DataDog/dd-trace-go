@@ -85,8 +85,9 @@ func newHighCardinalitySpanList(n int) spanList {
 		list[i].start = fixedTime
 		list[i].service = "service." + itoa[i%5+1]
 		list[i].resource = "resource." + itoa[i%5+1]
-		for i := range 50 {
-			list[i].SetTag("tag."+itoa[i%5+1], "value."+itoa[i%5+1])
+		for j := range 50 {
+			is, js := strconv.Itoa(i), strconv.Itoa(j)
+			list[i].SetTag("tag."+is+"."+js, "value."+is+"."+js)
 		}
 	}
 	return list
@@ -136,6 +137,30 @@ func TestPayloadV04Decode(t *testing.T) {
 			assert.NoError(err)
 			assert.Len(got, n)
 		})
+	}
+}
+
+func TestPayloadV1OTLPExportMarker(t *testing.T) {
+	p := newPayloadV1()
+	_, err := p.push(newSpanList(3))
+	require.NoError(t, err)
+	_, err = p.push(newSpanList(2))
+	require.NoError(t, err)
+	encoded, err := io.ReadAll(p)
+	require.NoError(t, err)
+
+	got := newPayloadV1()
+	_, err = bytes.NewBuffer(encoded).WriteTo(got)
+	require.NoError(t, err)
+	_, err = got.decodeBuffer()
+	require.NoError(t, err)
+
+	require.Contains(t, got.attributes, keySDKOTLPExport)
+	assert.Equal(t, "false", got.attributes[keySDKOTLPExport].value)
+	for i, c := range got.chunks {
+		for j, s := range c.spans {
+			assert.False(t, s.meta.Has(keySDKOTLPExport), "chunk %d span %d must not carry the marker", i, j)
+		}
 	}
 }
 

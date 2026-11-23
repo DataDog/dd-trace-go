@@ -854,18 +854,24 @@ func TestProcessRetryEFDFaultySessionAdmissionSeam(t *testing.T) {
 
 func TestProcessRetryEFDFaultySessionSuppressionFallsThroughToFTROnce(t *testing.T) {
 	settings := integrations.GetFlakyRetriesSettings()
-	oldRetryCount := settings.RetryCount
+	oldSettings := *settings
 	settings.RetryCount = 3
-	t.Cleanup(func() { settings.RetryCount = oldRetryCount })
+	t.Cleanup(func() { *settings = oldSettings })
 
 	meta := &testExecutionMetadata{isFlakyTestRetriesEnabled: true}
-	retryCount, ok := transitionSuppressedEFDToFlakyRetries(meta, true, false)
+	retryCount, ok := transitionSuppressedEFDToFlakyRetries(meta, time.Second, true, false)
 	require.True(t, ok)
 	require.Equal(t, int64(2), retryCount)
 	require.True(t, meta.efdFellBackToFlakyRetries)
 
-	_, ok = transitionSuppressedEFDToFlakyRetries(meta, true, false)
+	_, ok = transitionSuppressedEFDToFlakyRetries(meta, time.Second, true, false)
 	require.False(t, ok, "the EFD-to-FTR transition must happen at most once")
+
+	settings.DynamicRetryCounts = &[5]int64{1, 2, 4, 1, 1}
+	dynamicMeta := &testExecutionMetadata{isFlakyTestRetriesEnabled: true}
+	retryCount, ok = transitionSuppressedEFDToFlakyRetries(dynamicMeta, 20*time.Second, true, false)
+	require.True(t, ok)
+	require.Equal(t, int64(3), retryCount, "the first execution duration selects the dynamic retry count")
 
 	for _, test := range []struct {
 		name      string
@@ -877,7 +883,7 @@ func TestProcessRetryEFDFaultySessionSuppressionFallsThroughToFTROnce(t *testing
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			candidate := &testExecutionMetadata{isFlakyTestRetriesEnabled: true}
-			_, transitioned := transitionSuppressedEFDToFlakyRetries(candidate, test.failed, test.anyPassed)
+			_, transitioned := transitionSuppressedEFDToFlakyRetries(candidate, time.Second, test.failed, test.anyPassed)
 			require.False(t, transitioned)
 			require.False(t, candidate.efdFellBackToFlakyRetries)
 		})

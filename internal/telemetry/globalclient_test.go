@@ -7,9 +7,15 @@ package telemetry
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
 
 // Ensure that DD_INSTRUMENTATION_TELEMETRY_ENABLED is read once and cached,
@@ -27,4 +33,249 @@ func TestDisabledCachesInitialEnv(t *testing.T) {
 
 	// Reset again
 	telemetryEnabledOnce = sync.Once{}
+}
+
+// blockingWriter holds every Flush until release is closed.
+type blockingWriter struct {
+	started  chan struct{}
+	release  chan struct{}
+	once     sync.Once
+	inFlight atomic.Int32
+}
+
+func (w *blockingWriter) Flush(transport.Payload) ([]internal.EndpointRequestResult, error) {
+	w.inFlight.Add(1)
+	defer w.inFlight.Add(-1)
+	w.once.Do(func() { close(w.started) })
+	<-w.release
+	return []internal.EndpointRequestResult{{PayloadByteSize: 1, CallDuration: time.Nanosecond}}, nil
+}
+
+// TestCloseWaitsForStartAppFlush covers tracer.Stop, which closes its
+// telemetry client and then its HTTP client's idle connections. If Close
+// returned while the StartApp flush was still sending, that request's
+// keep-alive connection would go back to the idle pool after the cleanup and
+// leak (goleak reports it in the tracer tests when a real agent is running).
+func TestCloseWaitsForStartAppFlush(t *testing.T) {
+	telemetryEnabledOnce = sync.Once{}
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
+	require.Nil(t, GlobalClient())
+
+	config := defaultConfig(ClientConfig{})
+	config.AgentURL = "http://localhost:8126"
+	config.FlushInterval = internal.Range[time.Duration]{Min: time.Hour, Max: time.Hour}
+	c, err := newClient(internal.TracerConfig{Service: "test-service", Env: "test-env", Version: "1.0.0"}, config)
+	require.NoError(t, err)
+	writer := &blockingWriter{started: make(chan struct{}), release: make(chan struct{})}
+	c.writer = writer
+	t.Cleanup(startAppFlushWg.Wait)
+	t.Cleanup(func() { SwapClient(nil) })
+
+	StartApp(c)
+	<-writer.started
+	time.AfterFunc(50*time.Millisecond, func() { close(writer.release) })
+
+	require.NoError(t, c.Close())
+	assert.Zero(t, writer.inFlight.Load(), "Close returned while the StartApp flush was still sending")
+}
+
+// TestConcurrentStartAppSameClient makes sure two StartApp calls racing with
+// the same client don't deadlock by closing the client being installed.
+func TestConcurrentStartAppSameClient(t *testing.T) {
+	telemetryEnabledOnce = sync.Once{}
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
+	require.Nil(t, GlobalClient())
+
+	config := defaultConfig(ClientConfig{})
+	config.AgentURL = "http://localhost:8126"
+	config.FlushInterval = internal.Range[time.Duration]{Min: time.Hour, Max: time.Hour}
+	c, err := newClient(internal.TracerConfig{Service: "test-service", Env: "test-env", Version: "1.0.0"}, config)
+	require.NoError(t, err)
+	writer := &blockingWriter{started: make(chan struct{}), release: make(chan struct{})}
+	c.writer = writer
+	t.Cleanup(startAppFlushWg.Wait)
+	t.Cleanup(func() { SwapClient(nil) })
+	t.Cleanup(func() { writer.once.Do(func() {}); close(writer.release) })
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for range 8 {
+		wg.Go(func() {
+			<-start
+			StartApp(c)
+		})
+	}
+	close(start)
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("concurrent StartApp calls deadlocked")
+	}
+	assert.Equal(t, Client(c), GlobalClient())
+}
+
+// TestLog_QueuedBeforeStartApp_CapturesCallSiteStacktrace reproduces the bug
+// WithStacktrace() actually captures nothing itself — the real capture used
+// to happen inside loggerBackend.add, at replay time for a call queued
+// before StartApp. That attributed the stack to the replay goroutine
+// (SwapClient/globalClientRecorder.Replay), not to this test function, the
+// call's real site. Log now captures synchronously before queuing, and this
+// asserts the rendered stack reflects that: no replay-machinery frames
+// (SwapClient/Replay/globalClientCall), just this test function.
+func TestLog_QueuedBeforeStartApp_CapturesCallSiteStacktrace(t *testing.T) {
+	telemetryEnabledOnce = sync.Once{}
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+	t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
+
+	globalClientRecorder.Clear()
+	require.Nil(t, GlobalClient(), "no client must be installed yet for this test to exercise the queued path")
+
+	// The exact bug scenario: call the package-level Log function before any
+	// client exists, so globalClientCall queues the closure instead of
+	// running it immediately.
+	Log(NewRecord(LogError, "queued before start"), WithStacktrace())
+
+	tracerConfig := internal.TracerConfig{Service: "test-service", Env: "test-env", Version: "1.0.0"}
+	config := defaultConfig(ClientConfig{})
+	config.AgentURL = "http://localhost:8126"
+	config.FlushInterval = internal.Range[time.Duration]{Min: time.Hour, Max: time.Hour}
+	c, err := newClient(tracerConfig, config)
+	require.NoError(t, err)
+	t.Cleanup(func() { c.Close() })
+	t.Cleanup(func() { SwapClient(nil) })
+
+	recordWriter := &internal.RecordWriter{}
+	c.writer = recordWriter
+
+	// Installing the client replays the queued Log call — on this goroutine,
+	// not the original call site's.
+	old := SwapClient(c)
+	require.Nil(t, old)
+
+	c.Flush()
+
+	payloads := recordWriter.Payloads()
+	require.NotEmpty(t, payloads)
+	// Flushes with more than one payload (e.g. a heartbeat alongside the
+	// replayed logs) are wrapped in a transport.MessageBatch by the default
+	// mapper, so unwrap that layer when present.
+	var logs transport.Logs
+	for _, p := range payloads {
+		switch v := p.(type) {
+		case transport.Logs:
+			logs = v
+		case transport.MessageBatch:
+			for _, m := range v {
+				if l, ok := m.Payload.(transport.Logs); ok {
+					logs = l
+				}
+			}
+		}
+	}
+	require.Len(t, logs.Logs, 1)
+
+	stack := logs.Logs[0].StackTrace
+	assert.Contains(t, stack, "TestLog_QueuedBeforeStartApp_CapturesCallSiteStacktrace")
+	assert.NotContains(t, stack, "SwapClient")
+	assert.NotContains(t, stack, "Replay")
+	assert.NotContains(t, stack, "globalClientCall")
+}
+
+// TestLog_DisabledSkipsStacktraceCapture guards against a regression: Log
+// used to capture a stacktrace whenever the caller requested one and no
+// client was installed yet — even when telemetry was fully disabled, in
+// which case globalClientCall discards the call a line later via its own
+// Disabled() check anyway. When telemetry is disabled, StartApp never
+// installs a client, so GlobalClient() is permanently nil: a hot,
+// repeatedly-invoked disabled path (e.g. AppSec's exception recording)
+// would pay for a stack walk and allocation it can never observe.
+//
+// This compares allocations for the same Log(record, WithStacktrace()) call
+// under two states — disabled vs. enabled-but-not-yet-started — holding the
+// call-site argument construction (building the one-element options slice,
+// the WithStacktrace() closure) constant across both. Only the internal
+// capture branch should differ, so the disabled case must allocate less.
+func TestLog_DisabledSkipsStacktraceCapture(t *testing.T) {
+	record := NewRecord(LogError, "should be a no-op when disabled")
+
+	measure := func(disabled bool) float64 {
+		telemetryEnabledOnce = sync.Once{}
+		t.Cleanup(func() { telemetryEnabledOnce = sync.Once{} })
+		if disabled {
+			t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "0")
+		} else {
+			t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "1")
+		}
+
+		globalClientRecorder.Clear()
+		t.Cleanup(func() { globalClientRecorder.Clear() })
+		require.Nil(t, GlobalClient())
+
+		return testing.AllocsPerRun(200, func() {
+			Log(record, WithStacktrace())
+		})
+	}
+
+	disabledAllocs := measure(true)
+	enabledNotStartedAllocs := measure(false)
+
+	assert.Less(t, disabledAllocs, enabledNotStartedAllocs,
+		"a disabled Log(..., WithStacktrace()) call must do less work than an enabled-but-not-started one — it must not capture a stacktrace it will immediately discard")
+}
+
+// flushGateClient blocks in Flush until releaseFlush closes. It lets a test
+// hold the app-started flush open while StartApp has already returned.
+type flushGateClient struct {
+	Client
+	releaseFlush chan struct{}
+}
+
+func (c *flushGateClient) AppStart()    {}
+func (c *flushGateClient) Close() error { return nil }
+func (c *flushGateClient) Flush()       { <-c.releaseFlush }
+
+// TestWaitForStartAppFlushBlocksUntilStartupFlushReturns pins the contract
+// tracer.Stop relies on: the wait returns only after every flush goroutine
+// launched by StartApp finishes. Stop waits before CloseIdleConnections, so a
+// late flush cannot strand a keep-alive connection in the idle pool.
+func TestWaitForStartAppFlushBlocksUntilStartupFlushReturns(t *testing.T) {
+	// Force telemetry enabled; an earlier test may have cached the env var as
+	// disabled. Consume the lazy init first so the cache below sticks.
+	_ = Disabled()
+	savedEnabled := telemetryClientEnabled
+	telemetryClientEnabled = true
+	defer func() { telemetryClientEnabled = savedEnabled }()
+
+	// Reset the global slot and the recorders, as MockClient does.
+	SwapClient(nil)
+	globalClientRecorder.Clear()
+	metricsHandleSwappablePointers.Clear()
+	defer SwapClient(nil)
+
+	client := &flushGateClient{releaseFlush: make(chan struct{})}
+	StartApp(client)
+
+	waitDone := make(chan struct{})
+	go func() {
+		WaitForStartAppFlush()
+		close(waitDone)
+	}()
+
+	select {
+	case <-waitDone:
+		t.Fatal("WaitForStartAppFlush returned while the startup flush was in flight")
+	case <-time.After(10 * time.Millisecond):
+	}
+
+	close(client.releaseFlush)
+
+	select {
+	case <-waitDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("WaitForStartAppFlush did not return after the startup flush finished")
+	}
 }

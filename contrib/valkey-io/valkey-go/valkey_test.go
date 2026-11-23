@@ -438,3 +438,32 @@ func TestNewClient(t *testing.T) {
 	}
 
 }
+
+// BenchmarkStartSpan measures client.startSpan, which merges static,
+// build-once tags via WithStartSpanConfig and per-call tags via a single
+// WithTags map instead of one tracer.Tag closure per tag. Compare its
+// ns/op and allocs/op across commits (e.g. with benchstat) to evaluate
+// changes to the tagging strategy.
+func BenchmarkStartSpan(b *testing.B) {
+	err := tracer.Start(tracer.WithTestDefaults(nil))
+	require.NoError(b, err)
+	defer tracer.Stop()
+
+	cfg := defaultConfig()
+	cfg.rawCommand = true
+	c := &client{
+		cfg:     cfg,
+		host:    "127.0.0.1",
+		port:    "6380",
+		dbIndex: "0",
+		user:    "default",
+	}
+	c.spanCfg = newSpanConfig(cfg, c.host, c.port, c.dbIndex, c.user)
+	cmd := command{statement: "SET", raw: "SET test_key test_value"}
+
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		span, _ := c.startSpan(context.Background(), cmd)
+		span.Finish()
+	}
+}

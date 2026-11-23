@@ -13,14 +13,17 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/request"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/eventbridge"
 	"github.com/aws/aws-sdk-go/service/kinesis"
+	"github.com/aws/aws-sdk-go/service/lambda"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/aws/aws-sdk-go/service/sfn"
 	"github.com/aws/aws-sdk-go/service/sns"
@@ -30,6 +33,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
 const componentName = "aws/aws-sdk-go/aws"
@@ -52,6 +56,10 @@ type handlers struct {
 }
 
 // WrapSession wraps a session.Session, causing requests and responses to be traced.
+// Wrapping a session that is already wrapped replaces its tracing handlers, so
+// each request is traced once, with the options of the last call. The handlers
+// move back to the front and back of their lists, so handlers added between
+// two calls still run inside the span.
 func WrapSession(s *session.Session, opts ...Option) *session.Session {
 	cfg := new(config)
 	defaults(cfg)
@@ -61,10 +69,12 @@ func WrapSession(s *session.Session, opts ...Option) *session.Session {
 	instr.Logger().Debug("contrib/aws/aws-sdk-go/aws: Wrapping Session: %#v", cfg)
 	h := &handlers{cfg: cfg}
 	s = s.Copy()
+	s.Handlers.Send.RemoveByName(SendHandlerName)
 	s.Handlers.Send.PushFrontNamed(request.NamedHandler{
 		Name: SendHandlerName,
 		Fn:   h.Send,
 	})
+	s.Handlers.Complete.RemoveByName(CompleteHandlerName)
 	s.Handlers.Complete.PushBackNamed(request.NamedHandler{
 		Name: CompleteHandlerName,
 		Fn:   h.Complete,
@@ -79,6 +89,9 @@ func (h *handlers) Send(req *request.Request) {
 	// Make a copy of the URL so we don't modify the outgoing request
 	url := *req.HTTPRequest.URL
 	url.User = nil // Do not include userinfo in the HTTPURL tag.
+	// Obfuscate the query string (for example, a presigned URL signature), or
+	// remove it when it must not be reported.
+	redactURLQuery(&url)
 
 	region := awsRegion(req)
 
@@ -209,6 +222,8 @@ func extraTagsForService(req *request.Request) map[string]interface{} {
 		extraTags, err = dynamoDBTags(req.Params)
 	case kinesis.ServiceName:
 		extraTags, err = kinesisTags(req.Params)
+	case lambda.ServiceName:
+		extraTags, err = lambdaTags(req.Params)
 	case eventbridge.ServiceName:
 		extraTags, err = eventBridgeTags(req.Params)
 	case sfn.ServiceName:
@@ -227,16 +242,29 @@ func sqsTags(params interface{}, region string, partition string) (map[string]in
 	var queueURL string
 	switch input := params.(type) {
 	case *sqs.SendMessageInput:
-		queueURL = *input.QueueUrl
+		queueURL = aws.StringValue(input.QueueUrl)
 	case *sqs.DeleteMessageInput:
-		queueURL = *input.QueueUrl
+		queueURL = aws.StringValue(input.QueueUrl)
 	case *sqs.DeleteMessageBatchInput:
-		queueURL = *input.QueueUrl
+		queueURL = aws.StringValue(input.QueueUrl)
 	case *sqs.ReceiveMessageInput:
-		queueURL = *input.QueueUrl
+		queueURL = aws.StringValue(input.QueueUrl)
 	case *sqs.SendMessageBatchInput:
-		queueURL = *input.QueueUrl
+		queueURL = aws.StringValue(input.QueueUrl)
+	case *sqs.ChangeMessageVisibilityInput:
+		queueURL = aws.StringValue(input.QueueUrl)
+	case *sqs.ChangeMessageVisibilityBatchInput:
+		queueURL = aws.StringValue(input.QueueUrl)
+	case *sqs.GetQueueAttributesInput:
+		queueURL = aws.StringValue(input.QueueUrl)
+	case *sqs.PurgeQueueInput:
+		queueURL = aws.StringValue(input.QueueUrl)
+	case *sqs.SetQueueAttributesInput:
+		queueURL = aws.StringValue(input.QueueUrl)
 	default:
+		return nil, nil
+	}
+	if queueURL == "" {
 		return nil, nil
 	}
 
@@ -248,6 +276,7 @@ func sqsTags(params interface{}, region string, partition string) (map[string]in
 	tags := map[string]interface{}{
 		ext.SQSQueueName:    queueName,
 		ext.CloudResourceID: arn,
+		ext.SQSQueueURL:     queueURL,
 	}
 
 	return tags, nil
@@ -302,21 +331,26 @@ func snsTags(params interface{}) (map[string]interface{}, error) {
 		if input.TopicArn != nil {
 			destTag, destARN = ext.SNSTopicName, *input.TopicArn
 		} else {
-			destTag, destARN = ext.SNSTargetName, *input.TargetArn
+			destTag, destARN = ext.SNSTargetName, aws.StringValue(input.TargetArn)
 		}
+	case *sns.PublishBatchInput:
+		destTag, destARN = ext.SNSTopicName, aws.StringValue(input.TopicArn)
 	case *sns.GetTopicAttributesInput:
-		destTag, destARN = ext.SNSTopicName, *input.TopicArn
+		destTag, destARN = ext.SNSTopicName, aws.StringValue(input.TopicArn)
 	case *sns.ListSubscriptionsByTopicInput:
-		destTag, destARN = ext.SNSTopicName, *input.TopicArn
+		destTag, destARN = ext.SNSTopicName, aws.StringValue(input.TopicArn)
 	case *sns.RemovePermissionInput:
-		destTag, destARN = ext.SNSTopicName, *input.TopicArn
+		destTag, destARN = ext.SNSTopicName, aws.StringValue(input.TopicArn)
 	case *sns.SetTopicAttributesInput:
-		destTag, destARN = ext.SNSTopicName, *input.TopicArn
+		destTag, destARN = ext.SNSTopicName, aws.StringValue(input.TopicArn)
 	case *sns.SubscribeInput:
-		destTag, destARN = ext.SNSTopicName, *input.TopicArn
+		destTag, destARN = ext.SNSTopicName, aws.StringValue(input.TopicArn)
 	case *sns.CreateTopicInput:
-		destTag, destName = ext.SNSTopicName, *input.Name
+		destTag, destName = ext.SNSTopicName, aws.StringValue(input.Name)
 	default:
+		return nil, nil
+	}
+	if destName == "" && destARN == "" {
 		return nil, nil
 	}
 	if destName == "" {
@@ -326,59 +360,164 @@ func snsTags(params interface{}) (map[string]interface{}, error) {
 		}
 		destName = parts[len(parts)-1]
 	}
-	return map[string]interface{}{
+	tags := map[string]any{
 		destTag: destName,
-	}, nil
+	}
+	// Only a TopicArn is a topic ARN: a TargetArn may be an endpoint or phone
+	// number ARN, and CreateTopicInput only carries the topic name.
+	if destTag == ext.SNSTopicName && destARN != "" {
+		tags[ext.SNSTopicARN] = destARN
+	}
+	return tags, nil
 }
 
 func dynamoDBTags(params interface{}) (map[string]interface{}, error) {
 	var tableName string
 	switch input := params.(type) {
 	case *dynamodb.GetItemInput:
-		tableName = *input.TableName
+		tableName = aws.StringValue(input.TableName)
 	case *dynamodb.PutItemInput:
-		tableName = *input.TableName
+		tableName = aws.StringValue(input.TableName)
 	case *dynamodb.QueryInput:
-		tableName = *input.TableName
+		tableName = aws.StringValue(input.TableName)
 	case *dynamodb.ScanInput:
-		tableName = *input.TableName
+		tableName = aws.StringValue(input.TableName)
 	case *dynamodb.UpdateItemInput:
-		tableName = *input.TableName
+		tableName = aws.StringValue(input.TableName)
 	default:
 		return nil, nil
 	}
-	return map[string]interface{}{
+	if tableName == "" {
+		return nil, nil
+	}
+	tags := map[string]any{
 		ext.DynamoDBTableName: tableName,
+	}
+	if arn := dynamoDBTableARN(tableName); arn != "" {
+		tags[ext.DynamoDBTableARN] = arn
+	}
+	return tags, nil
+}
+
+// dynamoDBTableARN returns tableName if it is a DynamoDB table ARN,
+// arn:<partition>:dynamodb:<region>:<account>:table/<name>, and "" otherwise.
+func dynamoDBTableARN(tableName string) string {
+	parts := strings.SplitN(tableName, ":", 6)
+	if len(parts) != 6 || parts[0] != "arn" || parts[1] == "" || parts[2] != "dynamodb" ||
+		parts[3] == "" || parts[4] == "" {
+		return ""
+	}
+	name, ok := strings.CutPrefix(parts[5], "table/")
+	if !ok || name == "" || strings.Contains(name, "/") {
+		return ""
+	}
+	return tableName
+}
+
+// lambdaFunctionARN returns functionName if it is a full function ARN, and ""
+// otherwise. Like dd-trace-java, it is tagged as sent, including a version or
+// alias qualifier, and a partial ARN (account:function:name) or a name is
+// not, because its partition and region are unknown.
+func lambdaFunctionARN(functionName string) string {
+	if strings.HasPrefix(functionName, "arn:") {
+		return functionName
+	}
+	return ""
+}
+
+func lambdaTags(params any) (map[string]any, error) {
+	var functionName string
+	switch input := params.(type) {
+	case *lambda.InvokeInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.InvokeAsyncInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.InvokeWithResponseStreamInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.GetFunctionInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.GetFunctionConfigurationInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.DeleteFunctionInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.UpdateFunctionCodeInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.UpdateFunctionConfigurationInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.PublishVersionInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.AddPermissionInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.RemovePermissionInput:
+		functionName = aws.StringValue(input.FunctionName)
+	case *lambda.GetPolicyInput:
+		functionName = aws.StringValue(input.FunctionName)
+	default:
+		return nil, nil
+	}
+	arn := lambdaFunctionARN(functionName)
+	if arn == "" {
+		return nil, nil
+	}
+	return map[string]any{
+		ext.LambdaFunctionARN: arn,
 	}, nil
 }
 
 func kinesisTags(params interface{}) (map[string]interface{}, error) {
-	var streamName string
+	var name, arn *string
 	switch input := params.(type) {
 	case *kinesis.PutRecordInput:
-		streamName = *input.StreamName
+		name, arn = input.StreamName, input.StreamARN
 	case *kinesis.PutRecordsInput:
-		streamName = *input.StreamName
+		name, arn = input.StreamName, input.StreamARN
 	case *kinesis.AddTagsToStreamInput:
-		streamName = *input.StreamName
+		name, arn = input.StreamName, input.StreamARN
 	case *kinesis.RemoveTagsFromStreamInput:
-		streamName = *input.StreamName
+		name, arn = input.StreamName, input.StreamARN
 	case *kinesis.CreateStreamInput:
-		streamName = *input.StreamName
+		// CreateStreamInput has no StreamARN: the stream does not exist yet.
+		name = input.StreamName
 	case *kinesis.DeleteStreamInput:
-		streamName = *input.StreamName
+		name, arn = input.StreamName, input.StreamARN
 	case *kinesis.DescribeStreamInput:
-		streamName = *input.StreamName
+		name, arn = input.StreamName, input.StreamARN
 	case *kinesis.DescribeStreamSummaryInput:
-		streamName = *input.StreamName
+		name, arn = input.StreamName, input.StreamARN
 	case *kinesis.GetShardIteratorInput:
-		streamName = *input.StreamName
+		name, arn = input.StreamName, input.StreamARN
+	case *kinesis.GetRecordsInput:
+		// GetRecordsInput identifies the stream by ARN only.
+		arn = input.StreamARN
 	default:
 		return nil, nil
 	}
-	return map[string]interface{}{
-		ext.KinesisStreamName: streamName,
-	}, nil
+	tags := map[string]any{}
+	if streamName := coalesceNameOrArnResource(name, arn); streamName != "" {
+		tags[ext.KinesisStreamName] = streamName
+	}
+	if streamARN := aws.StringValue(arn); streamARN != "" {
+		tags[ext.KinesisStreamARN] = streamARN
+	}
+	if len(tags) == 0 {
+		return nil, nil
+	}
+	return tags, nil
+}
+
+// coalesceNameOrArnResource returns name when it is set, otherwise the
+// trailing "/" segment of arnVal, otherwise the empty string. Kinesis requests
+// may identify a stream by name or by ARN; when both are set, the name takes
+// precedence.
+func coalesceNameOrArnResource(name *string, arnVal *string) string {
+	if name != nil {
+		return *name
+	}
+	if arnVal != nil {
+		parts := strings.Split(*arnVal, "/")
+		return parts[len(parts)-1]
+	}
+	return ""
 }
 
 func eventBridgeTags(params interface{}) (map[string]interface{}, error) {
@@ -410,11 +549,13 @@ func sfnTags(params interface{}) (map[string]interface{}, error) {
 	var stateMachineName, stateMachineArn string
 	switch input := params.(type) {
 	case *sfn.CreateStateMachineInput:
-		stateMachineName = *input.Name
+		stateMachineName = aws.StringValue(input.Name)
 	case *sfn.DescribeStateMachineInput:
-		stateMachineArn = *input.StateMachineArn
+		stateMachineArn = aws.StringValue(input.StateMachineArn)
 	case *sfn.StartExecutionInput:
-		stateMachineArn = *input.StateMachineArn
+		stateMachineArn = aws.StringValue(input.StateMachineArn)
+	case *sfn.StartSyncExecutionInput:
+		stateMachineArn = aws.StringValue(input.StateMachineArn)
 	case *sfn.StopExecutionInput:
 		name, err := stateMachineNameFromExecutionARN(input.ExecutionArn)
 		if err != nil {
@@ -428,19 +569,27 @@ func sfnTags(params interface{}) (map[string]interface{}, error) {
 		}
 		stateMachineName = name
 	case *sfn.ListExecutionsInput:
-		stateMachineArn = *input.StateMachineArn
+		stateMachineArn = aws.StringValue(input.StateMachineArn)
 	case *sfn.UpdateStateMachineInput:
-		stateMachineArn = *input.StateMachineArn
+		stateMachineArn = aws.StringValue(input.StateMachineArn)
 	case *sfn.DeleteStateMachineInput:
-		stateMachineArn = *input.StateMachineArn
+		stateMachineArn = aws.StringValue(input.StateMachineArn)
 	}
 	if stateMachineName == "" {
 		parts := strings.Split(stateMachineArn, ":")
 		stateMachineName = parts[len(parts)-1]
 	}
-	return map[string]interface{}{
-		ext.SFNStateMachineName: stateMachineName,
-	}, nil
+	tags := map[string]any{}
+	if stateMachineName != "" {
+		tags[ext.SFNStateMachineName] = stateMachineName
+	}
+	if stateMachineArn != "" {
+		tags[ext.SFNStateMachineARN] = stateMachineArn
+	}
+	if len(tags) == 0 {
+		return nil, nil
+	}
+	return tags, nil
 }
 
 // stateMachineNameFromExecutionARN returns the state machine name from the given execution ARN.
@@ -454,4 +603,30 @@ func stateMachineNameFromExecutionARN(arn *string) (string, error) {
 		return "", fmt.Errorf("got unexpected execution ARN format: %q", *arn)
 	}
 	return parts[len(parts)-2], nil
+}
+
+// redactURLQuery obfuscates the query string of u for the http.url tag (for
+// example, a presigned URL signature), or removes it when it must not be
+// reported. u must be a copy of the request URL. An opaque URL can also
+// contain user information and a query string: the user information is
+// removed, and the query string is moved to RawQuery before the obfuscation.
+func redactURLQuery(u *url.URL) {
+	if rest, ok := strings.CutPrefix(u.Opaque, "//"); ok {
+		authority, path := rest, ""
+		if i := strings.IndexAny(rest, "/?#"); i >= 0 {
+			authority, path = rest[:i], rest[i:]
+		}
+		if i := strings.LastIndexByte(authority, '@'); i >= 0 {
+			u.Opaque = "//" + authority[i+1:] + path
+		}
+	}
+	if opaque, query, ok := strings.Cut(u.Opaque, "?"); ok {
+		u.Opaque = opaque
+		if u.RawQuery != "" {
+			query += "&" + u.RawQuery
+		}
+		u.RawQuery = query
+	}
+	u.RawQuery = httptrace.ObfuscateQueryString(u.RawQuery, httptrace.ForClientSpan())
+	u.ForceQuery = false
 }

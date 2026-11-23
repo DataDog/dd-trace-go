@@ -8,6 +8,7 @@ package tracer
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"github.com/DataDog/datadog-go/v5/statsd"
+	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	tinternal "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer/internal"
@@ -727,6 +729,7 @@ func TestPerSpanVersionInStats(t *testing.T) {
 func TestStatsIncludeHTTPMethodAndEndpoint(t *testing.T) {
 	uniqueMethod := "POST"
 	uniqueEndpoint := "/__unique_endpoint__"
+	const statusCode = 201
 
 	bucketSize := int64(500_000)
 	s := Span{
@@ -736,6 +739,7 @@ func TestStatsIncludeHTTPMethodAndEndpoint(t *testing.T) {
 		metrics:  map[string]float64{keyMeasured: 1},
 		meta: tinternal.NewSpanMetaFromMap(map[string]string{
 			ext.HTTPMethod:   uniqueMethod,
+			ext.HTTPCode:     "201",
 			ext.HTTPEndpoint: uniqueEndpoint,
 		}),
 	}
@@ -755,7 +759,122 @@ func TestStatsIncludeHTTPMethodAndEndpoint(t *testing.T) {
 	require.NotEmpty(t, actualStats[0].Stats[0].Stats)
 	group := actualStats[0].Stats[0].Stats[0]
 	assert.Equal(t, uniqueMethod, group.GetHTTPMethod())
+	assert.Equal(t, uint32(statusCode), group.GetHTTPStatusCode())
 	assert.Equal(t, uniqueEndpoint, group.GetHTTPEndpoint())
+}
+
+func TestStatsPreferOTelSemanticHTTPAttributesWithLegacyMethodFallback(t *testing.T) {
+	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+	tests := []struct {
+		name       string
+		meta       map[string]string
+		wantMethod string
+		wantStatus uint32
+	}{
+		{
+			name: "successful response",
+			meta: map[string]string{
+				"http.request.method":       "GET",
+				"http.response.status_code": "200",
+				ext.HTTPMethod:              "LEGACY",
+			},
+			wantMethod: "GET",
+			wantStatus: 200,
+		},
+		{
+			name: "legacy method fallback",
+			meta: map[string]string{
+				ext.HTTPMethod:              "PATCH",
+				"http.response.status_code": "204",
+			},
+			wantMethod: "PATCH",
+			wantStatus: 204,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			transport := newDummyTransport()
+			cfg := newTestConfigWithTransport(t, transport)
+			require.True(t, cfg.internalConfig.OTelSemanticsEnabled())
+			c := newConcentrator(cfg, int64(500_000), &statsd.NoOpClientDirect{})
+			s := Span{
+				name:     "http.request",
+				resource: tt.wantMethod,
+				start:    time.Now().UnixNano(),
+				duration: int64(time.Millisecond),
+				metrics:  map[string]float64{keyMeasured: 1},
+				meta:     tinternal.NewSpanMetaFromMap(tt.meta),
+			}
+
+			ss, ok := c.newTracerStatSpan(&s, nil)
+			require.True(t, ok)
+			c.Start()
+			c.In <- []*tracerStatSpan{ss}
+			c.Stop()
+
+			actualStats := transport.Stats()
+			require.Len(t, actualStats, 1)
+			require.Len(t, actualStats[0].Stats, 1)
+			require.Len(t, actualStats[0].Stats[0].Stats, 1)
+			group := actualStats[0].Stats[0].Stats[0]
+			assert.Equal(t, tt.wantMethod, group.GetHTTPMethod())
+			assert.Equal(t, tt.wantStatus, group.GetHTTPStatusCode())
+		})
+	}
+}
+
+func TestStatsPropagateOTelHTTPServerSpanFields(t *testing.T) {
+	t.Setenv("DD_TRACE_OTEL_SEMANTICS_ENABLED", "true")
+
+	const (
+		method = "POST"
+		status = uint32(500)
+	)
+	transport := newDummyTransport()
+	cfg := newTestConfigWithTransport(t, transport)
+	require.True(t, cfg.internalConfig.OTelSemanticsEnabled())
+	c := newConcentrator(cfg, int64(500_000), &statsd.NoOpClientDirect{})
+	s := Span{
+		name:     "http.request",
+		resource: method + " /users/{id}",
+		start:    time.Now().UnixNano(),
+		duration: int64(time.Millisecond),
+		error:    1,
+		metrics:  map[string]float64{keyMeasured: 1},
+		meta: tinternal.NewSpanMetaFromMap(map[string]string{
+			ext.SpanKind:               ext.SpanKindServer,
+			ext.HTTPRequestMethod:      method,
+			ext.HTTPResponseStatusCode: strconv.FormatUint(uint64(status), 10),
+		}),
+	}
+
+	ss, ok := c.newTracerStatSpan(&s, nil)
+	require.True(t, ok)
+	c.Start()
+	c.In <- []*tracerStatSpan{ss}
+	c.Stop()
+
+	// Verify that stats aggregation and OTLP conversion propagate the server method, status, kind, and error state.
+	actualStats := transport.Stats()
+	require.Len(t, actualStats, 1)
+	require.Len(t, actualStats[0].Stats, 1)
+	require.Len(t, actualStats[0].Stats[0].Stats, 1)
+	group := actualStats[0].Stats[0].Stats[0]
+	assert.Equal(t, method, group.HTTPMethod)
+	assert.Equal(t, status, group.HTTPStatusCode)
+	assert.Equal(t, uint64(1), group.Errors)
+
+	otelAttrs := buildDataPointAttributes(group, group.Errors > 0)
+	statusAttr := extractOTLPAttribute(t, otelAttrs, ext.HTTPResponseStatusCode)
+	statusValue, ok := statusAttr.Value.Value.(*otlpcommon.AnyValue_IntValue)
+	require.True(t, ok, "%s must use an OTLP integer value", ext.HTTPResponseStatusCode)
+	assert.Equal(t, int64(status), statusValue.IntValue)
+	attrs := kvAttrsToMap(otelAttrs)
+	assert.Equal(t, "SPAN_KIND_SERVER", attrs["span.kind"])
+	assert.Equal(t, method, attrs[ext.HTTPRequestMethod])
+	assert.Equal(t, "STATUS_CODE_ERROR", attrs["status.code"])
 }
 
 func TestStatsIncludeServiceSource(t *testing.T) {

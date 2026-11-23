@@ -39,3 +39,14 @@ func TestAdaptLogger(t *testing.T) {
 	assertions.Equal(log.LevelInfo, recorder[1].level)
 	assertions.Contains(recorder[1].msg, "INFO: info")
 }
+
+func TestAdaptLoggerLogReportsThreshold(t *testing.T) {
+	defer log.SetLevel(log.GetLevel())
+	var got tracer.LogLevel
+	l := tracer.AdaptLogger(func(lvl tracer.LogLevel, _ string, _ ...any) { got = lvl })
+	for _, lvl := range []log.Level{log.LevelDebug, log.LevelInfo, log.LevelWarn, log.LevelError} {
+		log.SetLevel(lvl)
+		l.Log("")
+		assert.Equal(t, lvl, got)
+	}
+}

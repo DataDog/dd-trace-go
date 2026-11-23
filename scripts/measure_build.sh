@@ -11,7 +11,7 @@ set -euo pipefail
 #
 # Options:
 #   --sample NAME         Sample to build (default: net_http)
-#   --mode MODE           Build mode: standard or orchestrion (required)
+#   --mode MODE           Build mode: standard, orchestrion, or otelc (required)
 #   --output PATH         Output JSON file path (default: stdout)
 #   --repeats N           Number of build repeats (default: 3)
 #   -h, --help            Show this help message
@@ -35,7 +35,7 @@ Builds are performed with a cold build cache to measure full compilation cost.
 
 Options:
   --sample NAME         Sample to build (default: net_http)
-  --mode MODE           Build mode: standard or orchestrion (required)
+  --mode MODE           Build mode: standard, orchestrion, or otelc (required)
   --output PATH         Output JSON file path (default: stdout)
   --repeats N           Number of build repeats (default: 3)
   -h, --help            Show this help message
@@ -92,11 +92,11 @@ done
 
 # Validate required arguments
 if [[ -z "$MODE" ]]; then
-  die "--mode is required (standard or orchestrion)"
+  die "--mode is required (standard, orchestrion, or otelc)"
 fi
 
-if [[ "$MODE" != "standard" && "$MODE" != "orchestrion" ]]; then
-  die "--mode must be 'standard' or 'orchestrion', got: $MODE"
+if [[ "$MODE" != "standard" && "$MODE" != "orchestrion" && "$MODE" != "otelc" ]]; then
+  die "--mode must be 'standard', 'orchestrion', or 'otelc', got: $MODE"
 fi
 
 # Find repo root
@@ -121,16 +121,34 @@ message "  Output dir: $OUT_DIR"
 
 cd "$INTEGRATION_DIR" || die "Failed to cd to $INTEGRATION_DIR"
 
+# Retry helper for the two untimed, network-bound steps below. Both talk to the module proxy and
+# the checksum database, and neither is retried by the go command itself (golang/go#28194), so a
+# single dropped HTTP/2 stream part-way through would otherwise fail the whole measurement.
+# shellcheck source=.github/workflows/apps/go-retry.sh
+source "$REPO_ROOT/.github/workflows/apps/go-retry.sh"
+
 # Warm module cache (untimed)
 message "Warming module download cache..."
-go mod download || die "go mod download failed"
+retry_on_corruption go mod download || die "go mod download failed"
 
 # For orchestrion mode, ensure the binary is installed (untimed)
 if [[ "$MODE" == "orchestrion" ]]; then
   message "Installing orchestrion binary..."
-  go install "github.com/DataDog/orchestrion" || die "Failed to install orchestrion"
+  retry_on_corruption go install "github.com/DataDog/orchestrion" || die "Failed to install orchestrion"
   ORCHESTRION_VERSION="$(go list -m -f '{{.Version}}' github.com/DataDog/orchestrion)"
   message "  Orchestrion version: $ORCHESTRION_VERSION"
+fi
+
+# For otelc mode, clone and install the otelc binary (untimed)
+if [[ "$MODE" == "otelc" ]]; then
+  OTELC_VERSION="${OTELC_VERSION:?pin from .github/workflows/otelc.yml, set by the workflow}"
+  if command -v otelc &> /dev/null; then
+    message "Using otelc already on PATH..."
+  else
+    message "Installing otelc binary..."
+    retry_on_corruption go install "go.opentelemetry.io/otelc/tool/cmd/otelc@$OTELC_VERSION" || die "Failed to install otelc"
+  fi
+  message "  Otelc version: $OTELC_VERSION"
 fi
 
 # Get Go version
@@ -141,19 +159,32 @@ message "  Go version: $GO_VERSION"
 do_build() {
   local bin_path="$OUT_DIR/$SAMPLE-$MODE.test"
 
-  # Cold build cache
+  # Cold build cache. otelc keeps its own build cache and logs in its work
+  # directory, which go clean -cache does not touch, so each build gets a new
+  # one. Reusing it would also fill the runner's disk over the repeats.
   message "Cleaning build cache..."
   go clean -cache
+  local otelc_work="$OUT_DIR/otelc-work"
+  rm -rf "$otelc_work"
 
   # Timed build
   message "Building $SAMPLE with $MODE toolchain..."
   local start_time
   start_time=$(date +%s.%N 2> /dev/null || date +%s)
 
+  local build_status=0
   if [[ "$MODE" == "standard" ]]; then
-    go test -c -o "$bin_path" "./$SAMPLE" || die "Build failed (standard)"
+    go test -c -o "$bin_path" "./$SAMPLE" || build_status=$?
+  elif [[ "$MODE" == "orchestrion" ]]; then
+    go test -c -toolexec='orchestrion toolexec' -o "$bin_path" "./$SAMPLE" || build_status=$?
   else
-    go test -c -toolexec='orchestrion toolexec' -o "$bin_path" "./$SAMPLE" || die "Build failed (orchestrion)"
+    GOWORK=off otelc --work-dir "$otelc_work" go test -c -o "$bin_path" "./$SAMPLE" || build_status=$?
+  fi >&2
+
+  if [[ "$build_status" -ne 0 ]]; then
+    message "  Build failed ($MODE, exit $build_status); recording null metrics for this run"
+    echo "null null"
+    return 1
   fi
 
   local end_time
@@ -163,7 +194,11 @@ do_build() {
 
   # Binary size
   local size
-  size=$(stat -c %s "$bin_path" 2> /dev/null || stat -f %z "$bin_path" 2> /dev/null) || die "Failed to stat binary"
+  if ! size=$(stat -c %s "$bin_path" 2> /dev/null || stat -f %z "$bin_path" 2> /dev/null); then
+    message "  Failed to stat binary; recording null size for this run"
+    echo "$duration null"
+    return 1
+  fi
 
   message "  Duration: ${duration}s"
   message "  Size: $size bytes"
@@ -171,17 +206,23 @@ do_build() {
   echo "$duration $size"
 }
 
-# Perform builds — collect all duration samples; use last build's binary size
+# A failed build or stat is not fatal: do_build reports it as "null null" (or
+# "<duration> null"), which we record as null in the output.
 message "Performing $REPEATS builds..."
 durations=()
 size=""
+failures=0
 for i in $(seq 1 "$REPEATS"); do
   message "Build $i/$REPEATS:"
-  read -r d s <<< "$(do_build)"
+  build_output="$(do_build)" || failures=$((failures + 1))
+  read -r d s <<< "$build_output"
   durations+=("$d")
-  size="$s"
+  if [[ "$s" != "null" ]]; then size="$s"; else size="${size:-null}"; fi
 done
 message "Durations: ${durations[*]}, size: $size bytes"
+if [[ "$failures" -gt 0 ]]; then
+  message "WARNING: $failures/$REPEATS build(s) failed; recorded as null in output"
+fi
 
 # Dependency size attribution (standard mode only — orchestrion mode builds the
 # same source, so re-running the analysis there would just duplicate this data)
@@ -204,12 +245,12 @@ if [[ "$MODE" == "standard" ]] && command -v gsa &> /dev/null; then
     message "  gsa analysis failed; continuing without dependency_sizes"
   fi
 else
-  message "Skipping dependency attribution (gsa not found or mode is orchestrion)"
+  message "Skipping dependency attribution (gsa not found or mode is not standard)"
 fi
 
 # Build JSON output — durations as array, size as single value
 message "Generating JSON output..."
-DURATION_ARRAY=$(printf '%s\n' "${durations[@]}" | jq -R 'tonumber' | jq -s '.')
+DURATION_ARRAY=$(printf '%s\n' "${durations[@]}" | jq -R 'if . == "null" then null else tonumber end' | jq -s '.')
 JSON=$(jq -n \
   --arg sample "$SAMPLE" \
   --arg mode "$MODE" \
@@ -224,6 +265,11 @@ if [[ "$MODE" == "orchestrion" ]]; then
   JSON=$(echo "$JSON" | jq --arg orch_version "$ORCHESTRION_VERSION" '. + {orchestrion_version: $orch_version}')
 fi
 
+# Add otelc version if in otelc mode
+if [[ "$MODE" == "otelc" ]]; then
+  JSON=$(echo "$JSON" | jq --arg otelc_version "$OTELC_VERSION" '. + {otelc_version: $otelc_version}')
+fi
+
 # Output
 if [[ -z "$OUTPUT" ]]; then
   echo "$JSON"
@@ -233,3 +279,5 @@ else
 fi
 
 message "Done."
+
+[[ "$failures" -lt "$REPEATS" ]] || exit 1

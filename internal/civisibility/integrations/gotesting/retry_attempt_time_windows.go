@@ -12,31 +12,22 @@ import (
 	"reflect"
 	"time"
 	"unsafe"
-
-	"golang.org/x/sys/windows"
 )
-
-var (
-	retryAttemptKernel32                  = windows.NewLazySystemDLL("kernel32.dll")
-	retryAttemptQueryPerformanceCounter   = retryAttemptKernel32.NewProc("QueryPerformanceCounter")
-	retryAttemptQueryPerformanceFrequency = retryAttemptKernel32.NewProc("QueryPerformanceFrequency")
-)
-
-func retryAttemptPerformanceValue(proc *windows.LazyProc) (int64, bool) {
-	var value int64
-	ok, _, _ := proc.Call(uintptr(unsafe.Pointer(&value)))
-	return value, ok != 0
-}
 
 func initializeRetryAttemptStart(base unsafe.Pointer, field unsafeField) {
 	if base == nil || !field.available {
 		return
 	}
-	counter, ok := retryAttemptPerformanceValue(retryAttemptQueryPerformanceCounter)
+	value := reflect.NewAt(field.typ, fieldRawPtr(base, field)).Elem()
+	if value.Type() == reflect.TypeFor[time.Time]() {
+		// Go 1.28 keeps the start as a time.Time, on Windows too.
+		value.Set(reflect.ValueOf(time.Now()))
+		return
+	}
+	counter, ok := performanceClockValue(performanceClockCounter)
 	if !ok {
 		return
 	}
-	value := reflect.NewAt(field.typ, fieldRawPtr(base, field)).Elem()
 	now := value.FieldByName("now")
 	if now.IsValid() && now.CanAddr() && now.Kind() == reflect.Int64 {
 		reflect.NewAt(now.Type(), unsafe.Pointer(now.UnsafeAddr())).Elem().SetInt(counter)
@@ -48,12 +39,16 @@ func addRetryAttemptElapsed(base unsafe.Pointer, layout *testingInternalsLayout)
 	if base == nil || !field.available {
 		return
 	}
-	now, counterOK := retryAttemptPerformanceValue(retryAttemptQueryPerformanceCounter)
-	frequency, frequencyOK := retryAttemptPerformanceValue(retryAttemptQueryPerformanceFrequency)
+	value := reflect.NewAt(field.typ, fieldRawPtr(base, field)).Elem()
+	if value.Type() == reflect.TypeFor[time.Time]() {
+		*fieldPtr[time.Duration](base, layout.common.duration) += time.Since(value.Interface().(time.Time))
+		return
+	}
+	now, counterOK := performanceClockValue(performanceClockCounter)
+	frequency, frequencyOK := performanceClockValue(performanceClockFrequency)
 	if !counterOK || !frequencyOK || frequency <= 0 {
 		return
 	}
-	value := reflect.NewAt(field.typ, fieldRawPtr(base, field)).Elem()
 	startedField := value.FieldByName("now")
 	if !startedField.IsValid() || !startedField.CanAddr() || startedField.Kind() != reflect.Int64 {
 		return

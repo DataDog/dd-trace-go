@@ -1,0 +1,121 @@
+# Composite action to report cache effectiveness to Datadog.
+#
+# Metrics:
+# - `ci.step.cache.restore` (COUNT). Value: `1`. Tags:
+#   - `outcome`: Cache result: `hit` or `miss`.
+#   - `hit_type`: Match classification.
+#     - `exact`: Requested cache key matched.
+#     - `partial`: Cache restored using a key-prefix match instead of an exact match.
+#     - `unknown`: Exact or partial cache restore; reporter lacked `cache_matched_key`.
+#     - `miss`: Cache miss.
+# - `ci.cache.disk_size_bytes` (GAUGE).
+#   Value: Filesystem usage in bytes, e.g. `73400320`; actual cache upload is compressed.
+#   Measured near the end of the calling job's main phase, NOT immediately after
+#   restore, so it is tagged `phase:end_of_job`.
+#
+#   Series transition: until this change these values were published as
+#   `ci.step.cache.restore.disk_size_bytes`, whose name wrongly implied they
+#   were restore-time sizes. That series is retired; queries must move to
+#   `ci.cache.disk_size_bytes` with `phase:end_of_job`. Compressed
+#   cache-service storage consumption is measured from the cache API's
+#   `size_in_bytes` by scripts/citiming, not from this action.
+#
+# Common tags:
+# - `repository`: Repository name, e.g. `dd-trace-go`.
+# - `os.platform`: Runner operating system, e.g. `linux`.
+# - `os.architecture`: Runner architecture, e.g. `x64`.
+# - `runtime.name`: Runtime name, e.g. `go`.
+# - `runtime.version`: Resolved runtime version, e.g. `1.25.1`.
+# - `provider`: Cache provider, e.g. `github-cache` or `cloudx`.
+# - `workload`: Logical workload family, e.g. `unit-core`, `multi-os`.
+# - `ci.pipeline.name`: GitHub workflow name, e.g. `unit-integration-tests`.
+# - `ci.job.name`: GitHub job identifier, e.g. `test`.
+# - `ci.trigger`: GitHub event name, e.g. `pull_request`.
+# - `cache_name`: Low-cardinality logical cache identifier, e.g. `setup_go`, `go_mod`.
+# Tag values must have low cardinality.
+#
+# Metric submission is best-effort. Call this action with `continue-on-error: true`
+# and `if: always()` so reporting cannot change the calling job's result.
+# Without a Datadog API key the action is a no-op: the structured observation
+# itself is already mirrored into the job log by .github/actions/setup-go.
+name: 'Cache Metrics'
+description: 'Report cache outcomes and filesystem sizes to Datadog'
+inputs:
+  cache-metrics:
+    required: true
+    description: Cache measurements and metadata as JSON.
+  measure-sizes:
+    required: false
+    default: "false"
+    description: Whether to report filesystem usage for supplied cache paths; traversing them may be expensive.
+  dd-api-key:
+    required: false
+    default: ""
+    description: >-
+      Datadog API key used to submit the metrics. When empty, submission is
+      skipped; the raw observation stays available in the job log.
+  dd-site:
+    required: false
+    default: datadoghq.com
+    description: Datadog site to submit metrics to.
+runs:
+  using: "composite"
+  steps:
+    - name: Submit cache metrics
+      shell: bash
+      env:
+        CACHE_METRICS: ${{ inputs.cache-metrics }}
+        DD_API_KEY: ${{ inputs.dd-api-key }}
+        DD_SITE: ${{ inputs.dd-site }}
+        MEASURE_SIZES: ${{ inputs.measure-sizes }}
+        CI_JOB_NAME: ${{ github.job }}
+        CI_PIPELINE_NAME: ${{ github.workflow }}
+        CI_TRIGGER: ${{ github.event_name }}
+        RUNNER_OS: ${{ runner.os }}
+        RUNNER_ARCH: ${{ runner.arch }}
+      run: |
+        set -euo pipefail
+
+        if [[ -z "${DD_API_KEY:-}" ]]; then
+          printf 'No Datadog API key available; skipping cache metrics.\n'; exit 0
+        fi
+
+        case ".${DD_SITE:-}" in
+          *.datadoghq.com|*.datadoghq.eu|*.ddog-gov.com) ;;
+          *) printf 'Unsupported Datadog site; skipping cache metrics.\n'; exit 0 ;;
+        esac
+
+        temp_dir="$(mktemp -d "${TMPDIR:-/tmp}/cache-metrics.XXXXXX")"
+        trap 'rm -rf "$temp_dir"' EXIT
+        payload_file="$temp_dir/payload.json"
+        response_file="$temp_dir/response.txt"
+
+        bash "${GITHUB_ACTION_PATH}/payload.sh" > "$payload_file"
+
+        count="$(jq '.series | length' "$payload_file")"
+        if [[ "$count" == "0" ]]; then
+          printf 'No cache metrics to submit.\n'; exit 0
+        fi
+
+        curl_exit=0
+        http_code="$(curl --silent --show-error \
+          --output "$response_file" \
+          --write-out '%{http_code}' \
+          --connect-timeout 3 \
+          --max-time 10 \
+          --request POST "https://api.${DD_SITE}/api/v2/series" \
+          --header "DD-API-KEY: ${DD_API_KEY}" \
+          --header "Content-Type: application/json" \
+          --data-binary "@${payload_file}")" || curl_exit=$?
+
+        if [[ "$curl_exit" -ne 0 || "$http_code" != "202" ]]; then
+          diagnostic="$(head -c 512 "$response_file" 2>/dev/null)"
+          diagnostic="$(printf '%s' "$diagnostic" | tr '\r\n' '  ')"
+          diagnostic="${diagnostic//"$DD_API_KEY"/[REDACTED]}"
+          failure="Cache metric submission failed (curl ${curl_exit}"
+          failure+=", HTTP ${http_code:-000})${diagnostic:+: $diagnostic}."
+          printf '%s\n' "$failure"
+          exit 0
+        fi
+
+        printf 'Submitted %s cache metric series.\n' "$count"

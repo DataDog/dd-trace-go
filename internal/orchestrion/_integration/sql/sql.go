@@ -8,9 +8,10 @@ package sql
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"testing"
 
-	_ "github.com/mattn/go-sqlite3" // Auto-register sqlite3 driver
+	"github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -19,11 +20,13 @@ import (
 
 type TestCase struct {
 	*sql.DB
-	// untraced is the un-traced database connection, used to set up the test case
-	// without producing unnecessary spans. It is retained as a [TestCase] field
-	// and cleaned up using [t.Cleanup] to ensure the shared cache is not lost, as
-	// it stops existing once the last DB connection using it is closed.
-	untraced *sql.DB
+	// untraced is a connection opened with the driver directly, used to set up
+	// the test case without producing unnecessary spans. It does not go through
+	// database/sql, so neither orchestrion nor otelc traces it. It is retained as
+	// a [TestCase] field and cleaned up using [t.Cleanup] to ensure the shared
+	// cache is not lost, as it stops existing once the last connection using it
+	// is closed.
+	untraced driver.Conn
 }
 
 func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
@@ -34,21 +37,22 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 
 	var err error
 
-	//orchestrion:ignore
-	tc.untraced, err = sql.Open(dn, dsn)
+	tc.untraced, err = (&sqlite3.SQLiteDriver{}).Open(dsn)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, tc.untraced.Close()) })
+	untraced, ok := tc.untraced.(driver.ExecerContext)
+	require.True(t, ok)
 
-	_, err = tc.untraced.ExecContext(ctx,
+	_, err = untraced.ExecContext(ctx,
 		`CREATE TABLE IF NOT EXISTS notes (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		userid INTEGER,
 		content STRING,
 		created STRING
-	)`)
+	)`, nil)
 	require.NoError(t, err)
 
-	_, err = tc.untraced.ExecContext(ctx,
+	_, err = untraced.ExecContext(ctx,
 		`INSERT OR REPLACE INTO notes(userid, content, created) VALUES
 		(1, 'Hello, John. This is John. You are leaving a note for yourself. You are welcome and thank you.', datetime('now')),
 		(1, 'Hey, remember to mow the lawn.', datetime('now')),
@@ -56,7 +60,7 @@ func (tc *TestCase) Setup(ctx context.Context, t *testing.T) {
 		(2, 'Opportunities don''t happen, you create them.', datetime('now')),
 		(3, 'Pick up cabbage from the store on the way home.', datetime('now')),
 		(3, 'Review PR #1138', datetime('now')
-	)`)
+	)`, nil)
 	require.NoError(t, err)
 
 	tc.DB, err = sql.Open(dn, dsn)

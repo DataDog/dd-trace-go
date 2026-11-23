@@ -18,6 +18,11 @@ func initializeRetryAttemptStart(base unsafe.Pointer, field unsafeField) {
 		return
 	}
 	value := reflect.NewAt(field.typ, fieldRawPtr(base, field)).Elem()
+	if value.Type() == reflect.TypeFor[time.Time]() {
+		// Go 1.28 keeps the start as a time.Time.
+		value.Set(reflect.ValueOf(time.Now()))
+		return
+	}
 	now := value.FieldByName("now")
 	if now.IsValid() && now.CanAddr() && now.Type() == reflect.TypeFor[time.Time]() {
 		reflect.NewAt(now.Type(), unsafe.Pointer(now.UnsafeAddr())).Elem().Set(reflect.ValueOf(time.Now()))
@@ -30,6 +35,10 @@ func addRetryAttemptElapsed(base unsafe.Pointer, layout *testingInternalsLayout)
 		return
 	}
 	value := reflect.NewAt(field.typ, fieldRawPtr(base, field)).Elem()
+	if value.Type() == reflect.TypeFor[time.Time]() {
+		*fieldPtr[time.Duration](base, layout.common.duration) += time.Since(value.Interface().(time.Time))
+		return
+	}
 	now := value.FieldByName("now")
 	if !now.IsValid() || !now.CanAddr() || now.Type() != reflect.TypeFor[time.Time]() {
 		return

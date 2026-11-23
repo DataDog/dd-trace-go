@@ -7,6 +7,8 @@ package tracer
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,9 +27,9 @@ import (
 func withTestHooks(t *testing.T) *bool {
 	t.Helper()
 	started := false
-	otelmetricsinstall.StartHook = func(_ context.Context) error {
+	otelmetricsinstall.StartHook = func(_ context.Context) (bool, error) {
 		started = true
-		return nil
+		return true, nil
 	}
 	t.Cleanup(func() {
 		otelmetricsinstall.StartHook = nil
@@ -82,6 +84,34 @@ func TestTracerLegacyRuntimeMetricsSuppressedWhenOtelActive(t *testing.T) {
 	for _, l := range tp.Logs() {
 		assert.NotContains(t, l, "Runtime metrics enabled.", "legacy runtime metrics goroutine must not start when OTel is active")
 	}
+}
+
+func TestTracerStartOtelRuntimeMetricsHookFailure(t *testing.T) {
+	t.Setenv("DD_RUNTIME_METRICS_ENABLED", "true")
+	t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")
+	internalconfig.SetUseFreshConfig(true)
+	defer internalconfig.SetUseFreshConfig(false)
+
+	withTestHooks(t)
+	otelmetricsinstall.StartHook = func(_ context.Context) (bool, error) { return false, errors.New("hook failed") }
+
+	tp := new(log.RecordLogger)
+	require.NoError(t, Start(WithLogger(tp), WithDebugMode(true), withNoopInfoHTTPClient()))
+	defer Stop()
+
+	tr := getGlobalTracer().(*tracer)
+	assert.False(t, tr.config.otelRuntimeMetricsShouldBeEnabled)
+	var startupLog string
+	for _, l := range tp.Logs() {
+		assert.NotContains(t, l, "Runtime metrics enabled.", "legacy runtime metrics must not start when the OTel hook fails")
+		assert.NotContains(t, l, "Runtime metrics v2 enabled.", "runtime metrics v2 must not start when the OTel hook fails")
+		if strings.Contains(l, "DATADOG TRACER CONFIGURATION") {
+			startupLog = l
+		}
+	}
+	assert.Contains(t, startupLog, `"OTEL_ENABLED":false`)
+	assert.Contains(t, startupLog, `"DD_METRICS_OTEL_ENABLED":true`)
 }
 
 func TestTracerStartSkipsOtelRuntimeMetricsWhenExporterNone(t *testing.T) {

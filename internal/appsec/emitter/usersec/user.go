@@ -55,7 +55,7 @@ const (
 func StartUserLoginOperation(ctx context.Context, eventType UserEventType, args UserLoginOperationArgs) (*UserLoginOperation, *error) {
 	parent, ok := dyngo.FromContext(ctx)
 	if !ok { // Nothing will be reported in this case, but we can still block so we don't return
-		errorLogOnce.Do(func() { log.Error(errorLog) })
+		errorLogOnce.Do(func() { log.Error(errorLog) }) //errtrack:ignore request context lacks integration metadata
 	}
 
 	op := &UserLoginOperation{Operation: dyngo.NewOperation(parent), EventType: eventType}

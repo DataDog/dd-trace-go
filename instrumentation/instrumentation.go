@@ -13,9 +13,11 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -71,14 +73,16 @@ func Load(pkg Package) *Instrumentation {
 	}
 }
 
-// ReloadConfig reloads config read from environment variables. This is useful for tests.
-func ReloadConfig() {
-	namingschema.ReloadConfig()
-}
-
 // Version returns the version of the dd-trace-go package.
 func Version() string {
 	return version.Tag
+}
+
+// OtelcEnabled reports whether the application was built with otelc
+// (OpenTelemetry Go compile-time instrumentation). Integrations use it to run
+// code that only otelc builds need.
+func OtelcEnabled() bool {
+	return otelc.Enabled()
 }
 
 // Instrumentation represents instrumentation for a package.
@@ -92,6 +96,9 @@ type Instrumentation struct {
 }
 
 // ServiceName returns the default service name to be set for the given instrumentation component.
+// When the package has no naming entry, which is the recommended setup for new integrations, this
+// returns the global DD_SERVICE. The per-component naming logic backs the legacy
+// DD_TRACE_SPAN_ATTRIBUTE_SCHEMA feature.
 func (i *Instrumentation) ServiceName(component Component, opCtx OperationContext) string {
 	cfg := namingschema.GetConfig()
 
@@ -123,12 +130,13 @@ type ServiceOverride = internal.ServiceOverride
 // name and its source. The source tracks the origin of the service name
 // override for _dd.svc_src.
 func ServiceNameWithSource(name string, source string) tracer.StartSpanOption {
-	return func(cfg *tracer.StartSpanConfig) {
-		tracer.Tag(ext.KeyServiceSource, internal.ServiceOverride{Name: name, Source: source})(cfg)
-	}
+	return tracer.Tag(ext.KeyServiceSource, internal.ServiceOverride{Name: name, Source: source})
 }
 
-// OperationName returns the operation name to be set for the given instrumentation component.
+// OperationName returns the operation name to be set for the given instrumentation component. It
+// backs the legacy DD_TRACE_SPAN_ATTRIBUTE_SCHEMA naming-schema feature; new integrations should not
+// call it and should hardcode operation names as string literals instead. See
+// https://github.com/DataDog/dd-trace-go/blob/main/contrib/INTEGRATIONS.md.
 func (i *Instrumentation) OperationName(component Component, opCtx OperationContext) string {
 	op, ok := i.info.naming[component]
 	if !ok {
@@ -212,6 +220,43 @@ func (i *Instrumentation) AnalyticsRate(defaultGlobal bool) float64 {
 
 func (i *Instrumentation) GlobalAnalyticsRate() float64 {
 	return globalconfig.AnalyticsRate()
+}
+
+// OTelSemanticsEnabled `true` changes observability data to be emitted
+// according to OpenTelemetry semantic conventions. Datadog conventions
+// are used when `false`.
+func (i *Instrumentation) OTelSemanticsEnabled() bool {
+	return internalconfig.Get().OTelSemanticsEnabled()
+}
+
+// KinesisInjectDatadogAttributeEnabled reports whether the trace context may be injected into
+// Kinesis records.
+func (i *Instrumentation) KinesisInjectDatadogAttributeEnabled() bool {
+	return internalconfig.Get().KinesisInjectDatadogAttributeEnabled()
+}
+
+// EventBridgeInjectDatadogAttributeEnabled reports whether the trace context may be injected into
+// EventBridge event details.
+func (i *Instrumentation) EventBridgeInjectDatadogAttributeEnabled() bool {
+	return internalconfig.Get().EventBridgeInjectDatadogAttributeEnabled()
+}
+
+// SQSInjectDatadogAttributeEnabled reports whether the trace context may be injected into SQS
+// message attributes.
+func (i *Instrumentation) SQSInjectDatadogAttributeEnabled() bool {
+	return internalconfig.Get().SQSInjectDatadogAttributeEnabled()
+}
+
+// SNSInjectDatadogAttributeEnabled reports whether the trace context may be injected into SNS
+// message attributes.
+func (i *Instrumentation) SNSInjectDatadogAttributeEnabled() bool {
+	return internalconfig.Get().SNSInjectDatadogAttributeEnabled()
+}
+
+// SFNInjectDatadogAttributeEnabled reports whether the trace context may be injected into the
+// input of Step Functions executions.
+func (i *Instrumentation) SFNInjectDatadogAttributeEnabled() bool {
+	return internalconfig.Get().SFNInjectDatadogAttributeEnabled()
 }
 
 func (i *Instrumentation) AppSecEnabled() bool {

@@ -7,6 +7,8 @@ package openfeature
 
 import (
 	"encoding/json"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -28,6 +30,20 @@ type universalFlagsConfiguration struct {
 	Flags map[string]*flag `json:"flags"`
 	// invalidFlags contains errors for flags that could not be parsed or validated.
 	invalidFlags map[string]error
+
+	// Configurations are immutable after publication. Cache boxed environment strings
+	// on each configuration so evaluations can reuse them in their metadata maps.
+	environmentMetadataOnce sync.Once
+	environmentIDMetadata   any
+	environmentNameMetadata any
+}
+
+func (config *universalFlagsConfiguration) environmentMetadata() (id, name any) {
+	config.environmentMetadataOnce.Do(func() {
+		config.environmentIDMetadata = config.Environment.ID
+		config.environmentNameMetadata = config.Environment.Name
+	})
+	return config.environmentIDMetadata, config.environmentNameMetadata
 }
 
 // UnmarshalJSON parses flags independently so one invalid flag does not reject
@@ -54,6 +70,8 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 	config.CreatedAt = raw.CreatedAt
 	config.Format = raw.Format
 	config.Environment = raw.Environment
+	// Decoding into a reused object must also discard its previous metadata cache.
+	config.environmentMetadataOnce = sync.Once{}
 	config.ObserveFullEvaluationData = parseLenientBool(raw.ObserveFullEvaluationData)
 	config.Flags = make(map[string]*flag, len(raw.Flags))
 	config.invalidFlags = make(map[string]error)
@@ -68,6 +86,14 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 			config.invalidFlags[flagKey] = err
 			continue
 		}
+		// Prepare flag-wide activation validity once, including allocations that
+		// targeting or an earlier match may make unreachable during evaluation.
+		for _, allocation := range parsedFlag.Allocations {
+			if allocation.invalidActivation {
+				parsedFlag.invalidActivation = true
+				break
+			}
+		}
 		config.Flags[flagKey] = &parsedFlag
 	}
 
@@ -76,6 +102,7 @@ func (config *universalFlagsConfiguration) UnmarshalJSON(data []byte) error {
 
 // environment represents environment information for the configuration.
 type environment struct {
+	ID string `json:"id,omitempty"`
 	// Name is the environment name (e.g., "production", "staging")
 	Name string `json:"name"`
 }
@@ -111,6 +138,8 @@ type flag struct {
 	// Allocations define targeting and traffic distribution rules
 	// They are evaluated in order, and the first matching allocation wins
 	Allocations []*allocation `json:"allocations"`
+	// invalidActivation is consumed only by opted-out future-mode evaluations.
+	invalidActivation bool
 }
 
 // variant represents a single variation/variation of a feature flag.
@@ -139,10 +168,41 @@ type allocation struct {
 	StartAt *time.Time `json:"startAt,omitempty"`
 	// EndAt is the optional end time for this allocation (RFC 3339)
 	EndAt *time.Time `json:"endAt,omitempty"`
+	// RandomizationActivatedAt identifies when randomization first became active.
+	RandomizationActivatedAt *time.Time `json:"randomizationActivatedAt,omitempty"`
+	// A nil timestamp with invalidActivation=false means missing/null metadata.
+	invalidActivation bool
 	// Splits define how to distribute traffic among variants
 	Splits []*split `json:"splits"`
 	// DoLog indicates whether to log events for this allocation (defaults to true)
 	DoLog *bool `json:"doLog,omitempty"`
+}
+
+// UnmarshalJSON prepares activation independently of the other allocation fields.
+// Invalid activation remains distinct from missing metadata without rejecting
+// evaluations that do not use an activation cutoff. Other decoding errors retain
+// their existing per-flag rejection behavior.
+func (a *allocation) UnmarshalJSON(data []byte) error {
+	type plain allocation
+	var raw struct {
+		*plain
+		RandomizationActivatedAt json.RawMessage `json:"randomizationActivatedAt"`
+	}
+	raw.plain = (*plain)(a)
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	a.RandomizationActivatedAt = nil
+	a.invalidActivation = false
+	if len(raw.RandomizationActivatedAt) > 0 {
+		var activatedAt *time.Time
+		if err := json.Unmarshal(raw.RandomizationActivatedAt, &activatedAt); err != nil {
+			a.invalidActivation = true
+		} else {
+			a.RandomizationActivatedAt = activatedAt
+		}
+	}
+	return nil
 }
 
 // rule represents a targeting rule containing conditions.
@@ -212,8 +272,10 @@ type split struct {
 	// All shards must match for the split to apply (AND logic)
 	Shards []*shard `json:"shards"`
 	// VariationKey is the key of the variation to return if this split matches
-	VariationKey string  `json:"variationKey"`
-	SerialID     *uint32 `json:"serialId,omitempty"`
+	VariationKey     string        `json:"variationKey"`
+	SerialID         *uint32       `json:"serialId,omitempty"`
+	Features         splitFeatures `json:"features,omitempty"`
+	compiledFeatures atomic.Pointer[compiledSplitFeatures]
 }
 
 // shard defines a portion of traffic using consistent hashing.

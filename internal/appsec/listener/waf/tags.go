@@ -33,7 +33,6 @@ const (
 
 	durationExtSuffix = ".duration_ext"
 
-	blockedRequestTag  = "appsec.blocked"
 	downwardRequestTag = wafSpanTagPrefix + "downstream_request"
 )
 

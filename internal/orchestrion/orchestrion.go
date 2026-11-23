@@ -5,6 +5,8 @@
 
 package orchestrion
 
+import "github.com/DataDog/dd-trace-go/v2/internal/otelc"
+
 // Orchestrion will change this at build-time
 //
 //orchestrion:enabled
@@ -17,6 +19,19 @@ var enabled = false
 const Version = ""
 
 // Enabled returns whether the current build was compiled with orchestrion or not.
+//
+// This reports the specific tool, so it stays false under otelc. Callers that
+// only care whether the GLS was woven in want [glsActive] instead.
 func Enabled() bool {
 	return enabled
+}
+
+// glsActive reports whether this build has the goroutine-local storage woven in,
+// under either orchestrion or otelc. Both tools inject the same runtime.g field
+// and the same pair of linknamed accessors that gls.go consumes.
+//
+// It stays separate from [Enabled], which feeds the orchestrion_enabled telemetry
+// config and would misreport the tool if it were true under otelc.
+func glsActive() bool {
+	return enabled || otelc.Enabled()
 }

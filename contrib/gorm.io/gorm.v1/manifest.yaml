@@ -1,0 +1,11 @@
+_v: 1
+name: gorm.io/gorm
+display_name: GORM
+description: Instruments gorm create, update, delete, query, row, and raw SQL operations with spans that record SQL statements
+  and errors.
+packages:
+- name: gorm.io/gorm
+category:
+- db.client
+systems: []
+creation_date: '2021-01-04'
