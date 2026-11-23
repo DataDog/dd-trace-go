@@ -611,6 +611,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.13.0-dev // indirect
 	github.com/aws/aws-sdk-go-v2/service/kms v1.30.1 // indirect
+	github.com/aws/aws-sdk-go-v2/service/lambda v1.101.0 // indirect
 	github.com/aws/aws-xray-sdk-go/v2 v2.0.0 // indirect
 	github.com/sony/gobreaker v0.5.0 // indirect
 	go.einride.tech/aip v0.73.0 // indirect
