@@ -62,6 +62,10 @@ func normalizeRoute(framework, route string, params map[string]string, requestUR
 		parts, ok = parseColonRoute(route, params, false)
 	case "github.com/gofiber/fiber/v2":
 		parts, ok = parseFiberRoute(route, params)
+		// fiber matches the route with the path as the client sent it, still
+		// escaped (unless UnescapePath is set, but then a route with %XX does
+		// not match anything).
+		escapes = true
 	default:
 		// Other integrations report a route that is not the router's own
 		// (httprouter and httptreemux rebuild it from the request path), or

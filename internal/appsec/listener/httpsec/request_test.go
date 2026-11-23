@@ -565,6 +565,7 @@ func TestNormalizeRoute(t *testing.T) {
 		{name: "fiber dot is not optional", framework: fiber, route: "/f/:name.:ext?", params: map[string]string{"name": "a", "ext": ""}, want: "/f/{name}."},
 		{name: "fiber escape", framework: fiber, route: "/a\\:b/:id", want: "/a%3Ab/{id}"},
 		{name: "fiber root", framework: fiber, route: "/", want: "/"},
+		{name: "fiber escape sequence", framework: fiber, route: "/caf%c3%a9", want: "/caf%C3%A9"},
 
 		// net/http patterns.
 		{name: "servemux host", framework: netmux, route: "example.com/foo/{id}", want: "/foo/{id}"},
