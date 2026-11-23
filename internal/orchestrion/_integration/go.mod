@@ -643,6 +643,7 @@ require github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/otelc
 replace github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/otelc/v2 => ../../../contrib/elastic/go-elasticsearch.v6/otelc
 
 replace example.com/elasticsearchdep => ./internal/elasticsearchdep
+
 replace github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 => ../../../contrib/segmentio/kafka-go/otelc
 
 replace example.com/zerologdep => ./internal/zerologdep
