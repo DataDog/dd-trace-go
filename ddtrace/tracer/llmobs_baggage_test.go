@@ -337,3 +337,43 @@ func TestLLMObsBaggageValuesRoundTrip(t *testing.T) {
 		assert.Equal(t, v, extracted.baggageItem("v"), "header %q", carrier["baggage"])
 	}
 }
+
+func TestLLMObsStaleOptionalTagsDoNotCountAgainstTheBudget(t *testing.T) {
+	// A previous injection left a long session in the trace-wide tags. This request
+	// has no session and a long ml_app, which fits the tracestate budget only once
+	// the stale session is gone.
+	defer illmobs.SetEnabledForTesting(true)()
+	sc := &SpanContext{trace: newTrace()}
+	sc.trace.setPropagatingTag(keyPropagatedLLMObsSessionID, strings.Repeat("s", 80))
+	mlApp := strings.Repeat("a", 80)
+	sc.setLLMObsPropagated(&illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: "12345", WireTraceID: "12345", MLApp: mlApp}, true)
+
+	setLLMObsTagsForInjection(sc)
+
+	assert.Equal(t, mlApp, sc.trace.propagatingTag(keyPropagatedLLMObsMLAPP))
+	assert.Empty(t, sc.trace.propagatingTag(keyPropagatedLLMObsSessionID))
+}
+
+func TestLLMObsPartialFlushForgetsFlushedSpans(t *testing.T) {
+	// On a long-running trace, the span map must not keep every LLMObs span that
+	// partial flushing already sent.
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_ENABLED", "true")
+	t.Setenv("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", "2")
+	tr, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+	root := tr.StartSpan("root")
+	defer root.Finish()
+	llmSpan := &illmobs.Span{}
+	for range 4 {
+		child := tr.StartSpan("child", ChildOf(root.Context()))
+		child.Context().setLLMObsSpan(llmSpan)
+		child.Finish()
+	}
+
+	s := root.Context().trace.llmobs.Load()
+	require.NotNil(t, s)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	assert.Empty(t, s.spans)
+}

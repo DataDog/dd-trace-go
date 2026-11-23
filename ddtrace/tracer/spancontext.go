@@ -1167,6 +1167,8 @@ func (t *trace) finishedOneLocked(s *Span) {
 	// it is known — same as the full-flush path above.
 	filterRejected := t.filterReject
 
+	t.forgetLLMObsSpans(finishedSpans)
+
 	// Update trace state and release lock BEFORE acquiring fSpan lock
 	// Clear the tail so the GC can collect the flushed spans; without this the
 	// backing array retains pointers past len(t.spans) and keeps them alive.

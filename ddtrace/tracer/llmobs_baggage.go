@@ -171,6 +171,22 @@ func (t *trace) llmobsState() *traceLLMObs {
 	return t.llmobs.Load()
 }
 
+// forgetLLMObsSpans drops the map entries of spans that a partial flush sent, so
+// the map stays bounded like the trace's span buffer on a long-running trace.
+// Unflushed spans keep their entry, so their contexts still propagate after
+// Finish. Called with t.mu held; traceLLMObs.mu is never held while taking t.mu.
+func (t *trace) forgetLLMObsSpans(flushed []*Span) {
+	s := t.llmobs.Load()
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, span := range flushed {
+		delete(s.spans, span.context.SpanID())
+	}
+}
+
 // llmobsContext returns the LLMObs span, or else the inbound context, that
 // requests injected from c carry.
 func (c *SpanContext) llmobsContext() (*illmobs.Span, *illmobs.PropagatedLLMSpan) {
@@ -247,13 +263,19 @@ func setLLMObsTagsForInjection(ctx *SpanContext) {
 	// The other values can come from an inbound baggage header, which nothing caps.
 	// One invalid or oversized value would make the encoder drop the whole
 	// x-datadog-tags header, so it is left out of the tags; baggage still carries it.
-	for _, kv := range [...][2]string{
+	// A previous injection's values are cleared first, so they don't count against
+	// this request's budget. The agent name has the lowest priority and goes last.
+	optional := [...][2]string{
 		{keyPropagatedLLMObsMLAPP, dc.MLApp},
 		{keyPropagatedLLMObsSessionID, dc.SessionID},
 		{keyPropagatedLLMObsSampleRate, dc.SampleRate},
 		{keyPropagatedLLMObsSamplingDecision, dc.SamplingDecision},
-	} {
+	}
+	for _, kv := range optional {
 		t.unsetPropagatingTag(kv[0])
+	}
+	setPropagatingParentAgentTags(ctx, dc.ParentAgentSpanID, "")
+	for _, kv := range optional {
 		if kv[1] != "" && isValidPropagatableTag(kv[0], kv[1]) == nil && fitsPropagatingTagBudget(ctx, kv[0], kv[1]) {
 			t.setPropagatingTag(kv[0], kv[1])
 		}
