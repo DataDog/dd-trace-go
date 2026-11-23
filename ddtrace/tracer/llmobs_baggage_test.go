@@ -8,6 +8,7 @@ package tracer
 import (
 	"strings"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -130,7 +131,7 @@ func TestLLMObsBaggageInject(t *testing.T) {
 		sc.setBaggageItem("tenant", "acme")
 		sc.setBaggageItem(baggageKeyLLMObsParentID, "1")
 		sc.setBaggageItem(baggageKeyLLMObsSamplingDecision, "1")
-		sc.llmobsPropagated = &illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: testLLMObsHexTraceID, SamplingDecision: "0"}
+		sc.setLLMObsPropagated(&illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: testLLMObsHexTraceID, SamplingDecision: "0"}, true)
 
 		assert.Equal(t, TextMapCarrier{
 			"baggage": "llmobs.parent_id=555,llmobs.trace_id=" + testLLMObsHexTraceID + ",llmobs.sampling_decision=0,tenant=acme",
@@ -167,7 +168,7 @@ func TestLLMObsBaggageInject(t *testing.T) {
 
 	t.Run("repeated HTTP baggage lines are all merged", func(t *testing.T) {
 		sc := &SpanContext{trace: newTrace()}
-		sc.llmobsPropagated = &illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: testLLMObsHexTraceID}
+		sc.setLLMObsPropagated(&illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: testLLMObsHexTraceID}, true)
 		carrier := HTTPHeadersCarrier{"Baggage": {"tenant=acme", "region=us"}}
 
 		require.NoError(t, (&propagatorBaggage{}).Inject(sc, carrier))
@@ -176,7 +177,7 @@ func TestLLMObsBaggageInject(t *testing.T) {
 
 	t.Run("a reused pointer carrier drops stale llmobs items", func(t *testing.T) {
 		withLLMObs := &SpanContext{trace: newTrace()}
-		withLLMObs.llmobsPropagated = &illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: testLLMObsHexTraceID}
+		withLLMObs.setLLMObsPropagated(&illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: testLLMObsHexTraceID}, true)
 		carrier := &TextMapCarrier{}
 		require.NoError(t, (&propagatorBaggage{}).Inject(withLLMObs, carrier))
 		require.Contains(t, (*carrier)["baggage"], "llmobs.parent_id=555")
@@ -193,7 +194,7 @@ func TestLLMObsBaggageInject(t *testing.T) {
 
 	t.Run("a caller header under Baggage is merged into one key", func(t *testing.T) {
 		sc := &SpanContext{trace: newTrace()}
-		sc.llmobsPropagated = &illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: testLLMObsHexTraceID}
+		sc.setLLMObsPropagated(&illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: testLLMObsHexTraceID}, true)
 
 		assert.Equal(t, TextMapCarrier{
 			"baggage": "llmobs.parent_id=555,llmobs.trace_id=" + testLLMObsHexTraceID + ",tenant=acme;p=1",
@@ -259,11 +260,66 @@ func TestLLMObsDisabledForwardsInboundContextUnchanged(t *testing.T) {
 	child := tr.StartSpan("client", ChildOf(root.Context()))
 	defer child.Finish()
 
-	assert.Nil(t, root.Context().llmobsPropagated)
+	_, propagated := root.Context().llmobsContext()
+	assert.Nil(t, propagated)
 	out := TextMapCarrier{}
 	require.NoError(t, tr.Inject(child.Context(), out))
 	assert.ElementsMatch(t,
 		[]string{"llmobs.parent_id=555", "llmobs.trace_id=" + testLLMObsHexTraceID, "tenant=acme"},
 		strings.Split(out["baggage"], ","))
 	assert.NotContains(t, out["x-datadog-tags"], "llmobs")
+}
+
+func TestLLMObsInboundValuesCannotBreakTheTagsHeader(t *testing.T) {
+	// ml_app and session_id can arrive in an inbound baggage header, which nothing
+	// caps. An invalid or oversized one must not make the encoder drop the whole
+	// x-datadog-tags header (and _dd.p.dm with it).
+	defer illmobs.SetEnabledForTesting(true)()
+	tr, err := newTracer()
+	require.NoError(t, err)
+	defer tr.Stop()
+	for name, extra := range map[string]string{
+		"oversized ml_app": ",llmobs.ml_app=" + strings.Repeat("a", 400),
+	} {
+		t.Run(name, func(t *testing.T) {
+			extracted, err := tr.Extract(TextMapCarrier{
+				"x-datadog-trace-id": "123", "x-datadog-parent-id": "456", "x-datadog-sampling-priority": "1",
+				"baggage": "llmobs.parent_id=555,llmobs.trace_id=" + testLLMObsHexTraceID + extra,
+			})
+			require.NoError(t, err)
+			root := tr.StartSpan("server", ChildOf(extracted))
+			defer root.Finish()
+
+			out := TextMapCarrier{}
+			require.NoError(t, tr.Inject(root.Context(), out))
+			tags := out["x-datadog-tags"]
+			assert.Contains(t, tags, "_dd.p.llmobs_parent_id=555", "the header was not dropped")
+			assert.NotContains(t, tags, "_dd.p.llmobs_ml_app")
+			assert.NotContains(t, tags, "_dd.p.llmobs_sid")
+		})
+	}
+}
+
+func TestLLMObsExtractedContextInjectedDirectly(t *testing.T) {
+	// A relay that injects an extracted context, with no local span, forwards it.
+	defer illmobs.SetEnabledForTesting(true)()
+	tr, err := newTracer()
+	require.NoError(t, err)
+	defer tr.Stop()
+	extracted, err := tr.Extract(TextMapCarrier{
+		"x-datadog-trace-id": "123", "x-datadog-parent-id": "456", "x-datadog-sampling-priority": "1",
+		"x-datadog-tags": "_dd.p.llmobs_parent_id=555,_dd.p.llmobs_trace_id=" + testLLMObsDecimalTraceID,
+	})
+	require.NoError(t, err)
+	out := TextMapCarrier{}
+	require.NoError(t, tr.Inject(extracted, out))
+	assert.Contains(t, out["x-datadog-tags"], "_dd.p.llmobs_parent_id=555")
+	assert.Contains(t, out["x-datadog-tags"], "_dd.p.llmobs_trace_id="+testLLMObsDecimalTraceID)
+	assert.Contains(t, out["baggage"], "llmobs.parent_id=555")
+}
+
+func TestSpanContextSizeClass(t *testing.T) {
+	// Every span allocates a SpanContext. At 257 bytes it would move to the next
+	// size class (288), so per-feature state belongs on the trace, not here.
+	assert.LessOrEqual(t, unsafe.Sizeof(SpanContext{}), uintptr(256))
 }

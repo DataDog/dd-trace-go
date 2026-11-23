@@ -390,6 +390,23 @@ func TestLLMObsBaggageRead(t *testing.T) {
 		assert.Contains(t, tags, "_dd.p.llmobs_parent_id=555")
 	})
 
+	t.Run("an-apm-span-reattached-to-a-new-context-keeps-its-llmobs-parent", func(t *testing.T) {
+		// A common way to detach cancellation: start goroutine work from
+		// ContextWithSpan(context.Background(), span).
+		_, coll, ll := testTracer(t)
+		l, lctx := ll.StartSpan(context.Background(), llmobs.SpanKindWorkflow, "l", llmobs.StartSpanConfig{})
+		apm, _ := tracer.StartSpanFromContext(lctx, "apm-child")
+		tool, _ := ll.StartSpan(tracer.ContextWithSpan(context.Background(), apm), llmobs.SpanKindTool, "detached_tool", llmobs.StartSpanConfig{})
+		tool.Finish(llmobs.FinishSpanConfig{})
+		apm.Finish()
+		l.Finish(llmobs.FinishSpanConfig{})
+		tracer.Flush()
+
+		got := coll.RequireSpan(t, "detached_tool")
+		assert.Equal(t, l.SpanID(), got.ParentID)
+		assert.Equal(t, l.TraceID(), got.TraceID)
+	})
+
 	t.Run("inbound-llmobs-baggage-is-replaced-not-forwarded", func(t *testing.T) {
 		_, coll, ll := testTracer(t)
 		out := newOutboundCapture(t)

@@ -7,6 +7,7 @@ package llmobs
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -51,5 +52,24 @@ func TestIsCanonicalTraceID(t *testing.T) {
 		{"", false},
 	} {
 		assert.Equal(t, tt.want, IsCanonicalTraceID(tt.in), tt.in)
+	}
+}
+
+func TestDistributedContextDoesNotWaitForTheSpanLock(t *testing.T) {
+	// Finish holds mu across a blocking send to the LLMObs writer, and every
+	// injection reads the distributed context, so reading it must not take mu.
+	s := &Span{spanID: "1", llmTraceID: "abc"}
+	sessionID := "s"
+	s.wireSessionID.Store(&sessionID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	done := make(chan DistributedContext, 1)
+	go func() { done <- s.DistributedContext() }()
+	select {
+	case dc := <-done:
+		assert.Equal(t, "s", dc.SessionID)
+	case <-time.After(5 * time.Second):
+		t.Fatal("DistributedContext waited for the span lock")
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 )
 
 // LLMObs distributed context travels in the W3C baggage header under the llmobs.*
@@ -63,9 +64,15 @@ func isLLMObsBaggageKey(k string) bool {
 // dd-trace-py's _select_propagated_carrier does. Baggage is preferred. A real tag
 // parent that differs from the baggage parent means a tags-only hop forwarded
 // stale baggage, so then the tags are used. It also returns the carrier and the
-// error type for telemetry. spanCtx and spanCtx.trace must be non-nil.
+// error type for telemetry. spanCtx must be non-nil.
 func propagatedLLMSpan(spanCtx *SpanContext) (p *illmobs.PropagatedLLMSpan, carrier, errType string) {
-	tagParent := spanCtx.trace.propagatingTag(keyPropagatedLLMObsParentID)
+	tag := func(k string) string {
+		if spanCtx.trace == nil {
+			return ""
+		}
+		return spanCtx.trace.propagatingTag(k)
+	}
+	tagParent := tag(keyPropagatedLLMObsParentID)
 	baggageParent := spanCtx.baggageItem(baggageKeyLLMObsParentID)
 	parent := baggageParent
 	switch {
@@ -94,7 +101,7 @@ func propagatedLLMSpan(spanCtx *SpanContext) (p *illmobs.PropagatedLLMSpan, carr
 				return v
 			}
 		}
-		return spanCtx.trace.propagatingTag(tagKey)
+		return tag(tagKey)
 	}
 	p = &illmobs.PropagatedLLMSpan{
 		SpanID:            parent,
@@ -113,7 +120,7 @@ func propagatedLLMSpan(spanCtx *SpanContext) (p *illmobs.PropagatedLLMSpan, carr
 		baggageTraceID = spanCtx.baggageItem(baggageKeyLLMObsTraceID)
 	}
 	if !fromBaggage || tagsMatch {
-		tagTraceID = spanCtx.trace.propagatingTag(keyPropagatedLLMObsTraceID)
+		tagTraceID = tag(keyPropagatedLLMObsTraceID)
 	}
 	switch {
 	case illmobs.IsCanonicalTraceID(baggageTraceID):
@@ -140,7 +147,77 @@ func activateInboundLLMObsContext(spanCtx *SpanContext) {
 	p, carrier, errType := propagatedLLMSpan(spanCtx)
 	illmobs.TrackDistributedContextCarrier(carrier, errType)
 	if p != nil {
-		spanCtx.llmobsPropagated = p
+		spanCtx.setLLMObsPropagated(p, true)
+	}
+}
+
+// traceLLMObs is the LLMObs context of one local trace.
+type traceLLMObs struct {
+	mu locking.RWMutex
+	// propagated is the inbound context, which requests outside any LLMObs span carry.
+	// +checklocks:mu
+	propagated *illmobs.PropagatedLLMSpan
+	// spans maps an APM span ID to the LLMObs span that requests injected from that
+	// APM span carry: the LLMObs span active when it started, or its parent's.
+	// +checklocks:mu
+	spans map[uint64]*illmobs.Span
+}
+
+func (t *trace) llmobsState() *traceLLMObs {
+	if s := t.llmobs.Load(); s != nil {
+		return s
+	}
+	t.llmobs.CompareAndSwap(nil, &traceLLMObs{})
+	return t.llmobs.Load()
+}
+
+// llmobsContext returns the LLMObs span, or else the inbound context, that
+// requests injected from c carry.
+func (c *SpanContext) llmobsContext() (*illmobs.Span, *illmobs.PropagatedLLMSpan) {
+	if c.trace == nil {
+		return nil, nil
+	}
+	s := c.trace.llmobs.Load()
+	if s == nil {
+		return nil, nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.spans[c.spanID], s.propagated
+}
+
+func (c *SpanContext) setLLMObsSpan(span *illmobs.Span) {
+	if c.trace == nil {
+		return
+	}
+	s := c.trace.llmobsState()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.spans == nil {
+		s.spans = make(map[uint64]*illmobs.Span)
+	}
+	s.spans[c.spanID] = span
+}
+
+// setLLMObsPropagated records the inbound context. The local root sets it with
+// replace; a span that only finds it in its context.Context fills it in if unset.
+func (c *SpanContext) setLLMObsPropagated(p *illmobs.PropagatedLLMSpan, replace bool) {
+	if c.trace == nil {
+		return
+	}
+	s := c.trace.llmobsState()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if replace || s.propagated == nil {
+		s.propagated = p
+	}
+}
+
+// inheritLLMObsSpan makes a child span carry its parent's LLMObs span, for
+// children started without a context.Context.
+func inheritLLMObsSpan(child, parent *SpanContext) {
+	if span, _ := parent.llmobsContext(); span != nil {
+		child.setLLMObsSpan(span)
 	}
 }
 
@@ -156,17 +233,28 @@ func setLLMObsTagsForInjection(ctx *SpanContext) {
 	}
 	t := ctx.trace
 	dc, _ := ctx.llmobsDistributedContext() // zero value without an LLMObs context
+	// The identity tags are validated at read: a numeric parent and a normalized trace ID.
 	for _, kv := range [...][2]string{
 		{keyPropagatedLLMObsParentID, dc.ParentID},
 		{keyPropagatedLLMObsTraceID, dc.WireTraceID},
+	} {
+		if kv[1] == "" {
+			t.unsetPropagatingTag(kv[0])
+		} else {
+			t.setPropagatingTag(kv[0], kv[1])
+		}
+	}
+	// The other values can come from an inbound baggage header, which nothing caps.
+	// One invalid or oversized value would make the encoder drop the whole
+	// x-datadog-tags header, so it is left out of the tags; baggage still carries it.
+	for _, kv := range [...][2]string{
 		{keyPropagatedLLMObsMLAPP, dc.MLApp},
 		{keyPropagatedLLMObsSessionID, dc.SessionID},
 		{keyPropagatedLLMObsSampleRate, dc.SampleRate},
 		{keyPropagatedLLMObsSamplingDecision, dc.SamplingDecision},
 	} {
-		if kv[1] == "" {
-			t.unsetPropagatingTag(kv[0])
-		} else {
+		t.unsetPropagatingTag(kv[0])
+		if kv[1] != "" && isValidPropagatableTag(kv[0], kv[1]) == nil && fitsPropagatingTagBudget(ctx, kv[0], kv[1]) {
 			t.setPropagatingTag(kv[0], kv[1])
 		}
 	}
@@ -185,11 +273,19 @@ func apmTraceID(spanCtx *SpanContext) string {
 // from c carries. It is computed at injection and never stored in c's baggage,
 // which every child span copies.
 func (c *SpanContext) llmobsDistributedContext() (illmobs.DistributedContext, bool) {
+	span, p := c.llmobsContext()
 	switch {
-	case c.llmobsSpan != nil:
-		return c.llmobsSpan.DistributedContext(), true
-	case c.llmobsPropagated != nil:
-		return c.llmobsPropagated.DistributedContext(), true
+	case span != nil:
+		return span.DistributedContext(), true
+	case p != nil:
+		return p.DistributedContext(), true
+	}
+	// An extracted context that is injected without a local span (a relay) still
+	// forwards what it received. It has no local root, so nothing decoded it yet.
+	if (c.trace == nil || c.trace.root == nil) && illmobs.Enabled() { // +checklocksignore - root is write-once at init.
+		if p, _, _ := propagatedLLMSpan(c); p != nil {
+			return p.DistributedContext(), true
+		}
 	}
 	return illmobs.DistributedContext{}, false
 }

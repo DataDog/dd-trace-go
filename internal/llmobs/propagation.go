@@ -24,16 +24,19 @@ type DistributedContext struct {
 }
 
 // DistributedContext returns the context that a downstream service inherits from s.
-// It holds the read lock because Annotate can change the session ID at any time.
+// It takes no lock: every field but the session ID is fixed once the span starts,
+// and the session ID, which Annotate can change, is read atomically.
 func (s *Span) DistributedContext() DistributedContext {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	var sessionID string
+	if p := s.wireSessionID.Load(); p != nil {
+		sessionID = *p
+	}
 	dc := DistributedContext{
 		ParentID:          s.SpanID(),
 		TraceID:           s.llmTraceID,
 		WireTraceID:       s.WireTraceID(),
 		MLApp:             s.mlApp,
-		SessionID:         s.sessionID,
+		SessionID:         sessionID,
 		SampleRate:        s.sampleRate,
 		SamplingDecision:  s.samplingDecision,
 		ParentAgentSpanID: s.PropagatedParentAgentSpanID(),

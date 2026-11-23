@@ -606,6 +606,8 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 	if span.sessionID == "" {
 		span.sessionID = span.propagatedSessionID()
 	}
+	sessionID := span.sessionID // a copy: Annotate later rewrites the field
+	span.wireSessionID.Store(&sessionID)
 	if span.mlApp == "" {
 		span.mlApp = span.propagatedMLApp()
 		if span.mlApp == "" {

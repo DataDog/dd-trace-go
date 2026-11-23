@@ -23,7 +23,6 @@ import (
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
-	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking/assert"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -141,12 +140,6 @@ type SpanContext struct {
 	bridgeState atomic.Uint32
 
 	trace *trace // reference to the trace that this span belongs too
-
-	// llmobsSpan, or else llmobsPropagated, is the LLMObs context that requests
-	// injected from this context carry in baggage. It is set at span start and
-	// inherited by child spans. Read-only after init.
-	llmobsSpan       *illmobs.Span
-	llmobsPropagated *illmobs.PropagatedLLMSpan
 
 	// The 16-character hex string of the last seen Datadog Span ID
 	// this value will be added as the _dd.parent_id tag to spans
@@ -313,8 +306,7 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 			context.trace = parent.trace
 			context.origin = parent.origin // +checklocksignore - Initialization time, not shared yet. Parent origin is read-only after init.
 			context.errors.Store(parent.errors.Load())
-			context.llmobsSpan = parent.llmobsSpan
-			context.llmobsPropagated = parent.llmobsPropagated
+			inheritLLMObsSpan(context, parent)
 		}
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
@@ -664,6 +656,10 @@ type trace struct {
 	dm uint32
 	// samplingDecision indicates whether to send the trace to the agent.
 	samplingDecision samplingDecision // +checkatomic
+
+	// llmobs is the LLMObs context of this local trace. It is allocated only for
+	// traces that carry one, so other traces and every span pay nothing.
+	llmobs atomic.Pointer[traceLLMObs]
 
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in

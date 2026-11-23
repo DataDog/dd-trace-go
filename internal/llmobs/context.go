@@ -82,6 +82,12 @@ var propagatedLLMSpanUsed atomic.Bool
 // activeLLMSpanUsed reports whether contextWithActiveLLMSpan was ever called.
 var activeLLMSpanUsed atomic.Bool
 
+// ContextWithActiveLLMSpan returns ctx with span as the active LLMObs span, so
+// LLMObs spans started from it become its children.
+func ContextWithActiveLLMSpan(ctx context.Context, span *Span) context.Context {
+	return contextWithActiveLLMSpan(ctx, span)
+}
+
 func contextWithActiveLLMSpan(ctx context.Context, span *Span) context.Context {
 	activeLLMSpanUsed.Store(true)
 	return context.WithValue(ctx, ctxKeyActiveLLMSpan{}, span)

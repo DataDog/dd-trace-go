@@ -128,15 +128,23 @@ func contextWithPropagatedLLMSpan(ctx context.Context, s *Span) context.Context 
 	if s == nil {
 		return ctx
 	}
+	if s.context == nil || s.context.trace == nil || !illmobs.Enabled() {
+		return ctx
+	}
+	// An APM span under an LLMObs span, attached to a context that lost it (for
+	// example context.Background()), keeps that LLMObs span as the parent.
+	if span, _ := s.context.llmobsContext(); span != nil {
+		if _, ok := illmobs.ActiveLLMSpanFromContext(ctx); !ok {
+			return illmobs.ContextWithActiveLLMSpan(ctx, span)
+		}
+		return ctx
+	}
 	// if there is a propagated llm span already just skip
 	if _, ok := illmobs.PropagatedLLMSpanFromContext(ctx); ok {
 		return ctx
 	}
-	if s.context == nil || s.context.trace == nil || !illmobs.Enabled() {
-		return ctx
-	}
-	// The local root of an inbound request already decoded it.
-	if p := s.context.llmobsPropagated; p != nil {
+	if _, p := s.context.llmobsContext(); p != nil {
+		// The local root of an inbound request already decoded it.
 		return illmobs.ContextWithPropagatedLLMSpan(ctx, p)
 	}
 	// Fast path for the common span without LLMObs propagation: no baggage, and no tag.

@@ -10,6 +10,7 @@ import (
 	"maps"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -243,6 +244,11 @@ type Span struct {
 	sampleRate       string
 	samplingDecision string
 
+	// wireSessionID mirrors sessionID for DistributedContext, which runs on every
+	// injection and so must not take mu: Finish holds mu across a blocking send to
+	// the LLMObs writer.
+	wireSessionID atomic.Pointer[string]
+
 	integration string
 	scope       string
 	error       error
@@ -395,6 +401,7 @@ func (s *Span) Annotate(a SpanAnnotations) {
 		s.llmCtx.tags = updateMapKeys(s.llmCtx.tags, a.Tags)
 		if sessionID, ok := a.Tags[TagKeySessionID]; ok {
 			s.sessionID = sessionID
+			s.wireSessionID.Store(&sessionID)
 		}
 	}
 

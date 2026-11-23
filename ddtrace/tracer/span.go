@@ -1425,11 +1425,9 @@ func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
 	// trace-wide tags written here would let a finished or concurrent LLMObs span
 	// leave its parent behind for other requests of the trace.
 	if llmSpan, ok := illmobs.ActiveLLMSpanFromContext(ctx); ok {
-		spanCtx.llmobsSpan = llmSpan
-		spanCtx.llmobsPropagated = nil
+		spanCtx.setLLMObsSpan(llmSpan)
 	} else if p, ok := illmobs.PropagatedLLMSpanFromContext(ctx); ok {
-		spanCtx.llmobsSpan = nil
-		spanCtx.llmobsPropagated = p
+		spanCtx.setLLMObsPropagated(p, false)
 	}
 }
 
@@ -1448,28 +1446,35 @@ func setPropagatingParentAgentTags(spanCtx *SpanContext, parentAgentSpanID, name
 			return
 		}
 		// Only propagate the name when it fits within the x-datadog-tags and W3C tracestate budgets.
-		used, tsUsed := spanCtx.trace.propagatingTagsByteLens()
-		// _dd.p.tid is stamped during Inject, not here — reserve its space on 128-bit traces.
-		if spanCtx.traceID.HasUpper() && spanCtx.trace.propagatingTag(keyTraceID128) == "" {
-			used += 27
-			tsUsed += 23
-		}
-		var nameXTagsLen int
-		if prior := spanCtx.trace.propagatingTag(keyPropagatedLLMObsParentAgentName); prior != "" {
-			nameXTagsLen = used - len(prior) + len(name)
-			tsUsed -= len(keyPropagatedLLMObsParentAgentName) - len("_dd.p.") + len(prior) + 4
-		} else {
-			nameXTagsLen = used + len(keyPropagatedLLMObsParentAgentName) + len(name) + 2
-		}
-		nameTracestateLen := len(keyPropagatedLLMObsParentAgentName) - len("_dd.p.") + len(name) + 4
-		if nameXTagsLen <= internalconfig.Get().MaxTagsHeaderLen() &&
-			tsUsed+nameTracestateLen+tracestateHeaderReserve <= tracestateDDMaxSize {
+		if fitsPropagatingTagBudget(spanCtx, keyPropagatedLLMObsParentAgentName, name) {
 			spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentAgentName, name)
 		} else {
 			spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
 			log.Debug("LLMObs: parent agent name dropped from propagation — x-datadog-tags budget exceeded (name=%q)", name)
 		}
 	}
+}
+
+// fitsPropagatingTagBudget reports whether setting key to value keeps the
+// propagating tags within the x-datadog-tags and W3C tracestate budgets. Over
+// either budget, the encoder drops every propagating tag, not only this one.
+func fitsPropagatingTagBudget(spanCtx *SpanContext, key, value string) bool {
+	used, tsUsed := spanCtx.trace.propagatingTagsByteLens()
+	// _dd.p.tid is stamped during Inject, after this check — reserve its space on 128-bit traces.
+	if spanCtx.traceID.HasUpper() && spanCtx.trace.propagatingTag(keyTraceID128) == "" {
+		used += 27
+		tsUsed += 23
+	}
+	var xTagsLen int
+	if prior := spanCtx.trace.propagatingTag(key); prior != "" {
+		xTagsLen = used - len(prior) + len(value)
+		tsUsed -= len(key) - len("_dd.p.") + len(prior) + 4
+	} else {
+		xTagsLen = used + len(key) + len(value) + 2
+	}
+	tracestateLen := len(key) - len("_dd.p.") + len(value) + 4
+	return xTagsLen <= internalconfig.Get().MaxTagsHeaderLen() &&
+		tsUsed+tracestateLen+tracestateHeaderReserve <= tracestateDDMaxSize
 }
 
 // used in internal/civisibility/integrations/manual_api_common.go using linkname
