@@ -2,7 +2,7 @@
 
 > **Status: for design review only. This file has no code change. It can be
 > removed before merge.** The delivered change of this PR is documentation
-> (godoc, `internal/appsec/README.md`) and 2 compiled `Example` functions per
+> (godoc, file comments in `appsec.go`) and 2 compiled `Example` functions per
 > package (section 2). The document has **no open decision**: the 3 decisions
 > are made in section 1.
 > Origin: ROMAIN-51 (follow-up of DD-20 / PR #5847).
@@ -67,7 +67,8 @@ no public API, no test expectation.
 |---|---|
 | `contrib/go-chi/chi.v5/chi.go` | New `Middleware` godoc (2.1) |
 | `contrib/go-chi/chi/chi.go` | New `Middleware` godoc (2.1) |
-| `internal/appsec/README.md` | Section "Late blocks and route reports in HTTP contribs" (2.2) |
+| `contrib/go-chi/chi.v5/appsec.go` | Comment of `withAppsec`: placement table and trade-off (2.2). Comment only. |
+| `contrib/go-chi/chi/appsec.go` | The same, for chi v1 (2.2). Comment only. |
 | `contrib/go-chi/chi.v5/example_test.go` | 2 new `Example` functions and 2 helpers (2.3) |
 | `contrib/go-chi/chi/example_test.go` | The same, for chi v1 (2.3) |
 
@@ -121,39 +122,44 @@ package name in the code is `chi`.
 // only on the endpoint, requests that no endpoint matches are not traced.
 ```
 
-### 2.2 New text of `internal/appsec/README.md`
+### 2.2 New comment in `appsec.go`
 
-Section "Late blocks and route reports in HTTP contribs" (line 369). Paragraphs
-1 and 2 do not change. A new paragraph and a new table go **between** paragraph
-2 and the last paragraph ("go-chi details are next to the code ..."). The last
-paragraph does not change.
+The chi-specific notes go in the chi packages, next to the existing AppSec notes
+from PR #5847. `internal/appsec/README.md` does not change.
 
-New text:
+Both files, `contrib/go-chi/chi.v5/appsec.go` and `contrib/go-chi/chi/appsec.go`,
+have the same doc comment on `withAppsec`. Its first paragraph says: "With Use
+before routing, chi has not selected the route when this middleware starts ... so
+a rule on path parameters does not match with a Use at the root." That is the
+existing note. The change **adds the text below as new paragraphs, right after
+that first paragraph** and before the paragraph "After the handler, it reports
+the route ...". The other lines of the comment, and the code, do not change. The
+text is the same in both files (`knownParams` is not changed).
 
-```markdown
-#### go-chi: where Middleware runs, and the path parameters
-
-AppSec gets the path parameters of go-chi only when chi has selected the
-endpoint before `Middleware` starts. The table gives the result for each
-placement. Results are the same on chi v5.3.0 and v1.5.5. The "spans" column is
-the number of go-chi spans for a matched request.
-
-| Placement | What `Middleware` sees at its start | Spans |
-|---|---|---:|
-| `Use` at the root only | No route and no path parameters. AppSec gets the route after the handler. | 1 |
-| `r.With(Middleware())` on the endpoint, or `Group.Use` with the endpoint registered directly on that `Group` | The route (`/users/{id}`) and the path parameters (`id=42`). | 1 |
-| `Use` at the root **and** one of the 2 placements above | The root sees no path parameters. The inner one sees `id=42`. | 2 (parent and child) |
-| `Group.Use` around `Route("/docs", child)` or `Mount` | The mount pattern (`/docs/*`) and the rest of the path. **Not** the path parameters of the child. | 1 |
-| `Group.Use` only, path or method that no endpoint matches | The `Group` middleware does not run (404 or 405). | 0 |
-
-`Use` at the root keeps the coverage of requests that no endpoint matches and of
-the work before routing. `Middleware` only on the endpoint loses it. Using both
-keeps it, and adds 1 child span for each matched request. Orchestrion adds
-`Use(Middleware())` at the root. 2 spans do not mean 2 WAF contexts.
-
-A rule that needs the path parameters before the handler needs the endpoint
-placement.
+```go
+//
+// Where Middleware runs decides what the WAF gets. The results are the same on
+// chi v5.3.0 and v1.5.5. "Spans" is the number of go-chi spans of 1 matched
+// request:
+//
+//	Placement                                    Middleware sees at its start       Spans
+//	Use at the root only                         no route, no path parameters       1
+//	r.With(Middleware()) on the endpoint, or     the route (/users/{id}) and        1
+//	Use in a Group that registers the endpoint   the parameters (id=42)
+//	Use at the root and one placement above      root: no parameters; inner: id=42  2
+//	Use in a Group around Route or Mount         the mount pattern (/docs/*), not   1
+//	                                             the parameters of the child
+//	Use in a Group only, no endpoint matches     does not run (404, 405)            0
+//
+// Use at the root keeps the coverage of requests that no endpoint matches and of
+// the work before routing. Middleware only on the endpoint loses it. Using both
+// keeps it, and adds 1 child span for each matched request. Orchestrion adds
+// Use(Middleware()) at the root. 2 spans do not mean 2 WAF contexts.
 ```
+
+**Checked:** I added this text to a scratch copy of both files at `b3dc60f72`.
+`gofmt -l` reports nothing, and `go build ./...` and `go vet .` pass in both
+packages. I then restored the files.
 
 ### 2.3 The `Example` functions
 
@@ -257,7 +263,8 @@ the earlier draft are for a later P: see A.9.
 
 - [ ] **AC9** `[integration test, real WAF]` All chi tests at `b3dc60f72` pass
   with no changed expectation, in both packages. No test file other than
-  `example_test.go` changes.
+  `example_test.go` changes, and `chi.go` and `appsec.go` change only in
+  comments.
   `cd contrib/go-chi/chi.v5 && go test ./...`, and the same in
   `contrib/go-chi/chi`.
 - [ ] **AC13** `[system-tests]` The `chi` weblog jobs of the dd-trace-go
@@ -278,12 +285,14 @@ the earlier draft are for a later P: see A.9.
 1. The Adversarial Reviewer challenge (2 rounds) is **done**. Its result is the
    placement table (2.4).
 2. Code review with the `code-review` skill is not required for the delivered
-   change when it only has godoc, README and `Example` code. The reviewer of the
-   PR checks that the text of 2.1 and 2.2 is the text in the files.
+   change when it only has comments (godoc and `appsec.go`) and `Example` code. The
+   reviewer of the PR checks that the text of 2.1 and 2.2 is the text in the
+   files, and that no line of code changed outside the `Example` files.
 3. Contrib owners (`@DataDog/apm-go`, `@DataDog/apm-idm-go`, `CODEOWNERS:60`)
    approve the change in `contrib/`.
-4. `@DataDog/asm-go` (`CODEOWNERS:67-72`) approves the change in
-   `internal/appsec/README.md`.
+4. `@DataDog/asm-go` (`CODEOWNERS:67-72`, pattern `*appsec.go`) reviews the
+   comment change in `contrib/go-chi/chi.v5/appsec.go` and
+   `contrib/go-chi/chi/appsec.go`.
 
 ---
 
