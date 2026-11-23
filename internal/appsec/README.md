@@ -400,7 +400,9 @@ from the request URL as the API Security sampling key when the integration has n
 route, and sets `httpsec.Config.RouteInferred` for it: such a route gets no tag.
 
 An optional parameter or a catch-all is in the tag only when its path parameter
-has a non-empty value. Without a value (go-chi reports a late route without
-parameters), it is left out, which is the fallback that RFC-1125 allows. A
+has a non-empty value. Without a value, it is left out, which is the fallback that
+RFC-1125 allows. go-chi reports a late route without parameters to the WAF, so it
+gives the parameters of that route with `httpsec.ReportRouteParams`, which stores
+them for API Security and causes no WAF evaluation. A
 gorilla/mux `PathPrefix` route is reported as its template, so the rest of the
 path is left out.

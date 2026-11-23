@@ -490,3 +490,30 @@ func TestAppSecSamePatternRewriteNested(t *testing.T) {
 	assert.Equal(t, []string{"path-block"}, o.events)
 	assert.Len(t, o.routes, 2, "the tracers of the root and of the child router")
 }
+
+// TestAppSecNormalizedRoute checks that, with Use before routing, the normalized
+// route has the catch-all of the route that chi selected only when it has a value.
+// The path parameters reach API Security after the handler, without the WAF. In a
+// mounted router, the catch-all is the last "*".
+func TestAppSecNormalizedRoute(t *testing.T) {
+	t.Setenv("DD_API_SECURITY_ENABLED", "true")
+	t.Setenv("DD_APPSEC_ENABLED", "true")
+	testutils.StartAppSec(t)
+
+	router := chi.NewRouter()
+	router.Use(Middleware())
+	router.Get("/users/{id}", okHandler)
+	router.Get("/files/*", okHandler)
+	api := chi.NewRouter()
+	api.Get("/static/*", okHandler)
+	router.Mount("/api", api)
+	for target, want := range map[string]string{
+		"/users/1":       "/users/{id}",
+		"/files/a/b.txt": "/files/{param1}",
+		"/files/":        "/files/",
+		"/api/static/a":  "/api/static/{param1}",
+		"/api/static/":   "/api/static/",
+	} {
+		assert.Equal(t, want, requestTags(t, router, target)["_dd.appsec.normalized_route"], target)
+	}
+}

@@ -321,6 +321,20 @@ func RouteMatched(ctx context.Context, route string, routeParams map[string]stri
 	return err
 }
 
+// ReportRouteParams records the path parameters of the route that the router
+// selected, for an integration that learns them after the handler started and
+// reports the route with RouteMatched without parameters. They are not sent to
+// the WAF: the call causes no WAF evaluation. API Security uses them to know
+// which catch-alls and optional parameters the request has.
+func ReportRouteParams(ctx context.Context, routeParams map[string]string) {
+	op, ok := dyngo.FindOperation[HandlerOperation](ctx)
+	if !ok {
+		log.Debug("appsec: ReportRouteParams called without an active HandlerOperation in the context, ignoring")
+		return
+	}
+	op.pathParams = routeParams
+}
+
 func responseStarted(w http.ResponseWriter) bool {
 	if res, ok := w.(interface{ Committed() bool }); ok {
 		return res.Committed()

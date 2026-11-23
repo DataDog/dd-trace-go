@@ -30,7 +30,9 @@ import (
 // After the handler, it reports the route that chi selected when it is not the start
 // route (RouteMatched without parameters): API Security uses the route as the
 // sampling key, and api_security.missing_route counts the requests without it. The
-// report sends only the route and causes no additional native WAF evaluation. A late
+// report sends only the route and causes no additional native WAF evaluation. The
+// path parameters of that route go to API Security only (ReportRouteParams), for
+// the catch-all of the normalized route; the WAF does not get them. A late
 // block replaces the response only if it is not sent yet (see "Late blocks and route
 // reports in HTTP contribs" in internal/appsec/README.md).
 //
@@ -68,11 +70,28 @@ func withAppsec(next http.Handler, span trace.TagSetter, cfg *config, cache *syn
 				// The error is ignored: afterHandle applies the stored action, and the
 				// commitTracker tells if the response can still be replaced.
 				_ = httpsec.RouteMatched(tr.Context(), finalRoute, nil)
+				// API Security only: the WAF does not get the parameters.
+				httpsec.ReportRouteParams(tr.Context(), selectedParams(rc))
 			}
 		})
 
 		httpsec.WrapHandler(late, span, &appsecCfg).ServeHTTP(tw, r)
 	})
+}
+
+// selectedParams returns the parameters of the route that chi selected. The last
+// value of a name that is used at several levels wins: the catch-all of a route
+// in a mounted router is the last "*".
+func selectedParams(rctx *chi.Context) map[string]string {
+	keys, values := rctx.URLParams.Keys, rctx.URLParams.Values
+	if len(keys) == 0 || len(keys) != len(values) {
+		return nil
+	}
+	params := make(map[string]string, len(keys))
+	for i, key := range keys {
+		params[key] = values[i]
+	}
+	return params
 }
 
 // knownParams returns the parameters that chi matched so far, as AppSec read them
