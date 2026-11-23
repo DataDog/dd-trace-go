@@ -598,6 +598,8 @@ replace github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2
 require (
 	example.com/httprouterdep v0.0.0-00010101000000-000000000000
 	example.com/zerologdep v0.0.0-00010101000000-000000000000
+	github.com/rabbitmq/amqp091-go v1.17.0
+	github.com/streadway/amqp v1.1.0
 )
 
 replace example.com/httprouterdep => ./internal/httprouterdep
@@ -607,8 +609,10 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/rabbitmq/amqp091-go/v2 v2.13.0-dev.1 // indirect
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/streadway/amqp/v2 v2.13.0-dev.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/kms v1.30.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.101.0 // indirect
 	github.com/aws/aws-xray-sdk-go/v2 v2.0.0 // indirect
@@ -656,3 +660,7 @@ replace example.com/k8sclientgodep => ./internal/k8sclientgodep
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../../contrib/aws/aws-sdk-go/otelc
 
 replace example.com/awsv1dep => ./internal/awsv1dep
+
+replace github.com/DataDog/dd-trace-go/contrib/rabbitmq/amqp091-go/v2 => ../../../contrib/rabbitmq/amqp091-go
+
+replace github.com/DataDog/dd-trace-go/contrib/streadway/amqp/v2 => ../../../contrib/streadway/amqp

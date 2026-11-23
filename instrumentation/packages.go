@@ -53,6 +53,9 @@ const (
 	PackageNetHTTP   Package = "net/http"
 	PackageIBMSarama Package = "IBM/sarama"
 
+	PackageRabbitMQAMQP091Go Package = "rabbitmq/amqp091-go"
+	PackageStreadwayAMQP     Package = "streadway/amqp"
+
 	PackageValyalaFastHTTP                 Package = "valyala/fasthttp"
 	PackageUrfaveNegroni                   Package = "urfave/negroni"
 	PackageTwitchTVTwirp                   Package = "twitchtv/twirp"
@@ -814,6 +817,12 @@ var packages = map[Package]PackageInfo{
 				buildServiceNameV0: staticName("postgres.db"),
 			},
 		},
+	},
+	PackageRabbitMQAMQP091Go: {
+		TracedPackage: "github.com/rabbitmq/amqp091-go",
+	},
+	PackageStreadwayAMQP: {
+		TracedPackage: "github.com/streadway/amqp",
 	},
 	PackageIBMSarama: {
 		TracedPackage: "github.com/IBM/sarama",

@@ -173,6 +173,7 @@ integration-suites:
     contrib/net/http/otelc: [ net_http ]
     contrib/olivere/elastic.v5: []
     contrib/opensearch-project/opensearch-go.v4: [ opensearch-go.v4 ]
+    contrib/rabbitmq/amqp091-go: [ rabbitmq_amqp091 ]
     contrib/redis/go-redis.v9: [ go-redis.v9 ]
     contrib/redis/rueidis: [ rueidis ]
     contrib/rs/zerolog: [ zerolog ]
@@ -181,6 +182,7 @@ integration-suites:
     contrib/segmentio/kafka-go/otelc: [ segmentio_kafka.v0 ]
     contrib/Shopify/sarama: [ shopify_sarama ]
     contrib/sirupsen/logrus: [ logrus ]
+    contrib/streadway/amqp: [ streadway_amqp ]
     contrib/syndtr/goleveldb: []
     contrib/tidwall/buntdb: []
     contrib/twitchtv/twirp: [ twirp ]
@@ -212,10 +214,12 @@ integration-suites:
         mongo.v2,
         opensearch-go.v4,
         pgx,
+        rabbitmq_amqp091,
         redigo,
         rueidis,
         segmentio_kafka.v0,
         shopify_sarama,
+        streadway_amqp,
         twmb_franz_go,
         valkey-go,
         vault,

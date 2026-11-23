@@ -1,0 +1,13 @@
+_v: 1
+name: github.com/streadway/amqp
+display_name: streadway/amqp
+description: Instruments RabbitMQ publish, consume and get operations with producer and consumer spans, trace-context propagation
+  in AMQP headers, and Data Streams Monitoring checkpoints.
+packages:
+- name: github.com/streadway/amqp
+category:
+- messaging.consumer
+- messaging.producer
+systems:
+- rabbitmq
+creation_date: '2026-11-19'

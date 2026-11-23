@@ -74,11 +74,13 @@
 //   - [contrib/net/http/v2]
 //   - [contrib/olivere/elastic.v5/v2]
 //   - [contrib/opensearch-project/opensearch-go.v4/v2]
+//   - [contrib/rabbitmq/amqp091-go/v2]
 //   - [contrib/redis/go-redis.v9/v2]
 //   - [contrib/redis/rueidis/v2]
 //   - [contrib/rs/zerolog/v2]
 //   - [contrib/segmentio/kafka-go/v2]
 //   - [contrib/sirupsen/logrus/v2]
+//   - [contrib/streadway/amqp/v2]
 //   - [contrib/syndtr/goleveldb/v2]
 //   - [contrib/tidwall/buntdb/v2]
 //   - [contrib/twitchtv/twirp/v2]
@@ -145,11 +147,13 @@
 // [contrib/net/http/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/net/http/v2
 // [contrib/olivere/elastic.v5/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/olivere/elastic.v5/v2
 // [contrib/opensearch-project/opensearch-go.v4/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2
+// [contrib/rabbitmq/amqp091-go/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/rabbitmq/amqp091-go/v2
 // [contrib/redis/go-redis.v9/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2
 // [contrib/redis/rueidis/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2
 // [contrib/rs/zerolog/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2
 // [contrib/segmentio/kafka-go/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2
 // [contrib/sirupsen/logrus/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2
+// [contrib/streadway/amqp/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/streadway/amqp/v2
 // [contrib/syndtr/goleveldb/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/syndtr/goleveldb/v2
 // [contrib/tidwall/buntdb/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/tidwall/buntdb/v2
 // [contrib/twitchtv/twirp/v2]: https://pkg.go.dev/github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2

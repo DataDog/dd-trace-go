@@ -44,11 +44,13 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 v2.13.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/rabbitmq/amqp091-go/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.13.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/streadway/amqp/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2 v2.13.0-dev.1
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.13.0-dev.1
@@ -243,6 +245,7 @@ require (
 	github.com/polyfloyd/go-errorlint v1.8.1-0.20250906200200-9b25878c4dea // indirect
 	github.com/power-devops/perfstat v0.0.0-20260805114148-88456608a4f6 // indirect
 	github.com/puzpuzpuz/xsync/v4 v4.5.0 // indirect
+	github.com/rabbitmq/amqp091-go v1.17.0 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/redis/go-redis/v9 v9.7.3 // indirect
 	github.com/redis/rueidis v1.0.74 // indirect
@@ -258,6 +261,7 @@ require (
 	github.com/sony/gobreaker v0.5.0 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
+	github.com/streadway/amqp v1.1.0 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
@@ -370,11 +374,13 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 => ../../contrib/log/slog
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../contrib/net/http
 	github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 => ../../contrib/opensearch-project/opensearch-go.v4
+	github.com/DataDog/dd-trace-go/contrib/rabbitmq/amqp091-go/v2 => ../../contrib/rabbitmq/amqp091-go
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 => ../../contrib/redis/go-redis.v9
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 => ../../contrib/redis/rueidis
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 => ../../contrib/rs/zerolog
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 => ../../contrib/segmentio/kafka-go
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 => ../../contrib/sirupsen/logrus
+	github.com/DataDog/dd-trace-go/contrib/streadway/amqp/v2 => ../../contrib/streadway/amqp
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 => ../../contrib/twitchtv/twirp
 	github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2 => ../../contrib/twmb/franz-go
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 => ../../contrib/valkey-io/valkey-go
