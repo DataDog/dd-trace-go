@@ -1868,11 +1868,16 @@ func encodeValue(value string) string {
 
 // urlEncode performs percent-encoding while respecting the safe characters.
 // A space is written as %20: url.QueryEscape would write "+", which the W3C
-// baggage decoders of other tracers read as a literal plus sign.
+// baggage decoders of other tracers read as a literal plus sign. "%" and "+" are
+// always escaped, so a literal "%41" or "+" survives any W3C-compliant decoder.
 func urlEncode(input string, safeCharacters string) string {
 	var encoded strings.Builder
 	for _, c := range input {
 		switch {
+		case c == '%':
+			encoded.WriteString("%25")
+		case c == '+':
+			encoded.WriteString("%2B")
 		case strings.ContainsRune(safeCharacters, c):
 			encoded.WriteRune(c)
 		case c == ' ':

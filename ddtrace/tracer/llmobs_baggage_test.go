@@ -323,3 +323,17 @@ func TestSpanContextSizeClass(t *testing.T) {
 	// size class (288), so per-feature state belongs on the trace, not here.
 	assert.LessOrEqual(t, unsafe.Sizeof(SpanContext{}), uintptr(256))
 }
+
+func TestLLMObsBaggageValuesRoundTrip(t *testing.T) {
+	// "+" and "%" are written escaped, so the extractor, which decodes "+" as a
+	// space, returns the value unchanged. Base64 session IDs contain "+".
+	for _, v := range []string{"abc+def==", "app%41", "a b"} {
+		carrier := TextMapCarrier{}
+		sc := &SpanContext{trace: newTrace()}
+		sc.setBaggageItem("v", v)
+		require.NoError(t, (&propagatorBaggage{}).Inject(sc, carrier))
+		extracted, err := (&propagatorBaggage{}).Extract(carrier)
+		require.NoError(t, err)
+		assert.Equal(t, v, extracted.baggageItem("v"), "header %q", carrier["baggage"])
+	}
+}
