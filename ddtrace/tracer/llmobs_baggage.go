@@ -161,6 +161,10 @@ type traceLLMObs struct {
 	// APM span carry: the LLMObs span active when it started, or its parent's.
 	// +checklocks:mu
 	spans map[uint64]*illmobs.Span
+	// closed is set once the trace's span buffer overflowed. No partial flush
+	// runs after that, so new entries would never be removed.
+	// +checklocks:mu
+	closed bool
 }
 
 func (t *trace) llmobsState() *traceLLMObs {
@@ -187,6 +191,20 @@ func (t *trace) forgetLLMObsSpans(flushed []*Span) {
 	}
 }
 
+// closeLLMObsSpans stops recording span entries for a trace whose span buffer
+// overflowed: finishedOneLocked returns early for a full trace, so
+// forgetLLMObsSpans would never remove them. The inbound context stays, so
+// requests from the trace still carry it. The state is created if the trace had
+// no LLMObs activity yet, so a span recorded after the overflow still sees closed.
+// Called with t.mu held.
+func (t *trace) closeLLMObsSpans() {
+	s := t.llmobsState()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.closed = true
+	s.spans = nil
+}
+
 // llmobsContext returns the LLMObs span, or else the inbound context, that
 // requests injected from c carry.
 func (c *SpanContext) llmobsContext() (*illmobs.Span, *illmobs.PropagatedLLMSpan) {
@@ -209,6 +227,9 @@ func (c *SpanContext) setLLMObsSpan(span *illmobs.Span) {
 	s := c.trace.llmobsState()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
 	if s.spans == nil {
 		s.spans = make(map[uint64]*illmobs.Span)
 	}
