@@ -1420,58 +1420,17 @@ func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
 }
 
 func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
-	llmSpan, ok := illmobs.ActiveLLMSpanFromContext(ctx)
-	if !ok {
-		// A service that forwards a request without an LLMObs span of its own
-		// still sends the inbound context on in baggage. The tags were written once
-		// at the local root (activateInboundLLMObsContext): rewriting the trace-wide
-		// tags here would reset them while an LLMObs span of this trace is open.
-		if p, ok := illmobs.PropagatedLLMSpanFromContext(ctx); ok {
-			spanCtx.llmobsSpan = nil
-			spanCtx.llmobsPropagated = p
-		}
-		return
+	// Only record which LLMObs context requests injected from spanCtx carry. The
+	// _dd.p.llmobs_* tags are written at injection (setLLMObsTagsForInjection):
+	// trace-wide tags written here would let a finished or concurrent LLMObs span
+	// leave its parent behind for other requests of the trace.
+	if llmSpan, ok := illmobs.ActiveLLMSpanFromContext(ctx); ok {
+		spanCtx.llmobsSpan = llmSpan
+		spanCtx.llmobsPropagated = nil
+	} else if p, ok := illmobs.PropagatedLLMSpanFromContext(ctx); ok {
+		spanCtx.llmobsSpan = nil
+		spanCtx.llmobsPropagated = p
 	}
-	spanCtx.llmobsSpan = llmSpan
-	spanCtx.llmobsPropagated = nil
-	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, llmSpan.SpanID())
-	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.WireTraceID())
-	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, llmSpan.MLApp())
-	// session_id is optional. Propagating tags are trace-scoped, so unset the key when the active
-	// span has no session; otherwise a predecessor's value lingers and propagates downstream.
-	if sessionID := llmSpan.SessionID(); sessionID != "" {
-		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSessionID, sessionID)
-	} else {
-		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSessionID)
-	}
-	setPropagatingParentAgentTags(spanCtx, llmSpan.PropagatedParentAgentSpanID(), llmSpan.PropagatedParentAgentName())
-}
-
-// setPropagatedLLMObsTags writes the inbound LLMObs context to the trace's
-// propagating tags, once, at the local root of an inbound request. It returns at
-// once when the inbound tags already name this parent. The session is written
-// only when the trace has none: it is trace-level, and the first writer wins.
-func setPropagatedLLMObsTags(spanCtx *SpanContext, p *illmobs.PropagatedLLMSpan) {
-	if spanCtx.trace.propagatingTag(keyPropagatedLLMObsParentID) == p.SpanID {
-		return
-	}
-	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, p.SpanID)
-	if p.WireTraceID != "" {
-		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, p.WireTraceID)
-	}
-	if p.MLApp != "" {
-		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, p.MLApp)
-	}
-	if p.SessionID != "" && spanCtx.trace.propagatingTag(keyPropagatedLLMObsSessionID) == "" {
-		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSessionID, p.SessionID)
-	}
-	if p.SampleRate != "" {
-		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSampleRate, p.SampleRate)
-	}
-	if p.SamplingDecision != "" {
-		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSamplingDecision, p.SamplingDecision)
-	}
-	setPropagatingParentAgentTags(spanCtx, p.ParentAgentSpanID, p.ParentAgentName)
 }
 
 // setPropagatingParentAgentTags writes the parent-agent attribution tags onto the trace's

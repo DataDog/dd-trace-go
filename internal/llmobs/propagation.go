@@ -14,6 +14,7 @@ import (
 type DistributedContext struct {
 	ParentID          string
 	TraceID           string
+	WireTraceID       string // the form for the _dd.p.llmobs_trace_id tag
 	MLApp             string
 	SessionID         string
 	SampleRate        string
@@ -30,6 +31,7 @@ func (s *Span) DistributedContext() DistributedContext {
 	dc := DistributedContext{
 		ParentID:          s.SpanID(),
 		TraceID:           s.llmTraceID,
+		WireTraceID:       s.WireTraceID(),
 		MLApp:             s.mlApp,
 		SessionID:         s.sessionID,
 		SampleRate:        s.sampleRate,
@@ -48,6 +50,7 @@ func (p *PropagatedLLMSpan) DistributedContext() DistributedContext {
 	dc := DistributedContext{
 		ParentID:          p.SpanID,
 		TraceID:           p.TraceID,
+		WireTraceID:       p.WireTraceID,
 		MLApp:             p.MLApp,
 		SessionID:         p.SessionID,
 		SampleRate:        p.SampleRate,

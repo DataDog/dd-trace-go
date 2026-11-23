@@ -209,6 +209,8 @@ func TestLLMObsBaggageWrite(t *testing.T) {
 		wg.Wait()
 
 		got := make(map[string]bool, n)
+		// Only baggage is per request. The tags are trace-shared, so concurrent
+		// injections can still overwrite each other's _dd.p.llmobs_parent_id.
 		for _, b := range out.baggage {
 			got[baggageItems(t, b)["llmobs.parent_id"]] = true
 		}
@@ -368,6 +370,24 @@ func TestLLMObsBaggageRead(t *testing.T) {
 
 		assert.Equal(t, l.SpanID(), baggageItems(t, carrier["baggage"])["llmobs.parent_id"])
 		assert.Contains(t, carrier["x-datadog-tags"], "_dd.p.llmobs_parent_id="+l.SpanID())
+	})
+
+	t.Run("a-pass-through-request-after-an-llmobs-span-finished-names-the-inbound-parent", func(t *testing.T) {
+		// The handler runs an LLMObs span, then calls another service outside it.
+		// Neither carrier may name the finished span.
+		_, _, ll := testTracer(t)
+		out := newOutboundCapture(t)
+		inbound := http.Header{}
+		inbound.Set("Baggage", "llmobs.parent_id=555,llmobs.trace_id="+upstreamTraceIDHex)
+
+		serveInbound(t, inbound, func(ctx context.Context) {
+			serverToolThenCall(t, ll, out)(ctx)
+			out.get(t, ctx, nil)
+		})
+
+		baggage, tags := out.last()
+		assert.Equal(t, "555", baggageItems(t, baggage)["llmobs.parent_id"])
+		assert.Contains(t, tags, "_dd.p.llmobs_parent_id=555")
 	})
 
 	t.Run("inbound-llmobs-baggage-is-replaced-not-forwarded", func(t *testing.T) {

@@ -141,8 +141,36 @@ func activateInboundLLMObsContext(spanCtx *SpanContext) {
 	illmobs.TrackDistributedContextCarrier(carrier, errType)
 	if p != nil {
 		spanCtx.llmobsPropagated = p
-		setPropagatedLLMObsTags(spanCtx, p)
 	}
+}
+
+// setLLMObsTagsForInjection writes the _dd.p.llmobs_* tags for one request from the
+// same per-span context as the llmobs.* baggage items, right before the tag
+// carriers are encoded, so both carriers name the same parent. Without an LLMObs
+// context it clears them, as dd-trace-py sends no parent then. The tags are
+// trace-shared, so two concurrent injections can still race between this write
+// and the encoding.
+func setLLMObsTagsForInjection(ctx *SpanContext) {
+	if ctx.trace == nil || !illmobs.Enabled() {
+		return
+	}
+	t := ctx.trace
+	dc, _ := ctx.llmobsDistributedContext() // zero value without an LLMObs context
+	for _, kv := range [...][2]string{
+		{keyPropagatedLLMObsParentID, dc.ParentID},
+		{keyPropagatedLLMObsTraceID, dc.WireTraceID},
+		{keyPropagatedLLMObsMLAPP, dc.MLApp},
+		{keyPropagatedLLMObsSessionID, dc.SessionID},
+		{keyPropagatedLLMObsSampleRate, dc.SampleRate},
+		{keyPropagatedLLMObsSamplingDecision, dc.SamplingDecision},
+	} {
+		if kv[1] == "" {
+			t.unsetPropagatingTag(kv[0])
+		} else {
+			t.setPropagatingTag(kv[0], kv[1])
+		}
+	}
+	setPropagatingParentAgentTags(ctx, dc.ParentAgentSpanID, dc.ParentAgentName)
 }
 
 // apmTraceID returns the APM trace ID of spanCtx in canonical form.

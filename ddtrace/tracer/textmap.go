@@ -312,6 +312,7 @@ func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier any) error {
 	if spanCtx == nil {
 		return ErrInvalidSpanContext
 	}
+	setLLMObsTagsForInjection(spanCtx)
 	for _, v := range p.injectors {
 		err := v.Inject(spanCtx, carrier)
 		if err != nil {
