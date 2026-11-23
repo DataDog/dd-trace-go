@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/httptransport"
 	"github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2/internal/logger"
 	"github.com/aws/aws-lambda-go/lambdacontext"
 
@@ -50,12 +51,19 @@ const (
 	// so here's a configuration of the timeout when calling the Serverless Agent. We also
 	// want to let it having some time for its cold start so we should not set this too low.
 	timeout = 3000 * time.Millisecond
+)
 
-	helloUrl           = "http://localhost:8124/lambda/hello"
-	flushUrl           = "http://localhost:8124/lambda/flush"
-	startInvocationUrl = "http://localhost:8124/lambda/start-invocation"
-	endInvocationUrl   = "http://localhost:8124/lambda/end-invocation"
+const (
+	helloPath           = "/lambda/hello"
+	flushPath           = "/lambda/flush"
+	startInvocationPath = "/lambda/start-invocation"
+	endInvocationPath   = "/lambda/end-invocation"
+)
 
+// extensionURL and extensionPath are variables, not constants, so that tests
+// can point them at a fake extension with go build -ldflags -X.
+var (
+	extensionURL  = "http://localhost:8124"
 	extensionPath = "/opt/extensions/datadog-agent"
 )
 
@@ -76,12 +84,12 @@ type HTTPClient interface {
 
 func BuildExtensionManager(isUniversalInstrumentation bool) *ExtensionManager {
 	em := &ExtensionManager{
-		helloRoute:                 helloUrl,
-		flushRoute:                 flushUrl,
-		startInvocationUrl:         startInvocationUrl,
-		endInvocationUrl:           endInvocationUrl,
+		helloRoute:                 extensionURL + helloPath,
+		flushRoute:                 extensionURL + flushPath,
+		startInvocationUrl:         extensionURL + startInvocationPath,
+		endInvocationUrl:           extensionURL + endInvocationPath,
 		extensionPath:              extensionPath,
-		httpClient:                 &http.Client{Timeout: timeout},
+		httpClient:                 &http.Client{Timeout: timeout, Transport: httptransport.New()},
 		isUniversalInstrumentation: isUniversalInstrumentation,
 	}
 	em.checkAgentRunning()
