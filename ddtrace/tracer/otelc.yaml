@@ -190,6 +190,9 @@ span_gls_clear:
 # `target: main` plus `where.func` does not match a test-main compile unit, so the
 # rule below never fires under `otelc go test`.
 # internal/orchestrion/_integration/otelc-autostart guards that.
+#
+# `order: 50` applies this rule after dd_span, so on a `//dd:span func main()`
+# the tracer starts before the span and stops after it finishes.
 
 create_tracer:
   target: main
@@ -197,6 +200,7 @@ create_tracer:
     func: main
   do:
     - inject_code:
+        order: 50
         raw: |
           _ = __dd_tracer.Start()
           defer __dd_tracer.Stop()

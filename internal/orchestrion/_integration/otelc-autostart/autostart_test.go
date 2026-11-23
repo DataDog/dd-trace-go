@@ -29,7 +29,7 @@ func TestMainPackageRules(t *testing.T) {
 
 	t.Run("otelc build", func(t *testing.T) {
 		agent := run(t, true)
-		for _, name := range []string{spanName, directiveSpan} {
+		for _, name := range []string{spanName, directiveSpan, mainSpan} {
 			assert.NotNilf(t, agent.FindSpan(agenttest.With().Operation(name)),
 				"no %q span reached the agent across %d request(s)", name, agent.Requests())
 		}

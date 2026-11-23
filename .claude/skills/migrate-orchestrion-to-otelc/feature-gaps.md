@@ -55,10 +55,13 @@ Orchestrion's `function` join point offers `result-implements`, `final-result-im
 
 Orchestrion orders advice on one join point by namespace and `order:`
 (`crashtracker/orchestrion.yml` and `instrumentation/errortrace/orchestrion.yml` both set
-`order: 100`). otelc has no ordering key. Modifiers in one `do:` sequence run in declaration order,
-and the order across separate rules is not defined
-(https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/583). Stop when an aspect sets
-`order:`, or when two rules land on the same function and the result depends on which runs first.
+`order: 100`). otelc accepts `order` only on `inject_code` and `expand_directive`. A rule with a
+higher `order` is applied later, so its code runs first at the start of the function, like
+Orchestrion. `create_tracer` in `ddtrace/tracer/otelc.yaml` uses it. Other modifier kinds are
+applied by kind, and rules of one kind keep an order you cannot set
+(https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/583). Stop when an
+aspect sets `order:` on advice that is not `prepend-statements`, or when two such rules land on the
+same function and the result depends on which runs first.
 
 ## 6. Function literals and nested functions
 
