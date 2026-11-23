@@ -69,6 +69,12 @@ type concentrator struct {
 	// bufferedObfuscation is the obfuscation policy of the stat spans buffered
 	// in spanConcentrator.
 	bufferedObfuscation statsObfuscationPolicy // +checklocks:obfuscationMu
+	// pendingFlushes holds the payloads flushed when the obfuscation policy
+	// changed, until runFlusher or the next flushAndSend sends them. The
+	// ingester only queues them, so a slow transport never stalls ingestion.
+	pendingFlushes []pendingStatsFlush // +checklocks:obfuscationMu
+	// flushPending wakes runFlusher to send pendingFlushes.
+	flushPending chan struct{}
 
 	aggregationKey stats.PayloadAggregationKey
 
@@ -199,6 +205,17 @@ func (s *otlpStatsSender) send(csp *pb.ClientStatsPayload, _ int, retries int, i
 	})
 }
 
+// pendingStatsFlush is a set of flushed stats payloads whose resources were
+// obfuscated with obfuscation version obfVersion.
+type pendingStatsFlush struct {
+	csps       []*pb.ClientStatsPayload
+	obfVersion int
+}
+
+// maxPendingStatsFlushes bounds pendingFlushes. Entries only accumulate when
+// the agent's obfuscation policy changes faster than the transport sends.
+const maxPendingStatsFlushes = 16
+
 type tracerStatSpan struct {
 	statSpan    *stats.StatSpan
 	origin      string
@@ -256,6 +273,7 @@ func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdCl
 		statsdClient:     statsdClient,
 		otelSemantics:    c.internalConfig.OTelSemanticsEnabled(),
 		sender:           &ddStatsSender{cfg: c},
+		flushPending:     make(chan struct{}, 1),
 	}
 }
 
@@ -288,6 +306,8 @@ func (c *concentrator) runFlusher(tick <-chan time.Time) {
 		select {
 		case now := <-tick:
 			c.flushAndSend(now, withoutCurrentBucket)
+		case <-c.flushPending:
+			c.sendPendingFlushes()
 		case <-c.stop:
 			return
 		}
@@ -324,8 +344,8 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *statsObfuscator) (
 	resource := s.resource
 	policy := statsObfuscationPolicy{version: c.sender.obfuscationVersion(&agentInfo)}
 	if policy.version > 0 {
-		policy.obfuscator = obfuscator.forConfig(agentInfo.statsSQLObfuscation)
-		resource = obfuscatedResource(policy.obfuscator, s.spanType, s.resource)
+		policy.sql = agentInfo.statsSQLObfuscation
+		resource = obfuscatedResource(obfuscator.forConfig(policy.sql), s.spanType, s.resource)
 		c.spanConcentrator.SetObfuscationEnabled(true, agentInfo.HasFlag("big_resource"))
 	} else {
 		c.spanConcentrator.SetObfuscationEnabled(false, false)
@@ -384,19 +404,50 @@ func (c *concentrator) add(s *tracerStatSpan) {
 	if s.version != "" {
 		aggKey.Version = s.version
 	}
-	var flushed []*pb.ClientStatsPayload
+	queued, dropped := false, false
 	c.obfuscationMu.Lock()
-	flushedVersion := c.bufferedObfuscation.version
 	if s.obfuscation != c.bufferedObfuscation {
 		// The obfuscation policy changed with the agent's /info. A payload
-		// reports one obfuscation version, so send what was buffered under the
-		// previous policy before s joins the buckets.
-		flushed = c.spanConcentrator.Flush(time.Now().UnixNano(), true)
+		// reports one obfuscation version, so flush what was buffered under the
+		// previous policy before s joins the buckets, and queue it for sending.
+		if csps := c.spanConcentrator.Flush(time.Now().UnixNano(), true); len(csps) > 0 {
+			if len(c.pendingFlushes) < maxPendingStatsFlushes {
+				c.pendingFlushes = append(c.pendingFlushes, pendingStatsFlush{csps: csps, obfVersion: c.bufferedObfuscation.version})
+				queued = true
+			} else {
+				dropped = true
+			}
+		}
 		c.bufferedObfuscation = s.obfuscation
 	}
 	c.spanConcentrator.AddSpan(s.statSpan, aggKey, "", nil, s.origin)
 	c.obfuscationMu.Unlock()
-	c.sendPayloads(flushed, flushedVersion)
+	if queued {
+		select {
+		case c.flushPending <- struct{}{}:
+		default: // runFlusher is already due to send the pending flushes
+		}
+	}
+	if dropped {
+		c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
+		log.Error("Dropping client stats: too many stats payloads are waiting to be sent") //errtrack:ignore agent or network backpressure
+	}
+}
+
+// takePendingFlushes removes and returns the queued pendingFlushes.
+func (c *concentrator) takePendingFlushes() []pendingStatsFlush {
+	c.obfuscationMu.Lock()
+	defer c.obfuscationMu.Unlock()
+	pending := c.pendingFlushes
+	c.pendingFlushes = nil
+	return pending
+}
+
+// sendPendingFlushes sends the payloads flushed by obfuscation policy changes.
+func (c *concentrator) sendPendingFlushes() {
+	for _, p := range c.takePendingFlushes() {
+		c.sendPayloads(p.csps, p.obfVersion)
+	}
 }
 
 // Stop stops the concentrator and blocks until the operation completes.
@@ -454,9 +505,15 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 		c.drainIn()
 	}
 	c.obfuscationMu.Lock()
+	pending := c.pendingFlushes
+	c.pendingFlushes = nil
 	csps := c.spanConcentrator.Flush(timenow.UnixNano(), includeCurrent)
 	obfVersion := c.bufferedObfuscation.version
 	c.obfuscationMu.Unlock()
+	// Payloads flushed by an earlier policy change go first.
+	for _, p := range pending {
+		c.sendPayloads(p.csps, p.obfVersion)
+	}
 	bc := c.spanConcentrator.DrainBlockCounts()
 	c.emitCollapseMetrics(bc)
 	c.sendPayloads(csps, obfVersion)

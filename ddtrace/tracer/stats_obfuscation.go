@@ -92,12 +92,15 @@ func featureFlagSQLConfig(af *agentFeatures) obfuscate.SQLConfig {
 }
 
 // statsObfuscationPolicy identifies how a stat span's resource was obfuscated.
+// Policies compare by value, so spans obfuscated with equal configs share a
+// policy whichever obfuscator instance processed them.
 type statsObfuscationPolicy struct {
 	// version is the obfuscation version the resource was obfuscated with, or
 	// 0 when obfuscation was left to the destination.
 	version int
-	// obfuscator identifies the SQL obfuscation config that was used.
-	obfuscator *obfuscate.Obfuscator
+	// sql is the SQL obfuscation config that was used. It is zero when version
+	// is 0.
+	sql obfuscate.SQLConfig
 }
 
 // statsObfuscator hands out an obfuscator matching the agent's current SQL
@@ -126,8 +129,12 @@ func (s *statsObfuscator) forConfig(cfg obfuscate.SQLConfig) *obfuscate.Obfuscat
 	// The obfuscator query cache is disabled, so a replaced obfuscator holds
 	// no resources that need stopping.
 	next := &configuredObfuscator{cfg: cfg, o: obfuscate.NewObfuscator(obfuscate.Config{SQL: cfg})}
-	// A concurrent caller may install its own obfuscator first; each caller
-	// still uses one matching the snapshot it read.
-	s.cur.CompareAndSwap(cur, next)
+	if !s.cur.CompareAndSwap(cur, next) {
+		// A concurrent caller installed an obfuscator first; reuse it when it
+		// has the same config.
+		if cur := s.cur.Load(); cur != nil && cur.cfg == cfg {
+			return cur.o
+		}
+	}
 	return next.o
 }
