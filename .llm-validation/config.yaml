@@ -23,6 +23,7 @@ setup:
     - profiler/AGENTS.md
     - internal/appsec/AGENTS.md
     - internal/civisibility/AGENTS.md
+    - .github/AGENTS.md
   directories:
     - .claude
     - .agents/skills
