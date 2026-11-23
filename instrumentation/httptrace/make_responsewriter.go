@@ -87,18 +87,29 @@ import "net/http"
 // This code is generated because we have to account for all the permutations
 // of the interfaces.
 //
+// The Flush and the Hijack of the generated struct go through the monitored
+// writer (see flusher and hijacker in response_writer.go), so that it records a
+// Flush that is on the wire and a successful Hijack. The set of optional
+// interfaces does not change.
+//
 // In case of any new interfaces or methods we didn't consider here, we also
 // implement the rwUnwrapper interface, which is used internally by
 // the standard library: https://github.com/golang/go/blob/6d89b38ed86e0bfa0ddaba08dc4071e6bb300eea/src/net/http/responsecontroller.go#L42-L44
 func wrapResponseWriter(w http.ResponseWriter) (http.ResponseWriter, *responseWriter) {
 {{- range .Interfaces }}
+	{{- if or (eq . "Flusher") (eq . "Hijacker") }}
+	_, ok{{.}} := w.(http.{{.}})
+	{{- else }}
 	h{{.}}, ok{{.}} := w.(http.{{.}})
+	{{- end }}
 {{- end }}
 
 	mw := newResponseWriter(w)
 	type monitoredResponseWriter interface {
 		http.ResponseWriter
 		Status() int
+		Committed() bool
+		wireCommitted() bool
 		Unwrap() http.ResponseWriter
 	}
 	switch {
@@ -110,7 +121,7 @@ func wrapResponseWriter(w http.ResponseWriter) (http.ResponseWriter, *responseWr
 		{{- range . }}
 			http.{{.}}
 		{{- end }}
-		}{mw{{ range . }}, h{{.}}{{ end }}}
+		}{mw{{ range . }}, {{ if eq . "Flusher" }}flusher{mw}{{ else if eq . "Hijacker" }}hijacker{mw}{{ else }}h{{.}}{{ end }}{{ end }}}
 	{{- end }}
 {{- end }}
 	default:

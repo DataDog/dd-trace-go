@@ -1,0 +1,41 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Hooks on the library, not call-site rules: a kafka.Writer is usually built as
+# a struct literal, which no constructor rule sees, and the contrib's wrappers
+# are other types, so a call site could not use them. The contrib marks the
+# calls its own Reader and KafkaWriter make, and the hooks skip them.
+# ReadMessage calls FetchMessage, so this traces both.
+reader_fetch_message:
+  target: github.com/segmentio/kafka-go
+  where:
+    func: FetchMessage
+    recv: "*Reader"
+  do:
+    - inject_hooks:
+        before: BeforeReaderFetchMessage
+        after: AfterReaderFetchMessage
+        path: github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2
+
+reader_close:
+  target: github.com/segmentio/kafka-go
+  where:
+    func: Close
+    recv: "*Reader"
+  do:
+    - inject_hooks:
+        before: BeforeReaderClose
+        path: github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2
+
+writer_write_messages:
+  target: github.com/segmentio/kafka-go
+  where:
+    func: WriteMessages
+    recv: "*Writer"
+  do:
+    - inject_hooks:
+        before: BeforeWriterWriteMessages
+        after: AfterWriterWriteMessages
+        path: github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2

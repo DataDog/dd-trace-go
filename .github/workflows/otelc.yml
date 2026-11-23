@@ -34,7 +34,7 @@ concurrency:
 env:
   # The single place to bump the tested otelc release. Upstream only; do not point
   # this at a fork.
-  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.2.1-0.20261109141436-15ecaa2b8324' }}
+  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.2.1-0.20261117102139-486faefff22f' }}
   # Modules otelc reads, tidied by both jobs next to the application each one
   # builds.
   OTELC_MODULES: >-
@@ -49,8 +49,14 @@ env:
     contrib/aws/aws-sdk-go-v2/otelc
     contrib/aws/aws-sdk-go
     contrib/aws/aws-sdk-go/otelc
+    contrib/cloud.google.com/go/pubsub.v1
+    contrib/cloud.google.com/go/pubsub.v1/otelc
+    contrib/cloud.google.com/go/pubsub.v2
+    contrib/cloud.google.com/go/pubsub.v2/otelc
     contrib/net/http
     contrib/net/http/otelc
+    contrib/rs/zerolog
+    contrib/rs/zerolog/otelc
     contrib/database/sql
     contrib/database/sql/otelc
     contrib/gin-gonic/gin
@@ -63,10 +69,20 @@ env:
     contrib/gofiber/fiber.v2/otelc
     contrib/julienschmidt/httprouter
     contrib/julienschmidt/httprouter/otelc
+    contrib/k8s.io/client-go
+    contrib/k8s.io/client-go/otelc
     contrib/gomodule/redigo
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
     contrib/google.golang.org/grpc/otelc
+    contrib/go-redis/redis
+    contrib/go-redis/redis/otelc
+    contrib/go-redis/redis.v7
+    contrib/go-redis/redis.v7/otelc
+    contrib/go-redis/redis.v8
+    contrib/go-redis/redis.v8/otelc
+    contrib/redis/go-redis.v9
+    contrib/redis/go-redis.v9/otelc
     contrib/gorm.io/gorm.v1
     contrib/gorm.io/gorm.v1/otelc
     contrib/jackc/pgx.v5
@@ -81,6 +97,8 @@ env:
     contrib/labstack/echo.v4/otelc
     contrib/labstack/echo.v5
     contrib/labstack/echo.v5/otelc
+    contrib/segmentio/kafka-go
+    contrib/segmentio/kafka-go/otelc
     contrib/valyala/fasthttp
     contrib/valyala/fasthttp/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
@@ -97,21 +115,30 @@ env:
     chi.v5
     fiber.v2
     julienschmidt_httprouter
+    k8s_client_go
     redigo
     grpc
     gorilla_mux
     99designs.gqlgen
     ibm_sarama
     shopify_sarama
+    go-redis.v0
+    go-redis.v7
+    go-redis.v8
+    go-redis.v9
     gorm
     aws.v2
     pgx
     mongo
     mongo.v2
+    gcp_pubsub.v1
+    gcp_pubsub.v2
     echo.v4
     echo.v5
     aws.v1
     valyala_fasthttp
+    segmentio_kafka.v0
+    zerolog
 
 jobs:
   # Classifies the PR diff against .github/ci-components.yml. Fails open: every

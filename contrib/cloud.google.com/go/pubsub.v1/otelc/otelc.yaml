@@ -1,0 +1,127 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# The publish span ends in (*PublishResult).Get, so Publish stores its closer on
+# the result. A hook cannot do that: PublishResult lives in
+# cloud.google.com/go/internal/pubsub, which a hook cannot import, and a hook
+# cannot read a field that add_struct_fields adds. So these rules run
+# in-package, and Receive uses the same tracer, declared by the add_file rule.
+# pubsub/v2 shares PublishResult and adds its own field, so the two rule sets
+# never collide.
+pubsub_v1_publish_result_field:
+  target: cloud.google.com/go/internal/pubsub
+  where:
+    struct: PublishResult
+  do:
+    - add_struct_fields:
+        new_field:
+          - name: DD__pubsubV1CloseSpan
+            type: func(string, error)
+
+pubsub_v1_publish_result_get:
+  target: cloud.google.com/go/internal/pubsub
+  where:
+    func: Get
+    recv: "*PublishResult"
+  do:
+    - inject_code:
+        raw: |-
+          {{- $r := .Receiver -}}
+          defer func() {
+            if {{ $r }}.DD__pubsubV1CloseSpan != nil {
+              {{ $r }}.DD__pubsubV1CloseSpan({{ .FuncReturn 0 }}, {{ .FuncReturn 1 }})
+            }
+          }()
+
+pubsub_v1_helpers:
+  target: cloud.google.com/go/pubsub
+  do:
+    - add_file:
+        file: inject.go
+        path: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/otelc/v2
+
+pubsub_v1_topic_publish:
+  target: cloud.google.com/go/pubsub
+  where:
+    func: Publish
+    recv: "*Topic"
+  do:
+    - inject_code:
+        raw: |-
+          {{- $ctx := .FuncArgument 0 -}}
+          {{- $res := .FuncReturn 0 -}}
+          {{ $ctx }}, __dd_closeSpan := __dd_pubsubTracePublish({{ $ctx }}, {{ .Receiver }}, {{ .FuncArgument 1 }})
+          if __dd_closeSpan != nil {
+            defer func() {
+              if {{ $res }} != nil {
+                {{ $res }}.DD__pubsubV1CloseSpan = __dd_closeSpan
+              }
+            }()
+          }
+
+pubsub_v1_subscription_receive:
+  target: cloud.google.com/go/pubsub
+  where:
+    func: Receive
+    recv: "*Subscription"
+  do:
+    - inject_code:
+        raw: |-
+          {{- $f := .FuncArgument 1 -}}
+          {{ $f }} = __dd_pubsubWrapReceiveHandler({{ .Receiver }}, {{ $f }})
+
+# pubsub.NewClient and pubsub.NewSchemaClient build these clients themselves,
+# so the rules also rewrite cloud.google.com/go/pubsub and exclude only apiv1
+# and the contrib.
+pubsub_v1_new_publisher_client:
+  target:
+    - "**"
+    - not: "cloud.google.com/go/pubsub/apiv1/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/**"
+  where:
+    function_call: cloud.google.com/go/pubsub/apiv1.NewPublisherClient
+  do:
+    - wrap_call:
+        append_args:
+          - "option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(pubsubv1admin.UnaryAdminInterceptor()))"
+        variadic_type: "option.ClientOption"
+  imports:
+    option: google.golang.org/api/option
+    grpc: google.golang.org/grpc
+    pubsubv1admin: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2/admin
+
+pubsub_v1_new_subscriber_client:
+  target:
+    - "**"
+    - not: "cloud.google.com/go/pubsub/apiv1/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/**"
+  where:
+    function_call: cloud.google.com/go/pubsub/apiv1.NewSubscriberClient
+  do:
+    - wrap_call:
+        append_args:
+          - "option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(pubsubv1admin.UnaryAdminInterceptor()))"
+        variadic_type: "option.ClientOption"
+  imports:
+    option: google.golang.org/api/option
+    grpc: google.golang.org/grpc
+    pubsubv1admin: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2/admin
+
+pubsub_v1_new_schema_client:
+  target:
+    - "**"
+    - not: "cloud.google.com/go/pubsub/apiv1/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/**"
+  where:
+    function_call: cloud.google.com/go/pubsub/apiv1.NewSchemaClient
+  do:
+    - wrap_call:
+        append_args:
+          - "option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(pubsubv1admin.UnaryAdminInterceptor()))"
+        variadic_type: "option.ClientOption"
+  imports:
+    option: google.golang.org/api/option
+    grpc: google.golang.org/grpc
+    pubsubv1admin: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2/admin
