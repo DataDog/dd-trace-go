@@ -29,6 +29,17 @@ func init() {
 }
 
 // Middleware returns middleware that will trace incoming requests.
+//
+// # AppSec
+//
+// Add Middleware before any middleware that writes or flushes the response, and
+// make the response writers of the middlewares after it implement Unwrap(): AppSec
+// must see the response to decide if a block can still replace it.
+//
+// With Use before routing, chi selects the route after Middleware starts, so AppSec
+// gets the route after the handler returns. With Use at the root, it gets no path
+// parameters. Use r.With(Middleware()) on the endpoint to get the route and the path
+// parameters before the handler (for example for rules on path parameters).
 func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 	cfg := new(config)
 	defaults(cfg)
@@ -62,7 +73,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 
 			next := next // avoid modifying the value of next in the outer closure scope
 			if instr.AppSecEnabled() {
-				next = withAppsec(next, r, span)
+				next = withAppsec(next, span)
 				// Note that the following response writer passed to the handler
 				// implements the `interface { Status() int }` expected by httpsec.
 			}

@@ -19,7 +19,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/DataDog/datadog-agent/pkg/trace/traceutil/normalize"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
 	telemetrylog "github.com/DataDog/dd-trace-go/v2/internal/telemetry/log"
@@ -50,7 +54,8 @@ var errResponseTooLarge = errors.New("response exceeds maximum size")
 
 // agentlessSource polls the Agentless configuration endpoint on an interval
 // and applies newly received configuration. All fields other than mu, etag,
-// and warned are immutable after construction.
+// warned, rawService, rawServiceOK, and serviceHeader are immutable after
+// construction.
 type agentlessSource struct {
 	// endpoint is the full request URL. SENSITIVE: may embed credentials; never log.
 	endpoint string
@@ -74,6 +79,12 @@ type agentlessSource struct {
 	mu     sync.Mutex
 	etag   string          // +checklocks:mu
 	warned map[string]bool // +checklocks:mu
+	// rawService and rawServiceOK are the spanService result that
+	// serviceHeader comes from. With them, the source normalizes and logs a
+	// service once, not on every poll.
+	rawService    string // +checklocks:mu
+	rawServiceOK  bool   // +checklocks:mu
+	serviceHeader string // +checklocks:mu
 
 	stopCh   chan struct{}
 	doneCh   chan struct{}
@@ -121,6 +132,7 @@ func newAgentlessSource(settings internalffe.Settings, selection *FlagSelection,
 	s.retryDelay = func(attempt int) time.Duration {
 		return retryDelay(s.pollInterval, attempt, rand.Float64())
 	}
+	s.usageService() // normalizes the service now, not on the first poll
 	return s, nil
 }
 
@@ -270,6 +282,10 @@ func (s *agentlessSource) pollOnce(attempt int) (pollOutcome, time.Duration) {
 	if s.apiKey != "" {
 		req.Header.Set("DD-API-KEY", s.apiKey)
 	}
+	// The CDN uses DD-Service to attribute the usage of this request.
+	if service := s.usageService(); service != "" {
+		req.Header.Set("DD-Service", service)
+	}
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
@@ -389,6 +405,78 @@ func (s *agentlessSource) requestedEnv() string {
 	default:
 		return s.env
 	}
+}
+
+// usageService returns the DD-Service value for the service of the tracer's
+// spans. It normalizes the service when the source is built. It normalizes it
+// again only when the span service changes. This occurs when the provider
+// starts before tracer.Start sets the service, or when a service mapping or a
+// global service.name tag changes.
+func (s *agentlessSource) usageService() string {
+	service, ok := spanService()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.rawService == service && s.rawServiceOK == ok {
+		return s.serviceHeader
+	}
+	header := ""
+	if ok {
+		header = normalizeUsageService(service)
+	} else {
+		logOnboarding("the service.name global tag is not a string or a number; DD-Service header not sent")
+	}
+	s.rawService, s.rawServiceOK, s.serviceHeader = service, ok, header
+	return header
+}
+
+// spanService returns the service that the tracer gives a span that sets no
+// service of its own. It reads the tracer's own settings in the order of
+// tracer.startSpan: the configured service, then a global service.name tag,
+// then the service mapping (DD_SERVICE_MAPPING or WithServiceMapping). For
+// example, with DD_SERVICE=checkout and DD_SERVICE_MAPPING=checkout:store, it
+// returns store.
+//
+// A string tag replaces the service. The tracer keeps a number as a metric, so
+// a number does not change the service. The tracer formats other values into a
+// name, and the SDK does not copy that formatting. For them, ok is false and
+// the request has no header. service is then the configured service.
+func spanService() (service string, ok bool) {
+	cfg := internalconfig.Get()
+	service = cfg.ServiceName()
+	if tag, set := cfg.GlobalTags()[ext.ServiceName]; set {
+		switch v := tag.(type) {
+		case string:
+			service = v
+		default:
+			if _, number := internal.ToFloat64(v); !number {
+				return service, false
+			}
+		}
+	}
+	if mapped, found := cfg.ServiceMapping(service); found {
+		service = mapped
+	}
+	return service, true
+}
+
+// normalizeUsageService returns the DD-Service value for service. The value is
+// the service name that APM shows, from the Agent's own NormalizeService. For
+// example, "My Service" becomes my_service. As in APM, a name longer than 100
+// bytes is cut to 100 bytes. It returns "" when the Agent replaces service with
+// its fallback name, because that name is not the name of this service.
+//
+// The value can have non-ASCII letters, for example café-api. Go's HTTP client
+// sends their UTF-8 bytes. The CDN alone decides which values it accepts, so
+// the SDK does not copy that rule. The tracer's service stays as configured.
+func normalizeUsageService(service string) string {
+	apmService, err := normalize.NormalizeService(service, "")
+	if errors.Is(err, normalize.ErrEmpty) || errors.Is(err, normalize.ErrInvalid) {
+		if service != "" {
+			logOnboarding("service %q has no APM name; DD-Service header not sent", service)
+		}
+		return ""
+	}
+	return apmService
 }
 
 func (s *agentlessSource) currentETag() string {
