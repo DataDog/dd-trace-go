@@ -18,6 +18,7 @@ import (
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
+	"github.com/DataDog/datadog-agent/pkg/trace/stats"
 	"github.com/DataDog/datadog-go/v5/statsd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -674,6 +675,88 @@ func TestStatsObfuscationIdlePolicyBucketsDropped(t *testing.T) {
 	assert.Equal(t, []int{2}, policies())
 	payloads := tsp.Stats()
 	require.Len(t, payloads, 2, "both policies' due buckets are sent, each in its own payload")
+}
+
+// TestStatsLateSpanBucket checks that a span ending before the oldest bucket
+// still open is counted in that bucket, as it was when a single concentrator
+// aggregated every span, whether its policy's buckets were kept, dropped as
+// idle and recreated, or never existed before.
+func TestStatsLateSpanBucket(t *testing.T) {
+	const bsize = int64(10 * time.Second)
+	v1 := agentFeatures{obfuscationVersion: 1}
+	v2 := agentFeatures{obfuscationVersion: 2, statsSQLObfuscation: obfuscate.SQLConfig{ObfuscationMode: obfuscate.NormalizeOnly}}
+	for _, tc := range []struct {
+		name string
+		// before are the policies and ends, in buckets after startup, of the
+		// spans added before the flush at 5 buckets.
+		before []struct {
+			af  agentFeatures
+			end int64
+		}
+		late agentFeatures // policy of the late span
+	}{
+		{name: "kept policy", late: v1, before: []struct {
+			af  agentFeatures
+			end int64
+		}{{v1, 0}, {v1, 5}}},
+		{name: "recreated policy", late: v1, before: []struct {
+			af  agentFeatures
+			end int64
+		}{{v1, 0}}},
+		{name: "new policy", late: v2, before: []struct {
+			af  agentFeatures
+			end int64
+		}{{v1, 0}, {v1, 5}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tsp := newDummyTransport()
+			cfg := newTestConfigWithTransportAndEnv(t, tsp, "someEnv")
+			c := newConcentrator(cfg, bsize, &statsd.NoOpClientDirect{})
+			c.policyMu.Lock()
+			created := c.created
+			c.policyMu.Unlock()
+			// reference is the single concentrator that aggregated every span
+			// before stats were split by obfuscation policy.
+			reference := stats.NewSpanConcentrator(c.spanConcentratorConfig, created)
+			at := func(buckets int64) int64 { return created.UnixNano() + buckets*bsize }
+			add := func(af agentFeatures, end int64) {
+				cfg.agent.store(af)
+				ss, ok := c.newTracerStatSpan(&Span{
+					name: "db.query", service: "db", resource: "SELECT 1", spanType: "sql",
+					start: end - 1, duration: 1, metrics: map[string]float64{keyMeasured: 1},
+				}, &statsObfuscator{})
+				require.True(t, ok)
+				c.add(ss)
+				reference.AddSpan(ss.statSpan, c.aggregationKey, "", nil, "")
+			}
+			for _, s := range tc.before {
+				add(s.af, at(s.end))
+			}
+			c.flushAndSend(time.Unix(0, at(5)), withoutCurrentBucket)
+			reference.Flush(at(5), false)
+
+			beforeLate := len(tsp.Stats())
+			add(tc.late, at(1)) // ends before the oldest bucket still open
+			c.flushAndSend(time.Unix(0, at(6)), withCurrentBucket)
+			var got []uint64
+			for _, p := range tsp.Stats()[beforeLate:] {
+				for _, b := range p.Stats {
+					got = append(got, b.Start)
+				}
+			}
+			var want []uint64
+			for _, p := range reference.Flush(at(6), true) {
+				for _, b := range p.Stats {
+					want = append(want, b.Start)
+				}
+			}
+			slices.Sort(got)
+			slices.Sort(want)
+			assert.Equal(t, want, got)
+			oldestOpen := uint64(alignTs(at(5), bsize) - bsize)
+			assert.Contains(t, got, oldestOpen, "the late span is counted in the oldest open bucket")
+		})
+	}
 }
 
 // TestStatsObfuscationTraceStraddlingPoll finishes the children of one trace

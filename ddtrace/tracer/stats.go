@@ -76,6 +76,9 @@ type concentrator struct {
 	// share one: when the agent's /info changes mid-trace, spans of both
 	// policies can keep arriving in any order without forcing a flush.
 	policyBuckets []*policyBuckets // +checklocks:policyMu
+	// lastFlush is the latest time policyBuckets were flushed at, in Unix
+	// nanoseconds, or 0 before the first flush.
+	lastFlush int64 // +checklocks:policyMu
 
 	aggregationKey stats.PayloadAggregationKey
 
@@ -211,17 +214,18 @@ func (s *otlpStatsSender) send(csp *pb.ClientStatsPayload, _ int, retries int, i
 type policyBuckets struct {
 	policy  statsObfuscationPolicy
 	sc      *stats.SpanConcentrator
-	lastAdd int64 // when a span was last added, in Unix nanoseconds
+	lastAdd int64 // the latest end of a span added, in Unix nanoseconds
 }
 
-// idlePolicyBuckets is how many bucket intervals the buckets of an obfuscation
-// policy stay without new spans before they are dropped. By then regular
+// idlePolicyBuckets is how many bucket intervals past the end of their latest
+// span the buckets of an obfuscation policy stay before they are dropped. By then regular
 // flushes have sent everything they held; dropping them also flushes any
 // remainder.
 const idlePolicyBuckets = 4
 
 type tracerStatSpan struct {
 	statSpan    *stats.StatSpan
+	end         int64 // span end, in Unix nanoseconds
 	origin      string
 	version     string                 // per-span version tag; "" means use global aggKey version
 	obfuscation statsObfuscationPolicy // how the resource was obfuscated
@@ -395,6 +399,7 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *statsObfuscator) (
 	version, _ := s.meta.Version()
 	return &tracerStatSpan{
 		statSpan:    statSpan,
+		end:         s.start + s.duration,
 		origin:      origin,
 		version:     version,
 		obfuscation: policy,
@@ -409,7 +414,7 @@ func (c *concentrator) add(s *tracerStatSpan) {
 	}
 	c.policyMu.Lock()
 	b := c.bucketsFor(s.obfuscation)
-	b.lastAdd = time.Now().UnixNano()
+	b.lastAdd = max(b.lastAdd, s.end)
 	b.sc.AddSpan(s.statSpan, aggKey, "", nil, s.origin)
 	c.policyMu.Unlock()
 }
@@ -423,7 +428,16 @@ func (c *concentrator) bucketsFor(policy statsObfuscationPolicy) *policyBuckets 
 			return b
 		}
 	}
-	b := &policyBuckets{policy: policy, sc: stats.NewSpanConcentrator(c.spanConcentratorConfig, c.created)}
+	sc := stats.NewSpanConcentrator(c.spanConcentratorConfig, c.created)
+	if c.lastFlush > 0 {
+		// A flush moves forward the oldest bucket that accepts spans, and
+		// spans ending before it are counted in it. Flushing the empty
+		// concentrator at the latest flush time gives it the oldest bucket of
+		// a concentrator that was flushed at every flush so far, so late spans
+		// land in the same bucket whichever policy buckets exist.
+		sc.Flush(c.lastFlush, false)
+	}
+	b := &policyBuckets{policy: policy, sc: sc}
 	c.policyBuckets = append(c.policyBuckets, b)
 	return b
 }
@@ -437,13 +451,15 @@ type flushedStats struct {
 
 // flushPolicyBuckets flushes the buckets of every obfuscation policy, and
 // drops the buckets of policies that have been idle long enough; they are
-// recreated when spans obfuscated under their policy arrive again.
+// recreated, from the same oldest bucket, when spans obfuscated under their
+// policy arrive again.
 func (c *concentrator) flushPolicyBuckets(now int64, includeCurrent bool) (flushed []flushedStats, bc stats.BlockCounts) {
 	c.policyMu.Lock()
 	defer c.policyMu.Unlock()
+	c.lastFlush = max(c.lastFlush, now)
 	kept := c.policyBuckets[:0]
 	for _, b := range c.policyBuckets {
-		drop := includeCurrent || now-b.lastAdd > idlePolicyBuckets*c.bucketSize
+		drop := now-b.lastAdd > idlePolicyBuckets*c.bucketSize
 		if csps := b.sc.Flush(now, includeCurrent || drop); len(csps) > 0 {
 			flushed = append(flushed, flushedStats{csps: csps, obfVersion: b.policy.version})
 		}
