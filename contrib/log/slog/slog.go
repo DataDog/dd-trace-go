@@ -103,10 +103,12 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 // If Group was not called for the logger, we just call WithAttrs for the wrapped handler.
 func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	if len(h.groups) == 0 {
+		// The wrapped handler owns attrs once it gets them, so read them first.
+		outerIDs := h.outerIDs || hasTraceID(attrs)
 		return &handler{
 			wrapped:  h.wrapped.WithAttrs(attrs),
 			groups:   h.groups,
-			outerIDs: h.outerIDs || hasTraceID(attrs),
+			outerIDs: outerIDs,
 		}
 	}
 	groups := append([]group{}, h.groups...)
@@ -122,7 +124,11 @@ func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 }
 
 // WithGroup saves the provided group to be used later in the Handle method.
+// An empty name returns h, as slog.Handler requires.
 func (h *handler) WithGroup(name string) slog.Handler {
+	if name == "" {
+		return h
+	}
 	return &handler{
 		wrapped:  h.wrapped,
 		groups:   append(h.groups, group{name: name}),

@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 
@@ -122,6 +123,52 @@ func TestNestedHandlerOuterGroup(t *testing.T) {
 			require.NoError(t, json.Unmarshal(b.Bytes(), &entry))
 			assert.Contains(t, entry, ext.LogKeyTraceID)
 			assert.Equal(t, map[string]any{"key": "value"}, entry["g"])
+		})
+	}
+}
+
+// clearing preformats the attributes and clears the slice, which slog.Handler
+// allows because the handler owns it.
+type clearing struct {
+	next slog.Handler
+}
+
+func (h clearing) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.next.Enabled(ctx, level)
+}
+
+func (h clearing) Handle(ctx context.Context, r slog.Record) error {
+	return h.next.Handle(ctx, r)
+}
+
+func (h clearing) WithAttrs(attrs []slog.Attr) slog.Handler {
+	next := h.next.WithAttrs(slices.Clone(attrs))
+	clear(attrs)
+	return clearing{next: next}
+}
+
+func (h clearing) WithGroup(name string) slog.Handler {
+	return clearing{next: h.next.WithGroup(name)}
+}
+
+func TestNestedHandlerDedup(t *testing.T) {
+	setOtelcEnabled(t, true)
+	ctx := startSpan(t)
+
+	for name, newInner := range map[string]func(*bytes.Buffer) slog.Handler{
+		"empty group": func(b *bytes.Buffer) slog.Handler {
+			return WrapHandler(slog.NewJSONHandler(b, nil)).WithGroup("")
+		},
+		"wrapped handler clears attrs": func(b *bytes.Buffer) slog.Handler {
+			return WrapHandler(clearing{next: slog.NewJSONHandler(b, nil)})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var b bytes.Buffer
+			slog.New(WrapHandler(passthrough{next: newInner(&b)})).InfoContext(ctx, "nested")
+
+			assert.Equal(t, 1, strings.Count(b.String(), `"`+ext.LogKeyTraceID+`"`), b.String())
+			assert.Equal(t, 1, strings.Count(b.String(), `"`+ext.LogKeySpanID+`"`), b.String())
 		})
 	}
 }
