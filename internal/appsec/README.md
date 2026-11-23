@@ -404,5 +404,6 @@ has a non-empty value. Without a value, it is left out, which is the fallback th
 RFC-1125 allows. go-chi reports a late route without parameters to the WAF, so it
 gives the parameters of that route with `httpsec.ReportRouteParams`, which stores
 them for API Security and causes no WAF evaluation. A
-gorilla/mux `PathPrefix` route is reported as its template, so the rest of the
-path is left out.
+gorilla/mux `PathPrefix` route is reported as its template: the listener matches
+the template at the start of the request path, as gorilla does, and the rest of
+the path is the implicit catch-all of the route.

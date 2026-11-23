@@ -900,3 +900,30 @@ func setMuxHTTPConfig(t *testing.T, otel string) {
 		tracer.Stop()
 	})
 }
+
+// TestAppSecNormalizedRoutePathPrefix checks that the normalized route of a
+// PathPrefix route has an unnamed catch-all for the rest of the path.
+func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
+	t.Setenv("DD_API_SECURITY_ENABLED", "true")
+	testutils.StartAppSec(t)
+
+	router := NewRouter()
+	router.PathPrefix("/static/").Handler(okHandler())
+	router.PathPrefix("/api").Handler(okHandler())
+	router.Handle("/users/{id}", okHandler())
+	for target, want := range map[string]string{
+		"/static/css/app.css": "/static/{param1}",
+		"/static/":            "/static/",
+		"/api/v1/x":           "/api/{param1}",
+		"/apix":               "/api{param1}",
+		"/api":                "/api",
+		"/users/1":            "/users/{id}",
+	} {
+		mt := mocktracer.Start()
+		router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, target, nil))
+		spans := mt.FinishedSpans()
+		mt.Stop()
+		require.Len(t, spans, 1, target)
+		assert.Equal(t, want, spans[0].Tag("_dd.appsec.normalized_route"), target)
+	}
+}

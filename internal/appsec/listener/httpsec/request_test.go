@@ -567,6 +567,18 @@ func TestNormalizeRoute(t *testing.T) {
 		{name: "fiber root", framework: fiber, route: "/", want: "/"},
 		{name: "fiber escape sequence", framework: fiber, route: "/caf%c3%a9", want: "/caf%C3%A9"},
 
+		// gorilla/mux PathPrefix routes have an implicit catch-all.
+		{name: "gorilla prefix", framework: mux, route: "/api", requestURI: "/api/x?a=b", want: "/api/{param1}"},
+		{name: "gorilla prefix in a segment", framework: mux, route: "/api", requestURI: "/apix", want: "/api{param1}"},
+		{name: "gorilla prefix, empty remainder", framework: mux, route: "/api", requestURI: "/api", want: "/api"},
+		{name: "gorilla prefix, slash remainder", framework: mux, route: "/api", requestURI: "/api/", want: "/api"},
+		{name: "gorilla prefix with slash", framework: mux, route: "/static/", requestURI: "/static/css/app.css", want: "/static/{param1}"},
+		{name: "gorilla prefix with variable", framework: mux, route: "/u/{id}", requestURI: "/u/1/rest", want: "/u/{id}/{param1}"},
+		{name: "gorilla prefix with constraint", framework: mux, route: "/u/{id:[0-9]+}", requestURI: "/u/12x", want: "/u/{id}{param1}"},
+		{name: "gorilla prefix, escaped path", framework: mux, route: "/café", requestURI: "/caf%C3%A9/x", want: "/caf%C3%A9/{param1}"},
+		{name: "gorilla path route", framework: mux, route: "/users/{id}", requestURI: "/users/1", want: "/users/{id}"},
+		{name: "gorilla catch-all variable", framework: mux, route: "/r/{path:.*}", requestURI: "/r/a/b", want: "/r/{path}"},
+
 		// net/http patterns.
 		{name: "servemux host", framework: netmux, route: "example.com/foo/{id}", want: "/foo/{id}"},
 		{name: "servemux method", framework: netmux, route: "GET /foo/{id}", want: "/foo/{id}"},

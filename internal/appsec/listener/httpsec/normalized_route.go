@@ -7,8 +7,10 @@ package httpsec
 
 import (
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // normalizedRouteTag is the span tag that holds the route of the request as an
@@ -54,6 +56,9 @@ func normalizeRoute(framework, route string, params map[string]string, requestUR
 		escapes = true
 	case "github.com/gorilla/mux":
 		parts, ok = parseBraceRoute(route, params, false)
+		if ok {
+			parts = appendGorillaRemainder(parts, route, requestURI)
+		}
 	case "github.com/go-chi/chi", "github.com/go-chi/chi/v5":
 		parts, ok = parseBraceRoute(route, params, true)
 	case "github.com/gin-gonic/gin":
@@ -229,6 +234,79 @@ func parseBraceRoute(route string, params map[string]string, chiWildcard bool) (
 		parts = append(parts, routePart{static: route[start:]})
 	}
 	return parts, true
+}
+
+// gorillaPrefixes caches the regexp of gorilla/mux route templates. The routes of
+// an application are static, so the cache is bounded by their number.
+var gorillaPrefixes sync.Map // string -> *regexp.Regexp, nil when it does not compile
+
+// appendGorillaRemainder adds the implicit unnamed catch-all of a gorilla/mux
+// PathPrefix route: the rest of the request path after the part that the route
+// template matches. The template does not tell a PathPrefix route from a Path
+// route, but a Path route matches the whole path, so it has no rest. The template
+// is matched as gorilla matches it: its literal text, a variable with its pattern
+// ([^/]+ by default), from the start of the unescaped path.
+func appendGorillaRemainder(parts []routePart, route, requestURI string) []routePart {
+	if requestURI == "" {
+		return parts
+	}
+	re := gorillaPrefixRegexp(route)
+	if re == nil {
+		return parts
+	}
+	path := requestPath(requestURI)
+	if unescaped, err := url.PathUnescape(path); err == nil {
+		path = unescaped
+	}
+	loc := re.FindStringIndex(path)
+	if loc == nil {
+		return parts
+	}
+	rest := path[loc[1]:]
+	if rest == "" || rest == "/" {
+		// An empty catch-all is absent.
+		return parts
+	}
+	if strings.HasPrefix(rest, "/") {
+		// PathPrefix("/api") hit with "/api/x" is "/api/{param1}".
+		parts = append(parts, routePart{static: "/"})
+	}
+	return append(parts, routePart{param: true})
+}
+
+// gorillaPrefixRegexp returns the regexp that matches the gorilla/mux route
+// template route at the start of a path, or nil.
+func gorillaPrefixRegexp(route string) *regexp.Regexp {
+	if re, found := gorillaPrefixes.Load(route); found {
+		return re.(*regexp.Regexp)
+	}
+	var pattern strings.Builder
+	pattern.WriteByte('^')
+	start := 0
+	for i := 0; i < len(route); i++ {
+		if route[i] != '{' {
+			continue
+		}
+		end := closingBrace(route, i)
+		if end < 0 {
+			break
+		}
+		pattern.WriteString(regexp.QuoteMeta(route[start:i]))
+		varPattern := "[^/]+"
+		if _, p, found := strings.Cut(route[i+1:end], ":"); found {
+			varPattern = p
+		}
+		pattern.WriteString("(?:" + varPattern + ")")
+		i = end
+		start = end + 1
+	}
+	pattern.WriteString(regexp.QuoteMeta(route[start:]))
+	re, err := regexp.Compile(pattern.String())
+	if err != nil {
+		re = nil
+	}
+	gorillaPrefixes.Store(route, re)
+	return re
 }
 
 // closingBrace returns the index of the brace that closes the one at start,
