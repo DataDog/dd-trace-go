@@ -29,3 +29,15 @@ func Transport(rt http.RoundTripper, caCert []byte, fingerprint string) http.Rou
 	}
 	return elastictrace.NewRoundTripper(elastictrace.WithTransport(rt))
 }
+
+// TransportV8 is Transport for go-elasticsearch v8. Without a Transport, v8
+// uses a clone of http.DefaultTransport, not http.DefaultTransport itself as
+// v6 and v7 do, so TransportV8 wraps a clone too.
+func TransportV8(rt http.RoundTripper, caCert []byte, fingerprint string) http.RoundTripper {
+	if rt == nil && caCert == nil && fingerprint == "" {
+		if t, ok := http.DefaultTransport.(*http.Transport); ok {
+			rt = t.Clone()
+		}
+	}
+	return Transport(rt, caCert, fingerprint)
+}
