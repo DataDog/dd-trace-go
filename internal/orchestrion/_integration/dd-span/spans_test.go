@@ -222,6 +222,17 @@ func TestLocalNames(t *testing.T) {
 	requireParent(t, spans, "spanWithLocals", "test.root")
 }
 
+func TestShadowingNames(t *testing.T) {
+	spans := traced(t, func(context.Context) {
+		_ = spanWithShadowingParams("a", "b")
+		_ = (&shadowingReceiver{}).spanWithShadowingReceiver()
+	})
+
+	requireOperations(t, spans, "test.root", "spanWithShadowingParams", "spanWithShadowingReceiver")
+	requireParent(t, spans, "spanWithShadowingParams", "test.root")
+	requireParent(t, spans, "spanWithShadowingReceiver", "test.root")
+}
+
 func TestFunctionLiteral(t *testing.T) {
 	spans := traced(t, func(ctx context.Context) {
 		//dd:span literal:assigned other:tag

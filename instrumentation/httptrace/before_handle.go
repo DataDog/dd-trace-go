@@ -66,6 +66,18 @@ type ServeConfig struct {
 // It returns the "traced" http.ResponseWriter and http.Request, an additional afterHandle function
 // that should be executed after the Handler runs, and a handled bool that instructs if the request has been handled
 // or not - in case it was handled, the original handler should not run.
+//
+// The returned writer records a Flush or a Hijack as "response started", so
+// that AppSec does not write a block response after a response that is already
+// sent. This applies when the handler calls Flush or Hijack on the returned
+// writer, directly or through [http.ResponseController]. A Flush counts only
+// when it is known to be on the wire: the writer directly under it is a known
+// server writer (net/http, golang.org/x/net/http2, httptest.ResponseRecorder),
+// or another writer from BeforeHandle that recorded it. A successful Hijack
+// always counts. In all other cases the behavior is unchanged. For example,
+// these are not counted: a pass-through writer between the server and
+// BeforeHandle that forwards Flush, and an Unwrap-only writer there that lets a
+// [http.ResponseController] go around the returned writer.
 func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (http.ResponseWriter, *http.Request, func(), bool) {
 	if cfg == nil {
 		cfg = new(ServeConfig)
@@ -100,7 +112,7 @@ func BeforeHandle(cfg *ServeConfig, w http.ResponseWriter, r *http.Request) (htt
 	rw, ddrw := wrapResponseWriter(w)
 	rt := r.WithContext(ctx)
 	closeSpan := func() {
-		finishSpans(ddrw.status, cfg.IsStatusError, cfg.FinishOpts...)
+		finishSpans(ddrw.Status(), cfg.IsStatusError, cfg.FinishOpts...)
 	}
 	afterHandle := closeSpan
 	handled := false

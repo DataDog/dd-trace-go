@@ -99,13 +99,15 @@ integration-suites:
     contrib/aws/aws-sdk-go-v2: [ aws.v2 ]
     contrib/aws/aws-sdk-go-v2/otelc: [ aws.v2 ]
     contrib/aws/aws-sdk-go/otelc: [aws.v1]
-    contrib/aws/datadog-lambda-go: []
+    contrib/aws/datadog-lambda-go: [ aws_lambda ]
     contrib/aws/datadog-lambda-go/test/integration_tests/error: []
     contrib/aws/datadog-lambda-go/test/integration_tests/hello: []
     contrib/azure/apim-callout: []
     contrib/bradfitz/gomemcache: []
     contrib/cloud.google.com/go/pubsub.v1: [ gcp_pubsub.v1 ]
+    contrib/cloud.google.com/go/pubsub.v1/otelc: [ gcp_pubsub.v1 ]
     contrib/cloud.google.com/go/pubsub.v2: [ gcp_pubsub.v2 ]
+    contrib/cloud.google.com/go/pubsub.v2/otelc: [ gcp_pubsub.v2 ]
     contrib/cloudevents/sdk-go.v2: [ cloudevents ]
     contrib/confluentinc/confluent-kafka-go/kafka: [ confluent-kafka-go.v1 ]
     contrib/confluentinc/confluent-kafka-go/kafka.v2: [ confluent-kafka-go.v2 ]
@@ -157,6 +159,7 @@ integration-suites:
     contrib/julienschmidt/httprouter: [ julienschmidt_httprouter ]
     contrib/julienschmidt/httprouter/otelc: [ julienschmidt_httprouter ]
     contrib/k8s.io/client-go: [ k8s_client_go ]
+    contrib/k8s.io/client-go/otelc: [ k8s_client_go ]
     contrib/k8s.io/gateway-api: []
     contrib/labstack/echo.v4: [ echo.v4 ]
     contrib/labstack/echo.v4/otelc: [ echo.v4 ]
@@ -173,7 +176,9 @@ integration-suites:
     contrib/redis/go-redis.v9: [ go-redis.v9 ]
     contrib/redis/rueidis: [ rueidis ]
     contrib/rs/zerolog: [ zerolog ]
+    contrib/rs/zerolog/otelc: [ zerolog ]
     contrib/segmentio/kafka-go: [ segmentio_kafka.v0 ]
+    contrib/segmentio/kafka-go/otelc: [ segmentio_kafka.v0 ]
     contrib/Shopify/sarama: [ shopify_sarama ]
     contrib/sirupsen/logrus: [ logrus ]
     contrib/sirupsen/logrus/otelc: [ logrus ]
@@ -275,7 +280,6 @@ workflow-gates:
   team-freeze-guard.yml: []
   test-apps-schedule.yml: []
   test-apps.yml: []
-  update-supported-versions-doc.yml: []
   update-system-tests.yml: []
 
 # Workflows allowed to filter with a native `on.pull_request.paths:` block
@@ -486,6 +490,8 @@ components:
       - contrib/99designs/gqlgen/**
       - contrib/aws/aws-sdk-go-v2/**
       - contrib/aws/aws-sdk-go/**
+      - contrib/cloud.google.com/go/pubsub.v1/**
+      - contrib/cloud.google.com/go/pubsub.v2/**
       - contrib/database/sql/**
       - contrib/gin-gonic/gin/**
       - contrib/go-chi/chi/**
@@ -499,10 +505,13 @@ components:
       - contrib/gorm.io/gorm.v1/**
       - contrib/jackc/pgx.v5/**
       - contrib/julienschmidt/httprouter/**
+      - contrib/k8s.io/client-go/**
       - contrib/labstack/echo.v4/**
       - contrib/labstack/echo.v5/**
       - contrib/net/http/**
       - contrib/sirupsen/logrus/**
+      - contrib/segmentio/kafka-go/**
+      - contrib/rs/zerolog/**
       - contrib/valyala/fasthttp/**
     module-scoped: true
     dependent-modules: []

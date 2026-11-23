@@ -15,6 +15,9 @@
 //     tracer, so both rules add that import to it, and otelc fails the build
 //     if they use different aliases.
 //
+//   - //dd:span on main itself. The tracer has to start before that span and
+//     stop after it finishes, or the span is lost.
+//
 //     # nothing is emitted: no tracer was ever started
 //     go run ./otelc-autostart
 //
@@ -37,8 +40,10 @@ import (
 const (
 	spanName      = "otelc.autostart"
 	directiveSpan = "otelc.autostart.directive"
+	mainSpan      = "otelc.autostart.main"
 )
 
+//dd:span span.name:otelc.autostart.main
 func main() {
 	// Lets the test tell a failed injection apart from a failed flush: no span
 	// with enabled=false means no rule applied, no span with enabled=true points
