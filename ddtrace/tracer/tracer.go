@@ -47,7 +47,6 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 
-	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	"github.com/DataDog/go-runtime-metrics-internal/pkg/runtimemetrics"
 )
 
@@ -161,9 +160,9 @@ type tracer struct {
 	// or operation name.
 	rulesSampling *rulesSampler
 
-	// obfuscator holds the obfuscator used to obfuscate resources in aggregated stats.
-	// obfuscator may be nil if disabled.
-	obfuscator *obfuscate.Obfuscator
+	// obfuscator obfuscates resources in aggregated stats with the agent's
+	// current SQL obfuscation config.
+	obfuscator *statsObfuscator
 
 	// statsd is used for tracking metrics associated with the runtime and the tracer.
 	statsd globalinternal.StatsdClient
@@ -641,20 +640,10 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 		stats:            sc,
 		spansStarted:     *globalinternal.NewXSyncMapCounterMap(),
 		spansFinished:    *globalinternal.NewXSyncMapCounterMap(),
-		obfuscator: obfuscate.NewObfuscator(func() obfuscate.Config {
-			af := c.agent.load()
-			return obfuscate.Config{
-				SQL: obfuscate.SQLConfig{
-					TableNames:       af.HasFlag("table_names"),
-					ReplaceDigits:    af.HasFlag("quantize_sql_tables") || af.HasFlag("replace_sql_digits"),
-					KeepSQLAlias:     af.HasFlag("keep_sql_alias"),
-					DollarQuotedFunc: af.HasFlag("dollar_quoted_func"),
-				},
-			}
-		}()),
-		statsd:      statsd,
-		dataStreams: dataStreamsProcessor,
-		logFile:     logFile,
+		obfuscator:       &statsObfuscator{},
+		statsd:           statsd,
+		dataStreams:      dataStreamsProcessor,
+		logFile:          logFile,
 	}
 	t.flushHandler = t.defaultFlushHandler
 	buildSharedAttrs(c, &t.sharedAttrs, &t.sharedAttrsForMainSvc)
@@ -759,8 +748,10 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 
 // refreshAgentFeatures fetches a fresh snapshot from /info and atomically
 // updates the dynamic agent capabilities. Static fields that are baked into
-// components at startup (statsd address, obfuscator config, etc.) are
-// preserved from the current snapshot so a poll can never change them.
+// components at startup (statsd address, feature flags, etc.) are preserved
+// from the current snapshot so a poll can never change them. The stats SQL
+// obfuscation config is dynamic: it must match the agent that receives the
+// stats, so it follows the fresh obfuscation version and feature flags.
 //
 // The trace-protocol decision is NOT part of that snapshot: it lives in
 // config.protocolState (see trace_protocol_state.go), a monotone lattice that

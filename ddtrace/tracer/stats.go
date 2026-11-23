@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"github.com/DataDog/datadog-agent/pkg/trace/stats"
 
@@ -28,9 +27,10 @@ import (
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
 
-// tracerObfuscationVersion indicates which version of stats obfuscation logic we implement
-// In the future this can be pulled directly from our obfuscation import.
-var tracerObfuscationVersion = 1
+// tracerObfuscationVersion is the newest trace-agent obfuscation version whose
+// stats obfuscation the tracer reproduces. Version 2 agents run a non-default
+// SQL obfuscation config, which the tracer reads from /info and applies.
+var tracerObfuscationVersion = 2
 
 // defaultStatsBucketSize specifies the default span of time that will be
 // covered in one stats bucket.
@@ -42,7 +42,7 @@ type statsConcentrator interface {
 	Start()
 	Stop()
 	flushAndSend(now time.Time, includeCurrent bool)
-	newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool)
+	newTracerStatSpan(s *Span, obfuscator *statsObfuscator) (*tracerStatSpan, bool)
 	trySendSpan(s *tracerStatSpan)
 	trySendSpans(spans []*tracerStatSpan)
 }
@@ -129,8 +129,8 @@ type ddStatsSender struct {
 
 func (s *ddStatsSender) shouldObfuscate() bool {
 	// Obfuscate if agent reports an obfuscation version AND our version is at least as new.
-	agentObfVersion := s.cfg.agent.load().obfuscationVersion
-	return agentObfVersion > 0 && agentObfVersion <= tracerObfuscationVersion
+	af := s.cfg.agent.load()
+	return af.obfuscationVersion > 0 && af.obfuscationVersion <= tracerObfuscationVersion && !af.statsSQLObfuscationUnsupported
 }
 
 func (s *ddStatsSender) peerTags(agentPeerTags []string) []string {
@@ -144,7 +144,9 @@ func (s *ddStatsSender) httpRouteFallback() bool {
 func (s *ddStatsSender) send(csp *pb.ClientStatsPayload, retries int, interval time.Duration) error {
 	obfVersion := 0
 	if s.shouldObfuscate() {
-		obfVersion = tracerObfuscationVersion
+		// Report the agent's version: the stats were obfuscated with the logic
+		// of that version, which may be older than the newest one we support.
+		obfVersion = s.cfg.agent.load().obfuscationVersion
 	} else {
 		log.Debug("Stats Obfuscation was skipped, agent will obfuscate (tracer %d, agent %d)", tracerObfuscationVersion, s.cfg.agent.load().obfuscationVersion)
 	}
@@ -303,11 +305,11 @@ func (c *concentrator) runIngester() {
 }
 
 // +checklocksignore — Post-finish: reads finished span fields during stats computation.
-func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
+func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *statsObfuscator) (*tracerStatSpan, bool) {
 	agentInfo := c.cfg.agent.load()
 	resource := s.resource
 	if c.sender.shouldObfuscate() {
-		resource = obfuscatedResource(obfuscator, s.spanType, s.resource)
+		resource = obfuscatedResource(obfuscator.forConfig(agentInfo.statsSQLObfuscation), s.spanType, s.resource)
 		c.spanConcentrator.SetObfuscationEnabled(true, agentInfo.HasFlag("big_resource"))
 	} else {
 		c.spanConcentrator.SetObfuscationEnabled(false, false)
@@ -517,7 +519,7 @@ type noopConcentrator struct{}
 func (c *noopConcentrator) Start()                           {}
 func (c *noopConcentrator) Stop()                            {}
 func (c *noopConcentrator) flushAndSend(_ time.Time, _ bool) {}
-func (c *noopConcentrator) newTracerStatSpan(_ *Span, _ *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
+func (c *noopConcentrator) newTracerStatSpan(_ *Span, _ *statsObfuscator) (*tracerStatSpan, bool) {
 	return nil, false
 }
 func (c *noopConcentrator) trySendSpan(_ *tracerStatSpan)    {}

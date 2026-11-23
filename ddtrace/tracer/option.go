@@ -27,6 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"github.com/tinylib/msgp/msgp"
 
@@ -473,8 +474,19 @@ type agentFeatures struct {
 	// obfuscationVersion reports the trace-agent's version of obfuscation logic. A value of 0 means this field wasn't present.
 	obfuscationVersion int
 
+	// statsSQLObfuscation is the SQL obfuscation config the trace-agent applies
+	// to stats it obfuscates itself. Client-side stats obfuscation uses it so
+	// both produce the same resources. Unlike featureFlags it is refreshed on
+	// every poll, together with obfuscationVersion.
+	statsSQLObfuscation obfuscate.SQLConfig
+
 	// spanEvents reports whether the trace-agent can receive spans with the `span_events` field.
 	spanEventsAvailable bool
+
+	// statsSQLObfuscationUnsupported reports that the trace-agent's SQL
+	// obfuscation config can't be reproduced by this tracer, so stats
+	// obfuscation must be left to the agent.
+	statsSQLObfuscationUnsupported bool
 
 	// evpProxyV2 reports if the trace-agent can receive payloads on the /evp_proxy/v2 endpoint.
 	evpProxyV2 bool
@@ -620,8 +632,9 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 		} `json:"filter_tags_regex"`
 		IgnoreResources []string `json:"ignore_resources"`
 		Config          struct {
-			StatsdPort int    `json:"statsd_port"`
-			DefaultEnv string `json:"default_env"`
+			StatsdPort  int                  `json:"statsd_port"`
+			DefaultEnv  string               `json:"default_env"`
+			Obfuscation agentInfoObfuscation `json:"obfuscation"`
 		} `json:"config"`
 	}
 	var info infoResponse
@@ -677,6 +690,9 @@ func fetchAgentFeatures(ctx context.Context, agentURL *url.URL, httpClient *http
 	for _, flag := range info.FeatureFlags {
 		features.featureFlags[flag] = struct{}{}
 	}
+	var sqlSupported bool
+	features.statsSQLObfuscation, sqlSupported = agentStatsSQLConfig(&features, info.Config.Obfuscation)
+	features.statsSQLObfuscationUnsupported = !sqlSupported
 	features.reachable = true
 	return features, nil
 }
