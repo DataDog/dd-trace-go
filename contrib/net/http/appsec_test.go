@@ -387,3 +387,31 @@ func TestAppsecHTTP30XRedirectChainKeepsFirstHop(t *testing.T) {
 	assert.Equal(t, "/redirect?totalRedirects=2", serviceSpan.Tags()["appsec.api.redirection.redirect_target"], "redirect_target must reflect the FIRST redirect hop, not the last")
 	assert.Equal(t, float64(5), serviceSpan.Tags()["_dd.appsec.downstream_request"], "unexpected or missing _dd.appsec.downstream_request tag")
 }
+
+// TestAppsecNormalizedRouteCatchAll checks that the normalized route has the
+// catch-all of a ServeMux route only when it has a value, also for a route that is
+// registered on a caller-provided *http.ServeMux, which reports no path parameters
+// to the WAF.
+func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
+	t.Setenv("DD_API_SECURITY_ENABLED", "true")
+	testutils.StartAppSec(t)
+
+	underlying := http.NewServeMux()
+	underlying.HandleFunc("/direct/{path...}", func(http.ResponseWriter, *http.Request) {})
+	mux := NewServeMux(WithServeMux(underlying))
+	mux.HandleFunc("/wrapped/{path...}", func(http.ResponseWriter, *http.Request) {})
+
+	for target, want := range map[string]string{
+		"/direct/a/b":  "/direct/{path}",
+		"/direct/":     "/direct/",
+		"/wrapped/a/b": "/wrapped/{path}",
+		"/wrapped/":    "/wrapped/",
+	} {
+		mt := mocktracer.Start()
+		mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, target, nil))
+		spans := mt.FinishedSpans()
+		mt.Stop()
+		require.Len(t, spans, 1, target)
+		assert.Equal(t, want, spans[0].Tag("_dd.appsec.normalized_route"), target)
+	}
+}

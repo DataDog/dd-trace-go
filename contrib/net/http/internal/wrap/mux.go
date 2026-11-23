@@ -102,7 +102,18 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	so := make([]tracer.StartSpanOption, len(mux.cfg.SpanOpts), len(mux.cfg.SpanOpts)+1)
 	copy(so, mux.cfg.SpanOpts)
 	so = append(so, httptrace.HeaderTagsFromRequest(r, mux.cfg.HeaderTags))
-	TraceAndServe(mux.ServeMux, w, r, &httptrace.ServeConfig{
+	var h http.Handler = mux.ServeMux
+	if internal.Instrumentation.AppSecEnabled() {
+		// A route registered on a caller-provided *http.ServeMux reports no path
+		// parameters (see NewServeMux). ServeMux sets the pattern and the path
+		// values of the request that it serves: give them to API Security, which
+		// does not send them to the WAF.
+		h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mux.ServeMux.ServeHTTP(w, r)
+			httpsec.ReportRouteParams(r.Context(), pattern.PathParameters(r.Pattern, r))
+		})
+	}
+	TraceAndServe(h, w, r, &httptrace.ServeConfig{
 		Service:              mux.cfg.ServiceName,
 		ServiceSource:        mux.cfg.ServiceSource,
 		Framework:            "net/http",
