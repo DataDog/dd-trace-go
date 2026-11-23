@@ -52,6 +52,9 @@ func (m *mockCluster) consumerConfig(group string) *kafka.ConfigMap {
 		"bootstrap.servers":        m.servers,
 		"group.id":                 group,
 		"enable.auto.offset.store": false,
+		// Close would otherwise commit the stored offset, and the Commit case
+		// of TestDataStreamsOffsets would pass without its rule.
+		"enable.auto.commit": false,
 	}
 }
 
