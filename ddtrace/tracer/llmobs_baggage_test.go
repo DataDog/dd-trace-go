@@ -377,3 +377,33 @@ func TestLLMObsPartialFlushForgetsFlushedSpans(t *testing.T) {
 	defer s.mu.RUnlock()
 	assert.Empty(t, s.spans)
 }
+
+func TestLLMObsTraceOverflowStopsRecordingSpans(t *testing.T) {
+	// Once a trace's span buffer overflows, no partial flush runs for it, so the
+	// span map must stop growing. The inbound context is kept.
+	old := traceMaxSize
+	traceMaxSize = 3
+	defer func() { traceMaxSize = old }()
+	tr, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+
+	root := tr.StartSpan("root")
+	defer root.Finish()
+	inbound := &illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: "12345"}
+	root.Context().setLLMObsPropagated(inbound, true)
+	llmSpan := &illmobs.Span{}
+	for range 10 {
+		child := tr.StartSpan("child", ChildOf(root.Context()))
+		child.Context().setLLMObsSpan(llmSpan)
+		defer child.Finish()
+	}
+
+	s := root.Context().trace.llmobs.Load()
+	require.NotNil(t, s)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	assert.True(t, s.closed)
+	assert.Empty(t, s.spans)
+	assert.Same(t, inbound, s.propagated)
+}
