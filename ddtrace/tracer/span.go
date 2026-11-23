@@ -1269,7 +1269,9 @@ func obfuscatedResource(o *obfuscate.Obfuscator, typ, resource string) string {
 	case "sql", "cassandra":
 		oq, err := o.ObfuscateSQLString(resource)
 		if err != nil {
-			log.Error("Error obfuscating stats group resource %q: %v", resource, err.Error()) //errtrack:ignore unparseable user-provided resource
+			// Neither the resource nor the error is logged: both can hold the
+			// raw SQL that obfuscation exists to hide.
+			log.Error("Error obfuscating stats group resource of span type %s; reporting it as %s", typ, textNonParsable) //errtrack:ignore unparseable user-provided resource
 			return textNonParsable
 		}
 		return oq.Query

@@ -47,12 +47,7 @@ type agentInfoSQLObfuscation struct {
 // config this tracer cannot reproduce; stats obfuscation must then be left to
 // the agent.
 func agentStatsSQLConfig(af *agentFeatures, o agentInfoObfuscation) (cfg obfuscate.SQLConfig, ok bool) {
-	cfg = obfuscate.SQLConfig{
-		TableNames:       af.HasFlag("table_names"),
-		ReplaceDigits:    af.HasFlag("quantize_sql_tables") || af.HasFlag("replace_sql_digits"),
-		KeepSQLAlias:     af.HasFlag("keep_sql_alias"),
-		DollarQuotedFunc: af.HasFlag("dollar_quoted_func"),
-	}
+	cfg = featureFlagSQLConfig(af)
 	if af.obfuscationVersion < 2 {
 		// Version 1 agents report obfuscation_version 1 only for their default
 		// SQL config, which the feature flags above already describe.
@@ -83,6 +78,26 @@ func agentStatsSQLConfig(af *agentFeatures, o agentInfoObfuscation) (cfg obfusca
 	default:
 		return cfg, false
 	}
+}
+
+// featureFlagSQLConfig returns the SQL obfuscation config described by the
+// agent's feature flags.
+func featureFlagSQLConfig(af *agentFeatures) obfuscate.SQLConfig {
+	return obfuscate.SQLConfig{
+		TableNames:       af.HasFlag("table_names"),
+		ReplaceDigits:    af.HasFlag("quantize_sql_tables") || af.HasFlag("replace_sql_digits"),
+		KeepSQLAlias:     af.HasFlag("keep_sql_alias"),
+		DollarQuotedFunc: af.HasFlag("dollar_quoted_func"),
+	}
+}
+
+// statsObfuscationPolicy identifies how a stat span's resource was obfuscated.
+type statsObfuscationPolicy struct {
+	// version is the obfuscation version the resource was obfuscated with, or
+	// 0 when obfuscation was left to the destination.
+	version int
+	// obfuscator identifies the SQL obfuscation config that was used.
+	obfuscator *obfuscate.Obfuscator
 }
 
 // statsObfuscator hands out an obfuscator matching the agent's current SQL

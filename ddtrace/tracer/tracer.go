@@ -750,8 +750,9 @@ func newTracer(opts ...StartOption) (*tracer, error) {
 // updates the dynamic agent capabilities. Static fields that are baked into
 // components at startup (statsd address, feature flags, etc.) are preserved
 // from the current snapshot so a poll can never change them. The stats SQL
-// obfuscation config is dynamic: it must match the agent that receives the
-// stats, so it follows the fresh obfuscation version and feature flags.
+// obfuscation config of an agent reporting obfuscation version 2 is dynamic:
+// it must match the agent that receives the stats, so it follows the fresh
+// /info config. For older versions it derives from the frozen feature flags.
 //
 // The trace-protocol decision is NOT part of that snapshot: it lives in
 // config.protocolState (see trace_protocol_state.go), a monotone lattice that
@@ -821,6 +822,12 @@ func (t *tracer) refreshAgentFeatures() {
 			f.defaultEnv = current.defaultEnv
 			f.reachable = current.reachable
 			f.hasTelemetryProxy = current.hasTelemetryProxy
+			if f.obfuscationVersion < 2 {
+				// Version 1 agents describe their SQL obfuscation through feature
+				// flags, which stay frozen at their startup values.
+				f.statsSQLObfuscation = featureFlagSQLConfig(&f)
+				f.statsSQLObfuscationUnsupported = false
+			}
 			return f
 		})
 	}

@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -60,6 +61,14 @@ type concentrator struct {
 	stopped uint32 // +checkatomic
 
 	spanConcentrator *stats.SpanConcentrator
+
+	// obfuscationMu serializes buffering stat spans with flushing them, so that
+	// every flushed payload holds spans obfuscated under a single policy, the
+	// one its obfuscation version header reports.
+	obfuscationMu locking.Mutex
+	// bufferedObfuscation is the obfuscation policy of the stat spans buffered
+	// in spanConcentrator.
+	bufferedObfuscation statsObfuscationPolicy // +checklocks:obfuscationMu
 
 	aggregationKey stats.PayloadAggregationKey
 
@@ -109,8 +118,13 @@ func reportStatsSendError(err error) {
 // statsSender abstracts a concentrator's stats destination: how a flushed
 // payload is sent, and the obfuscation/peer-tags policy for that destination.
 type statsSender interface {
-	send(csp *pb.ClientStatsPayload, retries int, interval time.Duration) error
-	shouldObfuscate() bool
+	// send sends csp, whose resources were obfuscated with obfuscation version
+	// obfVersion (0 when left to the destination).
+	send(csp *pb.ClientStatsPayload, obfVersion int, retries int, interval time.Duration) error
+	// obfuscationVersion returns the obfuscation version the tracer obfuscates
+	// stats with for an agent with features af, or 0 when it must leave
+	// obfuscation to the destination.
+	obfuscationVersion(af *agentFeatures) int
 	// peerTags returns the peer tags to use for a stat span, given the
 	// agent-advertised peer tags.
 	peerTags(agentPeerTags []string) []string
@@ -127,10 +141,14 @@ type ddStatsSender struct {
 	cfg *config
 }
 
-func (s *ddStatsSender) shouldObfuscate() bool {
-	// Obfuscate if agent reports an obfuscation version AND our version is at least as new.
-	af := s.cfg.agent.load()
-	return af.obfuscationVersion > 0 && af.obfuscationVersion <= tracerObfuscationVersion && !af.statsSQLObfuscationUnsupported
+func (s *ddStatsSender) obfuscationVersion(af *agentFeatures) int {
+	// Obfuscate if agent reports an obfuscation version AND our version is at
+	// least as new. The stats are then obfuscated with the logic of the agent's
+	// version, which may be older than the newest one we support.
+	if af.obfuscationVersion > 0 && af.obfuscationVersion <= tracerObfuscationVersion && !af.statsSQLObfuscationUnsupported {
+		return af.obfuscationVersion
+	}
+	return 0
 }
 
 func (s *ddStatsSender) peerTags(agentPeerTags []string) []string {
@@ -141,13 +159,8 @@ func (s *ddStatsSender) httpRouteFallback() bool {
 	return false
 }
 
-func (s *ddStatsSender) send(csp *pb.ClientStatsPayload, retries int, interval time.Duration) error {
-	obfVersion := 0
-	if s.shouldObfuscate() {
-		// Report the agent's version: the stats were obfuscated with the logic
-		// of that version, which may be older than the newest one we support.
-		obfVersion = s.cfg.agent.load().obfuscationVersion
-	} else {
+func (s *ddStatsSender) send(csp *pb.ClientStatsPayload, obfVersion int, retries int, interval time.Duration) error {
+	if obfVersion == 0 {
 		log.Debug("Stats Obfuscation was skipped, agent will obfuscate (tracer %d, agent %d)", tracerObfuscationVersion, s.cfg.agent.load().obfuscationVersion)
 	}
 	return sendWithRetry(retries, interval, func() error {
@@ -160,10 +173,10 @@ type otlpStatsSender struct {
 	exporter *otlpMetricsExporter
 }
 
-func (s *otlpStatsSender) shouldObfuscate() bool {
+func (s *otlpStatsSender) obfuscationVersion(_ *agentFeatures) int {
 	// There is no Datadog Agent downstream of an OTLP concentrator to apply
 	// obfuscation, so the tracer must always obfuscate locally.
-	return true
+	return tracerObfuscationVersion
 }
 
 func (s *otlpStatsSender) peerTags(agentPeerTags []string) []string {
@@ -174,7 +187,7 @@ func (s *otlpStatsSender) httpRouteFallback() bool {
 	return true
 }
 
-func (s *otlpStatsSender) send(csp *pb.ClientStatsPayload, retries int, interval time.Duration) error {
+func (s *otlpStatsSender) send(csp *pb.ClientStatsPayload, _ int, retries int, interval time.Duration) error {
 	rms, sketchDecodeErr := buildOTLPMetricsRequest(csp, s.exporter.cfg)
 	if sketchDecodeErr != nil {
 		// Report once per flushed payload, before the transport retry loop. The
@@ -187,9 +200,10 @@ func (s *otlpStatsSender) send(csp *pb.ClientStatsPayload, retries int, interval
 }
 
 type tracerStatSpan struct {
-	statSpan *stats.StatSpan
-	origin   string
-	version  string // per-span version tag; "" means use global aggKey version
+	statSpan    *stats.StatSpan
+	origin      string
+	version     string                 // per-span version tag; "" means use global aggKey version
+	obfuscation statsObfuscationPolicy // how the resource was obfuscated
 }
 
 // newConcentrator creates a new concentrator using the given tracer
@@ -308,8 +322,10 @@ func (c *concentrator) runIngester() {
 func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *statsObfuscator) (*tracerStatSpan, bool) {
 	agentInfo := c.cfg.agent.load()
 	resource := s.resource
-	if c.sender.shouldObfuscate() {
-		resource = obfuscatedResource(obfuscator.forConfig(agentInfo.statsSQLObfuscation), s.spanType, s.resource)
+	policy := statsObfuscationPolicy{version: c.sender.obfuscationVersion(&agentInfo)}
+	if policy.version > 0 {
+		policy.obfuscator = obfuscator.forConfig(agentInfo.statsSQLObfuscation)
+		resource = obfuscatedResource(policy.obfuscator, s.spanType, s.resource)
 		c.spanConcentrator.SetObfuscationEnabled(true, agentInfo.HasFlag("big_resource"))
 	} else {
 		c.spanConcentrator.SetObfuscationEnabled(false, false)
@@ -355,9 +371,10 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *statsObfuscator) (
 	origin, _ := s.meta.Get(keyOrigin)
 	version, _ := s.meta.Version()
 	return &tracerStatSpan{
-		statSpan: statSpan,
-		origin:   origin,
-		version:  version,
+		statSpan:    statSpan,
+		origin:      origin,
+		version:     version,
+		obfuscation: policy,
 	}, true
 }
 
@@ -367,7 +384,19 @@ func (c *concentrator) add(s *tracerStatSpan) {
 	if s.version != "" {
 		aggKey.Version = s.version
 	}
+	var flushed []*pb.ClientStatsPayload
+	c.obfuscationMu.Lock()
+	flushedVersion := c.bufferedObfuscation.version
+	if s.obfuscation != c.bufferedObfuscation {
+		// The obfuscation policy changed with the agent's /info. A payload
+		// reports one obfuscation version, so send what was buffered under the
+		// previous policy before s joins the buckets.
+		flushed = c.spanConcentrator.Flush(time.Now().UnixNano(), true)
+		c.bufferedObfuscation = s.obfuscation
+	}
 	c.spanConcentrator.AddSpan(s.statSpan, aggKey, "", nil, s.origin)
+	c.obfuscationMu.Unlock()
+	c.sendPayloads(flushed, flushedVersion)
 }
 
 // Stop stops the concentrator and blocks until the operation completes.
@@ -424,9 +453,18 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	if includeCurrent {
 		c.drainIn()
 	}
+	c.obfuscationMu.Lock()
 	csps := c.spanConcentrator.Flush(timenow.UnixNano(), includeCurrent)
+	obfVersion := c.bufferedObfuscation.version
+	c.obfuscationMu.Unlock()
 	bc := c.spanConcentrator.DrainBlockCounts()
 	c.emitCollapseMetrics(bc)
+	c.sendPayloads(csps, obfVersion)
+}
+
+// sendPayloads sends flushed stats payloads, whose resources were obfuscated
+// with obfuscation version obfVersion.
+func (c *concentrator) sendPayloads(csps []*pb.ClientStatsPayload, obfVersion int) {
 	if len(csps) == 0 {
 		// nothing to flush
 		return
@@ -442,7 +480,7 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 		csp.Service = c.cfg.internalConfig.ServiceName()
 		csp.ProcessTags = processtags.GlobalTags().String()
 		flushedBuckets += len(csp.Stats)
-		err := c.sender.send(csp, sendRetries, retryInterval)
+		err := c.sender.send(csp, obfVersion, sendRetries, retryInterval)
 		if err != nil {
 			c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
 			reportStatsSendError(err)

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
@@ -23,6 +24,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // statsObfuscationQueries are chosen so that every SQL config exercised below
@@ -189,7 +191,8 @@ func TestStatsSQLObfuscationUnsupportedMode(t *testing.T) {
 	cfg := newTestConfigWithTransportAndEnv(t, newDummyTransport(), "someEnv")
 	cfg.agent.store(fetchTestAgentFeatures(t, `{"obfuscation_version":2,"config":{"obfuscation":{"sql_obfuscation_mode":"some_future_mode"}}}`))
 	s := &ddStatsSender{cfg: cfg}
-	assert.False(t, s.shouldObfuscate())
+	af := cfg.agent.load()
+	assert.Zero(t, s.obfuscationVersion(&af))
 }
 
 func TestStatsSQLObfuscationVersion1IgnoresMode(t *testing.T) {
@@ -204,6 +207,25 @@ func TestStatsSQLObfuscationVersion1IgnoresMode(t *testing.T) {
 	assert.False(t, af.statsSQLObfuscationUnsupported)
 }
 
+func TestObfuscatedResourceErrorKeepsSQLOutOfLogs(t *testing.T) {
+	rl := new(log.RecordLogger)
+	defer log.UseLogger(rl)()
+	const query = "SELECT * FROM users WHERE password = 'hunter2"
+	for _, mode := range []obfuscate.ObfuscationMode{"", obfuscate.ObfuscateAndNormalize} {
+		o := (&statsObfuscator{}).forConfig(obfuscate.SQLConfig{ObfuscationMode: mode})
+		_, err := o.ObfuscateSQLString(query)
+		if err == nil {
+			continue
+		}
+		assert.Equal(t, textNonParsable, obfuscatedResource(o, "sql", query))
+	}
+	log.Flush()
+	logs := strings.Join(rl.Logs(), "\n")
+	require.Contains(t, logs, "Error obfuscating stats group resource")
+	assert.NotContains(t, logs, "hunter2")
+	assert.NotContains(t, logs, "password")
+}
+
 func TestStatsObfuscatorRebuildsOnConfigChange(t *testing.T) {
 	var s statsObfuscator
 	def := s.forConfig(obfuscate.SQLConfig{})
@@ -214,13 +236,19 @@ func TestStatsObfuscatorRebuildsOnConfigChange(t *testing.T) {
 	assert.Nil(t, (*statsObfuscator)(nil).forConfig(obfuscate.SQLConfig{}))
 }
 
+// statsPost is one client stats payload received by statsAgent.
+type statsPost struct {
+	obfuscationVersion string
+	resources          []string
+}
+
 // statsAgent is a minimal trace-agent that serves /info and records the
 // client stats it receives.
 type statsAgent struct {
 	mu        sync.Mutex
 	info      string
-	versions  []string
-	resources []string
+	infoCalls int
+	posts     []statsPost
 }
 
 func (a *statsAgent) setInfo(body string) {
@@ -229,11 +257,18 @@ func (a *statsAgent) setInfo(body string) {
 	a.mu.Unlock()
 }
 
+func (a *statsAgent) snapshot() (infoCalls int, posts []statsPost) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.infoCalls, slices.Clone(a.posts)
+}
+
 func (a *statsAgent) handler(t *testing.T) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/info", func(w http.ResponseWriter, _ *http.Request) {
 		a.mu.Lock()
 		defer a.mu.Unlock()
+		a.infoCalls++
 		w.Write([]byte(a.info))
 	})
 	mux.HandleFunc("/v0.4/traces", func(w http.ResponseWriter, _ *http.Request) {
@@ -245,16 +280,36 @@ func (a *statsAgent) handler(t *testing.T) http.Handler {
 			t.Errorf("decoding stats payload: %v", err)
 			return
 		}
-		a.mu.Lock()
-		defer a.mu.Unlock()
-		a.versions = append(a.versions, r.Header.Get(obfuscationVersionHeader))
+		post := statsPost{obfuscationVersion: r.Header.Get(obfuscationVersionHeader)}
 		for _, b := range p.Stats {
 			for _, g := range b.Stats {
-				a.resources = append(a.resources, g.Resource)
+				post.resources = append(post.resources, g.Resource)
 			}
 		}
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		a.posts = append(a.posts, post)
 	})
 	return mux
+}
+
+// startStatsTracer starts a tracer computing client stats against agent.
+func startStatsTracer(t *testing.T, agent *statsAgent, opts ...StartOption) *tracer {
+	srv := httptest.NewServer(agent.handler(t))
+	t.Cleanup(srv.Close)
+	tr, err := newTracer(append([]StartOption{
+		WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
+		WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true)),
+		WithStatsComputation(true),
+	}, opts...)...)
+	require.NoError(t, err)
+	setGlobalTracer(tr)
+	t.Cleanup(func() { setGlobalTracer(&NoopTracer{}) })
+	return tr
+}
+
+func finishSQLSpan(tr *tracer, query string) {
+	tr.StartSpan("db.query", SpanType(ext.SpanTypeSQL), ResourceName(query)).Finish()
 }
 
 // TestStatsObfuscationEndToEnd runs a tracer against a mocked agent and checks
@@ -272,60 +327,144 @@ func TestStatsObfuscationEndToEnd(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			agent := &statsAgent{info: tc.settings.infoJSON(t, true)}
-			srv := httptest.NewServer(agent.handler(t))
-			defer srv.Close()
-			tr, err := newTracer(
-				WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
-				WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true)),
-				WithStatsComputation(true),
-			)
-			require.NoError(t, err)
-			setGlobalTracer(tr)
-			defer setGlobalTracer(&NoopTracer{})
-
-			tr.StartSpan("db.query", SpanType(ext.SpanTypeSQL), ResourceName(query)).Finish()
+			tr := startStatsTracer(t, agent)
+			finishSQLSpan(tr, query)
 			tr.Stop()
 
-			agent.mu.Lock()
-			defer agent.mu.Unlock()
-			assert.Equal(t, []string{tc.wantVersion}, agent.versions)
-			assert.Equal(t, []string{agentObfuscatedResource(t, tc.settings.effectiveSQLConfig(), query)}, agent.resources)
+			_, posts := agent.snapshot()
+			assert.Equal(t, []statsPost{{
+				obfuscationVersion: tc.wantVersion,
+				resources:          []string{agentObfuscatedResource(t, tc.settings.effectiveSQLConfig(), query)},
+			}}, posts)
 		})
 	}
 }
 
 // TestStatsObfuscationFollowsAgentRestart checks that a running tracer picks
 // up a new agent SQL config from /info, instead of keeping the config it saw
-// at startup while claiming the new version.
+// at startup, and never mixes resources obfuscated under both configs in one
+// payload.
 func TestStatsObfuscationFollowsAgentRestart(t *testing.T) {
 	query := statsObfuscationQueries[1]
-	agent := &statsAgent{info: agentSQLSettings{}.infoJSON(t, true)}
-	srv := httptest.NewServer(agent.handler(t))
-	defer srv.Close()
-	tr, err := newTracer(
-		WithAgentAddr(strings.TrimPrefix(srv.URL, "http://")),
-		WithHTTPClient(internal.DefaultHTTPClient(defaultHTTPTimeout, true)),
-		WithStatsComputation(true),
-	)
-	require.NoError(t, err)
-	setGlobalTracer(tr)
-	defer setGlobalTracer(&NoopTracer{})
+	startup := agentSQLSettings{mode: obfuscate.ObfuscateOnly}
+	agent := &statsAgent{info: startup.infoJSON(t, true)}
+	tr := startStatsTracer(t, agent)
 
 	// Obfuscate one span under the startup config, so a tracer that froze its
 	// obfuscator at that point would keep using it.
-	tr.StartSpan("db.query", SpanType(ext.SpanTypeSQL), ResourceName(query)).Finish()
-
+	finishSQLSpan(tr, query)
 	restarted := agentSQLSettings{mode: obfuscate.NormalizeOnly}
 	agent.setInfo(restarted.infoJSON(t, true))
 	tr.refreshAgentFeatures()
-	tr.StartSpan("db.query", SpanType(ext.SpanTypeSQL), ResourceName(query)).Finish()
+	finishSQLSpan(tr, query)
 	tr.Stop()
 
-	agent.mu.Lock()
-	defer agent.mu.Unlock()
-	assert.Equal(t, []string{"2"}, agent.versions)
-	assert.ElementsMatch(t, []string{
-		agentObfuscatedResource(t, obfuscate.SQLConfig{}, query),
-		agentObfuscatedResource(t, restarted.effectiveSQLConfig(), query),
-	}, agent.resources)
+	_, posts := agent.snapshot()
+	assert.Equal(t, []statsPost{
+		{obfuscationVersion: "2", resources: []string{agentObfuscatedResource(t, startup.effectiveSQLConfig(), query)}},
+		{obfuscationVersion: "2", resources: []string{agentObfuscatedResource(t, restarted.effectiveSQLConfig(), query)}},
+	}, posts)
+}
+
+// TestStatsObfuscationRawGroupAcrossRefresh checks that a stats group the
+// tracer left raw, for the agent to obfuscate, is not sent under an
+// obfuscation version header after /info starts allowing client-side
+// obfuscation: the agent would then skip obfuscating it.
+func TestStatsObfuscationRawGroupAcrossRefresh(t *testing.T) {
+	query := statsObfuscationQueries[1]
+	// A version newer than the tracer supports: the agent obfuscates.
+	agent := &statsAgent{info: `{"endpoints":["/v0.4/traces","/v0.6/stats"],"client_drop_p0s":true,"obfuscation_version":3}`}
+	tr := startStatsTracer(t, agent)
+
+	finishSQLSpan(tr, query)
+	v2 := agentSQLSettings{mode: obfuscate.ObfuscateAndNormalize}
+	agent.setInfo(v2.infoJSON(t, true))
+	tr.refreshAgentFeatures()
+	finishSQLSpan(tr, query)
+	tr.Stop()
+
+	_, posts := agent.snapshot()
+	assert.Equal(t, []statsPost{
+		{obfuscationVersion: "", resources: []string{query}},
+		{obfuscationVersion: "2", resources: []string{agentObfuscatedResource(t, v2.effectiveSQLConfig(), query)}},
+	}, posts)
+}
+
+// TestStatsObfuscationRawGroupFlushedAfterRefresh checks that a raw stats
+// group still buffered when /info starts allowing client-side obfuscation is
+// flushed without an obfuscation version header, even with no newer span to
+// separate it from.
+func TestStatsObfuscationRawGroupFlushedAfterRefresh(t *testing.T) {
+	query := statsObfuscationQueries[1]
+	agent := &statsAgent{info: `{"endpoints":["/v0.4/traces","/v0.6/stats"],"client_drop_p0s":true,"obfuscation_version":3}`}
+	tr := startStatsTracer(t, agent)
+
+	finishSQLSpan(tr, query)
+	agent.setInfo(agentSQLSettings{mode: obfuscate.ObfuscateAndNormalize}.infoJSON(t, true))
+	tr.refreshAgentFeatures()
+	tr.Stop()
+
+	_, posts := agent.snapshot()
+	assert.Equal(t, []statsPost{{obfuscationVersion: "", resources: []string{query}}}, posts)
+}
+
+// TestStatsObfuscationVersion1FlagsFrozen checks that, as before obfuscation
+// version 2 support, a version 1 agent's SQL feature flags apply as they were
+// at startup: a poll reporting other flags doesn't change stats obfuscation.
+func TestStatsObfuscationVersion1FlagsFrozen(t *testing.T) {
+	query := "SELECT * FROM users123 AS u WHERE u.id = 1"
+	info := func(flags ...string) string {
+		b, err := json.Marshal(map[string]any{
+			"endpoints":           []string{"/v0.4/traces", "/v0.6/stats"},
+			"client_drop_p0s":     true,
+			"feature_flags":       flags,
+			"obfuscation_version": 1,
+		})
+		require.NoError(t, err)
+		return string(b)
+	}
+	agent := &statsAgent{info: info("keep_sql_alias")}
+	tr := startStatsTracer(t, agent)
+
+	agent.setInfo(info("replace_sql_digits"))
+	tr.refreshAgentFeatures()
+	assert.Equal(t, obfuscate.SQLConfig{KeepSQLAlias: true}, tr.config.agent.load().statsSQLObfuscation)
+	finishSQLSpan(tr, query)
+	tr.Stop()
+
+	_, posts := agent.snapshot()
+	assert.Equal(t, []statsPost{{
+		obfuscationVersion: "1",
+		resources:          []string{agentObfuscatedResource(t, obfuscate.SQLConfig{KeepSQLAlias: true}, query)},
+	}}, posts)
+}
+
+// TestStatsObfuscationTimedPoll drives an agent SQL config transition through
+// the tracer's real /info poll ticks, and checks the stats payloads sent
+// before and after it.
+func TestStatsObfuscationTimedPoll(t *testing.T) {
+	const pollInterval = 20 * time.Millisecond
+	query := statsObfuscationQueries[1]
+	agent := &statsAgent{info: agentSQLSettings{}.infoJSON(t, true)}
+	tr := startStatsTracer(t, agent, withAgentInfoPollInterval(pollInterval))
+	require.Equal(t, 1, tr.config.agent.load().obfuscationVersion)
+
+	finishSQLSpan(tr, query)
+	infoCallsBefore, _ := agent.snapshot()
+	v2 := agentSQLSettings{mode: obfuscate.NormalizeOnly}
+	agent.setInfo(v2.infoJSON(t, true))
+	start := time.Now()
+	require.Eventually(t, func() bool {
+		return tr.config.agent.load().obfuscationVersion == 2
+	}, 50*pollInterval, pollInterval/4, "the poll never picked up the new /info")
+	infoCallsAfter, _ := agent.snapshot()
+	t.Logf("poll interval %s: /info picked up after %s, %d poll(s) since the change", pollInterval, time.Since(start).Round(time.Millisecond), infoCallsAfter-infoCallsBefore)
+	finishSQLSpan(tr, query)
+	tr.Stop()
+
+	_, posts := agent.snapshot()
+	assert.Equal(t, []statsPost{
+		{obfuscationVersion: "1", resources: []string{agentObfuscatedResource(t, obfuscate.SQLConfig{}, query)}},
+		{obfuscationVersion: "2", resources: []string{agentObfuscatedResource(t, v2.effectiveSQLConfig(), query)}},
+	}, posts)
 }
