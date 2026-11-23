@@ -194,12 +194,11 @@ func (t *trace) forgetLLMObsSpans(flushed []*Span) {
 // closeLLMObsSpans stops recording span entries for a trace whose span buffer
 // overflowed: finishedOneLocked returns early for a full trace, so
 // forgetLLMObsSpans would never remove them. The inbound context stays, so
-// requests from the trace still carry it. Called with t.mu held.
+// requests from the trace still carry it. The state is created if the trace had
+// no LLMObs activity yet, so a span recorded after the overflow still sees closed.
+// Called with t.mu held.
 func (t *trace) closeLLMObsSpans() {
-	s := t.llmobs.Load()
-	if s == nil {
-		return
-	}
+	s := t.llmobsState()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.closed = true
