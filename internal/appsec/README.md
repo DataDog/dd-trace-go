@@ -365,3 +365,22 @@ The AppSec trace rate limit (`DD_APPSEC_TRACE_RATE_LIMIT`) limits the WAF force-
 - A denied `keep` run keeps its events. They reach the backend when any other source keeps the
   trace: the sampler, the first-request rules keep, or the API Security schema keep. So the limiter
   is not a global limit on the traces that have events.
+
+### Late blocks and route reports in HTTP contribs
+
+An HTTP contrib can learn the route of a request after the handler ran (go-chi
+with `Use` before routing). It then calls `httpsec.RouteMatched(ctx, route, nil)`.
+With no path parameters, the call sends no data to the WAF: it causes no
+additional native WAF evaluation, so there is no new match or event, no use of
+the request budget or of the event limit, and a stored action is not replaced.
+API Security uses the route as the sampling key.
+
+A block or a redirect that the WAF stored replaces the response only if the
+response is not sent yet. It never stops the handler. The integration tells
+`httpsec` if the response is sent through the response writer (`Committed()`). If
+it is sent, the bytes do not change: the block is a `block_failure`, and a redirect
+is not counted as a block (see [Block outcome telemetry](#block-outcome-telemetry)).
+
+go-chi details are next to the code: the route timing and the WAF input in
+`contrib/go-chi/*/appsec.go`, and how the commit tracker sees a sent response in
+`contrib/go-chi/*/writer_appsec.go`.

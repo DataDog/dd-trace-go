@@ -239,8 +239,7 @@ func TestFixtureChildSpendsOwnTimeoutFirst(t *testing.T) {
 	output, err := runFixtureChild(binary,
 		append(os.Environ(), "DD_FUZZ_EXAMPLE_SCENARIO=command-block"),
 		"-test.run=^TestFixtureChildProcess$", "-test.timeout=1s")
-	var exit *exec.ExitError
-	if !errors.As(err, &exit) {
+	if _, ok := errors.AsType[*exec.ExitError](err); !ok {
 		t.Fatalf("harness deadline fired before the child spent its own timeout: %v: %s", err, output)
 	}
 }
