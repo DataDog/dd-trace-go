@@ -250,12 +250,22 @@ type statsAgent struct {
 	info      string
 	infoCalls int
 	posts     []statsPost
+	hits      []map[string]uint64 // hits by resource, for each post
+	// blockFirst, when set, holds the response to the first stats post until
+	// it is closed.
+	blockFirst chan struct{}
 }
 
 func (a *statsAgent) setInfo(body string) {
 	a.mu.Lock()
 	a.info = body
 	a.mu.Unlock()
+}
+
+func (a *statsAgent) postHits() []map[string]uint64 {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return slices.Clone(a.hits)
 }
 
 func (a *statsAgent) snapshot() (infoCalls int, posts []statsPost) {
@@ -282,14 +292,21 @@ func (a *statsAgent) handler(t *testing.T) http.Handler {
 			return
 		}
 		post := statsPost{obfuscationVersion: r.Header.Get(obfuscationVersionHeader)}
+		hits := map[string]uint64{}
 		for _, b := range p.Stats {
 			for _, g := range b.Stats {
 				post.resources = append(post.resources, g.Resource)
+				hits[g.Resource] += g.Hits
 			}
 		}
 		a.mu.Lock()
-		defer a.mu.Unlock()
+		first := len(a.posts) == 0
 		a.posts = append(a.posts, post)
+		a.hits = append(a.hits, hits)
+		a.mu.Unlock()
+		if first && a.blockFirst != nil {
+			<-a.blockFirst
+		}
 	})
 	return mux
 }
@@ -518,7 +535,7 @@ func TestStatsObfuscationConcurrentSameConfig(t *testing.T) {
 }
 
 // blockingStatsTransport blocks every stats send until release is closed, and
-// records the obfuscation version and hits of each payload it sends.
+// records the obfuscation version and stats groups of each payload it sends.
 type blockingStatsTransport struct {
 	*dummyTransport
 	release chan struct{}
@@ -530,7 +547,7 @@ type blockingStatsTransport struct {
 
 type statsSend struct {
 	obfVersion int
-	hits       uint64
+	hits       map[string]uint64 // hits by resource
 }
 
 func (b *blockingStatsTransport) sendStats(p *pb.ClientStatsPayload, obfVersion int) error {
@@ -538,10 +555,10 @@ func (b *blockingStatsTransport) sendStats(p *pb.ClientStatsPayload, obfVersion 
 	b.entered++
 	b.mu.Unlock()
 	<-b.release
-	s := statsSend{obfVersion: obfVersion}
+	s := statsSend{obfVersion: obfVersion, hits: map[string]uint64{}}
 	for _, bucket := range p.Stats {
 		for _, g := range bucket.Stats {
-			s.hits += g.Hits
+			s.hits[g.Resource] += g.Hits
 		}
 	}
 	b.mu.Lock()
@@ -556,46 +573,153 @@ func (b *blockingStatsTransport) snapshot() (entered int, sent []statsSend) {
 	return b.entered, slices.Clone(b.sent)
 }
 
-// TestStatsObfuscationTransitionDoesNotStallIngestion checks that the flush
-// on an obfuscation policy change doesn't send on the ingester goroutine: a
-// blocked transport must not stop the concentrator from consuming spans.
-func TestStatsObfuscationTransitionDoesNotStallIngestion(t *testing.T) {
+// TestStatsObfuscationIngestionNotStalled checks that a blocked stats send
+// never stops the concentrator from consuming spans, while spans of two
+// obfuscation policies arrive interleaved, and that every hit is then sent in
+// a payload labeled with its own policy's version.
+func TestStatsObfuscationIngestionNotStalled(t *testing.T) {
 	tsp := &blockingStatsTransport{dummyTransport: newDummyTransport(), release: make(chan struct{})}
 	cfg := newTestConfigWithTransportAndEnv(t, tsp, "someEnv")
-	c := newConcentrator(cfg, defaultStatsBucketSize, &statsd.NoOpClientDirect{})
-	statSpan := func(version int) *tracerStatSpan {
-		cfg.agent.store(agentFeatures{obfuscationVersion: version})
+	const bucketSize = int64(10 * time.Millisecond)
+	c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
+	const query = "SELECT 1"
+	statSpan := func(af agentFeatures) *tracerStatSpan {
+		cfg.agent.store(af)
 		ss, ok := c.newTracerStatSpan(&Span{
-			name: "db.query", service: "db", resource: "SELECT 1", spanType: "sql",
+			name: "db.query", service: "db", resource: query, spanType: "sql",
 			start: time.Now().UnixNano(), duration: 1, metrics: map[string]float64{keyMeasured: 1},
 		}, &statsObfuscator{})
 		require.True(t, ok)
 		return ss
 	}
-	v1, v2 := statSpan(1), statSpan(2)
+	// The two policies obfuscate query differently, so a payload mixing them
+	// shows up as a resource under the wrong version.
+	v1 := statSpan(agentFeatures{obfuscationVersion: 1})
+	v2 := statSpan(agentFeatures{obfuscationVersion: 2, statsSQLObfuscation: obfuscate.SQLConfig{ObfuscationMode: obfuscate.NormalizeOnly}})
+	wantResource := map[int]string{
+		1: agentObfuscatedResource(t, obfuscate.SQLConfig{}, query),
+		2: agentObfuscatedResource(t, obfuscate.SQLConfig{ObfuscationMode: obfuscate.NormalizeOnly}, query),
+	}
+	require.NotEqual(t, wantResource[1], wantResource[2])
 	c.Start()
 
 	c.trySendSpans([]*tracerStatSpan{v1})
-	c.trySendSpans([]*tracerStatSpan{v2}) // policy change: the v1 payload is sent and blocks
 	require.Eventually(t, func() bool {
 		entered, _ := tsp.snapshot()
 		return entered == 1
-	}, 5*time.Second, time.Millisecond, "the policy change never flushed")
+	}, 5*time.Second, time.Millisecond, "the flusher never sent the first bucket")
 
+	// The flusher is now blocked in the transport.
 	const batches = 1000
-	for range batches {
-		c.trySendSpans([]*tracerStatSpan{v2})
+	for i := range batches {
+		if i%2 == 0 {
+			c.trySendSpans([]*tracerStatSpan{v2})
+		} else {
+			c.trySendSpans([]*tracerStatSpan{v1})
+		}
 	}
-	c.trySendSpans([]*tracerStatSpan{v1}) // a second policy change while the transport is blocked
 	assert.Eventually(t, func() bool { return len(c.In) == 0 }, 5*time.Second, time.Millisecond,
 		"ingestion stalled behind the blocked transport")
 
 	close(tsp.release)
 	c.Stop()
 	_, sent := tsp.snapshot()
-	assert.Equal(t, []statsSend{
-		{obfVersion: 1, hits: 1},
-		{obfVersion: 2, hits: 1 + batches},
-		{obfVersion: 1, hits: 1},
-	}, sent)
+	total := map[int]uint64{}
+	for _, s := range sent {
+		for resource, hits := range s.hits {
+			assert.Equal(t, wantResource[s.obfVersion], resource, "payload labeled %d", s.obfVersion)
+			total[s.obfVersion] += hits
+		}
+	}
+	assert.Equal(t, map[int]uint64{1: 1 + batches/2, 2: batches / 2}, total)
+}
+
+// TestStatsObfuscationIdlePolicyBucketsDropped checks that the buckets of an
+// obfuscation policy are sent and dropped once no span used it for a while,
+// while those of a policy still in use stay.
+func TestStatsObfuscationIdlePolicyBucketsDropped(t *testing.T) {
+	tsp := newDummyTransport()
+	cfg := newTestConfigWithTransportAndEnv(t, tsp, "someEnv")
+	c := newConcentrator(cfg, defaultStatsBucketSize, &statsd.NoOpClientDirect{})
+	add := func(version int, end time.Time) {
+		cfg.agent.store(agentFeatures{obfuscationVersion: version})
+		ss, ok := c.newTracerStatSpan(&Span{
+			name: "db.query", service: "db", resource: "SELECT 1", spanType: "sql",
+			start: end.UnixNano() - 1, duration: 1, metrics: map[string]float64{keyMeasured: 1},
+		}, &statsObfuscator{})
+		require.True(t, ok)
+		c.add(ss)
+	}
+	policies := func() []int {
+		c.policyMu.Lock()
+		defer c.policyMu.Unlock()
+		versions := make([]int, 0, len(c.policyBuckets))
+		for _, b := range c.policyBuckets {
+			versions = append(versions, b.policy.version)
+		}
+		return versions
+	}
+	now := time.Now()
+	add(1, now)
+	add(2, now)
+	require.Equal(t, []int{1, 2}, policies())
+
+	// Only the version 2 policy keeps receiving spans.
+	later := now.Add(time.Duration(idlePolicyBuckets+1) * time.Duration(defaultStatsBucketSize))
+	c.policyMu.Lock()
+	c.policyBuckets[1].lastAdd = later.UnixNano()
+	c.policyMu.Unlock()
+	c.flushAndSend(later, withoutCurrentBucket)
+
+	assert.Equal(t, []int{2}, policies())
+	payloads := tsp.Stats()
+	require.Len(t, payloads, 2, "both policies' due buckets are sent, each in its own payload")
+}
+
+// TestStatsObfuscationTraceStraddlingPoll finishes the children of one trace
+// in alternating order across a real /info poll that changes the obfuscation
+// policy. The trace's spans then reach the concentrator with interleaved
+// policies; with the agent blocking the first stats post for a while, every
+// hit must still arrive, in posts labeled with the policy it was obfuscated
+// under.
+func TestStatsObfuscationTraceStraddlingPoll(t *testing.T) {
+	const pollInterval = 20 * time.Millisecond
+	query := statsObfuscationQueries[1]
+	agent := &statsAgent{info: agentSQLSettings{}.infoJSON(t, true), blockFirst: make(chan struct{})}
+	tr := startStatsTracer(t, agent, withAgentInfoPollInterval(pollInterval))
+	require.Equal(t, 1, tr.config.agent.load().obfuscationVersion)
+
+	root := tr.StartSpan("web.request", ResourceName("GET /"))
+	const children = 64
+	spans := make([]*Span, children)
+	for i := range spans {
+		spans[i] = tr.StartSpan("db.query", ChildOf(root.Context()), Tag(keyMeasured, 1), SpanType(ext.SpanTypeSQL), ResourceName(query))
+	}
+	for i := 0; i < children; i += 2 {
+		spans[i].Finish()
+	}
+	v2 := agentSQLSettings{mode: obfuscate.NormalizeOnly}
+	agent.setInfo(v2.infoJSON(t, true))
+	require.Eventually(t, func() bool {
+		return tr.config.agent.load().obfuscationVersion == 2
+	}, 50*pollInterval, pollInterval/4, "the poll never picked up the new /info")
+	for i := 1; i < children; i += 2 {
+		spans[i].Finish()
+	}
+	root.Finish()
+
+	time.AfterFunc(200*time.Millisecond, func() { close(agent.blockFirst) })
+	tr.Stop()
+
+	_, posts := agent.snapshot()
+	hits := agent.postHits()
+	require.Len(t, posts, 2)
+	got := map[string]map[string]uint64{}
+	for i, p := range posts {
+		got[p.obfuscationVersion] = hits[i]
+	}
+	assert.Equal(t, map[string]map[string]uint64{
+		"1": {agentObfuscatedResource(t, obfuscate.SQLConfig{}, query): children / 2},
+		"2": {agentObfuscatedResource(t, v2.effectiveSQLConfig(), query): children / 2, "GET /": 1},
+	}, got)
 }
