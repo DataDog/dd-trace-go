@@ -35,7 +35,7 @@ permissions:
   packages: write
 
 env:
-  SYSTEM_TESTS_REF: 9c99e12186311ebd6cd1d0ce57c4d93b53703d93 # Automated: Updated by .github/workflows/update-system-tests.yml.
+  SYSTEM_TESTS_REF: 659a95d20927010a163ffdc5906d37600e81ee0b # Automated: Updated by .github/workflows/update-system-tests.yml.
 
 jobs:
   # Classifies the PR diff against .github/ci-components.yml. Fails open: every
@@ -512,7 +512,7 @@ jobs:
       - build-service-extensions-callout
       - build-haproxy
       - build-apim-callout
-    uses: DataDog/system-tests/.github/workflows/system-tests.yml@9c99e12186311ebd6cd1d0ce57c4d93b53703d93 # Automated: Updated by .github/workflows/update-system-tests.yml.
+    uses: DataDog/system-tests/.github/workflows/system-tests.yml@659a95d20927010a163ffdc5906d37600e81ee0b # Automated: Updated by .github/workflows/update-system-tests.yml.
     permissions:
       contents: read
       id-token: write
@@ -522,7 +522,7 @@ jobs:
       binaries_artifact: system_tests_binaries
       push_to_test_optimization: true
       desired_execution_time: 300
-      ref: 9c99e12186311ebd6cd1d0ce57c4d93b53703d93 # Automated: Updated by .github/workflows/update-system-tests.yml.
+      ref: 659a95d20927010a163ffdc5906d37600e81ee0b # Automated: Updated by .github/workflows/update-system-tests.yml.
 
   system-tests-done:
     name: System Tests

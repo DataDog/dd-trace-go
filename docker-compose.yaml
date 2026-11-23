@@ -1,6 +1,6 @@
 services:
   aerospike:
-    image: aerospike:ce-8.2.0.1_1@sha256:4877baa174fb304430bbc774e9ec241e6e5a6dcd3668b8eb9044a31c25c21c80
+    image: aerospike:ce-8.2.0.1_1@sha256:5c11b9b11a4d76ef9484d1367c3be3f902d446204ad1b33bb01566327516acf8
     healthcheck:
       test: ["CMD", "asinfo", "-v", "status"]
       interval: 10s
@@ -10,7 +10,7 @@ services:
     ports:
       - "3000:3000"
   cassandra:
-    image: cassandra:5@sha256:acd754f07c73f3a166bb477354b56ce9a05690c3e5e2aaacc1aab2afddba6436
+    image: cassandra:5@sha256:7ec032283c56c9ea7c022007b2fecdf5ca69c7a9871e0634f41ae05833dc1638
     environment:
       JVM_OPTS: "-Xms750m -Xmx750m"
       CASSANDRA_CLUSTER_NAME: "dd-trace-go-test-cluster"
@@ -40,7 +40,7 @@ services:
     ports:
       - "3306:3306"
   postgres:
-    image: postgres:18@sha256:e3d24f6906d0760bf4da0dae872415391ededefad23fd471c47dc53b0ddf3c42
+    image: postgres:19@sha256:bb6e70add742cd868fb62cb3b2f67d1dd2bdd2b65a521e778420748753687c60
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
@@ -87,7 +87,7 @@ services:
     ports:
       - "6379:6379"
   valkey:
-    image: valkey/valkey:9@sha256:3add1a336a920ea54770a001ab6feb3da5fceea96a40373a3a2cd469b815f0b7
+    image: valkey/valkey:9@sha256:1c2b25b09f354c66fe994733acdf12fcfd4bdf6f3bd92b88a93a70378d884056
     environment:
       VALKEY_EXTRA_FLAGS: "--port 6380 --requirepass password-for-default"
     healthcheck:
@@ -131,7 +131,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch6:
-    image: elasticsearch:9.5.5@sha256:b7b0f24e9b5e90656ffe69804b3a48907499ab2b9cd67f02b7af3aff1b026a89
+    image: elasticsearch:9.5.5@sha256:6f11b295d5099c18b8774d280a82725d1184d0d5cb08373b12785ce7cd7a9bfb
     environment:
       http.port: 9202-9300
       discovery.type: single-node
@@ -149,7 +149,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch7:
-    image: elasticsearch:9.5.5@sha256:b7b0f24e9b5e90656ffe69804b3a48907499ab2b9cd67f02b7af3aff1b026a89
+    image: elasticsearch:9.5.5@sha256:6f11b295d5099c18b8774d280a82725d1184d0d5cb08373b12785ce7cd7a9bfb
     environment:
       http.port: 9203-9300
       discovery.type: single-node
@@ -167,7 +167,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch8:
-    image: elasticsearch:9.5.5@sha256:b7b0f24e9b5e90656ffe69804b3a48907499ab2b9cd67f02b7af3aff1b026a89
+    image: elasticsearch:9.5.5@sha256:6f11b295d5099c18b8774d280a82725d1184d0d5cb08373b12785ce7cd7a9bfb
     environment:
       http.port: 9204-9300
       discovery.type: single-node
@@ -186,7 +186,7 @@ services:
         soft: 65536
         hard: 65536
   datadog-agent:
-    image: datadog/agent:latest@sha256:d0df2a5f7dcda4f702a1d47ef9bd25bdf772421140ef964537562d906129260a
+    image: datadog/agent:latest@sha256:109bb519784f413a3520ebb582010a273fb30cd4169a39ea29a949c3e566452a
     environment:
       DD_APM_ENABLED: "true"
       DD_BIND_HOST: "0.0.0.0"
@@ -202,7 +202,7 @@ services:
     ports:
       - "8126:8126"
   testagent:
-    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.69.1@sha256:af1d11e2826341ea0ba09a5cc9e7a2ff6b466bfeaa1f53b1e5ead9bdc7047461
+    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.70.0@sha256:fbd7d376d4b4df2516309dac8558d458a0f673b87c455f42a6eb6364a3a40284
     environment:
       LOG_LEVEL: DEBUG
       TRACE_LANGUAGE: golang
@@ -222,7 +222,7 @@ services:
     ports:
       - "127.0.0.1:9126:9126"
   mongodb3:
-    image: mongo:9@sha256:1444adda2e4b8d6a0d7f242a625d834a78d6e3aa6e4ed1b0b4c2dab2318c5e3d
+    image: mongo:9@sha256:b0c835c26e5997413e985000f1013c275377cd9607761c1784d486f6dd620b7f
     healthcheck:
       test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q 1"]
       interval: 10s
@@ -232,7 +232,7 @@ services:
     ports:
       - "27018:27017"
   mongodb:
-    image: mongo:9@sha256:1444adda2e4b8d6a0d7f242a625d834a78d6e3aa6e4ed1b0b4c2dab2318c5e3d
+    image: mongo:9@sha256:b0c835c26e5997413e985000f1013c275377cd9607761c1784d486f6dd620b7f
     healthcheck:
       test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q 1"]
       interval: 10s
@@ -252,7 +252,7 @@ services:
     ports:
       - "11211:11211"
   kafka:
-    image: confluentinc/confluent-local:8.4.1@sha256:6b422880ccc31b8f02d9df7759f3549ca29a7b40d2a790bd81452b09faded13f
+    image: confluentinc/confluent-local:8.4.1@sha256:1b899456b71e81380e0fc5cf9173e936848b630a3d9bf631805157fb1d067999
     container_name: kafka
     environment:
       KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094"
