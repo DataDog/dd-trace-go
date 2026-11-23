@@ -50,6 +50,12 @@ type (
 		method string
 		// route is the HTTP route for the current handler operation (or the URL if no route is available).
 		route string
+		// routeInferred reports that route was inferred from the request URL, and not matched by a router.
+		routeInferred bool
+		// pathParams are the path parameters of the route.
+		pathParams map[string]string
+		// requestURI is the request URI, as sent by the client.
+		requestURI string
 
 		// downstreamRequestBodyAnalysis is the number of times a call to a downstream request body monitoring function was made.
 		downstreamRequestBodyAnalysis atomic.Int32
@@ -82,6 +88,9 @@ type (
 		Cookies      map[string][]string
 		QueryParams  map[string][]string
 		PathParams   map[string]string
+
+		// RouteInferred reports that RequestRoute was inferred from the request URL, and not matched by a router.
+		RouteInferred bool
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
@@ -125,6 +134,9 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.T
 		framework:        args.Framework,
 		method:           args.Method,
 		route:            args.RequestRoute,
+		routeInferred:    args.RouteInferred,
+		pathParams:       args.PathParams,
+		requestURI:       args.RequestURI,
 	}
 
 	// We need to use an atomic pointer to store the action because the action may be created asynchronously in the future.
@@ -158,6 +170,26 @@ func (op *HandlerOperation) Method() string {
 // Route returns the HTTP route for the current handler operation.
 func (op *HandlerOperation) Route() string {
 	return op.route
+}
+
+// MatchedRoute returns the route that a router matched for the current handler
+// operation. It is empty when the route was inferred from the request URL.
+func (op *HandlerOperation) MatchedRoute() string {
+	if op.routeInferred {
+		return ""
+	}
+	return op.route
+}
+
+// PathParams returns the path parameters of the route of the current handler
+// operation, if the integration reported them.
+func (op *HandlerOperation) PathParams() map[string]string {
+	return op.pathParams
+}
+
+// RequestURI returns the request URI of the current handler operation.
+func (op *HandlerOperation) RequestURI() string {
+	return op.requestURI
 }
 
 // DownstreamRequestBodyAnalysis returns the number of times a call to a downstream request body monitoring function was made.
@@ -270,6 +302,10 @@ func RouteMatched(ctx context.Context, route string, routeParams map[string]stri
 
 	// Overwrite the previous route that was created using a quantization algorithm
 	op.route = route
+	op.routeInferred = false
+	if routeParams != nil {
+		op.pathParams = routeParams
+	}
 
 	var err error
 	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) {
@@ -419,17 +455,18 @@ func BeforeHandle(
 	}
 
 	op, blockAtomic, ctx := StartOperation(r.Context(), HandlerOperationArgs{
-		Framework:    opts.Framework,
-		Method:       r.Method,
-		RequestURI:   r.RequestURI,
-		RequestRoute: opts.Route,
-		Host:         r.Host,
-		RemoteAddr:   r.RemoteAddr,
-		ClientIP:     clientIP,
-		Headers:      r.Header,
-		Cookies:      cookies,
-		QueryParams:  queryParams,
-		PathParams:   opts.RouteParams,
+		Framework:     opts.Framework,
+		Method:        r.Method,
+		RequestURI:    r.RequestURI,
+		RequestRoute:  opts.Route,
+		RouteInferred: opts.RouteInferred,
+		Host:          r.Host,
+		RemoteAddr:    r.RemoteAddr,
+		ClientIP:      clientIP,
+		Headers:       r.Header,
+		Cookies:       cookies,
+		QueryParams:   queryParams,
+		PathParams:    opts.RouteParams,
 	}, span)
 	tr := r.WithContext(ctx)
 

@@ -384,3 +384,23 @@ is not counted as a block (see [Block outcome telemetry](#block-outcome-telemetr
 go-chi details are next to the code: the route timing and the WAF input in
 `contrib/go-chi/*/appsec.go`, and how the commit tracker sees a sent response in
 `contrib/go-chi/*/writer_appsec.go`.
+
+### Normalized route
+
+With API Security enabled, `listener/httpsec` sets `_dd.appsec.normalized_route`
+(RFC-1125) when the response is reported: the route of the request as an OpenAPI
+path template, such as `/users/{id}`. It is computed from the route, the path
+parameters and the request URI of the `httpsec.HandlerOperation`, after any
+`RouteMatched` call, with the grammar of the framework that started the operation
+(`normalized_route.go`). An unknown framework or a route that cannot be expressed
+as segments and parameters gets no tag.
+
+The route must come from a router. `httptrace.BeforeHandle` uses a route inferred
+from the request URL as the API Security sampling key when the integration has no
+route, and sets `httpsec.Config.RouteInferred` for it: such a route gets no tag.
+
+An optional parameter or a catch-all is in the tag only when its path parameter
+has a non-empty value. Without a value (go-chi reports a late route without
+parameters), it is left out, which is the fallback that RFC-1125 allows. A
+gorilla/mux `PathPrefix` route is reported as its template, so the rest of the
+path is left out.

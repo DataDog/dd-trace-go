@@ -25,6 +25,10 @@ type Config struct {
 	ResponseHeaderCopier func(http.ResponseWriter) http.Header
 	// Route is the route name to be used for the request.
 	Route string
+	// RouteInferred reports that Route was inferred from the request URL, and
+	// not matched by a router. API Security still uses it as a sampling key,
+	// but it is never reported as the route of the request.
+	RouteInferred bool
 	// RouteParams is a map of route parameters to be used for the request.
 	RouteParams map[string]string
 	// Cookies are the request cookies as the application reads them. If empty,

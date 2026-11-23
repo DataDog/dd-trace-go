@@ -99,6 +99,10 @@ func (feature *Feature) OnResponse(op *httpsec.HandlerOperation, resp httpsec.Ha
 
 	op.Run(op, builder.Build())
 
+	if feature.APISec.Enabled {
+		setNormalizedRouteTag(op)
+	}
+
 	metric := "no_schema"
 	for k := range op.Derivatives() {
 		if strings.HasPrefix(k, "_dd.appsec.s.") {
@@ -114,6 +118,18 @@ func (feature *Feature) OnResponse(op *httpsec.HandlerOperation, resp httpsec.Ha
 	// this metric for its successful responses.
 	if feature.APISec.Enabled && op.Route() == "" && resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		telemetry.Count(telemetry.NamespaceAppSec, "api_security.missing_route", []string{"framework:" + op.Framework()}).Submit(1)
+	}
+}
+
+// setNormalizedRouteTag sets the normalized route of the request, when a router
+// matched a route that can be normalized.
+func setNormalizedRouteTag(op *httpsec.HandlerOperation) {
+	route := op.MatchedRoute()
+	if route == "" {
+		return
+	}
+	if normalized, ok := normalizeRoute(op.Framework(), route, op.PathParams(), op.RequestURI()); ok {
+		op.SetTag(normalizedRouteTag, normalized)
 	}
 }
 
