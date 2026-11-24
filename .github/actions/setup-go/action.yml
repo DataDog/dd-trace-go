@@ -35,8 +35,21 @@
 # releases, pushes — restores only, which also removes the trim and the
 # cache-save post steps from those jobs. The seed set is sized against
 # the raised cache quota and covers the nightly default-branch workloads
-# (multi-OS, unit-integration, smoke); the pool gauges (ci.cache.pool.*)
-# watch the fill.
+# (multi-OS, unit-integration, smoke; the stable-alias orchestrion and
+# otelc integration strata and the AppSec macOS strata). The pool
+# measured at its 100 GiB eviction boundary (2026-11-17), so seed only
+# the strata that pay for their size, and widen a lane's seed gate only
+# with a citiming window as evidence; the pool gauges (ci.cache.pool.*),
+# tagged per variant digest, watch the fill and the seed presence.
+#
+# Windows skips the isolated Go build/module caches (cache: "false"):
+# extracting the 1.4 GiB cache with tar.exe costs 2.6-3.3m while saving
+# about 2m of build time, measured on multios's windows-latest runners
+# (APMLP-2248); the 8-core shared runners the integration lanes use are
+# unmeasured, so the skip there is the conservative default, not a
+# measured conclusion. The AppSec module-only archive is separate and
+# stays. Revisit with APMLP-2248's faster-setup results and paired runs
+# on the shared fleet.
 #
 # Contract (mirrors the semantics the tools wrapper had before the migration):
 #   1. Select the Go toolchain with the repository's pinned official
