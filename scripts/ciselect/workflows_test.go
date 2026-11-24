@@ -368,6 +368,69 @@ func jobRunsTestCacheClean(t *testing.T, path, jobID string) bool {
 	return false
 }
 
+// TestAppSecWindowsDevDriveWiring pins the Windows-speedup wiring of the
+// one Windows job that does not go through the setup-go action (which
+// provisions the Dev Drive itself): the `disabled` job restores the module
+// cache into the workspace, so its Dev Drive step must run before that
+// restore (the build cache then lives on the Dev Drive before the first
+// compile) and redirect only the build cache, because GOMODCACHE is
+// managed by the workflow.
+func TestAppSecWindowsDevDriveWiring(t *testing.T) {
+	root, _ := workflowPaths(t)
+	doc, _ := parseWorkflow(t, filepath.Join(root, workflowDir, "appsec.yml"))
+	jobs, ok := doc["jobs"].(map[string]any)
+	if !ok {
+		t.Fatal("appsec.yml has no jobs")
+	}
+	disabled, ok := jobs["disabled"].(map[string]any)
+	if !ok {
+		t.Fatal("appsec.yml has no `disabled` job (renamed?)")
+	}
+	// The Dev Drive step is Windows-only: without a Windows runner in the
+	// matrix the step is unreachable and the wiring above is dead.
+	strategy, _ := disabled["strategy"].(map[string]any)
+	matrix, _ := strategy["matrix"].(map[string]any)
+	runsOn, _ := matrix["runs-on"].([]any)
+	hasWindows := slices.ContainsFunc(runsOn, func(runner any) bool {
+		label, ok := runner.(string)
+		return ok && strings.Contains(strings.ToLower(label), "windows")
+	})
+	if !hasWindows {
+		t.Error("appsec.yml `disabled` job needs a Windows runner to reach the Dev Drive step")
+	}
+	steps, ok := disabled["steps"].([]any)
+	if !ok {
+		t.Fatal("appsec.yml `disabled` job has no steps")
+	}
+	indexOf := func(match func(map[string]any) bool) int {
+		for i, raw := range steps {
+			if step, ok := raw.(map[string]any); ok && match(step) {
+				return i
+			}
+		}
+		return -1
+	}
+	devDrive := indexOf(func(step map[string]any) bool { return step["uses"] == "./.github/actions/windows-dev-drive" })
+	if devDrive < 0 {
+		t.Fatal("appsec.yml `disabled` job does not use ./.github/actions/windows-dev-drive; " +
+			"its Windows builds and cache restore stay on the slow default volume")
+	}
+	step, _ := steps[devDrive].(map[string]any)
+	if got := step["if"]; got != "runner.os == 'Windows'" {
+		t.Errorf("the AppSec Dev Drive step has condition %v, want runner.os == 'Windows'", got)
+	}
+	if with, _ := step["with"].(map[string]any); with["redirect"] != "gocache" {
+		t.Errorf("the Dev Drive step must redirect gocache only (GOMODCACHE is restored into the workspace by this job), got with %v", with)
+	}
+	restore := indexOf(func(step map[string]any) bool { return step["name"] == "Restore Go modules cache" })
+	if restore < 0 {
+		t.Error("appsec.yml `disabled` job has no `Restore Go modules cache` step (renamed?)")
+	}
+	if restore >= 0 && restore < devDrive {
+		t.Error("the Dev Drive step runs after the module-cache restore; it must come first so the build cache lands on the Dev Drive before the first compile")
+	}
+}
+
 // TestSeedGatesAndTraceCheckPairing pins the literals that decide whether
 // the nightly run seeds: the three seed gates must stay identical and name
 // both supported versions, and the push-gated version matrix must keep the

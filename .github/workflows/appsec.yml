@@ -263,6 +263,14 @@ jobs:
         with:
           policy: dd-trace-go
 
+      # Move only GOCACHE to the Dev Drive.
+      # This job restores GOMODCACHE into the workspace below.
+      - name: Provision Windows Dev Drive
+        if: runner.os == 'Windows'
+        uses: ./.github/actions/windows-dev-drive
+        with:
+          redirect: gocache
+
       - name: Restore Go modules cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -517,6 +525,10 @@ jobs:
   test-app-smoke-tests:
     name: Smoke Tests
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.owner == 'DataDog'
+    # Exempt from SHA pinning (actions_pinned): appsec-go-test-app is a
+    # team-owned repository. The smoke tests must track the test app's main
+    # branch. A SHA pin would lag behind between dependabot's weekly
+    # github-actions bumps, so this ref stays at main.
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
     with:
       dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}

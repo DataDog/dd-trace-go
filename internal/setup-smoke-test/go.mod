@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/v2/internal/setup-smoke-test
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.13.0-dev.1
-	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.14.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.14.0-dev
 )
 
 require (
@@ -69,7 +69,7 @@ require (
 	go.uber.org/mock v0.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.4 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20260529124908-c761662dc8c9 // indirect
 	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect

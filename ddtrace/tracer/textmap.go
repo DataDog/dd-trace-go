@@ -19,6 +19,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/samplernames"
 )
@@ -311,6 +312,7 @@ func (p *chainedPropagator) Inject(spanCtx *SpanContext, carrier any) error {
 	if spanCtx == nil {
 		return ErrInvalidSpanContext
 	}
+	setLLMObsTagsForInjection(spanCtx)
 	for _, v := range p.injectors {
 		err := v.Inject(spanCtx, carrier)
 		if err != nil {
@@ -379,8 +381,17 @@ func (p *chainedPropagator) Extract(carrier any) (*SpanContext, error) {
 			ctx.baggage = maps.Clone(baggage) // +checklocksignore - Initialization time, not shared yet.
 			atomic.StoreUint32(&ctx.hasBaggage, 1)
 		}
+		if illmobs.Enabled() {
+			deleteLLMObsBaggage(ctx)
+		}
 
 		return ctx, nil
+	}
+
+	// A baggage-only context under "restart" has no trace to restart, but its
+	// LLMObs context must still not be continued.
+	if p.propagationBehaviorExtract == propagationBehaviorExtractRestart && incomingCtx != nil && illmobs.Enabled() {
+		deleteLLMObsBaggage(incomingCtx)
 	}
 
 	// "continue" continues the trace from the incoming context. Baggage is
@@ -1663,7 +1674,7 @@ func parseTraceparent(ctx *SpanContext, header string) error {
 	}
 	// parsing flags
 	flags := parts[3]
-	f, err := strconv.ParseInt(flags, 16, 8)
+	f, err := strconv.ParseUint(flags, 16, 8)
 	if err != nil {
 		return ErrSpanContextCorrupted
 	}
@@ -1855,13 +1866,23 @@ func encodeValue(value string) string {
 	return urlEncode(strings.TrimSpace(value), safeCharactersValue)
 }
 
-// urlEncode performs percent-encoding while respecting the safe characters
+// urlEncode performs percent-encoding while respecting the safe characters.
+// A space is written as %20: url.QueryEscape would write "+", which the W3C
+// baggage decoders of other tracers read as a literal plus sign. "%" and "+" are
+// always escaped, so a literal "%41" or "+" survives any W3C-compliant decoder.
 func urlEncode(input string, safeCharacters string) string {
 	var encoded strings.Builder
 	for _, c := range input {
-		if strings.ContainsRune(safeCharacters, c) {
+		switch {
+		case c == '%':
+			encoded.WriteString("%25")
+		case c == '+':
+			encoded.WriteString("%2B")
+		case strings.ContainsRune(safeCharacters, c):
 			encoded.WriteRune(c)
-		} else {
+		case c == ' ':
+			encoded.WriteString("%20")
+		default:
 			encoded.WriteString(url.QueryEscape(string(c)))
 		}
 	}
@@ -1896,32 +1917,100 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 		return nil
 	}
 
-	ctr := 0
-	var baggageBuilder strings.Builder
-	ctx.ForeachBaggageItem(func(k, v string) bool {
-		if baggageItemCapped(ctr) {
-			return false
+	var b baggageHeaderBuilder
+	// The llmobs.* items go first, so that they survive the item and byte caps,
+	// and replace any inbound copies of the same keys.
+	llmCtx, hasLLMObs := ctx.llmobsDistributedContext()
+	llmobsOn := hasLLMObs || illmobs.Enabled()
+	if hasLLMObs {
+		for _, item := range llmobsBaggageItems(llmCtx) {
+			if item[1] != "" && !b.add(encodeKey(item[0]), encodeValue(item[1])) {
+				break
+			}
 		}
-
-		var itemBuilder strings.Builder
-		if ctr > 0 {
-			itemBuilder.WriteRune(',')
-		}
-
-		itemBuilder.WriteString(encodeKey(k))
-		itemBuilder.WriteRune('=')
-		itemBuilder.WriteString(encodeValue(v))
-		if baggageByteCapped(baggageBuilder.Len(), itemBuilder.Len()) {
-			return false
-		}
-		baggageBuilder.WriteString(itemBuilder.String())
-		ctr++
-		return true
-	})
-	if baggageBuilder.Len() > 0 {
-		writer.Set("baggage", baggageBuilder.String())
 	}
+	ctx.ForeachBaggageItem(func(k, v string) bool {
+		if llmobsOn && isLLMObsBaggageKey(k) {
+			return true
+		}
+		return b.add(encodeKey(k), encodeValue(v))
+	})
+	// Without LLMObs, a caller's baggage header is replaced as it always was. With
+	// LLMObs enabled, its members are kept after ours, except the llmobs.* members,
+	// so a carrier reused for another request does not keep an earlier parent.
+	callerHeader := false
+	if llmobsOn {
+		if reader, ok := writer.(TextMapReader); ok {
+			callerHeader = mergeCallerBaggage(&b, ctx, reader)
+		}
+	}
+	if b.Len() == 0 {
+		if callerHeader {
+			deleteBaggageHeader(writer)
+		}
+		return nil
+	}
+	writer.Set("baggage", b.String())
+	// Remove a caller's header under another spelling, so the carrier holds one.
+	cleanBaggageKeys(writer, true)
 	return nil
+}
+
+// baggageHeaderBuilder joins encoded baggage members and stops at the first
+// member that would exceed baggageMaxItems or baggageMaxBytes.
+type baggageHeaderBuilder struct {
+	strings.Builder
+	items int
+}
+
+// add appends one member and reports whether more members can follow.
+func (b *baggageHeaderBuilder) add(encodedKey, encodedValue string) bool {
+	return b.addMember(encodedKey + "=" + encodedValue)
+}
+
+func (b *baggageHeaderBuilder) addMember(member string) bool {
+	if baggageItemCapped(b.items) {
+		return false
+	}
+	sep := 0
+	if b.items > 0 {
+		sep = 1
+	}
+	if baggageByteCapped(b.Len(), sep+len(member)) {
+		return false
+	}
+	if sep == 1 {
+		b.WriteByte(',')
+	}
+	b.WriteString(member)
+	b.items++
+	return true
+}
+
+// mergeCallerBaggage appends the members of a baggage header that the caller
+// already set on the carrier, and reports whether there was such a header. A
+// member whose key was already written loses: the span context wins, as in
+// dd-trace-py. Members keep their raw text, so W3C properties survive.
+func mergeCallerBaggage(b *baggageHeaderBuilder, ctx *SpanContext, reader TextMapReader) bool {
+	header, err := callerBaggageHeader(reader)
+	if err != nil || header == "" {
+		return false
+	}
+	for member := range strings.SplitSeq(header, ",") {
+		member = strings.TrimSpace(member)
+		k, _, ok := strings.Cut(member, "=")
+		if !ok {
+			continue
+		}
+		key, err := url.QueryUnescape(strings.TrimSpace(k))
+		if err != nil || key == "" || isLLMObsBaggageKey(key) || ctx.baggageItem(key) != "" {
+			continue
+		}
+		if !b.addMember(member) {
+			break
+		}
+	}
+	return true
 }
 
 func (p *propagatorBaggage) Extract(carrier any) (*SpanContext, error) {

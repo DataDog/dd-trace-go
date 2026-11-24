@@ -69,6 +69,11 @@
 #      not normal behaviour.
 #   4. With caching disabled, or with cache-provider github-cache, the cloudx
 #      provider is never invoked: no restore, no trimming, no save.
+#   5. Before toolchain selection on Windows, try to provision a Dev
+#      Drive (ReFS) and point GOCACHE and GOMODCACHE at it, so every
+#      restore and later compile lands on the fast volume. Best effort:
+#      when no Dev Drive is available, restore and build on the default
+#      volume.
 #
 # Cache key shape: ddtg-cx1-<family>-<variant digest>. The digest is the first
 # 16 hex characters of SHA-256 over the caller's variant description,
@@ -189,6 +194,23 @@ runs:
             exit 1
             ;;
         esac
+
+    # Windows runners keep the Go caches in the default locations under
+    # the user profile on the C: volume, which also carries the OS and the
+    # page file. Provision a Dev Drive (ReFS) and move GOCACHE and
+    # GOMODCACHE onto it. This runs BEFORE the toolchain selection below,
+    # so both cache tiers (the cloudx provider and actions/setup-go's
+    # built-in cache) resolve, restore and extract onto the fast volume,
+    # and every later compile writes there too. Best effort: when no Dev
+    # Drive can be provisioned the caches stay on the default volume, the
+    # job continues, and the cache-observation record (which reports
+    # `go env` cache paths) shows the fallback.
+    # The script is invoked by path, not through a nested local action
+    # reference; see windows-dev-drive/action.yml for the full rationale.
+    - name: Provision Windows Dev Drive for Go caches
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: '& "$env:GITHUB_ACTION_PATH\..\windows-dev-drive\dev-drive.ps1"'
 
     # Make transient module-proxy failures survivable for every step that
     # follows in the job. The separator is load-bearing: with a comma the go

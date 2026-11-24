@@ -3,9 +3,10 @@ name: Build Metrics
 # Build Metrics Workflow
 #
 # Measures build time and binary size for representative Orchestrion integration samples
-# built two ways from identical source:
+# built three ways from identical source:
 #   - Standard Go toolchain (go test -c)
 #   - Orchestrion (go test -c -toolexec='orchestrion toolexec')
+#   - otelc (otelc -rules="$REPO_ROOT" go test -c)
 #
 # Key features:
 # - Cold cache measurement: cleans build cache before each measurement to capture full compilation cost
@@ -17,8 +18,8 @@ name: Build Metrics
 #   the flaky GitHub-release download only runs on a cache miss; utilization
 #   is published as ci.cache.*.hit measures for hit-rate tracking
 # - Datadog CI Visibility: publishes metrics and tags to job spans for dashboard trending and regression monitoring
-# - Runs on: Pull requests (when this file, scripts/*, an aspect orchestrion.yml, or any go.mod changes) and pushes to main
-# - Tags metrics by: build.toolchain, build.sample, build.cache, go.version, orchestrion.version
+# - Runs on: Pull requests (when this file, scripts/*, an aspect orchestrion.yml, an otelc.yaml, or any go.mod changes) and pushes to main
+# - Tags metrics by: build.toolchain, build.sample, build.cache, go.version, orchestrion.version, otelc.version
 #
 # Dashboard: View trends in Datadog CI Visibility (filter @git.branch:main, split by build.toolchain)
 # Monitor: Alerts on binary size or build time regressions >5% (size) or >25% (duration) vs main baseline
@@ -35,6 +36,7 @@ on:
       # patterns win, so exclude it. Aspect files still match.
       - '!.github/workflows/orchestrion.yml'
       - '**/go.mod'
+      - '**/*otelc.yaml'
   push:
     branches:
       - main
@@ -48,6 +50,7 @@ on:
       # patterns win, so exclude it. Aspect files still match.
       - '!.github/workflows/orchestrion.yml'
       - '**/go.mod'
+      - '**/*otelc.yaml'
   workflow_dispatch:
 
 concurrency:
@@ -60,6 +63,7 @@ env:
   # and the cache key below both derive from it, so they cannot drift apart
   # (a stale key would silently serve an old binary).
   GSA_VERSION: "1.13.0"
+  OTELC_REF: "v1.2.1-0.20261109141436-15ecaa2b8324"
 
 permissions:
   id-token: write
@@ -123,7 +127,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mode: [standard, orchestrion]
+        mode: [standard, orchestrion, otelc]
         sample:
           - 99designs.gqlgen
           - aerospike.v7
@@ -228,14 +232,31 @@ jobs:
         if: matrix.mode == 'standard'
         run: echo "${{ github.workspace }}" >> "$GITHUB_PATH"
 
+      - name: Cache otelc binary
+        if: matrix.mode == 'otelc'
+        id: otelc-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .otelc-bin
+          key: otelc-${{ env.OTELC_REF }}-linux-amd64
+
+      - name: Install otelc binary
+        if: matrix.mode == 'otelc' && steps.otelc-cache.outputs.cache-hit != 'true'
+        run: GOBIN="${{ github.workspace }}/.otelc-bin" go install "go.opentelemetry.io/otelc/tool/cmd/otelc@${OTELC_REF}"
+
+      - name: Add otelc to PATH
+        if: matrix.mode == 'otelc'
+        run: echo "${{ github.workspace }}/.otelc-bin" >> "$GITHUB_PATH"
+
       - name: Measure build
         id: measure
         env:
           GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
+          OTELC_VERSION: ${{ env.OTELC_REF }}
         run: ./scripts/measure_build.sh --sample ${{ matrix.sample }} --mode ${{ matrix.mode }} --output "$RUNNER_TEMP/metrics.json"
 
       - name: Upload metrics artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: build-metrics-${{ matrix.sample }}-${{ matrix.mode }}
           path: ${{ runner.temp }}/metrics.json

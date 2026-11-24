@@ -18,3 +18,31 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestAliasedImport(t *testing.T) {
+	harness.Run(t, new(TestCaseAliasedImport))
+}
+
+func TestClients(t *testing.T) {
+	harness.Run(t, new(TestCaseClients))
+}
+
+func TestCustomNewClient(t *testing.T) {
+	harness.Run(t, new(TestCaseCustomNewClient))
+}
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestExplicitWrap(t *testing.T) {
+	harness.Run(t, new(TestCaseExplicitWrap))
+}
+
+func TestPackageVar(t *testing.T) {
+	harness.Run(t, new(TestCasePackageVar))
+}
+
+func TestUniversalClients(t *testing.T) {
+	harness.Run(t, new(TestCaseUniversalClients))
+}

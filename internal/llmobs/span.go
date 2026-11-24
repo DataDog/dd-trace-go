@@ -10,6 +10,7 @@ import (
 	"maps"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -231,6 +232,23 @@ type Span struct {
 	spanKind   SpanKind
 	sessionID  string
 
+	// spanID caches the APM span ID. A request injected after this span finished
+	// must not read it from an APM span that the span pool has reused.
+	spanID string
+
+	// wireTraceID is the form of llmTraceID that the _dd.p.llmobs_trace_id tag
+	// carried into this process, or empty for a trace that started here.
+	wireTraceID string
+
+	// sampleRate and samplingDecision are forwarded from the propagated context.
+	sampleRate       string
+	samplingDecision string
+
+	// wireSessionID mirrors sessionID for DistributedContext, which runs on every
+	// injection and so must not take mu: Finish holds mu across a blocking send to
+	// the LLMObs writer.
+	wireSessionID atomic.Pointer[string]
+
 	integration string
 	scope       string
 	error       error
@@ -254,6 +272,9 @@ func (s *Span) Name() string {
 
 // SpanID returns the span ID of the underlying APM span.
 func (s *Span) SpanID() string {
+	if s.spanID != "" {
+		return s.spanID
+	}
 	return s.apm.SpanID()
 }
 
@@ -380,6 +401,7 @@ func (s *Span) Annotate(a SpanAnnotations) {
 		s.llmCtx.tags = updateMapKeys(s.llmCtx.tags, a.Tags)
 		if sessionID, ok := a.Tags[TagKeySessionID]; ok {
 			s.sessionID = sessionID
+			s.wireSessionID.Store(&sessionID)
 		}
 	}
 
