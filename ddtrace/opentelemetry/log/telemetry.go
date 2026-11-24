@@ -13,7 +13,7 @@ type LogsExportTelemetry struct {
 }
 
 // NewLogsExportTelemetry creates a new LogsExportTelemetry for tracking log export operations.
-// The protocol should be "http" or "grpc", and encoding should be "protobuf".
+// The protocol should be "http" or "grpc", and encoding should be "protobuf" or "json".
 func NewLogsExportTelemetry(protocol, encoding string) *LogsExportTelemetry {
 	tags := []string{
 		"protocol:" + protocol,

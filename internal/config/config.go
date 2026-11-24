@@ -1873,7 +1873,7 @@ func (c *Config) BLRPMaxExportBatchSize() int {
 	return c.blrpMaxExportBatchSize
 }
 
-// OTLPLogsProtocol returns "http/protobuf" (default), "http" or "grpc".
+// OTLPLogsProtocol returns "http/protobuf" (default), "http", "http/json" or "grpc".
 func (c *Config) OTLPLogsProtocol() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

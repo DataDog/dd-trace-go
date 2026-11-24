@@ -36,7 +36,7 @@ func TestNewOTLPExporterProtocol(t *testing.T) {
 		"":              {&otlploghttp.Exporter{}, "encoding:protobuf,protocol:http"},
 		"http/protobuf": {&otlploghttp.Exporter{}, "encoding:protobuf,protocol:http"},
 		"grpc":          {&otlploggrpc.Exporter{}, "encoding:protobuf,protocol:grpc"},
-		"http/json":     {&otlploghttp.Exporter{}, "encoding:protobuf,protocol:http"},
+		"http/json":     {&jsonExporter{}, "encoding:json,protocol:http"},
 	} {
 		t.Run(protocol, func(t *testing.T) {
 			recorder := &telemetrytest.RecordClient{}

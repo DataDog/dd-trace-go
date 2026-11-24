@@ -24,12 +24,12 @@ func TestOTLPGenericProtocolSourceFallback(t *testing.T) {
 	for _, tc := range []struct {
 		name, lower, higher, logs, metrics string
 	}{
-		{"logs fallback", "grpc", "http/json", "grpc", "http/json"},
+		{"logs fallback", "grpc", "http/json", "http/json", "http/json"},
 		{"metrics fallback", "http/json", "grpc", "grpc", "http/json"},
 		{"shared higher priority", "http/json", "http/protobuf", "http/protobuf", "http/protobuf"},
-		{"signal-specific higher priority", "http/protobuf", "http/json", "http/protobuf", "http/json"},
+		{"signal-specific higher priority", "http/protobuf", "http/json", "http/json", "http/json"},
 		{"invalid higher priority", "grpc", "typo", "grpc", "http/protobuf"},
-		{"normalized fallback", " GRPC ", " HTTP/JSON ", "grpc", "http/json"},
+		{"normalized fallback", " GRPC ", " HTTP/JSON ", "http/json", "http/json"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "")

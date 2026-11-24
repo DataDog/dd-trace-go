@@ -1710,12 +1710,21 @@ func TestOTLPLogsProtocol(t *testing.T) {
 		assert.Equal(t, "grpc", protocol)
 	})
 
+	t.Run("accepts http/json from the signal key and from the generic key", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "HTTP/JSON")
+		assert.Equal(t, "http/json", loadConfig().OTLPLogsProtocol())
+
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "")
+		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "http/json")
+		assert.Equal(t, "http/json", loadConfig().OTLPLogsProtocol())
+	})
+
 	t.Run("unsupported OTEL_EXPORTER_OTLP_LOGS_PROTOCOL falls back to generic", func(t *testing.T) {
 		logger := new(log.RecordLogger)
 		defer log.UseLogger(logger)()
 		t.Setenv("DD_LOGS_OTEL_ENABLED", "true")
 		t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", "grpc")
-		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "http/json")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "websocket")
 		assert.Equal(t, "grpc", loadConfig().OTLPLogsProtocol())
 		assert.Contains(t, strings.Join(logger.Logs(), "\n"), "Unsupported OTEL_EXPORTER_OTLP_LOGS_PROTOCOL value")
 	})

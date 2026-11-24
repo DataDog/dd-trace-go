@@ -43,6 +43,7 @@ const (
 	protocolHTTP     = "http"
 	protocolGRPC     = "grpc"
 	encodingProtobuf = "protobuf"
+	encodingJSON     = "json"
 )
 
 // telemetryExporter wraps an sdklog.Exporter to track log record exports.
@@ -68,8 +69,9 @@ func (e *telemetryExporter) Export(ctx context.Context, records []sdklog.Record)
 // newOTLPExporter creates an OTLP exporter (HTTP or gRPC) configured with Datadog-specific defaults.
 //
 // The protocol comes from config.OTLPLogsProtocol, which only returns supported protocols:
-// - "http/protobuf" or "http": HTTP with protobuf encoding (default)
-// - "grpc": gRPC
+// - "http/protobuf" or "http": HTTP with protobuf encoding (default), using the upstream exporter
+// - "http/json": HTTP with JSON encoding, using our own exporter because the upstream one only produces protobuf
+// - "grpc": gRPC, using the upstream exporter
 //
 // Endpoint resolution priority:
 // 1. config.OTLPLogsEndpoint (highest priority)
@@ -83,11 +85,15 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 	var exporter sdklog.Exporter
 	var err error
 	protocolTag := protocolHTTP
+	encodingTag := encodingProtobuf
 
 	switch protocol {
 	case "grpc":
 		exporter, err = newOTLPGRPCExporter(ctx, grpcOpts...)
 		protocolTag = protocolGRPC
+	case "http/json":
+		exporter = newJSONExporter()
+		encodingTag = encodingJSON
 	default:
 		exporter, err = newOTLPHTTPExporter(ctx, httpOpts...)
 	}
@@ -99,7 +105,7 @@ func newOTLPExporter(ctx context.Context, httpOpts []otlploghttp.Option, grpcOpt
 	// Wrap the exporter with telemetry tracking
 	return &telemetryExporter{
 		Exporter:  exporter,
-		telemetry: NewLogsExportTelemetry(protocolTag, encodingProtobuf),
+		telemetry: NewLogsExportTelemetry(protocolTag, encodingTag),
 	}, nil
 }
 
@@ -131,6 +137,19 @@ func newOTLPGRPCExporter(ctx context.Context, opts ...otlploggrpc.Option) (sdklo
 	return exporter, nil
 }
 
+// warnDoubledLogsPath warns when the derived logs URL would append /v1/logs to an
+// OTEL_EXPORTER_OTLP_ENDPOINT that already ends with it.
+func warnDoubledLogsPath(cfg *config.Config) {
+	endpoint := cfg.OTLPLogsEndpoint()
+	if endpoint == cfg.OTLPLogsHTTPURL() {
+		return
+	}
+	u, _ := url.Parse(endpoint)
+	if strings.HasSuffix(strings.TrimRight(u.Path, "/"), defaultOTLPLogsPath) {
+		log.Warn("OTEL_EXPORTER_OTLP_ENDPOINT already ends in /v1/logs; the default HTTP logs URL appends /v1/logs again. Use OTEL_EXPORTER_OTLP_LOGS_ENDPOINT to specify a complete logs URL.") //errtrack:ignore invalid user configuration
+	}
+}
+
 // buildHTTPExporterOptions constructs the OTLP HTTP exporter options with DD-specific defaults
 func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Option {
 	cfg := config.Get()
@@ -142,11 +161,8 @@ func buildHTTPExporterOptions(userOpts ...otlploghttp.Option) []otlploghttp.Opti
 	}
 
 	if endpointURL := cfg.OTLPLogsHTTPURL(); endpointURL != "" {
-		if endpoint := cfg.OTLPLogsEndpoint(); len(userOpts) == 0 && endpoint != endpointURL {
-			u, _ := url.Parse(endpoint)
-			if strings.HasSuffix(strings.TrimRight(u.Path, "/"), defaultOTLPLogsPath) {
-				log.Warn("OTEL_EXPORTER_OTLP_ENDPOINT already ends in /v1/logs; the default HTTP logs URL appends /v1/logs again. Use OTEL_EXPORTER_OTLP_LOGS_ENDPOINT to specify a complete logs URL.") //errtrack:ignore invalid user configuration
-			}
+		if len(userOpts) == 0 {
+			warnDoubledLogsPath(cfg)
 		}
 		opts = append(opts, otlploghttp.WithEndpointURL(endpointURL))
 		log.Debug("Using resolved OTLP logs endpoint: %s", endpointURL)
