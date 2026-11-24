@@ -134,6 +134,42 @@ func TestTraceReceiveFuncDataStreamsForwardChainsThroughContext(t *testing.T) {
 	assert.Equal(t, want.GetHash(), got.GetHash())
 }
 
+func TestTraceReceiveFuncDataStreamsOverridesInheritedPathway(t *testing.T) {
+	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	producerCtx, ok := tracer.SetDataStreamsCheckpoint(context.Background(), produceEdgeTags(resource(dsmTopicFull))...)
+	require.True(t, ok)
+
+	msg := &Message{ID: "1", Data: []byte("hello"), Attributes: map[string]string{}}
+	datastreams.InjectToBase64Carrier(producerCtx, dataStreamsCarrier(msg.Attributes))
+
+	inheritedCtx, ok := tracer.SetDataStreamsCheckpoint(
+		context.Background(),
+		consumeEdgeTags(resource("projects/test-project/subscriptions/other-subscription"))...,
+	)
+	require.True(t, ok)
+	inherited, _ := datastreams.PathwayFromContext(inheritedCtx)
+
+	traceFn := newTestTracer().TraceReceiveFunc(resource(dsmSubscriptionFull))
+	ctx, finish := traceFn(inheritedCtx, msg)
+	finish()
+
+	_, ok = tracer.SpanFromContext(ctx)
+	require.True(t, ok, "handler context must keep its span")
+
+	wantCtx, ok := tracer.SetDataStreamsCheckpoint(producerCtx, consumeEdgeTags(resource(dsmSubscriptionFull))...)
+	require.True(t, ok)
+	want, _ := datastreams.PathwayFromContext(wantCtx)
+
+	got, ok := datastreams.PathwayFromContext(ctx)
+	require.True(t, ok, "pathway not found in receive handler context")
+	assert.NotZero(t, want.GetHash())
+	assert.NotEqual(t, inherited.GetHash(), got.GetHash())
+	assert.Equal(t, want.GetHash(), got.GetHash())
+}
+
 func TestEdgeResourceName(t *testing.T) {
 	for _, tc := range []struct {
 		name       string

@@ -12,6 +12,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	idatastreams "github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 )
 
 const dataStreamsTypeTag = "type:google-pubsub"
@@ -80,14 +81,22 @@ func (tr *Tracer) produceCheckpoint(ctx context.Context, topic Topic, msg *Messa
 	}
 }
 
-func (tr *Tracer) consumeCheckpoint(s Subscription, msg *Message) (context.Context, bool) {
+func (tr *Tracer) consumeCheckpoint(ctx context.Context, s Subscription, msg *Message) context.Context {
 	if msg == nil {
-		return nil, false
+		return ctx
 	}
 	parent := datastreams.ExtractFromBase64Carrier(context.Background(), dataStreamsCarrier(msg.Attributes))
-	return tracer.SetDataStreamsCheckpointWithParams(
+	checkpointCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
 		parent,
 		options.CheckpointParams{PayloadSize: dataStreamsPayloadSize(msg)},
 		consumeEdgeTags(s)...,
 	)
+	if !ok {
+		return ctx
+	}
+	p, hasPathway := idatastreams.PathwayFromContext(checkpointCtx)
+	if !hasPathway {
+		return ctx
+	}
+	return idatastreams.ContextWithPathway(ctx, p)
 }

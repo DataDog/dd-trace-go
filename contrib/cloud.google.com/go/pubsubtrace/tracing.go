@@ -18,7 +18,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/DataDog/dd-trace-go/v2/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -186,9 +185,7 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 			span.SetBaggageItem(k, v)
 		}
 		if tr.instr.DataStreamsEnabled() {
-			if checkpointCtx, ok := tr.consumeCheckpoint(s, msg); ok {
-				ctx = datastreams.MergeContexts(ctx, checkpointCtx)
-			}
+			ctx = tr.consumeCheckpoint(ctx, s, msg)
 		}
 		if msg.DeliveryAttempt != nil {
 			span.SetTag(ext.PubsubDeliveryAttempt, *msg.DeliveryAttempt)
