@@ -1457,10 +1457,14 @@ func setPropagatingParentAgentTags(spanCtx *SpanContext, parentAgentSpanID, name
 
 // fitsPropagatingTagBudget reports whether setting key to value keeps the
 // propagating tags within the x-datadog-tags budget. Over it, the encoder drops
-// every propagating tag, not only this one. The W3C tracestate dd= member is not
-// checked here: composeTracestate fits the LLMObs tags into it by priority (see
-// llmobsTracestatePriority), so a full dd= member doesn't cost x-datadog-tags a tag.
+// every propagating tag, not only this one. The tag must also fit the W3C
+// tracestate dd= member on its own. The member's shared budget is not checked
+// here: composeTracestate fills it by priority (see llmobsTracestatePriority), so
+// a crowded dd= member doesn't cost x-datadog-tags a tag.
 func fitsPropagatingTagBudget(spanCtx *SpanContext, key, value string) bool {
+	if len(key)-len("_dd.p.")+len(value)+4+tracestateHeaderReserve > tracestateDDMaxSize {
+		return false
+	}
 	used := spanCtx.trace.propagatingTagsHeaderLen()
 	// _dd.p.tid is stamped during Inject, after this check — reserve its space on 128-bit traces.
 	if spanCtx.traceID.HasUpper() && spanCtx.trace.propagatingTag(keyTraceID128) == "" {

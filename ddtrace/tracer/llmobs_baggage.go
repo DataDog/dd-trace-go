@@ -280,9 +280,9 @@ func setLLMObsTagsForInjection(ctx *SpanContext) {
 	for _, kv := range optional {
 		t.unsetPropagatingTag(kv[0])
 	}
-	setPropagatingParentAgentTags(ctx, "", "")
-	setLLMObsSamplingTagsForInjection(ctx, sampling)
+	// The agent span ID is always written, so it is reserved before the sampling pair.
 	setPropagatingParentAgentTags(ctx, dc.ParentAgentSpanID, "")
+	setLLMObsSamplingTagsForInjection(ctx, sampling)
 	for _, kv := range optional {
 		if fitsLLMObsOptionalTag(ctx, kv[0], kv[1]) {
 			t.setPropagatingTag(kv[0], kv[1])
@@ -293,9 +293,19 @@ func setLLMObsTagsForInjection(ctx *SpanContext) {
 
 // setLLMObsSamplingTagsForInjection writes the sampling rate and decision together or
 // not at all: a decision without its rate would give downstream spans different
-// sampling metadata from the root's.
+// sampling metadata from the root's. A decision that arrived without a rate is
+// forwarded alone, as received.
 func setLLMObsSamplingTagsForInjection(ctx *SpanContext, pair [2][2]string) {
 	rate, decision := pair[0], pair[1]
+	if decision[1] == "" {
+		return
+	}
+	if rate[1] == "" {
+		if fitsLLMObsOptionalTag(ctx, decision[0], decision[1]) {
+			ctx.trace.setPropagatingTag(decision[0], decision[1])
+		}
+		return
+	}
 	if !fitsLLMObsOptionalTag(ctx, rate[0], rate[1]) {
 		return
 	}

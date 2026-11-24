@@ -398,6 +398,6 @@ func TestLLMObsSamplingPairIsInjectedTogether(t *testing.T) {
 		}, true)
 		setLLMObsTagsForInjection(sc)
 		assert.Empty(t, sc.trace.propagatingTag(keyPropagatedLLMObsSampleRate))
-		assert.Empty(t, sc.trace.propagatingTag(keyPropagatedLLMObsSamplingDecision))
+		assert.Equal(t, "0", sc.trace.propagatingTag(keyPropagatedLLMObsSamplingDecision), "forwarded as received")
 	})
 }
