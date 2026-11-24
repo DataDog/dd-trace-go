@@ -50,8 +50,11 @@ var runtimeLineCoveragePackage func(i int) (counters *byte, numBlocks int, rowSi
 // code to, in the files wantFile accepts: for each run of instructions of a
 // function that map to one line, it calls line with the name of the function,
 // the file and the line, and whether the instructions come from a function
-// inlined into it. Probes map to no file of the repository. It is nil in test
-// binaries built by orchestrion versions that predate it.
+// inlined into it. It also reports the header line of each function that
+// inlines calls other than those of probes: without inlining, such a function
+// has a frame, and its prologue maps to the header. Probes map to no file of
+// the repository. It is nil in test binaries built by orchestrion versions
+// that predate it.
 //
 //go:linkname runtimeLineCoverageLines __dd_linecov_lines.V1
 var runtimeLineCoverageLines func(wantFile func(file string) bool, line func(funcName string, file string, line int32, inlined bool))
