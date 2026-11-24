@@ -136,6 +136,14 @@ func (e *Enricher) handleSendMessageBatch(ctx context.Context, span *tracer.Span
 	}
 
 	original := params
+	cloneEntries := func() {
+		if params == original {
+			batch := *params
+			batch.Entries = slices.Clone(params.Entries)
+			params = &batch
+			in.Parameters = params
+		}
+	}
 	for i := range params.Entries {
 		traceContext, err := e.getTraceContext(ctx, span, queueName(params.QueueUrl), sendMessageBatchEntrySize(&params.Entries[i]))
 		if err != nil {
@@ -146,13 +154,14 @@ func (e *Enricher) handleSendMessageBatch(ctx context.Context, span *tracer.Span
 			continue
 		}
 		if attrs := budget.inject(traceContext, params.Entries[i].MessageAttributes); attrs != nil {
-			if params == original {
-				batch := *params
-				batch.Entries = slices.Clone(params.Entries)
-				params = &batch
-				in.Parameters = params
-			}
+			cloneEntries()
 			params.Entries[i].MessageAttributes = attrs
+		} else if _, exists := params.Entries[i].MessageAttributes[datadogKey]; exists {
+			cloneEntries()
+			stripped := make(map[string]types.MessageAttributeValue, len(params.Entries[i].MessageAttributes))
+			maps.Copy(stripped, params.Entries[i].MessageAttributes)
+			delete(stripped, datadogKey)
+			params.Entries[i].MessageAttributes = stripped
 		}
 	}
 }

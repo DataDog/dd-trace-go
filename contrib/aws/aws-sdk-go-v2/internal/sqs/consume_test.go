@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"maps"
 	"strconv"
 	"strings"
 	"testing"
@@ -389,6 +390,65 @@ func TestForwardReplacesDatadogAtAttributeLimit(t *testing.T) {
 	} {
 		assert.Len(t, sent, maxMessageAttributes)
 		assertInjectedPathway(t, *sent[datadogKey].StringValue, expected, span)
+	}
+}
+
+func TestForwardDropsDatadogAtBatchByteLimit(t *testing.T) {
+	const (
+		queue        = "consume-queue"
+		forwardQueue = "forward-queue"
+		forwardURL   = "https://sqs.us-east-1.amazonaws.com/1234567890/" + forwardQueue
+	)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	const limit = 1 << 20
+	probe := receive(t, true, types.Message{Body: aws.String("a")})[0]
+	probeAttr, ok := probe.MessageAttributes[datadogKey]
+	require.True(t, ok)
+	attrSize := int(attributeSize(datadogKey, probeAttr))
+	require.Positive(t, attrSize)
+
+	messages := receive(t, true,
+		types.Message{Body: aws.String(strings.Repeat("b", limit/2))},
+		types.Message{Body: aws.String(strings.Repeat("b", limit/2))},
+	)
+	require.Len(t, messages, 2)
+	original := make([]map[string]types.MessageAttributeValue, len(messages))
+	for i := range messages {
+		require.Contains(t, messages[i].MessageAttributes, datadogKey)
+		require.Equal(t, limit/2, len(aws.ToString(messages[i].Body)))
+		original[i] = maps.Clone(messages[i].MessageAttributes)
+	}
+
+	consumeCtx := datastreams.ExtractFromBase64Carrier(context.Background(), carrierFromAttribute(t, messages[0].MessageAttributes[datadogKey]))
+	span, ctx := tracer.StartSpanFromContext(consumeCtx, "forward")
+	entries := make([]types.SendMessageBatchRequestEntry, len(messages))
+	for i := range messages {
+		entries[i] = types.SendMessageBatchRequestEntry{
+			Id:                aws.String(strconv.Itoa(i)),
+			MessageBody:       messages[i].Body,
+			MessageAttributes: messages[i].MessageAttributes,
+		}
+	}
+
+	sent := NewEnricher(true, true).EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: &sqs.SendMessageBatchInput{
+		QueueUrl: aws.String(forwardURL),
+		Entries:  entries,
+	}}, "SendMessageBatch")
+
+	gotEntries := sent.Parameters.(*sqs.SendMessageBatchInput).Entries
+	require.Len(t, gotEntries, 2)
+	var total int64
+	for _, entry := range gotEntries {
+		require.NotContains(t, entry.MessageAttributes, datadogKey)
+		require.Equal(t, limit/2, len(aws.ToString(entry.MessageBody)))
+		total += int64(len(aws.ToString(entry.MessageBody))) + messageAttributesSize(entry.MessageAttributes)
+	}
+	assert.LessOrEqual(t, total, int64(maxMessageBytes))
+	for i := range messages {
+		assert.Equal(t, original[i], messages[i].MessageAttributes)
+		assert.Contains(t, messages[i].MessageAttributes, datadogKey)
 	}
 }
 
