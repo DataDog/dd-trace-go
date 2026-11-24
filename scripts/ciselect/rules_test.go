@@ -776,7 +776,7 @@ func TestOTelcModulesGateTheOTelcLane(t *testing.T) {
 }
 
 // otelcModules returns the module directories listed in OTELC_MODULES in
-// .github/workflows/otelc.yml.
+// .github/workflows/otelc-lane.yml.
 func otelcModules(t *testing.T, root string) []string {
 	t.Helper()
 	doc, _ := parseWorkflow(t, filepath.Join(root, workflowDir+"/otelc-lane.yml"))
@@ -822,7 +822,7 @@ func TestOTelcGatedModulesFeedTheLane(t *testing.T) {
 		}
 		if !covered {
 			t.Errorf("%s gates the otelc lane but no OTELC_MODULES entry covers it. "+
-				"Either add the module to OTELC_MODULES in .github/workflows/otelc.yml "+
+				"Either add the module to OTELC_MODULES in .github/workflows/otelc-lane.yml "+
 				"or drop the otelc gate from its component in %s.", dir, tableRelPath)
 		}
 	}

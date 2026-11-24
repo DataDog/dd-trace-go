@@ -392,13 +392,25 @@ jobs:
           scope: DataDog/dd-trace-go
           policy: self.static-checks-shellcheck
 
-      - name: shellcheck
+      - name: shellcheck (scripts)
         uses: reviewdog/action-shellcheck@950c9d71535c8c49e5c029c33a438ade63b9009c # v1.35.1
         with:
           github_token: ${{ steps.generate-token.outputs.token }}
           reporter: github-pr-review
           fail_level: warning
           path: ./scripts
+          pattern: "**/*.sh"
+          filter_mode: nofilter
+
+      # The CI helper scripts under .github (lane-triage.sh first) have
+      # no Go test and no other gate, so this is their only lint.
+      - name: shellcheck (github scripts)
+        uses: reviewdog/action-shellcheck@950c9d71535c8c49e5c029c33a438ade63b9009c # v1.35.1
+        with:
+          github_token: ${{ steps.generate-token.outputs.token }}
+          reporter: github-pr-review
+          fail_level: warning
+          path: ./.github
           pattern: "**/*.sh"
           filter_mode: nofilter
 

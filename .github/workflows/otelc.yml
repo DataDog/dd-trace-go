@@ -1,11 +1,11 @@
 name: OTelc
 
-# The main-based half of the otelc integration lane: every push to main
-# re-runs the full OS matrix minutes after landing (macOS/Windows legs no
-# longer gate pull requests), the nightly schedule keeps the full matrix
-# and seeds the caches, release branches keep their coverage, and a
-# dispatch can pin an upstream otelc version. Failures of the macOS and
-# Windows legs are turned into issues by ci-lane-triage.yml.
+# The main-based half of the otelc integration lane: the newest push to
+# main re-runs the full OS matrix minutes after landing (superseded runs
+# are cancelled; the nightly is the guaranteed full matrix; macOS/Windows
+# legs no longer gate pull requests), release branches keep their
+# coverage, and a dispatch can pin an upstream otelc version. Failures of
+# the macOS and Windows legs are turned into issues by ci-lane-triage.yml.
 #
 # The lane body lives in otelc-lane.yml; pull requests run it through
 # otelc-pr.yml with the ubuntu legs only.

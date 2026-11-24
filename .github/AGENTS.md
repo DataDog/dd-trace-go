@@ -19,3 +19,6 @@
   issue's status table current. Keep
   `TestIntegrationLanesMacWindowsMainOnly` in
   `scripts/ciselect/workflows_test.go` in sync with the workflow files.
+  A pull request author touching platform-sensitive code can dispatch
+  `Orchestrion` or `OTelc` from their branch to run the full OS matrix
+  before merging.

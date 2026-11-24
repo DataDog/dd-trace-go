@@ -10,10 +10,10 @@ name: CI Lane Triage
 #   mentioning @DataDog/apm-go and pointing at the failing commit,
 #   the run, and the Datadog CI dashboard query for it;
 # - a leg that goes green again closes its open issue with a comment;
-# - one pinned tracking issue ("macOS/Windows integration lanes")
-#   summarizes every leg's last status and the open failures;
+# - one tracking issue ("macOS/Windows integration lanes") summarizes
+#   every lane's last status and the open failures;
 # - a daily check alerts on the tracking issue when a lane went 26
-#   hours without a macOS or Windows leg (a missing nightly).
+#   hours without any run on main.
 
 on:
   workflow_run:
@@ -41,8 +41,8 @@ jobs:
     # A fork pull request from a branch named main matches the branches
     # filter on head_branch; its events are pull_request events from
     # another repository, and they must never open issues that ping the
-    # team. Only this repository's own push, schedule, dispatch and
-    # workflow_call runs of the lanes are triaged.
+    # team. Only this repository's own push and schedule runs of the
+    # lanes are triaged.
     if: >-
       github.event_name != 'workflow_run' ||
       (github.event.workflow_run.head_repository.full_name == github.repository

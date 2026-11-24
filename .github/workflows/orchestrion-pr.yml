@@ -37,4 +37,35 @@ jobs:
   lane:
     uses: ./.github/workflows/orchestrion-lane.yml
     with:
-      os-list: '["ubuntu"]'
+      # Pull requests and the merge queue run the ubuntu legs only,
+      # except when the target is a release branch: a macOS/Windows
+      # regression on a release gates nothing on main and opens no
+      # issue, so those targets keep the full matrix here.
+      os-list: >-
+        ${{ (startsWith(github.base_ref, 'release-v') ||
+             startsWith(github.ref_name, 'mq-working-branch-release-v')) &&
+            '["ubuntu", "macos", "windows"]' || '["ubuntu"]' }}
+
+  # A top-level join with the check name the lane used to report
+  # directly, so a branch protection rule on it keeps resolving: the
+  # called workflow's own join is gated on the classifier, and a
+  # skipped check satisfies no required-check rule.
+  integration-test-done:
+    name: Orchestrion Integration Tests
+    needs: [lane]
+    if: '!cancelled()'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Failure
+        if: >-
+          contains(fromJSON('["failure", "cancelled"]'),
+          needs.lane.result)
+        run: echo "Failure!" && exit 1
+      - name: Skipped
+        if: needs.lane.result == 'skipped'
+        run: >-
+          echo "No changed path requires the integration matrix
+          (see .github/ci-components.yml)."
+      - name: Success
+        if: needs.lane.result == 'success'
+        run: echo "Success!"

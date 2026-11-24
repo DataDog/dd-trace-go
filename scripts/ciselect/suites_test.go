@@ -17,7 +17,7 @@ import (
 )
 
 // TestOtelcSuiteSetCoversRealSuites reads the otelc lane's suite set from
-// .github/workflows/otelc.yml, the single reviewable copy: it must be
+// .github/workflows/otelc-lane.yml, the single reviewable copy: it must be
 // non-empty and every entry must be an existing suite directory.
 func TestOtelcSuiteSetCoversRealSuites(t *testing.T) {
 	_, _, root := testTable(t)

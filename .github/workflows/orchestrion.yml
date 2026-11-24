@@ -1,12 +1,13 @@
 name: Orchestrion
 
-# The main-based half of the orchestrion integration lane: every push to
-# main re-runs the full OS matrix minutes after landing (macOS/Windows
-# legs no longer gate pull requests), the nightly schedule keeps the full
-# matrix, release branches keep their coverage, a dispatch can pin an
-# orchestrion version, and DataDog/orchestrion calls this file
-# cross-repository with the same effect. Failures of the macOS and
-# Windows legs are turned into issues by ci-lane-triage.yml.
+# The main-based half of the orchestrion integration lane: the newest
+# push to main re-runs the full OS matrix minutes after landing
+# (superseded runs are cancelled; the nightly is the guaranteed full
+# matrix; macOS/Windows legs no longer gate pull requests), release
+# branches keep their coverage, a dispatch can pin an orchestrion
+# version, and DataDog/orchestrion calls this file cross-repository with
+# the same effect. Failures of the macOS and Windows legs are turned
+# into issues by ci-lane-triage.yml.
 #
 # The lane body lives in orchestrion-lane.yml; pull requests and the
 # merge queue run it through orchestrion-pr.yml with the ubuntu legs
@@ -24,7 +25,12 @@ on:
         type: boolean
         default: false
         required: false
-  workflow_dispatch: # On-demand runs; a deliberate full-matrix run.
+  workflow_dispatch:
+    inputs:
+      orchestrion-version:
+        description: Orchestrion version to use for integration testing
+        type: string
+        required: false
   push:
     branches:
       - main

@@ -72,7 +72,8 @@ groups:
 # turns that lane off for the path. `selectSuites` also rewrites both lanes'
 # gates: on when a lane has a selection, off when every gate-on path was
 # suppressed. The otelc set itself lives in OTELC_TEST_PACKAGES in
-# .github/workflows/otelc.yml; the selector reads it from there at runtime.
+# .github/workflows/otelc-lane.yml; the selector reads it from there at
+# runtime.
 integration-suites:
   # Modules so cross-cutting that a change affects suites which never import
   # them: the weavers inject `net/http` spans into more than 20 suites, and

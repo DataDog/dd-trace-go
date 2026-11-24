@@ -751,10 +751,11 @@ func TestOTelcGatedJobsKeepTheClassifierCondition(t *testing.T) {
 	}
 }
 
-// TestOrchestrionRunsOnTheMergeQueue pins the merge-queue push trigger on the
-// orchestrion lane: it is what makes a narrowed pull-request run safe, and
-// removing it stops the full lane run before landing on main with no test
-// failing.
+// TestOrchestrionRunsOnTheMergeQueue pins the merge-queue push trigger on
+// the orchestrion lane: it is what makes a classifier-narrowed
+// pull-request run safe, and removing it stops the ungated Ubuntu run of
+// every suite before landing on main (macOS/Windows run only on main)
+// with no test failing.
 func TestOrchestrionRunsOnTheMergeQueue(t *testing.T) {
 	_, _, root := testTable(t)
 	body := readText(t, root, workflowDir+"/orchestrion-pr.yml")
@@ -1547,14 +1548,19 @@ func TestIntegrationLanesMacWindowsMainOnly(t *testing.T) {
 		mainFile := lane + ".yml"
 		laneFile := lane + "-lane.yml"
 
-		// The pull-request file runs the ubuntu legs only.
+		// The pull-request file runs the ubuntu legs only, widening to
+		// the full matrix when the target is a release branch.
 		doc, on := parseWorkflow(t, filepath.Join(root, workflowDir, prFile))
 		if _, has := on["pull_request"]; !has {
 			t.Errorf("%s: lost the pull_request trigger", prFile)
 		}
-		if got := laneOSList(t, doc); got != `["ubuntu"]` {
-			t.Errorf("%s: os-list = %s, want the ubuntu-only list: "+
-				"pull requests do not gate on the macOS/Windows legs", prFile, got)
+		osList := normalizeExpr(laneOSList(t, doc))
+		if !strings.Contains(osList, `'["ubuntu"]'`) ||
+			!strings.Contains(osList, `'["ubuntu", "macos", "windows"]'`) ||
+			!strings.Contains(osList, "startsWith(github.base_ref, 'release-v')") {
+			t.Errorf("%s: os-list = %s, want the ubuntu-only default "+
+				"widening to the full list for release targets: pull "+
+				"requests do not gate on the macOS/Windows legs", prFile, osList)
 		}
 		// The merge queue reaches the orchestrion lane through its PR file
 		// (ubuntu legs) and must never reach the otelc lane: it deliberately
@@ -1572,6 +1578,13 @@ func TestIntegrationLanesMacWindowsMainOnly(t *testing.T) {
 		// The main-based file runs the full OS matrix on every merge to
 		// main, minutes after landing, and never on queue branches.
 		doc, on = parseWorkflow(t, filepath.Join(root, workflowDir, mainFile))
+		for _, ev := range []string{"pull_request", "pull_request_target"} {
+			if _, has := on[ev]; has {
+				t.Errorf("%s: %s runs the full OS matrix on pull requests; "+
+					"pull requests belong in %s (ubuntu only)",
+					mainFile, ev, prFile)
+			}
+		}
 		push, _ := on["push"].(map[string]any)
 		if push == nil {
 			t.Fatalf("%s: no push trigger", mainFile)
@@ -1581,9 +1594,11 @@ func TestIntegrationLanesMacWindowsMainOnly(t *testing.T) {
 			t.Errorf("%s: push.branches misses main, so merges stop "+
 				"re-running the macOS/Windows legs", mainFile)
 		}
-		if slices.Contains(branches, "mq-working-branch-**") {
-			t.Errorf("%s: the merge queue must not run the full matrix; "+
-				"queue branches belong in the PR file", mainFile)
+		if offender, err := branchListRunsQueueBranch(branches); err != nil {
+			t.Errorf("%s: %v", mainFile, err)
+		} else if offender != "" {
+			t.Errorf("%s: push.branches %q runs the full matrix on "+
+				"merge-queue branches", mainFile, offender)
 		}
 		if got := laneOSList(t, doc); got != `["ubuntu", "macos", "windows"]` {
 			t.Errorf("%s: os-list = %s, want the full OS list: this is where "+
@@ -1618,12 +1633,65 @@ func branchPatterns(push any) []string {
 	return out
 }
 
+// normalizeExpr collapses the whitespace of a workflow expression so a
+// pin compares content, not the source's line wrapping (the YAML decoder
+// already folds the literal the same way).
+func normalizeExpr(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
 // laneOSList extracts the os-list a caller passes to its lane job.
 func laneOSList(t *testing.T, doc map[string]any) string {
 	t.Helper()
-	jobs := doc["jobs"].(map[string]any)
-	lane := jobs["lane"].(map[string]any)
-	with := lane["with"].(map[string]any)
+	jobs, _ := doc["jobs"].(map[string]any)
+	lane, ok := jobs["lane"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing lane job in jobs %v", jobs)
+	}
+	with, ok := lane["with"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing with mapping in lane job")
+	}
 	s, _ := with["os-list"].(string)
 	return s
+}
+
+// TestLaneTriageFilterMatchesTheLaneNames pins the workflow_run filter
+// of ci-lane-triage.yml to the lanes' `name:` values: a partial rename
+// stops every triage silently, because workflow_run matches on workflow
+// names, not file paths, and nothing else links the filter, the
+// script's LANES array and the two `name:` lines.
+func TestLaneTriageFilterMatchesTheLaneNames(t *testing.T) {
+	_, _, root := testTable(t)
+	_, on := parseWorkflow(t,
+		filepath.Join(root, workflowDir, "ci-lane-triage.yml"))
+	run, ok := on["workflow_run"].(map[string]any)
+	if !ok {
+		t.Fatal("ci-lane-triage.yml: no workflow_run trigger")
+	}
+	filter, ok := run["workflows"].([]any)
+	if !ok {
+		t.Fatal("ci-lane-triage.yml: no workflow_run.workflows filter")
+	}
+	names := make([]string, 0, len(filter))
+	for _, w := range filter {
+		s, _ := w.(string)
+		names = append(names, s)
+	}
+	for _, lane := range []string{"orchestrion.yml", "otelc.yml"} {
+		laneDoc, _ := parseWorkflow(t, filepath.Join(root, workflowDir, lane))
+		name, ok := laneDoc["name"].(string)
+		if !ok {
+			t.Fatalf("%s: no name: to match the triage filter", lane)
+		}
+		if !slices.Contains(names, name) {
+			t.Errorf("ci-lane-triage.yml: the workflow_run filter %v "+
+				"misses %s's name %q, so its failures are never triaged",
+				names, lane, name)
+		}
+	}
+	if len(names) != 2 {
+		t.Errorf("ci-lane-triage.yml: the filter lists %d workflows, "+
+			"want exactly the two lanes %v", len(names), names)
+	}
 }

@@ -69,7 +69,8 @@ jobs:
     name: Verify generated files are up-to-date
     needs:
       - changes
-    # Don't run in workflow_call or workflow_dispatch
+    # Skip the cross-repository call (orchestrion-version set) unless
+    # dispatched.
     if: >-
       (github.event_name == 'workflow_dispatch' || inputs.orchestrion-version == '')
       && (github.event_name != 'pull_request' || needs.changes.outputs.orchestrion == 'true')
@@ -178,7 +179,7 @@ jobs:
         mode: [DRIVER]
         include:
           # Alternate build modes (only on ubuntu with oldstable, so we
-      # save up CI time)
+          # save up CI time)
           - runs-on: ubuntu
             go-version: oldstable
             mode: TOOLEXEC

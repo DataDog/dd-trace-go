@@ -3,10 +3,14 @@
 # lanes into tracked GitHub issues. Called by ci-lane-triage.yml after
 # those legs left pull requests (they run on main-based events only).
 #
-# One open issue per failed leg, deduplicated by lane and leg name; a leg
-# that goes green closes its issue; one tracking issue summarizes every
-# lane's last status; the scheduled run alerts when a lane went 26 hours
-# without any run on main (a missing nightly).
+# One open issue per failed leg (failure and timeout conclusions),
+# deduplicated by lane and leg name to the lowest-numbered open issue;
+# a leg that goes green closes its issue only when its run is the lane's
+# newest completed run; issues for legs that left the matrix are closed;
+# one tracking issue, reopened when closed, summarizes every lane's last
+# status; the scheduled run alerts when a lane went 26 hours without
+# any run on main. Every gh read goes through read_gh: three attempts,
+# then the job fails loudly instead of silently dropping a triage.
 #
 # Environment (set by ci-lane-triage.yml):
 #   GH_TOKEN   token with issues:write
@@ -25,70 +29,58 @@ readonly TEAM='@DataDog/apm-go'
 readonly -a LANES=('Orchestrion' 'OTelc')
 # A lane is missing when no run happened within this many hours.
 readonly MISSING_HOURS='26'
-# macOS/Windows legs match these words in the job name.
+# macOS/Windows legs match these words in the job name; the triage loops
+# and the status counts build their name regex from this one list.
 readonly -a LEG_WORDS=('macos' 'windows')
 
 log() { printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 
-is_lane_leg() {
-  local name=$1 word
-  for word in "${LEG_WORDS[@]}"; do
-    [[ $name == *"$word"* ]] && return 0
+# read_gh: every GitHub read retried three times, then fail the job. A
+# swallowed read silently drops a failure issue, opens a duplicate team
+# ping, or alerts a missing nightly that ran.
+read_gh() {
+  local out i
+  for i in 1 2 3; do
+    out=$(gh "$@") && {
+      printf '%s' "$out"
+      return 0
+    }
+    log "gh $1 failed, attempt $i of 3"
   done
-  return 1
+  exit 1
+}
+
+# The name regex shared by every leg test, built from LEG_WORDS.
+leg_name_regex() {
+  local IFS='|'
+  printf '%s' "${LEG_WORDS[*]}"
+}
+
+is_lane_leg() {
+  local name=$1
+  [[ $name =~ $(leg_name_regex) ]]
 }
 
 ensure_label() {
   gh label create "$1" --color "$2" --repo "$REPO" >/dev/null 2>&1 || true
 }
 
-# Prints the issue number of an open, labeled issue with the exact title,
-# or nothing when there is no match. gh's --jq takes a fixed expression,
-# so the title is passed through jq itself.
-find_issue() {
-  local title=$1 label=$2
-  gh issue list --state open --label "$label" --repo "$REPO" \
-    --json number,title --limit 200 2>/dev/null \
-    | jq -r --arg t "$title" '.[] | select(.title == $t) | .number' || true
-}
-
-lane_run_url() {
-  printf 'https://github.com/%s/actions/runs/%s' "$REPO" "$1"
-}
-
-dd_ci_link() {
-  # The same query the dd-ci-upload bot posts on pull requests.
-  printf 'https://app.datadoghq.com/ci/pipeline-executions'
-  printf '?query=ci_level%%3Ajob+%%40git.commit.sha%%3A%s' "$1"
-}
-
-commit_line() {
-  local sha=$1 subject
-  subject=$(gh api "repos/$REPO/commits/$sha" \
-    --jq '.commit.message' 2>/dev/null | head -n 1) || subject=''
-  printf '%s — %s' "${sha:0:10}" "${subject:-<no subject>}"
-}
-
-# Legs of the lane run with any of the given conclusions, one job name
-# per line. Timed-out legs must join the failures: GitHub records a job
-# that exceeded its timeout as timed_out, not failure, and a hung
-# platform leg would otherwise open no issue at all. gh api --jq is a
-# fixed expression, so the conclusions go through jq as an array.
-legs_with_conclusion() {
-  local conclusions
-  conclusions=$(printf '%s' "$*" | jq -R 'split(" ")')
-  gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100" 2>/dev/null \
-    | jq -r --argjson c "$conclusions" \
-      '.jobs[] | select(.conclusion == $c[]) | .name' || true
-}
-
-# All open issues with the exact title and label, lowest number first.
+# All issues, open or closed by state, with the exact title and label,
+# lowest number first.
 issues_with_title() {
-  local title=$1 label=$2
-  gh issue list --state open --label "$label" --repo "$REPO" \
-    --json number,title --limit 200 2>/dev/null \
+  local state=$1 title=$2 label=$3
+  read_gh issue list --state "$state" --label "$label" --repo "$REPO" \
+    --json number,title --limit 200 \
     | jq -r --arg t "$title" \
-      '[.[] | select(.title == $t) | .number] | sort | .[]' || true
+      '[.[] | select(.title == $t) | .number] | sort | .[]'
+}
+
+# The lowest-numbered open issue with the exact title and label, or
+# nothing when there is no match. Two racing triage runs can leave two
+# open duplicates briefly; the lowest number keeps every later command
+# single-valued while collapse_duplicates heals them.
+find_issue() {
+  issues_with_title open "$1" "$2" | head -n 1
 }
 
 # Two triage runs can race each other past the lookup: both see no
@@ -107,36 +99,52 @@ collapse_duplicates() {
       'Closed as a duplicate created by a race between two triage
 runs; the lowest-numbered issue stays open.' \
       >/dev/null
-  done < <(issues_with_title "$title" "$label")
+  done <<<"$(issues_with_title open "$title" "$label")"
 }
 
-# A green leg may only close its issue when this run is the lane's
-# latest on main: an older run triaged after a newer failure would
-# otherwise announce a recovery that never happened.
-is_latest_lane_run() {
-  local lane=$1 latest
-  latest=$(gh run list --workflow "$lane" --branch main --limit 20 \
-    --json databaseId,event \
-    --jq '[.[] | select(.event != "pull_request")] | .[0].databaseId // empty' \
-    2>/dev/null) || latest=''
-  [ -n "$latest" ] && [ "$latest" = "$RUN_ID" ]
+lane_run_url() {
+  printf 'https://github.com/%s/actions/runs/%s' "$REPO" "$1"
+}
+
+dd_ci_link() {
+  # The same query the dd-ci-upload bot posts on pull requests.
+  printf 'https://app.datadoghq.com/ci/pipeline-executions'
+  printf '?query=ci_level%%3Ajob+%%40git.commit.sha%%3A%s' "$1"
+}
+
+commit_line() {
+  local sha=$1 subject
+  subject=$(read_gh api "repos/$REPO/commits/$sha" \
+    --jq '.commit.message' | head -n 1)
+  printf '%s — %s' "${sha:0:10}" "$subject"
+}
+
+# Legs of the lane run with any of the given conclusions, one job name
+# per line. Timed-out legs must join the failures: GitHub records a job
+# that exceeded its timeout as timed_out, not failure, and a hung
+# platform leg would otherwise open no issue at all.
+legs_with_conclusion() {
+  local conclusions
+  conclusions=$(printf '%s' "$*" | jq -R 'split(" ")')
+  read_gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100" \
+    | jq -r --argjson c "$conclusions" \
+      '.jobs[] | select(.conclusion == $c[]) | .name'
 }
 
 issue_body() {
   local lane=$1 name=$2 attribution=''
-  # The previous main-based run decides whether this failure is the first
-  # red: a green previous run means the failing commit introduced it.
-  # Anchor to the triggering run: another run may have started before
-  # this one finished, so the second-newest entry is not reliably the
-  # predecessor — find this run, then take the one after it.
+  # The predecessor run decides whether this failure is the first red: a
+  # green predecessor means the failing commit introduced it. Anchor to
+  # the triggering run, and skip cancelled and empty conclusions, which
+  # would otherwise hide the last green commit behind "also not green".
   local prev
-  prev=$(gh run list --workflow "$lane" --branch main --limit 20 \
-    --json databaseId,conclusion,headSha,event 2>/dev/null \
+  prev=$(read_gh run list --workflow "$lane" --branch main --limit 20 \
+    --json databaseId,conclusion,headSha,event \
     | jq -c --argjson id "$RUN_ID" '
-      [.[] | select(.event != "pull_request")]
+      [.[] | select(.event != "pull_request")
+           | select(.conclusion != null and .conclusion != "cancelled")]
       | (map(.databaseId) | index($id)) as $i
-      | if $i == null then empty else .[$i + 1] // empty end') \
-    || prev=''
+      | if $i == null then empty else .[$i + 1] // empty end') || prev=''
   if [ -n "$prev" ]; then
     local prev_conclusion prev_sha
     prev_conclusion=$(printf '%s' "$prev" | jq -r '.conclusion')
@@ -150,8 +158,9 @@ issue_body() {
     fi
   fi
   cat <<EOF
-A macOS or Windows leg of the **$lane** lane failed on main. These legs run
-on main-based events only, so this failure did not gate a pull request.
+A macOS or Windows leg of the **$lane** lane failed on main. These legs
+run on main-based events only, so this failure did not gate a pull
+request.
 
 Failing run: $(lane_run_url "$RUN_ID")
 Commit: $(commit_line "$HEAD_SHA")
@@ -162,84 +171,171 @@ $TEAM please triage.
 EOF
 }
 
+# The lane's newest completed run on main (any conclusion), or nothing.
+# Scheduled runs race pushes: a run that is still queued or running
+# tells nothing about the current state of main.
+newest_completed_lane_run() {
+  local lane=$1
+  read_gh run list --workflow "$lane" --branch main --limit 20 \
+    --json databaseId,conclusion,event \
+    | jq -c '[.[] | select(.event != "pull_request")
+                 | select(.conclusion != null)]
+      | .[0] // empty'
+}
+
+# The job conclusions of a run, keyed by job name. A missing jobs page
+# reads as an empty map.
+run_job_conclusions() {
+  local id=$1
+  read_gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" \
+    | jq -c '{"jobs": [.jobs[] | {key: .name, value: .conclusion}]}
+      | from_entries'
+}
+
+# A green leg may only close its issue when this run is the lane's
+# newest completed on main: an older run whose triage finishes after a
+# newer failure must not close the newer issue.
+is_newest_completed_lane_run() {
+  local lane=$1 latest
+  latest=$(newest_completed_lane_run "$lane" | jq -r '.databaseId // empty')
+  [ -n "$latest" ] && [ "$latest" = "$RUN_ID" ]
+}
+
+# The legs of the newest completed run that are green, one name per
+# line: a failure whose leg a newer run already fixed needs no ping.
+newest_green_legs() {
+  local lane=$1 newest id
+  newest=$(newest_completed_lane_run "$lane")
+  id=$(printf '%s' "$newest" | jq -r '.databaseId // empty')
+  [ -n "$id" ] || return 0
+  run_job_conclusions "$id" \
+    | jq -r --arg re "$(leg_name_regex)" \
+      'to_entries[] | select(.value == "success")
+        | select(.key | test($re; "i")) | .key'
+}
+
 triage_run() {
   local lane
-  lane=$(gh api "repos/$REPO/actions/runs/$RUN_ID" \
-    --jq '.name' 2>/dev/null) || lane=''
+  lane=$(read_gh api "repos/$REPO/actions/runs/$RUN_ID" --jq '.name')
   [ -n "$lane" ] || {
-    log "run $RUN_ID not readable; skipping"
+    log "run $RUN_ID has no lane name; skipping"
     return 0
   }
 
-  local name issue body
-  while IFS= read -r name; do
-    [ -n "$name" ] || continue
-    is_lane_leg "$name" || continue
-    issue=$(find_issue "lane: $lane — $name" "$FAILURE_LABEL")
-    if [ -n "$issue" ]; then
-      log "still failing: $lane / $name; commenting on issue #$issue"
-      body="Failed again at $(commit_line "$HEAD_SHA"):"
-      body+=" $(lane_run_url "$RUN_ID")"
-      gh issue comment "$issue" --repo "$REPO" --body "$body" >/dev/null
-    else
-      log "opening issue: lane: $lane — $name"
-      gh issue create --repo "$REPO" --title "lane: $lane — $name" \
-        --label "$FAILURE_LABEL" \
-        --body "$(issue_body "$lane" "$name")" >/dev/null
+  local name issue body failed
+  failed=$(legs_with_conclusion failure timed_out)
+  if [ -n "$failed" ]; then
+    # A newer completed run may have already fixed the leg: opening an
+    # issue would ping the team for something recovered.
+    local recovered
+    recovered=$(newest_green_legs "$lane")
+    while IFS= read -r name; do
+      [ -n "$name" ] || continue
+      if grep -qxF "$name" <<<"$recovered"; then
+        log "newer run already green: $lane / $name; not opening"
+        continue
+      fi
+      is_lane_leg "$name" || continue
+      issue=$(find_issue "lane: $lane — $name" "$FAILURE_LABEL")
+      if [ -n "$issue" ]; then
+        log "still failing: $lane / $name; commenting on issue #$issue"
+        body="Failed again at $(commit_line "$HEAD_SHA"):"
+        body+=" $(lane_run_url "$RUN_ID")"
+        gh issue comment "$issue" --repo "$REPO" --body "$body" >/dev/null
+      else
+        log "opening issue: lane: $lane — $name"
+        gh issue create --repo "$REPO" --title "lane: $lane — $name" \
+          --label "$FAILURE_LABEL" \
+          --body "$(issue_body "$lane" "$name")" >/dev/null
+      fi
       # A concurrent triage run may have created the same issue in the
       # meantime: keep the lowest number.
       collapse_duplicates "lane: $lane — $name" "$FAILURE_LABEL"
-    fi
-  done < <(legs_with_conclusion failure timed_out)
+    done <<<"$failed"
+  fi
 
-  # Only the lane's latest run on main may announce a recovery: an older
-  # run whose triage finishes after a newer failure must not close the
-  # newer issue.
-  if ! is_latest_lane_run "$lane"; then
+  # Only the lane's newest completed run may announce a recovery: an
+  # older run whose triage finishes after a newer failure must not
+  # close the newer issue.
+  if ! is_newest_completed_lane_run "$lane"; then
     log "older run: not closing issues for green legs of $lane"
     return 0
   fi
 
-  while IFS= read -r name; do
-    [ -n "$name" ] || continue
-    is_lane_leg "$name" || continue
-    issue=$(find_issue "lane: $lane — $name" "$FAILURE_LABEL")
-    if [ -n "$issue" ]; then
-      log "green: $lane / $name; closing issue #$issue"
-      body="Green again at $(commit_line "$HEAD_SHA"):"
-      body+=" $(lane_run_url "$RUN_ID"). Closing."
-      gh issue comment "$issue" --repo "$REPO" --body "$body" >/dev/null
-      gh issue close "$issue" --repo "$REPO" >/dev/null
+  local green
+  green=$(legs_with_conclusion success)
+  if [ -n "$green" ]; then
+    while IFS= read -r name; do
+      [ -n "$name" ] || continue
+      is_lane_leg "$name" || continue
+      issue=$(find_issue "lane: $lane — $name" "$FAILURE_LABEL")
+      if [ -n "$issue" ]; then
+        log "green: $lane / $name; closing issue #$issue"
+        body="Green again at $(commit_line "$HEAD_SHA"):"
+        body+=" $(lane_run_url "$RUN_ID"). Closing."
+        gh issue comment "$issue" --repo "$REPO" --body "$body" >/dev/null
+        gh issue close "$issue" --repo "$REPO" >/dev/null
+      fi
+    done <<<"$green"
+  fi
+
+  # Legs leave the matrix (a Go release bump renames or drops strata),
+  # and their issues would sit under "Open failures" forever because the
+  # green loop only closes legs the current run still has.
+  close_absent_legs "$lane"
+}
+
+# Close every open failure issue of this lane whose leg name no longer
+# appears among the current run's job names.
+close_absent_legs() {
+  local lane=$1 title issue leg
+  while IFS= read -r issue; do
+    [ -n "$issue" ] || continue
+    leg=${issue#* — }
+    if grep -qxF "$leg" <<<"$(run_job_conclusions "$RUN_ID" \
+      | jq -r 'keys[]')"; then
+      continue
     fi
-  done < <(legs_with_conclusion 'success')
+    log "leg left the matrix: closing issue #$issue"
+    gh issue close "$issue" --repo "$REPO" --comment \
+      "The ${lane} lane no longer runs a leg with this name; closing. \
+Reopen or open a new issue if the leg returns." \
+      >/dev/null
+  done <<<"$(read_gh issue list --state open \
+    --label "$FAILURE_LABEL" --repo "$REPO" \
+    --json number,title --limit 200 \
+    | jq -r --arg l "$lane" \
+      '.[] | select(.title | startswith("lane: " + $l + " — "))
+        | "\(.number)\t\(.title)"')"
 }
 
 # One status line per lane for the tracking issue body.
 last_run_line() {
   local lane=$1 run id conclusion n_mw n_green
-  run=$(gh run list --workflow "$lane" --branch main --limit 20 \
-    --json databaseId,conclusion,event \
-    --jq '[.[] | select(.event != "pull_request")] | .[0] // empty' \
-    2>/dev/null) || run=''
+  run=$(newest_completed_lane_run "$lane")
   if [ -z "$run" ]; then
-    printf 'no run on main recorded yet\n'
+    printf 'no completed run on main recorded yet\n'
     return 0
   fi
   id=$(printf '%s' "$run" | jq -r '.databaseId')
   conclusion=$(printf '%s' "$run" | jq -r '.conclusion // "unknown"')
-  n_mw=$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" --jq \
-    '[.jobs[] | select(.name | test("macos|windows"; "i"))] | length' \
-    2>/dev/null || printf 0)
-  n_green=$(gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" --jq \
-    '[.jobs[] | select(.conclusion == "success")
-      | select(.name | test("macos|windows"; "i"))] | length' \
-    2>/dev/null || printf 0)
+  # One jobs fetch feeds both counts, and the name regex comes from the
+  # one LEG_WORDS list, so the counts and the triaged legs cannot drift
+  # apart after a rename.
+  local jobs re
+  jobs=$(run_job_conclusions "$id")
+  re=$(leg_name_regex)
+  n_mw=$(printf '%s' "$jobs" | jq --arg re "$re" \
+    '[keys[] | select(test($re; "i"))] | length')
+  n_green=$(printf '%s' "$jobs" | jq --arg re "$re" \
+    '[to_entries[] | select(.value == "success")
+      | select(.key | test($re; "i"))] | length')
   printf 'last run %s — %s, %s of %s macOS/Windows legs green\n' \
     "$(lane_run_url "$id")" "$conclusion" "$n_green" "$n_mw"
 }
 
 tracking_body() {
-  local lane number title any=0
+  local lane any=0 number title
   {
     printf 'Status of the macOS/Windows legs of the Orchestrion and OTelc'
     printf ' integration lanes (main-based runs only).\n\n'
@@ -251,44 +347,49 @@ tracking_body() {
     printf '## Open failures\n\n'
     while IFS=$'\t' read -r number title; do
       [ -n "$number" ] || continue
-      printf -- '- %s %s\n' "$number" "$title"
+      printf -- '- #%s %s\n' "$number" "$title"
       any=1
-    done < <(gh issue list --state open --label "$FAILURE_LABEL" \
-      --repo "$REPO" --json number,title \
-      --jq '.[] | [.number, .title] | @tsv' 2>/dev/null || true)
+    done <<<"$(read_gh issue list --state open \
+      --label "$FAILURE_LABEL" --repo "$REPO" \
+      --json number,title --limit 200 \
+      | jq -r '.[] | [.number, .title] | @tsv')"
     [ "$any" -eq 1 ] || printf 'None.\n'
   }
 }
 
 refresh_tracking_issue() {
-  local issue footer
+  local issue footer body
   footer='Kept up to date by the CI Lane Triage workflow; do not close.'
   issue=$(find_issue "$TRACKING_TITLE" "$DASHBOARD_LABEL")
+  body="$(printf '%s\n\n%s\n' "$(tracking_body)" "$footer")"
   if [ -n "$issue" ]; then
     log "refreshing tracking issue #$issue"
-    gh issue edit "$issue" --repo "$REPO" \
-      --body "$(tracking_body)" >/dev/null
-  else
-    log 'creating tracking issue'
-    gh issue create --repo "$REPO" --title "$TRACKING_TITLE" \
-      --label "$DASHBOARD_LABEL" \
-      --body "$(printf '%s\n\n%s\n' "$(tracking_body)" "$footer")" \
-      >/dev/null
-    # A concurrent triage run may have created the same tracking issue:
-    # keep the lowest number.
-    collapse_duplicates "$TRACKING_TITLE" "$DASHBOARD_LABEL"
+    gh issue edit "$issue" --repo "$REPO" --body "$body" >/dev/null
+    return 0
   fi
+  # A closed tracking issue must be reopened, not duplicated: the
+  # healing only sees open issues.
+  issue=$(issues_with_title all "$TRACKING_TITLE" "$DASHBOARD_LABEL" \
+    | head -n 1)
+  if [ -n "$issue" ]; then
+    log "reopening tracking issue #$issue"
+    gh issue reopen "$issue" --repo "$REPO" >/dev/null
+    gh issue edit "$issue" --repo "$REPO" --body "$body" >/dev/null
+    return 0
+  fi
+  log 'creating tracking issue'
+  gh issue create --repo "$REPO" --title "$TRACKING_TITLE" \
+    --label "$DASHBOARD_LABEL" --body "$body" >/dev/null
+  collapse_duplicates "$TRACKING_TITLE" "$DASHBOARD_LABEL"
 }
 
 missing_run_alert() {
   local lane since found issue body
   since=$(date -u -d "-${MISSING_HOURS} hours" +%Y-%m-%dT%H:%M:%SZ)
-  since=${since:-$(date -u -v-26H +%Y-%m-%dT%H:%M:%SZ)}
   for lane in "${LANES[@]}"; do
-    found=$(gh run list --workflow "$lane" --branch main \
+    found=$(read_gh run list --workflow "$lane" --branch main \
       --created ">=$since" --json databaseId,event \
-      --jq '[.[] | select(.event != "pull_request")] | length' \
-      2>/dev/null) || found=0
+      | jq '[.[] | select(.event != "pull_request")] | length')
     if [ "${found:-0}" -eq 0 ]; then
       log "missing-run alert for $lane"
       issue=$(find_issue "$TRACKING_TITLE" "$DASHBOARD_LABEL")
@@ -302,12 +403,9 @@ missing_run_alert() {
 }
 
 main() {
-  command -v gh >/dev/null || {
-    log 'gh not installed'
-    exit 1
-  }
-  # Before any create: gh issue create fails outright on a missing label,
-  # and the first real triage must not die on one.
+  command -v gh >/dev/null || { log 'gh not installed'; exit 1; }
+  # Before any create: gh issue create fails outright on a missing
+  # label, and the first real triage must not die on one.
   ensure_label "$FAILURE_LABEL" 'D93F0B'
   ensure_label "$DASHBOARD_LABEL" '0E8A16'
   if [ -n "${RUN_ID:-}" ]; then
