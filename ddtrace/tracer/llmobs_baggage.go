@@ -111,6 +111,12 @@ func propagatedLLMSpan(spanCtx *SpanContext) (p *illmobs.PropagatedLLMSpan, carr
 		SamplingDecision:  read(baggageKeyLLMObsSamplingDecision, keyPropagatedLLMObsSamplingDecision),
 		ParentAgentSpanID: read(baggageKeyLLMObsParentAgentSpanID, keyPropagatedLLMObsParentAgentSpanID),
 	}
+	// The agent span ID is a decimal uint64 like the parent ID. Nothing caps the
+	// inbound value, and an oversized one would make the encoder drop the whole
+	// x-datadog-tags header, so an invalid one is dropped with its name.
+	if _, err := strconv.ParseUint(p.ParentAgentSpanID, 10, 64); err != nil {
+		p.ParentAgentSpanID = ""
+	}
 	if p.ParentAgentSpanID != "" {
 		p.ParentAgentName = read(baggageKeyLLMObsParentAgentName, keyPropagatedLLMObsParentAgentName)
 	}
@@ -175,8 +181,9 @@ func (t *trace) llmobsState() *traceLLMObs {
 	return t.llmobs.Load()
 }
 
-// forgetLLMObsSpans drops the map entries of spans that a partial flush sent, so
-// the map stays bounded like the trace's span buffer on a long-running trace.
+// forgetLLMObsSpans drops the map entries of spans that a full or partial flush
+// sent, so the map stays bounded like the trace's span buffer on a long-running
+// trace, and on a trace whose context starts more spans after the root finished.
 // Unflushed spans keep their entry, so their contexts still propagate after
 // Finish. Called with t.mu held; traceLLMObs.mu is never held while taking t.mu.
 func (t *trace) forgetLLMObsSpans(flushed []*Span) {
@@ -294,6 +301,11 @@ func setLLMObsTagsForInjection(ctx *SpanContext) {
 	}
 	for _, kv := range optional {
 		t.unsetPropagatingTag(kv[0])
+	}
+	t.unsetPropagatingTag(keyPropagatedLLMObsParentAgentSpanID)
+	t.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
+	if dc.ParentAgentSpanID != "" && !fitsPropagatingTagBudget(ctx, keyPropagatedLLMObsParentAgentSpanID, dc.ParentAgentSpanID) {
+		dc.ParentAgentSpanID, dc.ParentAgentName = "", ""
 	}
 	setPropagatingParentAgentTags(ctx, dc.ParentAgentSpanID, "")
 	for _, kv := range optional {

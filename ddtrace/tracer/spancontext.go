@@ -1110,6 +1110,9 @@ func (t *trace) finishedOneLocked(s *Span) {
 		// t.filterReject is guarded by t.mu, so capture it before unlocking below.
 		// The root has finished by full flush, so its decision is set.
 		filterRejected := t.filterReject
+		// A context kept after the root finished can start and finish more spans,
+		// each in its own full flush, so their LLMObs entries are removed here too.
+		t.forgetLLMObsSpans(spans)
 		t.spans = nil
 		t.finished = 0 // important, because a buffer can be used for several flushes
 		t.mu.Unlock()

@@ -280,7 +280,9 @@ func TestLLMObsInboundValuesCannotBreakTheTagsHeader(t *testing.T) {
 	require.NoError(t, err)
 	defer tr.Stop()
 	for name, extra := range map[string]string{
-		"oversized ml_app": ",llmobs.ml_app=" + strings.Repeat("a", 400),
+		"oversized ml_app":                 ",llmobs.ml_app=" + strings.Repeat("a", 400),
+		"oversized parent_agent_span_id":   ",llmobs.parent_agent_span_id=" + strings.Repeat("1", 600) + ",llmobs.parent_agent_name=agent",
+		"non-numeric parent_agent_span_id": ",llmobs.parent_agent_span_id=abc,llmobs.parent_agent_name=agent",
 	} {
 		t.Run(name, func(t *testing.T) {
 			extracted, err := tr.Extract(TextMapCarrier{
@@ -297,6 +299,8 @@ func TestLLMObsInboundValuesCannotBreakTheTagsHeader(t *testing.T) {
 			assert.Contains(t, tags, "_dd.p.llmobs_parent_id=555", "the header was not dropped")
 			assert.NotContains(t, tags, "_dd.p.llmobs_ml_app")
 			assert.NotContains(t, tags, "_dd.p.llmobs_sid")
+			assert.NotContains(t, tags, "_dd.p.llmobs_pagent_span_id")
+			assert.NotContains(t, tags, "_dd.p.llmobs_pagent_name")
 		})
 	}
 }
@@ -366,6 +370,29 @@ func TestLLMObsPartialFlushForgetsFlushedSpans(t *testing.T) {
 	root := tr.StartSpan("root")
 	defer root.Finish()
 	llmSpan := &illmobs.Span{}
+	for range 4 {
+		child := tr.StartSpan("child", ChildOf(root.Context()))
+		child.Context().setLLMObsSpan(llmSpan)
+		child.Finish()
+	}
+
+	s := root.Context().trace.llmobs.Load()
+	require.NotNil(t, s)
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	assert.Empty(t, s.spans)
+}
+
+func TestLLMObsFullFlushForgetsFlushedSpans(t *testing.T) {
+	// A context kept after its root finished can start and finish more spans, each
+	// in its own full flush. The span map must not keep their entries.
+	tr, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+	llmSpan := &illmobs.Span{}
+	root := tr.StartSpan("root")
+	root.Context().setLLMObsSpan(llmSpan)
+	root.Finish()
 	for range 4 {
 		child := tr.StartSpan("child", ChildOf(root.Context()))
 		child.Context().setLLMObsSpan(llmSpan)

@@ -250,10 +250,12 @@ func (l *LLMObs) llmobsSpanEvent(span *Span) *transport.LLMObsSpanEvent {
 		}
 	}
 
-	spanID := span.apm.SpanID()
+	// SpanID reads the cached ID: the parent's APM span can already be flushed
+	// and reused by the span pool.
+	spanID := span.SpanID()
 	parentID := DefaultParentID
 	if span.parent != nil {
-		parentID = span.parent.apm.SpanID()
+		parentID = span.parent.SpanID()
 	} else if span.propagated != nil {
 		parentID = span.propagated.SpanID
 	}
