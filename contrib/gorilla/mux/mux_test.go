@@ -902,7 +902,8 @@ func setMuxHTTPConfig(t *testing.T, otel string) {
 }
 
 // TestAppSecNormalizedRoutePathPrefix checks that the normalized route of a
-// PathPrefix route has an unnamed catch-all for the rest of the path.
+// PathPrefix route has an unnamed catch-all for the rest of the path, and that
+// a Path route has none.
 func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
 	t.Setenv("DD_API_SECURITY_ENABLED", "true")
 	testutils.StartAppSec(t)
@@ -911,19 +912,30 @@ func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
 	router.PathPrefix("/static/").Handler(okHandler())
 	router.PathPrefix("/api").Handler(okHandler())
 	router.Handle("/users/{id}", okHandler())
-	for target, want := range map[string]string{
-		"/static/css/app.css": "/static/{param1}",
-		"/static/":            "/static/",
-		"/api/v1/x":           "/api/{param1}",
-		"/apix":               "/api{param1}",
-		"/api":                "/api",
-		"/users/1":            "/users/{id}",
+	router.Handle("/f.{ext:json|jsonl}", okHandler())
+	encoded := NewRouter()
+	encoded.UseEncodedPath()
+	encoded.Handle("/u/{id}", okHandler())
+	for _, tc := range []struct {
+		router       *Router
+		target, want string
+	}{
+		{router, "/static/css/app.css", "/static/{param1}"},
+		{router, "/static/", "/static/"},
+		{router, "/api/v1/x", "/api/{param1}"},
+		{router, "/apix", "/api{param1}"},
+		{router, "/api", "/api"},
+		{router, "/users/1", "/users/{id}"},
+		{router, "/f.jsonl", "/f.{ext}"},
+		{encoded, "/u/a%2Fb", "/u/{id}"},
 	} {
 		mt := mocktracer.Start()
-		router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, target, nil))
+		rec := httptest.NewRecorder()
+		tc.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.target, nil))
 		spans := mt.FinishedSpans()
 		mt.Stop()
-		require.Len(t, spans, 1, target)
-		assert.Equal(t, want, spans[0].Tag("_dd.appsec.normalized_route"), target)
+		require.Equal(t, http.StatusOK, rec.Code, tc.target)
+		require.Len(t, spans, 1, tc.target)
+		assert.Equal(t, tc.want, spans[0].Tag("_dd.appsec.normalized_route"), tc.target)
 	}
 }

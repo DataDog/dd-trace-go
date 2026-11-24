@@ -403,7 +403,19 @@ An optional parameter or a catch-all is in the tag only when its path parameter
 has a non-empty value. Without a value, it is left out, which is the fallback that
 RFC-1125 allows. go-chi reports a late route without parameters to the WAF, so it
 gives the parameters of that route with `httpsec.ReportRouteParams`, which stores
-them for API Security and causes no WAF evaluation. A
-gorilla/mux `PathPrefix` route is reported as its template: the listener matches
-the template at the start of the request path, as gorilla does, and the rest of
-the path is the implicit catch-all of the route.
+them for API Security and causes no WAF evaluation. net/http does the same for a
+route registered on a caller-provided `*http.ServeMux`.
+
+A prefix route has an implicit catch-all: the rest of the path after the part that
+the route matched. Routers report a prefix route as its template, so the listener
+finds that part:
+- gorilla/mux `PathPrefix`: the listener matches the template as gorilla does. A
+  template that matches the whole path, escaped or not, is a `Path` route, which
+  has no rest.
+- fiber `Use`, `Static` and mounts: the route's static text and parameter values
+  start the escaped path, ignoring case. A path that does not start with them
+  gets no catch-all, and neither does a route with `*` or `+`, which takes the
+  rest of the path.
+
+fiber reports no route when its router found none (404 or 405), so such a request
+gets no tag.

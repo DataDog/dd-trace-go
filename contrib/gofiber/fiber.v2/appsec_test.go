@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -219,4 +221,68 @@ func TestAppSecBlocking(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "Hello World!\n", string(body))
 	})
+}
+
+// TestAppSecNormalizedRoute checks the normalized route of fiber requests: none
+// when no route handles the request, and the implicit catch-all of a prefix
+// route (Use, Static).
+func TestAppSecNormalizedRoute(t *testing.T) {
+	t.Setenv("DD_API_SECURITY_ENABLED", "true")
+	testutils.StartAppSec(t)
+
+	static := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(static, "app.css"), []byte("body{}"), 0o600))
+	routes := func(app *fiber.App) *fiber.App {
+		// An error handler right after the tracing middleware: fiber merges
+		// it into the same route.
+		app.Use(func(c *fiber.Ctx) error {
+			err := c.Next()
+			if err != nil && strings.HasPrefix(c.Path(), "/handled") {
+				return c.SendStatus(http.StatusNotFound)
+			}
+			return err
+		})
+		// A middleware that only calls c.Next. On another path than the tracing
+		// middleware, fiber does not merge it into the same route.
+		app.Use("/nope", func(c *fiber.Ctx) error { return c.Next() })
+		app.Get("/users/:id", func(c *fiber.Ctx) error { return c.SendString("ok") })
+		app.Get("/missing/:id", func(*fiber.Ctx) error { return fiber.ErrNotFound })
+		app.Use("/api", func(c *fiber.Ctx) error { return c.SendString("ok") })
+		app.Static("/static", static)
+		return app
+	}
+	wrapped := fiber.New()
+	Wrap(wrapped)
+	middleware := fiber.New()
+	middleware.Use(Middleware())
+	apps := map[string]*fiber.App{"Wrap": routes(wrapped), "Middleware": routes(middleware)}
+
+	for name, app := range apps {
+		for _, tc := range []struct {
+			method, target string
+			status         int
+			want           any
+		}{
+			{"GET", "/nope/x", http.StatusNotFound, nil},
+			{"GET", "/handled", http.StatusNotFound, nil},
+			{"POST", "/users/1", http.StatusMethodNotAllowed, nil},
+			{"GET", "/users/1", http.StatusOK, "/users/{id}"},
+			{"GET", "/missing/1", http.StatusNotFound, "/missing/{id}"},
+			{"GET", "/api/v1/x", http.StatusOK, "/api/{param1}"},
+			{"GET", "/static/app.css", http.StatusOK, "/static/{param1}"},
+		} {
+			t.Run(name+" "+tc.method+" "+tc.target, func(t *testing.T) {
+				mt := mocktracer.Start()
+				defer mt.Stop()
+
+				res, err := app.Test(httptest.NewRequest(tc.method, tc.target, nil))
+				require.NoError(t, err)
+				defer res.Body.Close()
+				require.Equal(t, tc.status, res.StatusCode)
+				spans := mt.FinishedSpans()
+				require.Len(t, spans, 1)
+				require.Equal(t, tc.want, spans[0].Tag("_dd.appsec.normalized_route"))
+			})
+		}
+	}
 }

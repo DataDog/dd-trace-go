@@ -578,6 +578,21 @@ func TestNormalizeRoute(t *testing.T) {
 		{name: "gorilla prefix, escaped path", framework: mux, route: "/café", requestURI: "/caf%C3%A9/x", want: "/caf%C3%A9/{param1}"},
 		{name: "gorilla path route", framework: mux, route: "/users/{id}", requestURI: "/users/1", want: "/users/{id}"},
 		{name: "gorilla catch-all variable", framework: mux, route: "/r/{path:.*}", requestURI: "/r/a/b", want: "/r/{path}"},
+		{name: "gorilla path route, longer alternative", framework: mux, route: "/f.{ext:json|jsonl}", requestURI: "/f.jsonl", want: "/f.{ext}"},
+		{name: "gorilla path route, encoded path", framework: mux, route: "/u/{id}", requestURI: "/u/a%2Fb", want: "/u/{id}"},
+		{name: "gorilla prefix, longest alternative", framework: mux, route: "/p/{v:a|ab}", requestURI: "/p/ab/x", want: "/p/{v}/{param1}"},
+
+		// fiber prefix routes (Use, Static, mounts) have an implicit catch-all.
+		{name: "fiber prefix", framework: fiber, route: "/api", requestURI: "/api/v1/x", want: "/api/{param1}"},
+		{name: "fiber prefix in a segment", framework: fiber, route: "/api", requestURI: "/apix", want: "/api{param1}"},
+		{name: "fiber route, trailing slash", framework: fiber, route: "/api", requestURI: "/api/", want: "/api"},
+		{name: "fiber prefix, other case", framework: fiber, route: "/api", requestURI: "/API/x", want: "/api/{param1}"},
+		{name: "fiber root prefix", framework: fiber, route: "/", requestURI: "/a/b", want: "/{param1}"},
+		{name: "fiber prefix with parameter", framework: fiber, route: "/t/:tenant", params: map[string]string{"tenant": "acme"}, requestURI: "/t/acme/x", want: "/t/{tenant}/{param1}"},
+		{name: "fiber prefix, other value", framework: fiber, route: "/t/:tenant", params: map[string]string{"tenant": "other"}, requestURI: "/t/acme/x", want: "/t/{tenant}"},
+		{name: "fiber prefix, unknown value", framework: fiber, route: "/t/:tenant", requestURI: "/t/acme/x", want: "/t/{tenant}"},
+		{name: "fiber route, absent optional", framework: fiber, route: "/u/:id?", params: map[string]string{"id": ""}, requestURI: "/u", want: "/u"},
+		{name: "fiber catch-all, empty with slashes", framework: fiber, route: "/c/*", params: map[string]string{"*1": ""}, requestURI: "/c//", want: "/c/"},
 
 		// net/http patterns.
 		{name: "servemux host", framework: netmux, route: "example.com/foo/{id}", want: "/foo/{id}"},

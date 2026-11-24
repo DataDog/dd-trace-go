@@ -7,6 +7,8 @@ package fiber
 
 import (
 	"context"
+	"errors"
+	"html"
 	"iter"
 	"maps"
 	"net/http"
@@ -113,11 +115,17 @@ func useAppSec(c *fiber.Ctx, span trace.TagSetter, next func() error) (err error
 		dyngo.OnData(op, func(*actions.BlockHTTP) { request.blocked.Store(true) })
 	}
 
+	// The route of this middleware, until a later one matches.
+	ownRoute := c.Route()
+
 	err = next()
 
 	// Wrap's route guards already report parameters before user code. Keep
 	// this fallback for global Middleware users and routes without parameters.
-	if route := c.Route(); !request.blocked.Load() && route != nil && route.Path != "" && route != request.route {
+	// When no route handled the request, c.Route() is the last middleware that
+	// fiber ran (this one, or one that only calls c.Next): it is not reported.
+	if route := c.Route(); !request.blocked.Load() && route != nil && route.Path != "" && route != request.route &&
+		route != ownRoute && !isNoRouteError(c, err) {
 		if blockErr := httpsec.RouteMatched(ctx, route.Path, c.AllParams()); blockErr != nil {
 			instr.Logger().Debug("gofiber/fiber.v2: request blocked on route parameters: %s", blockErr.Error())
 		}
@@ -138,6 +146,19 @@ func useAppSec(c *fiber.Ctx, span trace.TagSetter, next func() error) (err error
 		return nil, true
 	}
 	return err, handledResponse
+}
+
+// isNoRouteError reports whether err is the error that fiber's router returns
+// when no route handles the request: 405 when the path has routes for other
+// methods, otherwise 404 with a message that names the method and the path. A
+// handler that returns its own 404 has a route.
+func isNoRouteError(c *fiber.Ctx, err error) bool {
+	if errors.Is(err, fiber.ErrMethodNotAllowed) {
+		return true
+	}
+	var ferr *fiber.Error
+	return errors.As(err, &ferr) && ferr.Code == fiber.StatusNotFound &&
+		ferr.Message == "Cannot "+c.Method()+" "+html.EscapeString(string(c.Request().URI().PathOriginal()))
 }
 
 // convertRequest builds the net/http request AppSec expects out of a fasthttp

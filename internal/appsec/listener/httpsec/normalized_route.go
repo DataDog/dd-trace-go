@@ -66,7 +66,11 @@ func normalizeRoute(framework, route string, params map[string]string, requestUR
 	case "github.com/labstack/echo/v4", "github.com/labstack/echo/v5":
 		parts, ok = parseColonRoute(route, params, false)
 	case "github.com/gofiber/fiber/v2":
-		parts, ok = parseFiberRoute(route, params)
+		var matched string
+		parts, matched, ok = parseFiberRoute(route, params)
+		if ok {
+			parts = appendFiberRemainder(parts, matched, requestURI)
+		}
 		// fiber matches the route with the path as the client sent it, still
 		// escaped (unless UnescapePath is set, but then a route with %XX does
 		// not match anything).
@@ -236,49 +240,70 @@ func parseBraceRoute(route string, params map[string]string, chiWildcard bool) (
 	return parts, true
 }
 
-// gorillaPrefixes caches the regexp of gorilla/mux route templates. The routes of
-// an application are static, so the cache is bounded by their number.
-var gorillaPrefixes sync.Map // string -> *regexp.Regexp, nil when it does not compile
-
-// appendGorillaRemainder adds the implicit unnamed catch-all of a gorilla/mux
-// PathPrefix route: the rest of the request path after the part that the route
-// template matches. The template does not tell a PathPrefix route from a Path
-// route, but a Path route matches the whole path, so it has no rest. The template
-// is matched as gorilla matches it: its literal text, a variable with its pattern
-// ([^/]+ by default), from the start of the unescaped path.
-func appendGorillaRemainder(parts []routePart, route, requestURI string) []routePart {
-	if requestURI == "" {
-		return parts
-	}
-	re := gorillaPrefixRegexp(route)
-	if re == nil {
-		return parts
-	}
-	path := requestPath(requestURI)
-	if unescaped, err := url.PathUnescape(path); err == nil {
-		path = unescaped
-	}
-	loc := re.FindStringIndex(path)
-	if loc == nil {
-		return parts
-	}
-	rest := path[loc[1]:]
+// appendCatchAll adds the implicit unnamed catch-all of a prefix route, given
+// the rest of the request path after the part that the route matched. An empty
+// rest, or only "/", is an absent catch-all.
+func appendCatchAll(parts []routePart, rest string) []routePart {
 	if rest == "" || rest == "/" {
-		// An empty catch-all is absent.
 		return parts
 	}
 	if strings.HasPrefix(rest, "/") {
-		// PathPrefix("/api") hit with "/api/x" is "/api/{param1}".
+		// A prefix "/api" hit with "/api/x" is "/api/{param1}".
 		parts = append(parts, routePart{static: "/"})
 	}
 	return append(parts, routePart{param: true})
 }
 
-// gorillaPrefixRegexp returns the regexp that matches the gorilla/mux route
-// template route at the start of a path, or nil.
-func gorillaPrefixRegexp(route string) *regexp.Regexp {
-	if re, found := gorillaPrefixes.Load(route); found {
-		return re.(*regexp.Regexp)
+// gorillaRegexps holds the regexps of a gorilla/mux route template.
+type gorillaRegexps struct {
+	// full matches a whole path, as the regexp of a Path route.
+	full *regexp.Regexp
+	// prefix matches the longest start of a path, as the regexp of a
+	// PathPrefix route.
+	prefix *regexp.Regexp
+}
+
+// gorillaTemplates caches the regexps of gorilla/mux route templates. The routes
+// of an application are static, so the cache is bounded by their number.
+var gorillaTemplates sync.Map // string -> *gorillaRegexps, nil when they do not compile
+
+// appendGorillaRemainder adds the implicit unnamed catch-all of a gorilla/mux
+// PathPrefix route: the rest of the request path after the part that the route
+// template matches. The template does not tell a PathPrefix route from a Path
+// route. A Path route matches the whole path that the router matched, so a
+// template that matches a whole path has no rest. gorilla matches the unescaped
+// path, or the escaped path with UseEncodedPath: both are tried. The template is
+// matched as gorilla matches it: its literal text, and each variable with its
+// pattern ([^/]+ by default).
+func appendGorillaRemainder(parts []routePart, route, requestURI string) []routePart {
+	if requestURI == "" {
+		return parts
+	}
+	res := gorillaTemplateRegexps(route)
+	if res == nil {
+		return parts
+	}
+	escaped := requestPath(requestURI)
+	unescaped, err := url.PathUnescape(escaped)
+	if err != nil {
+		unescaped = escaped
+	}
+	if res.full.MatchString(unescaped) || res.full.MatchString(escaped) {
+		return parts
+	}
+	for _, path := range [...]string{unescaped, escaped} {
+		if loc := res.prefix.FindStringIndex(path); loc != nil {
+			return appendCatchAll(parts, path[loc[1]:])
+		}
+	}
+	return parts
+}
+
+// gorillaTemplateRegexps returns the regexps of the gorilla/mux route template
+// route, or nil.
+func gorillaTemplateRegexps(route string) *gorillaRegexps {
+	if res, found := gorillaTemplates.Load(route); found {
+		return res.(*gorillaRegexps)
 	}
 	var pattern strings.Builder
 	pattern.WriteByte('^')
@@ -301,12 +326,18 @@ func gorillaPrefixRegexp(route string) *regexp.Regexp {
 		start = end + 1
 	}
 	pattern.WriteString(regexp.QuoteMeta(route[start:]))
-	re, err := regexp.Compile(pattern.String())
-	if err != nil {
-		re = nil
+	var res *gorillaRegexps
+	if prefix, err := regexp.Compile(pattern.String()); err == nil {
+		// RE2 prefers the first alternative: {ext:json|jsonl} would stop at
+		// "json" in "jsonl". gorilla matches as much as it can.
+		prefix.Longest()
+		res = &gorillaRegexps{
+			full:   regexp.MustCompile(pattern.String() + "$"),
+			prefix: prefix,
+		}
 	}
-	gorillaPrefixes.Store(route, re)
-	return re
+	gorillaTemplates.Store(route, res)
+	return res
 }
 
 // closingBrace returns the index of the brace that closes the one at start,
@@ -383,12 +414,18 @@ func parseColonRoute(route string, params map[string]string, gin bool) ([]routeP
 // "*" is an optional and "+" a required catch-all, both unnamed (fiber names
 // their values *1, +1, ...). "\" escapes the next character. The "/" before an
 // optional parameter is optional with it.
-func parseFiberRoute(route string, params map[string]string) ([]routePart, bool) {
+//
+// It also returns the path text that the route matched: its static text and the
+// values of its parameters. It is empty when the route has no implicit catch-all
+// to find: a "*" or "+" takes the rest of the path. It is also empty when params
+// has no value for one of the parameters.
+func parseFiberRoute(route string, params map[string]string) ([]routePart, string, bool) {
 	if !strings.HasPrefix(route, "/") {
-		return nil, false
+		return nil, "", false
 	}
 	var (
 		parts             []routePart
+		matched           []byte
 		static            strings.Builder
 		wildcards, pluses int
 		flushStatic       = func() {
@@ -400,6 +437,16 @@ func parseFiberRoute(route string, params map[string]string) ([]routePart, bool)
 		optionalSlashAllowed = func() bool {
 			return static.Len() > 0 && strings.HasSuffix(static.String(), "/")
 		}
+		noMatchedText bool
+		matchParam    = func(key string, absent, slash bool) {
+			v, found := params[key]
+			noMatchedText = noMatchedText || !found
+			if absent && slash {
+				// The "/" before the parameter is not in the path.
+				matched = matched[:len(matched)-1]
+			}
+			matched = append(matched, v...)
+		}
 	)
 	for i := 0; i < len(route); i++ {
 		c := route[i]
@@ -408,6 +455,7 @@ func parseFiberRoute(route string, params map[string]string) ([]routePart, bool)
 			if i+1 < len(route) {
 				i++
 				static.WriteByte(route[i])
+				matched = append(matched, route[i])
 			}
 		case '*', '+':
 			var key string
@@ -419,8 +467,10 @@ func parseFiberRoute(route string, params map[string]string) ([]routePart, bool)
 				key = "+" + strconv.Itoa(pluses)
 			}
 			slash := c == '*' && optionalSlashAllowed()
+			absent := !hasValue(params, key, false)
 			flushStatic()
-			parts = append(parts, routePart{param: true, absent: !hasValue(params, key, false), optionalSlash: slash})
+			parts = append(parts, routePart{param: true, absent: absent, optionalSlash: slash})
+			noMatchedText = true
 		case ':':
 			end := i + 1
 			for end < len(route) && strings.IndexByte("/-.:?\\<", route[end]) < 0 {
@@ -428,12 +478,12 @@ func parseFiberRoute(route string, params map[string]string) ([]routePart, bool)
 			}
 			name := route[i+1 : end]
 			if name == "" {
-				return nil, false
+				return nil, "", false
 			}
 			if end < len(route) && route[end] == '<' {
 				close := strings.IndexByte(route[end:], '>')
 				if close < 0 {
-					return nil, false
+					return nil, "", false
 				}
 				end += close + 1
 			}
@@ -442,15 +492,35 @@ func parseFiberRoute(route string, params map[string]string) ([]routePart, bool)
 				end++
 			}
 			slash := optional && optionalSlashAllowed()
+			absent := optional && !hasValue(params, name, false)
 			flushStatic()
-			parts = append(parts, routePart{param: true, name: name, absent: optional && !hasValue(params, name, false), optionalSlash: slash})
+			parts = append(parts, routePart{param: true, name: name, absent: absent, optionalSlash: slash})
+			matchParam(name, absent, slash)
 			i = end - 1
 		default:
 			static.WriteByte(c)
+			matched = append(matched, c)
 		}
 	}
 	flushStatic()
-	return parts, true
+	if noMatchedText {
+		return parts, "", true
+	}
+	return parts, string(matched), true
+}
+
+// appendFiberRemainder adds the implicit unnamed catch-all of a fiber prefix
+// route (Use, Static, a mount): the rest of the escaped request path after the
+// text that the route matched. fiber matches the other routes with the whole
+// path, but for a trailing "/", so they have no rest. fiber ignores the case of
+// the path by default. A path that does not start with the matched text has a
+// route or values that fiber rewrote: it gets no catch-all.
+func appendFiberRemainder(parts []routePart, matched, requestURI string) []routePart {
+	path := requestPath(requestURI)
+	if matched == "" || len(path) <= len(matched) || !strings.EqualFold(path[:len(matched)], matched) {
+		return parts
+	}
+	return appendCatchAll(parts, path[len(matched):])
 }
 
 // assembleRoute writes the normalized route of parts. It returns false when
