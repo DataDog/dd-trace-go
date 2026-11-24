@@ -1986,15 +1986,16 @@ func TestOTLPLogsConfigTelemetry(t *testing.T) {
 
 		loadConfig()
 
-		for _, key := range []string{"OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_PROTOCOL"} {
+		// The endpoint is still read twice: once for the OTLP signals, once by the
+		// environment-only runtime metrics reader. The protocol is read only by the OTLP signals.
+		for key, want := range map[string]int{"OTEL_EXPORTER_OTLP_ENDPOINT": 2, "OTEL_EXPORTER_OTLP_PROTOCOL": 1} {
 			var reports int
 			for _, cfg := range recorder.Configuration {
 				if cfg.Name == key && cfg.Origin == telemetry.OriginEnvVar {
 					reports++
 				}
 			}
-			// Once for the OTLP signals, once for the environment-only runtime metrics reader.
-			assert.Equal(t, 2, reports, key)
+			assert.Equal(t, want, reports, key)
 		}
 	})
 }
@@ -3005,6 +3006,7 @@ func TestRuntimeMetricsProtocol(t *testing.T) {
 		{"signal over generic", "http/protobuf", "grpc", "grpc"},
 		{"generic fallback", "grpc", "", "grpc"},
 		{"normalized", "  GRPC  ", "", "grpc"},
+		{"empty defaults to http/protobuf", "", "", "http/protobuf"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("OTEL_EXPORTER_OTLP_PROTOCOL", tc.generic)
@@ -3012,6 +3014,24 @@ func TestRuntimeMetricsProtocol(t *testing.T) {
 			assert.Equal(t, tc.expected, loadConfig().RuntimeMetricsProtocol())
 		})
 	}
+
+	t.Run("unsupported value warns and falls back to http/protobuf", func(t *testing.T) {
+		logger := new(log.RecordLogger)
+		defer log.UseLogger(logger)()
+		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "websocket")
+		assert.Equal(t, "http/protobuf", loadConfig().RuntimeMetricsProtocol())
+		assert.Contains(t, strings.Join(logger.Logs(), "\n"), "Unsupported OTEL_EXPORTER_OTLP_METRICS_PROTOCOL value")
+	})
+
+	t.Run("unsupported value does not warn when OTel metrics are off", func(t *testing.T) {
+		logger := new(log.RecordLogger)
+		defer log.UseLogger(logger)()
+		t.Setenv("DD_METRICS_OTEL_ENABLED", "false")
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "websocket")
+		assert.Equal(t, "http/protobuf", loadConfig().RuntimeMetricsProtocol())
+		assert.NotContains(t, strings.Join(logger.Logs(), "\n"), "Unsupported OTEL_EXPORTER_OTLP_METRICS_PROTOCOL value")
+	})
 }
 
 func TestOTLPCompression(t *testing.T) {

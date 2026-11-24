@@ -571,7 +571,7 @@ func loadConfig() *Config {
 	cfg.otlpMetricsProtocol = resolveOTLPProtocol(resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "OTEL_EXPORTER_OTLP_PROTOCOL", otlpGenericProtocols, supportsOTLPProtocol(otlpMetricsProtocols), warnOTLPMetrics))
 	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
 	envP := provider.NewEnvironment()
-	cfg.runtimeMetricsProtocol = strings.ToLower(strings.TrimSpace(envP.GetString("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", envP.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"))))
+	cfg.runtimeMetricsProtocol = resolveOTLPProtocol(resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", "OTEL_EXPORTER_OTLP_PROTOCOL", otlpGenericProtocols, supportsOTLPProtocol(otlpRuntimeMetricsProtocols), cfg.runtimeMetricsOtel))
 	otlpGenericCompressions := getOTLPGenericValues(p, "OTEL_EXPORTER_OTLP_COMPRESSION")
 	cfg.runtimeMetricsCompression = resolveOTLPCompression(resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_METRICS_COMPRESSION", "OTEL_EXPORTER_OTLP_COMPRESSION", otlpGenericCompressions, supportsOTLPCompression, cfg.runtimeMetricsOtel))
 	cfg.runtimeMetricsHTTPEndpoint, cfg.runtimeMetricsHTTPPath, cfg.runtimeMetricsGRPCEndpoint, cfg.runtimeMetricsInsecure = resolveRuntimeMetricsEndpoint(
@@ -2218,6 +2218,7 @@ func (c *Config) RuntimeMetricsCompression() string {
 	return c.runtimeMetricsCompression
 }
 
+// RuntimeMetricsProtocol returns "http/protobuf" (default), "http" or "grpc".
 func (c *Config) RuntimeMetricsProtocol() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()

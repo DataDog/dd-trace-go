@@ -32,8 +32,9 @@ var DefaultSocketDSDPath = "/var/run/datadog/dsd.socket"
 
 // The OTLP protocols each exporter supports, default first.
 var (
-	otlpMetricsProtocols = []string{defaultOTLPProtocol, "http/json"}
-	otlpLogsProtocols    = []string{defaultOTLPProtocol, "http", "grpc"}
+	otlpMetricsProtocols        = []string{defaultOTLPProtocol, "http/json"}
+	otlpRuntimeMetricsProtocols = []string{defaultOTLPProtocol, "http", "grpc"}
+	otlpLogsProtocols           = []string{defaultOTLPProtocol, "http", "grpc"}
 	// otlpCompressions are the OTEL_EXPORTER_OTLP_*COMPRESSION values dd-trace-go honors for http/json, default first.
 	otlpCompressions = []string{"none", "gzip"}
 )
