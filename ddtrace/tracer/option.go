@@ -171,7 +171,8 @@ type config struct {
 	propagator Propagator
 
 	// httpClient specifies the HTTP client to be used by the agent's transport.
-	httpClient *http.Client
+	httpClient             *http.Client
+	httpClientIsDefaultUDS bool
 
 	// agentTransport, if set, is applied as the HTTP client's round-tripper
 	// unconditionally after newConfig builds c.httpClient — including after
@@ -255,6 +256,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 			// If we're connecting over UDS we can just rely on the agent to provide the hostname
 			log.Debug("connecting to agent over unix, do not set hostname on any traces")
 			c.httpClient = internal.UDSClient(rawAgentURL.Path, cmp.Or(c.internalConfig.AgentTimeout(), defaultHTTPTimeout))
+			c.httpClientIsDefaultUDS = true
 		} else {
 			c.httpClient = internal.DefaultHTTPClient(c.internalConfig.AgentTimeout(), false)
 		}
@@ -267,6 +269,7 @@ func newConfig(opts ...StartOption) (*config, error) {
 	// last so it always wins. For testing only — see config.agentTransport.
 	if c.agentTransport != nil {
 		c.httpClient = &http.Client{Transport: c.agentTransport}
+		c.httpClientIsDefaultUDS = false
 	}
 	WithGlobalTag(ext.RuntimeID, globalconfig.RuntimeID())(c)
 	// TODO: env/version/service fall back to global tags when unset. This runs

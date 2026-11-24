@@ -2970,3 +2970,21 @@ func TestAgentEnabledWithAgentlessEnvOnly(t *testing.T) {
 	assert.True(t, c.agentEnabled(), "agent must remain enabled when CI Visibility is off")
 	assert.False(t, c.internalConfig.CIVisibilityAgentlessActive(), "agentless mode must not be active without CI Visibility")
 }
+
+func TestLLMObsAgentlessKeepsCustomHTTPClient(t *testing.T) {
+	for _, agentURL := range []string{"http://localhost:8126", "unix:///unused.sock"} {
+		for _, agentless := range []string{"true", ""} {
+			t.Run(agentURL+"/agentless="+agentless, func(t *testing.T) {
+				t.Setenv("DD_TRACE_AGENT_URL", agentURL)
+				t.Setenv("DD_LLMOBS_AGENTLESS_ENABLED", agentless)
+				client := &http.Client{Transport: &agentInfoJSONRoundTripper{body: "{}"}}
+				cfg, err := newConfig(WithHTTPClient(client))
+				require.NoError(t, err)
+				llm, err := buildLLMObsConfig(cfg)
+				require.NoError(t, err)
+				require.True(t, llm.AgentlessEnabled)
+				require.Same(t, client, llm.TracerConfig.HTTPClient)
+			})
+		}
+	}
+}
