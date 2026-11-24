@@ -98,9 +98,12 @@ func TestEveryWorkflowIsRegistered(t *testing.T) {
 func TestCacheSeedAndDisableLiterals(t *testing.T) {
 	root, _ := workflowPaths(t)
 	seedLiterals := map[string]int{
+		"appsec.yml":                 1, // The macOS matrix job; the other jobs keep the module-only cache.
 		"multios-unit-tests.yml":     1,
 		"smoke-tests.yml":            4,
 		"unit-integration-tests.yml": 3,
+		"orchestrion.yml":            1, // The integration-test job; gated on a non-Windows runner.
+		"otelc.yml":                  1, // The integration-test job; gated on a non-Windows runner.
 	}
 	for name, want := range seedLiterals {
 		body := readText(t, filepath.Join(root, workflowDir), name)
@@ -125,6 +128,306 @@ func TestCacheSeedAndDisableLiterals(t *testing.T) {
 	_, on := parseWorkflow(t, filepath.Join(root, workflowDir, "main-branch-tests.yml"))
 	if _, ok := on["workflow_dispatch"]; !ok {
 		t.Error("main-branch-tests.yml lacks the workflow_dispatch trigger")
+	}
+}
+
+// setupGoStep returns the `with` mapping of the job's Setup Go step, the
+// step that uses the repository's setup-go composite action.
+func setupGoStep(t *testing.T, path, jobID string) map[string]any {
+	t.Helper()
+	doc, _ := parseWorkflow(t, path)
+	jobs, _ := doc["jobs"].(map[string]any)
+	job, _ := jobs[jobID].(map[string]any)
+	if job == nil {
+		t.Fatalf("%s has no job %q", path, jobID)
+	}
+	steps, _ := job["steps"].([]any)
+	for _, s := range steps {
+		step, _ := s.(map[string]any)
+		uses, _ := step["uses"].(string)
+		if strings.HasSuffix(uses, "actions/setup-go") {
+			with, _ := step["with"].(map[string]any)
+			if with == nil {
+				t.Fatalf("%s job %q: the setup-go step has no with block", path, jobID)
+			}
+			return with
+		}
+	}
+	t.Fatalf("%s job %q has no step using the setup-go action", path, jobID)
+	return nil
+}
+
+// TestGoCachePolicyPerOS pins the per-OS cache policy of APMLP-2249:
+// every Windows stratum skips the isolated Go caches — the multios
+// measurements in APMLP-2248 put a 1.4 GiB restore at 2.6-3.3m of
+// tar.exe extraction for about 2m of saved build time — and the lanes
+// whose Windows strata skip cache therefore gate both `cache` and
+// `seed` on a non-Windows runner. The integration lanes additionally
+// seed only their stable-alias strata, because the shared pool sat at
+// its 100 GiB eviction boundary when this was decided, and a dispatch
+// that overrides the pinned otelc version must stay restore-only
+// because no ordinary pull request can restore that variant. A
+// silently dropped condition reverts a stratum to a pointless restore
+// or an unbounded seed, and actionlint cannot catch that.
+func TestGoCachePolicyPerOS(t *testing.T) {
+	root, _ := workflowPaths(t)
+	join := func(name string) string {
+		return filepath.Join(root, workflowDir, name)
+	}
+
+	// Lanes whose Windows matrix strata skip the Go caches. The runner
+	// exclusion keys on what the matrix defines: matrix.runs-on for the
+	// integration lanes, runner.os for the multios caller. The seed
+	// gates carry each lane's extra bounds (stable alias, DRIVER mode,
+	// pinned tool version).
+	lanes := []struct{ name, jobID, cacheWant, seedWant string }{
+		{
+			name: "orchestrion.yml", jobID: "integration-test",
+			cacheWant: "${{ matrix.runs-on != 'windows' }}",
+			seedWant:  "${{ matrix.runs-on != 'windows' && matrix.go-version == 'stable' && matrix.mode == 'DRIVER' }}",
+		},
+		{
+			name: "otelc.yml", jobID: "integration-test",
+			cacheWant: "${{ matrix.runs-on != 'windows' }}",
+			seedWant:  "${{ matrix.runs-on != 'windows' && matrix.go-version == 'stable' && inputs.otelc-version == '' }}",
+		},
+		{
+			name: "multios-unit-tests.yml", jobID: "test-multi-os",
+			cacheWant: "${{ runner.os != 'Windows' }}",
+			seedWant:  "${{ runner.os != 'Windows' }}",
+		},
+	}
+	for _, lane := range lanes {
+		with := setupGoStep(t, join(lane.name), lane.jobID)
+		for _, input := range []struct{ key, want string }{
+			{"cache", lane.cacheWant},
+			{"seed", lane.seedWant},
+		} {
+			got, _ := with[input.key].(string)
+			if got != input.want {
+				t.Errorf("%s job %q: setup-go %s = %q, want %q", lane.name, lane.jobID, input.key, got, input.want)
+			}
+		}
+	}
+
+	// cache: false without quotes decodes as a boolean, so a string-only
+	// check can be silently bypassed.
+	cacheDisabled := func(v any) bool {
+		switch c := v.(type) {
+		case bool:
+			return !c
+		case string:
+			return c == "false"
+		}
+		return false
+	}
+
+	// The AppSec macOS matrix job seeds the isolated caches: the setup-go
+	// step must keep the default (cloudx) provider and an unconditional
+	// seed literal, or the strata silently stop saving on the nightly
+	// run. It must also drop the restored test-result entries (go clean
+	// -testcache): Go caches -v output and coverage profiles in GOCACHE,
+	// so without the clean a package unchanged since the nightly seed
+	// can pass without executing on the pull request's runner.
+	with := setupGoStep(t, join("appsec.yml"), "macos")
+	if got, _ := with["seed"].(string); got != "true" {
+		t.Errorf("appsec.yml job macos: setup-go seed = %q, want the literal true", got)
+	}
+	if cacheDisabled(with["cache"]) {
+		t.Error("appsec.yml job macos: setup-go cache is disabled, but the job needs the isolated caches")
+	}
+	if got, _ := with["cache-provider"].(string); got != "" {
+		t.Errorf("appsec.yml job macos: setup-go cache-provider = %q, want the default cloudx provider", got)
+	}
+	if got, _ := with["workload"].(string); got == "" {
+		t.Error("appsec.yml job macos: setup-go workload is empty, so the cache key family falls back to the job name")
+	}
+	if !jobRunsTestCacheClean(t, join("appsec.yml"), "macos") {
+		t.Error("appsec.yml job macos: no go clean -testcache step, so a restored GOCACHE can replay cached test results")
+	}
+}
+
+// TestMultiosWindowsKeepsAModuleCache pins the proxy-resilience half of
+// the Windows policy: the multios lane skips the isolated caches on
+// Windows because the combined restore measured net-negative there
+// (APMLP-2248), but a fully cold runner also re-fetches the whole
+// workspace dependency set from proxy.golang.org on every run, and a
+// saturated proxy turns minutes into tens of minutes through the |direct
+// fallback. The lane therefore restores a module-only archive on
+// Windows (the AppSec go-pkg-mod pattern), seeded by the nightly run
+// alone: the restore step must never save on pull requests, and the save
+// step must stay gated on the seeding events. A dropped step pair
+// silently re-exposes the lane to the proxy, and actionlint cannot
+// catch that.
+func TestMultiosWindowsKeepsAModuleCache(t *testing.T) {
+	root, _ := workflowPaths(t)
+	doc, _ := parseWorkflow(t, filepath.Join(root, workflowDir, "multios-unit-tests.yml"))
+	jobs, _ := doc["jobs"].(map[string]any)
+	job, _ := jobs["test-multi-os"].(map[string]any)
+	if job == nil {
+		t.Fatal("multios-unit-tests.yml has no job test-multi-os")
+	}
+	const wantKey = "go-pkg-mod-multios-${{ hashFiles('**/go.sum') }}"
+	steps, _ := job["steps"].([]any)
+	var restore, save map[string]any
+	for _, s := range steps {
+		step, _ := s.(map[string]any)
+		uses, _ := step["uses"].(string)
+		switch {
+		case strings.Contains(uses, "cache/restore"):
+			restore = step
+		case strings.Contains(uses, "cache/save"):
+			save = step
+		}
+	}
+	if restore == nil {
+		t.Fatal("multios test-multi-os has no actions/cache/restore step")
+	}
+	if save == nil {
+		t.Fatal("multios test-multi-os has no actions/cache/save step")
+	}
+	for _, step := range []struct {
+		name string
+		m    map[string]any
+	}{{"restore", restore}, {"save", save}} {
+		with, _ := step.m["with"].(map[string]any)
+		if got, _ := with["key"].(string); got != wantKey {
+			t.Errorf("multios module-cache %s key = %q, want %q", step.name, got, wantKey)
+		}
+		// The archive must live outside the workspace: extracted module
+		// trees under the workspace are swept up by the test step's
+		// `go list ./...`, and their go.sum files re-key hashFiles between
+		// the restore and the save.
+		if got, _ := with["path"].(string); got != "${{ runner.temp }}/go_pkg_mod_cache" {
+			t.Errorf("multios module-cache %s path = %q, want the RUNNER_TEMP path outside the workspace", step.name, got)
+		}
+		ifCond, _ := step.m["if"].(string)
+		if !strings.Contains(ifCond, "runner.os == 'Windows'") {
+			t.Errorf("multios module-cache %s gate %q must target the Windows stratum", step.name, ifCond)
+		}
+	}
+	// The restore must exist on every event and never write: only the
+	// save step writes, and only on the seeding events (the nightly
+	// schedule through the main-branch-tests caller, or a dispatch on
+	// the default branch).
+	if got, _ := restore["if"].(string); strings.Contains(got, "github.event_name") {
+		t.Errorf("multios module-cache restore gate %q must not exclude events: every run restores", got)
+	}
+	saveIf, _ := save["if"].(string)
+	for _, want := range []string{
+		"github.event_name == 'schedule'",
+		"github.event_name == 'workflow_dispatch'",
+		"github.ref == 'refs/heads/main'",
+	} {
+		if !strings.Contains(saveIf, want) {
+			t.Errorf("multios module-cache save gate %q lacks %q: only seeding events may write", saveIf, want)
+		}
+	}
+	// The save must not carry always(): a failed or cancelled run must not
+	// publish a partial archive under an immutable key.
+	if strings.Contains(saveIf, "always()") {
+		t.Errorf("multios module-cache save gate %q must not force the save on failed runs", saveIf)
+	}
+	// The job must export GOMODCACHE at the restored directory through
+	// GITHUB_ENV (an env var beats a `go env -w` default), before any go
+	// command runs, or the restore is decoration.
+	hasModcacheExport := false
+	for _, s := range steps {
+		step, _ := s.(map[string]any)
+		run, _ := step["run"].(string)
+		if strings.Contains(run, "GOMODCACHE=${RUNNER_TEMP}/go_pkg_mod_cache") && strings.Contains(run, "$GITHUB_ENV") {
+			ifCond, _ := step["if"].(string)
+			if strings.Contains(ifCond, "runner.os == 'Windows'") {
+				hasModcacheExport = true
+			}
+		}
+	}
+	if !hasModcacheExport {
+		t.Error("multios test-multi-os does not export GOMODCACHE at the RUNNER_TEMP module cache through GITHUB_ENV on Windows; the restored archive is unused")
+	}
+}
+
+// jobRunsTestCacheClean reports whether the job runs go clean -testcache
+// on its restored build cache.
+func jobRunsTestCacheClean(t *testing.T, path, jobID string) bool {
+	t.Helper()
+	doc, _ := parseWorkflow(t, path)
+	jobs, _ := doc["jobs"].(map[string]any)
+	job, _ := jobs[jobID].(map[string]any)
+	if job == nil {
+		t.Fatalf("%s has no job %q", path, jobID)
+	}
+	steps, _ := job["steps"].([]any)
+	for _, s := range steps {
+		step, _ := s.(map[string]any)
+		run, _ := step["run"].(string)
+		if strings.Contains(run, "go clean -testcache") {
+			return true
+		}
+	}
+	return false
+}
+
+// TestAppSecWindowsDevDriveWiring pins the Windows-speedup wiring of the
+// one Windows job that does not go through the setup-go action (which
+// provisions the Dev Drive itself): the `disabled` job restores the module
+// cache into the workspace, so its Dev Drive step must run before that
+// restore (the build cache then lives on the Dev Drive before the first
+// compile) and redirect only the build cache, because GOMODCACHE is
+// managed by the workflow.
+func TestAppSecWindowsDevDriveWiring(t *testing.T) {
+	root, _ := workflowPaths(t)
+	doc, _ := parseWorkflow(t, filepath.Join(root, workflowDir, "appsec.yml"))
+	jobs, ok := doc["jobs"].(map[string]any)
+	if !ok {
+		t.Fatal("appsec.yml has no jobs")
+	}
+	disabled, ok := jobs["disabled"].(map[string]any)
+	if !ok {
+		t.Fatal("appsec.yml has no `disabled` job (renamed?)")
+	}
+	// The Dev Drive step is Windows-only: without a Windows runner in the
+	// matrix the step is unreachable and the wiring above is dead.
+	strategy, _ := disabled["strategy"].(map[string]any)
+	matrix, _ := strategy["matrix"].(map[string]any)
+	runsOn, _ := matrix["runs-on"].([]any)
+	hasWindows := slices.ContainsFunc(runsOn, func(runner any) bool {
+		label, ok := runner.(string)
+		return ok && strings.Contains(strings.ToLower(label), "windows")
+	})
+	if !hasWindows {
+		t.Error("appsec.yml `disabled` job needs a Windows runner to reach the Dev Drive step")
+	}
+	steps, ok := disabled["steps"].([]any)
+	if !ok {
+		t.Fatal("appsec.yml `disabled` job has no steps")
+	}
+	indexOf := func(match func(map[string]any) bool) int {
+		for i, raw := range steps {
+			if step, ok := raw.(map[string]any); ok && match(step) {
+				return i
+			}
+		}
+		return -1
+	}
+	devDrive := indexOf(func(step map[string]any) bool { return step["uses"] == "./.github/actions/windows-dev-drive" })
+	if devDrive < 0 {
+		t.Fatal("appsec.yml `disabled` job does not use ./.github/actions/windows-dev-drive; " +
+			"its Windows builds and cache restore stay on the slow default volume")
+	}
+	step, _ := steps[devDrive].(map[string]any)
+	if got := step["if"]; got != "runner.os == 'Windows'" {
+		t.Errorf("the AppSec Dev Drive step has condition %v, want runner.os == 'Windows'", got)
+	}
+	if with, _ := step["with"].(map[string]any); with["redirect"] != "gocache" {
+		t.Errorf("the Dev Drive step must redirect gocache only (GOMODCACHE is restored into the workspace by this job), got with %v", with)
+	}
+	restore := indexOf(func(step map[string]any) bool { return step["name"] == "Restore Go modules cache" })
+	if restore < 0 {
+		t.Error("appsec.yml `disabled` job has no `Restore Go modules cache` step (renamed?)")
+	}
+	if restore >= 0 && restore < devDrive {
+		t.Error("the Dev Drive step runs after the module-cache restore; it must come first so the build cache lands on the Dev Drive before the first compile")
 	}
 }
 

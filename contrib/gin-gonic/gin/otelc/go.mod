@@ -3,8 +3,8 @@ module github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.13.0-dev.1
-	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.14.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.14.0-dev
 	github.com/gin-gonic/gin v1.10.1
 	go.opentelemetry.io/otelc/pkg v0.1.0
 )

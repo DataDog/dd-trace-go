@@ -8,6 +8,19 @@
 //
 // EXPERIMENTAL: This package is experimental and may change or be removed at any time
 // without notice. It is not subject to the Go module's compatibility promise.
+//
+// # Distributed tracing
+//
+// An outbound request carries the active LLMObs context in two places: the
+// _dd.p.llmobs_* tags in x-datadog-tags, and llmobs.* items in the W3C baggage
+// header. Baggage survives an intermediary that drops the APM trace headers, so
+// the downstream service still continues the LLMObs trace. This needs "baggage"
+// in DD_TRACE_PROPAGATION_STYLE, which is the default.
+//
+// An inbound request is read from baggage first. When the tags name a different
+// parent, an older tracer sat between the two services and forwarded stale
+// baggage, so the tags are used. With DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT=restart,
+// the inbound LLMObs context is ignored and the llmobs.* items are not forwarded.
 package llmobs
 
 import (

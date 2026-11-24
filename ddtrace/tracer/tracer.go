@@ -34,6 +34,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	llmobsconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -1125,6 +1126,9 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	// context.trace.root = span, making the nil check unreliable afterward.
 	isRootSpan := context == nil || context.trace == nil || context.trace.root == nil
 	span.context = newSpanContext(span, context)
+	if isRootSpan && context != nil && illmobs.Enabled() {
+		activateInboundLLMObsContext(span.context)
+	}
 	if pprofContext != nil {
 		setLLMObsPropagatingTags(pprofContext, span.context)
 	}
