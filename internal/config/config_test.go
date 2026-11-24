@@ -3015,6 +3015,8 @@ func TestRuntimeMetricsProtocol(t *testing.T) {
 		{"signal over generic", "http/protobuf", "grpc", "grpc"},
 		{"generic fallback", "grpc", "", "grpc"},
 		{"normalized", "  GRPC  ", "", "grpc"},
+		{"http/json from signal", "", "HTTP/JSON", "http/json"},
+		{"http/json from generic", "http/json", "", "http/json"},
 		{"empty defaults to http/protobuf", "", "", "http/protobuf"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

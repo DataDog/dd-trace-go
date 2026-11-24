@@ -90,7 +90,7 @@ type MetricsExportTelemetry struct {
 }
 
 // NewMetricsExportTelemetry creates a new MetricsExportTelemetry for tracking export operations.
-// The protocol should be "http" or "grpc", and encoding is typically "protobuf".
+// The protocol should be "http" or "grpc", and encoding is "protobuf" or "json".
 func NewMetricsExportTelemetry(protocol, encoding string) *MetricsExportTelemetry {
 	tags := []string{
 		"protocol:" + protocol,

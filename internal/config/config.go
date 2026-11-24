@@ -2218,7 +2218,7 @@ func (c *Config) RuntimeMetricsCompression() string {
 	return c.runtimeMetricsCompression
 }
 
-// RuntimeMetricsProtocol returns "http/protobuf" (default), "http" or "grpc".
+// RuntimeMetricsProtocol returns "http/protobuf" (default), "http", "http/json" or "grpc".
 func (c *Config) RuntimeMetricsProtocol() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
