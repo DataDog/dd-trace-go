@@ -52,6 +52,8 @@ sarama_new_consumer_from_client:
 
 # The producer rules pass the config from the call's arguments, or the client's
 # config, to the contrib. A nil config reaches the contrib as nil.
+# {{ .CallArguments }} also covers a call whose only argument returns both
+# values, such as NewSyncProducer(producerArgs()).
 #
 # TODO: wrap_call requires the original call in the template, so it stays in a
 # branch that never runs. The parameters keep a prefix so they cannot hide a
@@ -75,7 +77,7 @@ sarama_new_sync_producer:
               __dd_p = ibmsaramatrace.WrapSyncProducer(__dd_cfg, __dd_p)
             }
             return __dd_p, __dd_err
-          })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
+          })({{ .CallArguments }})
   imports:
     ibmsarama: github.com/IBM/sarama
     ibmsaramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
@@ -119,7 +121,7 @@ sarama_new_async_producer:
               __dd_p = ibmsaramatrace.WrapAsyncProducer(__dd_cfg, __dd_p)
             }
             return __dd_p, __dd_err
-          })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
+          })({{ .CallArguments }})
   imports:
     ibmsarama: github.com/IBM/sarama
     ibmsaramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2

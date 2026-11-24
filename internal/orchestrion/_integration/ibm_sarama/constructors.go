@@ -171,3 +171,24 @@ func (*TestCaseWrappedTwice) ExpectedTraces() trace.Traces {
 	return trace.Traces{produceSpan(), consumeSpan()}
 }
 func (*TestCaseWrappedTwice) ExpectedSpanCount() int { return 5 }
+
+// TestCaseMultiValueArgs passes the producer constructors a single call that
+// returns both arguments.
+type TestCaseMultiValueArgs struct{ mockBroker }
+
+func (tc *TestCaseMultiValueArgs) args() ([]string, *sarama.Config) { return tc.addrs, tc.cfg }
+
+func (tc *TestCaseMultiValueArgs) Run(_ context.Context, t *testing.T) {
+	sp, err := sarama.NewSyncProducer(tc.args())
+	require.NoError(t, err)
+	require.NoError(t, kafkamock.SendSync(sp))
+
+	ap, err := sarama.NewAsyncProducer(tc.args())
+	require.NoError(t, err)
+	require.NoError(t, kafkamock.SendAsync(ap))
+}
+
+func (*TestCaseMultiValueArgs) ExpectedTraces() trace.Traces {
+	return trace.Traces{produceSpan(), produceSpan()}
+}
+func (*TestCaseMultiValueArgs) ExpectedSpanCount() int { return 2 }
