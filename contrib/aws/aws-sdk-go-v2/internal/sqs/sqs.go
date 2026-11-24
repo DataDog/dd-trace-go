@@ -114,26 +114,25 @@ func (e *Enricher) handleSendMessageBatch(ctx context.Context, span *tracer.Span
 		return
 	}
 
-	var budget traceBudget
 	canInject := !e.noInject
-	if canInject && len(params.Entries) > maxBatchEntries {
-		instr.Logger().Debug("Cannot inject trace context: SQS batch has %d entries (maximum %d)", len(params.Entries), maxBatchEntries)
+	if len(params.Entries) > maxBatchEntries {
+		if canInject {
+			instr.Logger().Debug("Cannot inject trace context: SQS batch has %d entries (maximum %d)", len(params.Entries), maxBatchEntries)
+		}
 		canInject = false
 	}
-	if canInject {
-		var batchSize int64
-		for i := range params.Entries {
-			batchSize += sendMessageBatchEntrySize(&params.Entries[i])
-		}
-		budget = newTraceBudget(batchSize, func() int64 {
-			var extra int64
-			for i := range params.Entries {
-				entry := &params.Entries[i]
-				extra += messageTextExpansion(entry.MessageBody, entry.MessageAttributes)
-			}
-			return extra
-		})
+	var batchSize int64
+	for i := range params.Entries {
+		batchSize += sendMessageBatchEntrySize(&params.Entries[i])
 	}
+	budget := newTraceBudget(batchSize, func() int64 {
+		var extra int64
+		for i := range params.Entries {
+			entry := &params.Entries[i]
+			extra += messageTextExpansion(entry.MessageBody, entry.MessageAttributes)
+		}
+		return extra
+	})
 
 	original := params
 	cloneEntries := func() {
@@ -144,6 +143,18 @@ func (e *Enricher) handleSendMessageBatch(ctx context.Context, span *tracer.Span
 			in.Parameters = params
 		}
 	}
+	stripDatadog := func(i int) {
+		old := params.Entries[i].MessageAttributes[datadogKey]
+		cloneEntries()
+		stripped := make(map[string]types.MessageAttributeValue, len(params.Entries[i].MessageAttributes))
+		maps.Copy(stripped, params.Entries[i].MessageAttributes)
+		delete(stripped, datadogKey)
+		params.Entries[i].MessageAttributes = stripped
+		budget.remaining += attributeSize(datadogKey, old)
+		if budget.textExpansion == nil {
+			budget.remaining += attributeTextExpansion(old)
+		}
+	}
 	for i := range params.Entries {
 		traceContext, err := e.getTraceContext(ctx, span, queueName(params.QueueUrl), sendMessageBatchEntrySize(&params.Entries[i]))
 		if err != nil {
@@ -151,17 +162,16 @@ func (e *Enricher) handleSendMessageBatch(ctx context.Context, span *tracer.Span
 			continue
 		}
 		if !canInject {
+			if _, exists := params.Entries[i].MessageAttributes[datadogKey]; exists && budget.remaining < 0 {
+				stripDatadog(i)
+			}
 			continue
 		}
 		if attrs := budget.inject(traceContext, params.Entries[i].MessageAttributes); attrs != nil {
 			cloneEntries()
 			params.Entries[i].MessageAttributes = attrs
 		} else if _, exists := params.Entries[i].MessageAttributes[datadogKey]; exists {
-			cloneEntries()
-			stripped := make(map[string]types.MessageAttributeValue, len(params.Entries[i].MessageAttributes))
-			maps.Copy(stripped, params.Entries[i].MessageAttributes)
-			delete(stripped, datadogKey)
-			params.Entries[i].MessageAttributes = stripped
+			stripDatadog(i)
 		}
 	}
 }

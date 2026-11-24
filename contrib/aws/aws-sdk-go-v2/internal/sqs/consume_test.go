@@ -452,6 +452,123 @@ func TestForwardDropsDatadogAtBatchByteLimit(t *testing.T) {
 	}
 }
 
+func TestForwardCreditsStrippedAttributeToBatchBudget(t *testing.T) {
+	const (
+		forwardQueue = "forward-queue"
+		forwardURL   = "https://sqs.us-east-1.amazonaws.com/1234567890/" + forwardQueue
+	)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	const limit = 1 << 20
+	received := receive(t, true, types.Message{Body: aws.String("a")})[0]
+	consumeAttr, ok := received.MessageAttributes[datadogKey]
+	require.True(t, ok)
+	consumeSize := int(attributeSize(datadogKey, consumeAttr))
+	require.Positive(t, consumeSize)
+
+	consumeCtx := datastreams.ExtractFromBase64Carrier(context.Background(), carrierFromAttribute(t, consumeAttr))
+	span, ctx := tracer.StartSpanFromContext(consumeCtx, "forward")
+	forward := NewEnricher(true, true)
+	sent := forward.EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: &sqs.SendMessageInput{
+		QueueUrl:    aws.String(forwardURL),
+		MessageBody: aws.String("a"),
+	}}, "SendMessage")
+	forwardAttr, ok := sent.Parameters.(*sqs.SendMessageInput).MessageAttributes[datadogKey]
+	require.True(t, ok)
+	forwardSize := int(attributeSize(datadogKey, forwardAttr))
+	require.Positive(t, forwardSize)
+
+	bodies := []int{limit - consumeSize - forwardSize, 1}
+	messages := make([]types.Message, len(bodies))
+	original := make([]map[string]types.MessageAttributeValue, len(bodies))
+	for i, size := range bodies {
+		messages[i] = types.Message{Body: aws.String(strings.Repeat("b", size))}
+	}
+	messages = receive(t, true, messages...)
+	for i := range messages {
+		require.Contains(t, messages[i].MessageAttributes, datadogKey)
+		original[i] = maps.Clone(messages[i].MessageAttributes)
+	}
+
+	entries := make([]types.SendMessageBatchRequestEntry, len(messages))
+	for i := range messages {
+		entries[i] = types.SendMessageBatchRequestEntry{
+			Id:                aws.String(strconv.Itoa(i)),
+			MessageBody:       messages[i].Body,
+			MessageAttributes: messages[i].MessageAttributes,
+		}
+	}
+	batch := forward.EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: &sqs.SendMessageBatchInput{
+		QueueUrl: aws.String(forwardURL),
+		Entries:  entries,
+	}}, "SendMessageBatch")
+
+	gotEntries := batch.Parameters.(*sqs.SendMessageBatchInput).Entries
+	require.Len(t, gotEntries, 2)
+	require.NotContains(t, gotEntries[0].MessageAttributes, datadogKey)
+	injected, ok := gotEntries[1].MessageAttributes[datadogKey]
+	require.True(t, ok)
+	carrier := carrierFromAttribute(t, injected)
+	assert.Contains(t, carrier, "x-datadog-trace-id")
+	extracted, err := tracer.Extract(carrier)
+	require.NoError(t, err)
+	assert.Equal(t, span.Context().TraceID(), extracted.TraceID())
+	for i := range messages {
+		assert.Equal(t, original[i], messages[i].MessageAttributes)
+	}
+}
+
+func TestForwardRepairsBatchByteLimitWithInjectionDisabled(t *testing.T) {
+	const (
+		forwardQueue = "forward-queue"
+		forwardURL   = "https://sqs.us-east-1.amazonaws.com/1234567890/" + forwardQueue
+	)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	const limit = 1 << 20
+	messages := receive(t, true,
+		types.Message{Body: aws.String(strings.Repeat("b", limit/2))},
+		types.Message{Body: aws.String(strings.Repeat("b", limit/2))},
+	)
+	require.Len(t, messages, 2)
+	original := make([]map[string]types.MessageAttributeValue, len(messages))
+	for i := range messages {
+		require.Contains(t, messages[i].MessageAttributes, datadogKey)
+		original[i] = maps.Clone(messages[i].MessageAttributes)
+	}
+
+	consumeCtx := datastreams.ExtractFromBase64Carrier(context.Background(), carrierFromAttribute(t, messages[0].MessageAttributes[datadogKey]))
+	span, ctx := tracer.StartSpanFromContext(consumeCtx, "forward")
+	entries := make([]types.SendMessageBatchRequestEntry, len(messages))
+	for i := range messages {
+		entries[i] = types.SendMessageBatchRequestEntry{
+			Id:                aws.String(strconv.Itoa(i)),
+			MessageBody:       messages[i].Body,
+			MessageAttributes: messages[i].MessageAttributes,
+		}
+	}
+
+	batch := NewEnricher(false, true).EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: &sqs.SendMessageBatchInput{
+		QueueUrl: aws.String(forwardURL),
+		Entries:  entries,
+	}}, "SendMessageBatch")
+
+	gotEntries := batch.Parameters.(*sqs.SendMessageBatchInput).Entries
+	require.Len(t, gotEntries, 2)
+	var total int64
+	for _, entry := range gotEntries {
+		require.NotContains(t, entry.MessageAttributes, datadogKey)
+		require.Equal(t, limit/2, len(aws.ToString(entry.MessageBody)))
+		total += int64(len(aws.ToString(entry.MessageBody))) + messageAttributesSize(entry.MessageAttributes)
+	}
+	assert.LessOrEqual(t, total, int64(maxMessageBytes))
+	for i := range messages {
+		assert.Equal(t, original[i], messages[i].MessageAttributes)
+	}
+}
+
 func TestReceiveMessageByteLimit(t *testing.T) {
 	const queue = "consume-queue"
 	mt := mocktracer.Start()
