@@ -3014,6 +3014,39 @@ func TestRuntimeMetricsProtocol(t *testing.T) {
 	}
 }
 
+func TestOTLPCompression(t *testing.T) {
+	t.Run("defaults to none", func(t *testing.T) {
+		cfg := loadConfig()
+		assert.Equal(t, "none", cfg.OTLPLogsCompression())
+		assert.Equal(t, "none", cfg.RuntimeMetricsCompression())
+	})
+
+	t.Run("generic key applies to both signals", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_COMPRESSION", " GZIP ")
+		cfg := loadConfig()
+		assert.Equal(t, "gzip", cfg.OTLPLogsCompression())
+		assert.Equal(t, "gzip", cfg.RuntimeMetricsCompression())
+	})
+
+	t.Run("signal key wins over generic", func(t *testing.T) {
+		t.Setenv("OTEL_EXPORTER_OTLP_COMPRESSION", "gzip")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_COMPRESSION", "none")
+		t.Setenv("OTEL_EXPORTER_OTLP_METRICS_COMPRESSION", "none")
+		cfg := loadConfig()
+		assert.Equal(t, "none", cfg.OTLPLogsCompression())
+		assert.Equal(t, "none", cfg.RuntimeMetricsCompression())
+	})
+
+	t.Run("unsupported value warns and falls back to none", func(t *testing.T) {
+		logger := new(log.RecordLogger)
+		defer log.UseLogger(logger)()
+		t.Setenv("DD_LOGS_OTEL_ENABLED", "true")
+		t.Setenv("OTEL_EXPORTER_OTLP_LOGS_COMPRESSION", "zstd")
+		assert.Equal(t, "none", loadConfig().OTLPLogsCompression())
+		assert.Contains(t, strings.Join(logger.Logs(), "\n"), "Unsupported OTEL_EXPORTER_OTLP_LOGS_COMPRESSION value")
+	})
+}
+
 func TestRuntimeMetricsEndpoint(t *testing.T) {
 	for _, tc := range []struct {
 		name                           string

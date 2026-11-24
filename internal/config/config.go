@@ -226,6 +226,9 @@ type Config struct {
 	otlpLogsEndpoint string
 	otlpLogsHeaders  map[string]string
 	otlpLogsTimeout  time.Duration
+	// otlpLogsCompression is "none" or "gzip". Only the http/json exporter reads it;
+	// the upstream protobuf exporters read the environment themselves.
+	otlpLogsCompression string
 	// Resolved HTTP URL; empty when the exporter should use its agent fallback.
 	otlpLogsHTTPURL string
 	// traceProtocol is the Datadog trace protocol version the user requested
@@ -284,6 +287,7 @@ type Config struct {
 
 	// OTel runtime metrics exporter and reader settings, resolved from the environment only.
 	runtimeMetricsProtocol       string
+	runtimeMetricsCompression    string
 	runtimeMetricsHTTPEndpoint   string
 	runtimeMetricsHTTPPath       string
 	runtimeMetricsGRPCEndpoint   string
@@ -568,6 +572,8 @@ func loadConfig() *Config {
 	cfg.otlpMetricsFlushInterval = resolveOTLPMetricsFlushInterval(env.Get("_DD_TRACE_STATS_INTERVAL"))
 	envP := provider.NewEnvironment()
 	cfg.runtimeMetricsProtocol = strings.ToLower(strings.TrimSpace(envP.GetString("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", envP.GetString("OTEL_EXPORTER_OTLP_PROTOCOL", "http/protobuf"))))
+	otlpGenericCompressions := getOTLPGenericValues(p, "OTEL_EXPORTER_OTLP_COMPRESSION")
+	cfg.runtimeMetricsCompression = resolveOTLPCompression(resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_METRICS_COMPRESSION", "OTEL_EXPORTER_OTLP_COMPRESSION", otlpGenericCompressions, supportsOTLPCompression, cfg.runtimeMetricsOtel))
 	cfg.runtimeMetricsHTTPEndpoint, cfg.runtimeMetricsHTTPPath, cfg.runtimeMetricsGRPCEndpoint, cfg.runtimeMetricsInsecure = resolveRuntimeMetricsEndpoint(
 		envP.GetString("OTEL_EXPORTER_OTLP_ENDPOINT", ""),
 		envP.GetString("OTEL_EXPORTER_OTLP_METRICS_ENDPOINT", ""),
@@ -587,6 +593,7 @@ func loadConfig() *Config {
 	}
 	cfg.otlpLogsHeaders = resolveOTLPHeaders(otlpGenericHeaders, p.GetMap("OTEL_EXPORTER_OTLP_LOGS_HEADERS", nil, parseOTLPHeaders))
 	cfg.otlpLogsProtocol = resolveOTLPProtocol(resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "OTEL_EXPORTER_OTLP_PROTOCOL", otlpGenericProtocols, supportsOTLPProtocol(otlpLogsProtocols), cfg.logsOTelEnabled))
+	cfg.otlpLogsCompression = resolveOTLPCompression(resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_LOGS_COMPRESSION", "OTEL_EXPORTER_OTLP_COMPRESSION", otlpGenericCompressions, supportsOTLPCompression, cfg.logsOTelEnabled))
 	logsTimeout := p.GetInt64WithValidator("OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPTimeout.Milliseconds(), func(v int64) bool { return v >= 0 })
 	cfg.otlpLogsTimeout = time.Duration(p.GetInt64WithValidator("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", logsTimeout, func(v int64) bool { return v >= 0 })) * time.Millisecond
 	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
@@ -2195,6 +2202,20 @@ func (c *Config) OTLPMetricsProtocol() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.otlpMetricsProtocol
+}
+
+// OTLPLogsCompression returns "none" (default) or "gzip".
+func (c *Config) OTLPLogsCompression() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.otlpLogsCompression
+}
+
+// RuntimeMetricsCompression returns "none" (default) or "gzip".
+func (c *Config) RuntimeMetricsCompression() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsCompression
 }
 
 func (c *Config) RuntimeMetricsProtocol() string {

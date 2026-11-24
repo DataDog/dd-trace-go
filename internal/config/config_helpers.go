@@ -34,6 +34,8 @@ var DefaultSocketDSDPath = "/var/run/datadog/dsd.socket"
 var (
 	otlpMetricsProtocols = []string{defaultOTLPProtocol, "http/json"}
 	otlpLogsProtocols    = []string{defaultOTLPProtocol, "http", "grpc"}
+	// otlpCompressions are the OTEL_EXPORTER_OTLP_*COMPRESSION values dd-trace-go honors for http/json, default first.
+	otlpCompressions = []string{"none", "gzip"}
 )
 
 const (
@@ -590,6 +592,16 @@ func supportsOTLPProtocol(protocols []string) func(string) bool {
 	return func(v string) bool {
 		return slices.Contains(protocols, normalizeOTLPProtocol(v))
 	}
+}
+
+// resolveOTLPCompression returns the signal-specific compression, else the generic one, else "none".
+func resolveOTLPCompression(specific, generic string) string {
+	return normalizeOTLPProtocol(cmp.Or(specific, generic, otlpCompressions[0]))
+}
+
+// supportsOTLPCompression accepts "none" and "gzip", case-insensitively.
+func supportsOTLPCompression(v string) bool {
+	return slices.Contains(otlpCompressions, normalizeOTLPProtocol(v))
 }
 
 func normalizeOTLPProtocol(v string) string {
