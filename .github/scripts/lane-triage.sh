@@ -45,7 +45,7 @@ read_gh() {
       printf '%s' "$out"
       return 0
     }
-    log "gh $1 failed, attempt $i of 3"
+    log "gh $1 failed, attempt $i of 3" >&2
   done
   exit 1
 }
@@ -142,7 +142,8 @@ issue_body() {
     --json databaseId,conclusion,headSha,event \
     | jq -c --argjson id "$RUN_ID" '
       [.[] | select(.event != "pull_request")
-           | select(.conclusion != null and .conclusion != "cancelled")]
+           | select(.conclusion != null and .conclusion != ""
+               and .conclusion != "cancelled")]
       | (map(.databaseId) | index($id)) as $i
       | if $i == null then empty else .[$i + 1] // empty end') || prev=''
   if [ -n "$prev" ]; then
@@ -179,7 +180,7 @@ newest_completed_lane_run() {
   read_gh run list --workflow "$lane" --branch main --limit 20 \
     --json databaseId,conclusion,event \
     | jq -c '[.[] | select(.event != "pull_request")
-                 | select(.conclusion != null)]
+                 | select(.conclusion != null and .conclusion != "")]
       | .[0] // empty'
 }
 
@@ -188,7 +189,7 @@ newest_completed_lane_run() {
 run_job_conclusions() {
   local id=$1
   read_gh api "repos/$REPO/actions/runs/$id/jobs?per_page=100" \
-    | jq -c '{"jobs": [.jobs[] | {key: .name, value: .conclusion}]}
+    | jq -c '[.jobs[] | {key: .name, value: .conclusion}]
       | from_entries'
 }
 
@@ -281,17 +282,27 @@ triage_run() {
 
   # Legs leave the matrix (a Go release bump renames or drops strata),
   # and their issues would sit under "Open failures" forever because the
-  # green loop only closes legs the current run still has.
-  close_absent_legs "$lane"
+  # green loop only closes legs the current run still has. Only a
+  # successful run proves the matrix enumerated: a failed
+  # go-versions-matrix produces no platform jobs at all, and retiring
+  # every issue then would erase the failures the run should report.
+  local run_conclusion
+  run_conclusion=$(read_gh api "repos/$REPO/actions/runs/$RUN_ID" \
+    --jq '.conclusion // ""')
+  if [ "$run_conclusion" = 'success' ]; then
+    close_absent_legs "$lane"
+  else
+    log "run not successful: not retiring absent legs of $lane"
+  fi
 }
 
 # Close every open failure issue of this lane whose leg name no longer
 # appears among the current run's job names.
 close_absent_legs() {
-  local lane=$1 title issue leg
-  while IFS= read -r issue; do
+  local lane=$1 issue title leg
+  while IFS=$'\t' read -r issue title; do
     [ -n "$issue" ] || continue
-    leg=${issue#* — }
+    leg=${title#* — }
     if grep -qxF "$leg" <<<"$(run_job_conclusions "$RUN_ID" \
       | jq -r 'keys[]')"; then
       continue
