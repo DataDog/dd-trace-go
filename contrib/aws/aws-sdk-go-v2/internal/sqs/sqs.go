@@ -215,9 +215,10 @@ func setConsumeCheckpoint(msg *types.Message, queue string) {
 	if carrier != nil {
 		parent = datastreams.ExtractFromBase64Carrier(parent, carrier)
 	}
+	size := receivedMessageSize(msg)
 	checkpointCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
 		parent,
-		options.CheckpointParams{PayloadSize: receivedMessageSize(msg)},
+		options.CheckpointParams{PayloadSize: size},
 		"direction:in",
 		"type:sqs",
 		"topic:"+queue,
@@ -238,13 +239,12 @@ func setConsumeCheckpoint(msg *types.Message, queue string) {
 	if binary {
 		attr = types.MessageAttributeValue{DataType: aws.String("Binary"), BinaryValue: jsonBytes}
 	}
-	if _, exists := msg.MessageAttributes[datadogKey]; !exists && len(msg.MessageAttributes) >= maxMessageAttributes {
-		return
+	budget := newTraceBudget(size, func() int64 {
+		return messageTextExpansion(msg.Body, msg.MessageAttributes)
+	})
+	if attrs := budget.inject(attr, msg.MessageAttributes); attrs != nil {
+		msg.MessageAttributes = attrs
 	}
-	if msg.MessageAttributes == nil {
-		msg.MessageAttributes = make(map[string]types.MessageAttributeValue, 1)
-	}
-	msg.MessageAttributes[datadogKey] = attr
 }
 
 func datadogCarrier(msg *types.Message) (carrier tracer.TextMapCarrier, binaryAttribute bool) {

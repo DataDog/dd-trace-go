@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -388,5 +389,58 @@ func TestForwardReplacesDatadogAtAttributeLimit(t *testing.T) {
 	} {
 		assert.Len(t, sent, maxMessageAttributes)
 		assertInjectedPathway(t, *sent[datadogKey].StringValue, expected, span)
+	}
+}
+
+func TestReceiveMessageByteLimit(t *testing.T) {
+	const queue = "consume-queue"
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	const limit = 1 << 20
+	probe := receive(t, true, types.Message{Body: aws.String("a")})[0]
+	probeAttr, ok := probe.MessageAttributes[datadogKey]
+	require.True(t, ok)
+	require.Equal(t, "String", aws.ToString(probeAttr.DataType))
+	attrSize := int(attributeSize(datadogKey, probeAttr))
+	require.Positive(t, attrSize)
+
+	oldAttribute := types.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String("x")}
+
+	for _, tc := range []struct {
+		name       string
+		suffix     string
+		extraBytes int
+		withTrace  bool
+	}{
+		{"exact fit", "", 0, false},
+		{"one byte over", "", 1, false},
+		{"malformed body exact fit", "\xff", 0, false},
+		{"malformed body one byte over", "\xff", 1, false},
+		{"replace exact fit", "", 0, true},
+		{"replace one byte over", "", 1, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			padding := limit - attrSize - len(strings.ToValidUTF8(tc.suffix, "�")) + tc.extraBytes
+			msg := types.Message{Body: aws.String(strings.Repeat("b", padding) + tc.suffix)}
+			if tc.withTrace {
+				msg.MessageAttributes = map[string]types.MessageAttributeValue{datadogKey: oldAttribute}
+			}
+
+			got := receive(t, true, msg)
+
+			require.Len(t, got, 1)
+			if tc.extraBytes == 0 {
+				written, ok := got[0].MessageAttributes[datadogKey]
+				require.True(t, ok)
+				assert.Equal(t, consumeHash(t, context.Background(), queue), pathwayHash(t, carrierFromAttribute(t, written)))
+			} else {
+				if tc.withTrace {
+					assert.Equal(t, oldAttribute, got[0].MessageAttributes[datadogKey])
+				} else {
+					assert.Nil(t, got[0].MessageAttributes)
+				}
+			}
+		})
 	}
 }
