@@ -46,12 +46,15 @@ func newCoverageWriter() *coverageWriter {
 }
 
 func (w *coverageWriter) add(coverage *testCoverage) {
+	w.addRecord(newCiTestCoverageData(coverage))
+}
+
+func (w *coverageWriter) addRecord(record coverageRecord) {
 	telemetry.EventsEnqueueForSerialization()
-	ciTestCoverage := newCiTestCoverageData(coverage)
 	var payloadToFlush *coveragePayload
 
 	w.mu.Lock()
-	if err := w.payload.push(ciTestCoverage); err != nil {
+	if err := w.payload.push(record); err != nil {
 		log.Error("coverageWriter: Error encoding msgpack: %s", err.Error())
 	}
 	if w.payload.size() > agentlessPayloadSizeLimit {

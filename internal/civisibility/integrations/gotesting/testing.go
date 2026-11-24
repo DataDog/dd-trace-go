@@ -210,6 +210,14 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 	*internalTests = newTestArray
 }
 
+// openLineCoverageWindow opens the line coverage window of the test execution
+// that t runs. The window closes in t's first cleanup, which runs last.
+func openLineCoverageWindow(t *testing.T, suite integrations.TestSuite, test integrations.Test) {
+	if window := coverage.OpenLineCoverageWindow(); window != nil {
+		t.Cleanup(func() { window.Close(suite.SuiteID(), test.TestID()) })
+	}
+}
+
 // executeInternalTest wraps the original test function to include CI visibility instrumentation.
 func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 	originalFunc := runtime.FuncForPC(reflect.Indirect(reflect.ValueOf(testInfo.originalFunc)).Pointer())
@@ -451,6 +459,8 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			// Collect coverage before test execution so we can register a baseline.
 			tCoverage.CollectCoverageBeforeTestExecution()
 		}
+
+		openLineCoverageWindow(t, suite, test)
 
 		// Execute the original test function.
 		testInfo.originalFunc(t)

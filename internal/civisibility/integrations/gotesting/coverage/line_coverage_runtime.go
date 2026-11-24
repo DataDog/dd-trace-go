@@ -1,0 +1,57 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
+
+package coverage
+
+import (
+	_ "runtime" // defines the symbols below in test binaries built with line coverage
+	_ "unsafe"  // for go:linkname
+)
+
+// Accessors that orchestrion adds to the runtime when it builds a test binary
+// with line coverage. They are nil in any other binary. Every goroutine carries
+// a coverage slot, inherited from the goroutine that starts it, and the probes
+// of repository code mark blocks in the row of the running goroutine's slot.
+
+// runtimeLineCoverageSlot returns the slot of the calling goroutine.
+//
+//go:linkname runtimeLineCoverageSlot __dd_linecov_slot.V1
+var runtimeLineCoverageSlot func() uint32
+
+// runtimeLineCoverageSetSlot sets the slot of the calling goroutine, and
+// returns its previous slot.
+//
+//go:linkname runtimeLineCoverageSetSlot __dd_linecov_set_slot.V1
+var runtimeLineCoverageSetSlot func(slot uint32) uint32
+
+// runtimeLineCoverageSlotRefs returns the number of live goroutines that carry
+// slot.
+//
+//go:linkname runtimeLineCoverageSlotRefs __dd_linecov_refs.V1
+var runtimeLineCoverageSlotRefs func(slot uint32) int32
+
+// runtimeLineCoverageRetarget moves the goroutines other than the caller that
+// carry slot from to slot 0. It returns how many moved, and whether one of them
+// was running, and so may still store into the rows of slot from.
+//
+//go:linkname runtimeLineCoverageRetarget __dd_linecov_retarget.V1
+var runtimeLineCoverageRetarget func(from uint32) (moved int, running bool)
+
+// runtimeLineCoveragePackage returns the counters of the i-th instrumented
+// package: one row of rowSize bytes per slot, one byte per block, and the
+// encoded table of its blocks. ok is false past the last package.
+//
+//go:linkname runtimeLineCoveragePackage __dd_linecov_package.V1
+var runtimeLineCoveragePackage func(i int) (counters *byte, numBlocks int, rowSize int, pkgPath string, meta string, ok bool)
+
+// lineCoverageRuntimeAvailable reports whether the runtime has the line
+// coverage accessors.
+func lineCoverageRuntimeAvailable() bool {
+	return runtimeLineCoverageSlot != nil &&
+		runtimeLineCoverageSetSlot != nil &&
+		runtimeLineCoverageSlotRefs != nil &&
+		runtimeLineCoverageRetarget != nil &&
+		runtimeLineCoveragePackage != nil
+}

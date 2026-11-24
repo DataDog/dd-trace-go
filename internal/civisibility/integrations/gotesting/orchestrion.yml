@@ -57,6 +57,9 @@ aspects:
             //go:linkname __dd_civisibility_instrumentTestingParallel github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingParallel
             func __dd_civisibility_instrumentTestingParallel(t *T) bool
 
+            //go:linkname __dd_civisibility_instrumentTestingParallelWait github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations/gotesting.instrumentTestingParallelWait
+            func __dd_civisibility_instrumentTestingParallelWait(t *T) func()
+
       - prepend-statements:
           template: |-
             {{ .Function.Argument 1 }} = __dd_civisibility_instrumentTestingTFunc({{ .Function.Argument 1 }})
@@ -223,6 +226,7 @@ aspects:
             if __dd_civisibility_instrumentTestingParallel({{ .Function.Receiver }}) {
               return
             }
+            defer __dd_civisibility_instrumentTestingParallelWait({{ .Function.Receiver }})()
 
   - id: testify.suite.Run
     join-point:

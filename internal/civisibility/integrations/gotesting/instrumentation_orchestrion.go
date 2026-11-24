@@ -53,10 +53,14 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	// Create a new test session for CI visibility.
 	session = integrations.CreateTestSession(integrations.WithTestSessionFramework(testFramework, runtime.Version()))
 
+	// Per-test line coverage runs whenever the binary was built with it, and
+	// replaces the per-test coverage of the -cover counters.
+	lineCoverageStarted := coverage.StartLineCoverage(session.SessionID())
+
 	coverageInitialized := false
 	settings := integrations.GetSettings()
 	if settings != nil {
-		if settings.CodeCoverage {
+		if settings.CodeCoverage && !lineCoverageStarted {
 			// Initialize the runtime coverage if enabled.
 			coverage.InitializeCoverage(m, true)
 			coverageInitialized = true
@@ -401,6 +405,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				}
 			}()
 
+			openLineCoverageWindow(currentT, suite, test)
 			f(currentT)
 		}
 
@@ -717,4 +722,16 @@ func instrumentTestingParallel(t *testing.T) bool {
 	}
 
 	return false
+}
+
+// instrumentTestingParallelWait releases the line coverage slot of the test
+// while it waits in t.Parallel, and returns the function that takes a slot
+// again when the wait ends.
+//
+//go:linkname instrumentTestingParallelWait
+func instrumentTestingParallelWait(_ *testing.T) (resume func()) {
+	if !isCiVisibilityEnabled() {
+		return func() {}
+	}
+	return coverage.PauseLineCoverageWindow()
 }

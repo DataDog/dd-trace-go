@@ -56,15 +56,15 @@ func newCoveragePayload() *coveragePayload {
 }
 
 // push pushes a new item into the stream.
-func (p *coveragePayload) push(testCoverageData *ciTestCoverageData) error {
+func (p *coveragePayload) push(record coverageRecord) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	startTime := time.Now()
 	defer func() {
 		p.serializationTime += time.Since(startTime)
 	}()
-	p.buf.Grow(testCoverageData.Msgsize())
-	if err := msgp.Encode(&p.buf, testCoverageData); err != nil {
+	p.buf.Grow(record.Msgsize())
+	if err := msgp.Encode(&p.buf, record); err != nil {
 		return err
 	}
 	p.count = p.count + 1
