@@ -391,6 +391,30 @@ jobs:
           # To enable sharing the reported JUnit XML, we need to save it into the temporary, shared directory by GHA.
           XML_PATH: ${{ runner.temp }}${{ matrix.runs-on == 'windows' && '\' || '/' }}${{ env.REPORT }}
 
+      # The suites above run without -race. The confluent-kafka-go aspects set
+      # up each client once, behind a sync.Once, and the first-use tests only
+      # notice a missing Once under the race detector, so they also run with
+      # -race here, in a single matrix cell.
+      - name: Run Race Tests (confluent-kafka-go first use)
+        if: matrix.runs-on == 'ubuntu' && matrix.mode == 'DRIVER' && matrix.go-version == 'stable'
+        shell: bash
+        run: |-
+          export PATH="${{ github.workspace }}/dd-trace-go/bin:${PATH}"
+          selection="$(go list ./... | grep -v /civisibility |
+            bash "${{ github.workspace }}/dd-trace-go/.github/workflows/apps/select-orchestrion-suites.sh")"
+          PACKAGE_NAMES="$(sed -n '1p' <<< "${selection}" | tr ' ' '\n' | grep -E '/confluent-kafka-go\.v[12]$' || true)"
+          if [[ -z "${PACKAGE_NAMES}" ]]; then
+            echo "No confluent-kafka-go suite selected, skipping"
+            exit 0
+          fi
+          # shellcheck disable=SC2086
+          orchestrion go test -race -count=1 -run '^(TestConcurrentFirstUse|TestCloseUnused)$' $PACKAGE_NAMES
+        working-directory: ${{ github.workspace }}/dd-trace-go/internal/orchestrion/_integration
+        env:
+          GOFLAGS: -timeout=10m -tags=githubci
+          # Prevent auto-respawn, which is problematic with installs from commit SHA
+          DD_ORCHESTRION_IS_GOMOD_VERSION: true
+
         # Check for changes in the supported_configurations.json file
       - name: Run Config Inverter Check
         if: always()

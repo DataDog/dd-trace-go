@@ -18,7 +18,8 @@ import (
 
 // TestConcurrentFirstUse produces from several goroutines on a producer that
 // has not been used yet, so they all set up the lazily created tracer at once.
-// Run with -race. No broker is needed: the messages are only queued.
+// CI runs it with -race (see .github/workflows/orchestrion.yml). No broker is
+// needed: the messages are only queued.
 func TestConcurrentFirstUse(t *testing.T) {
 	require.True(t, built.WithOrchestrion, "this test must be run with orchestrion enabled")
 
