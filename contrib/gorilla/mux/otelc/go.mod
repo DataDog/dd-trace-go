@@ -7,8 +7,8 @@ replace github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 => ./..
 replace github.com/DataDog/dd-trace-go/v2 => ../../../..
 
 require (
-	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.13.0-dev.1
-	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1
+	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.14.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.14.0-dev
 	github.com/gorilla/mux v1.8.1
 	github.com/stretchr/testify v1.12.1
 	go.opentelemetry.io/otelc/pkg v0.1.0
