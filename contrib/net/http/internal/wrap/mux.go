@@ -7,6 +7,7 @@ package wrap
 
 import (
 	"net/http"
+	"strings"
 
 	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/pattern"
@@ -82,6 +83,20 @@ func (mux *ServeMux) HandleFunc(pttrn string, handlerFunc func(http.ResponseWrit
 // whose pattern most closely matches the request URL.
 // We only need to rewrite this function to be able to trace
 // all the incoming requests to the underlying multiplexer
+// reportingServeMux serves a request with a ServeMux, then reports its path
+// values. A route registered on a caller-provided *http.ServeMux reports no path
+// parameters (see NewServeMux). ServeMux sets the pattern and the path values of
+// the request that it serves: they go to API Security, which does not send them
+// to the WAF. A pattern without wildcards has no path values.
+type reportingServeMux struct{ *http.ServeMux }
+
+func (mux reportingServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	mux.ServeMux.ServeHTTP(w, r)
+	if strings.Contains(r.Pattern, "{") {
+		httpsec.ReportRouteParams(r.Context(), pattern.PathParameters(r.Pattern, r))
+	}
+}
+
 func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if mux.cfg.IgnoreRequest(r) {
 		mux.ServeMux.ServeHTTP(w, r)
@@ -104,14 +119,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	so = append(so, httptrace.HeaderTagsFromRequest(r, mux.cfg.HeaderTags))
 	var h http.Handler = mux.ServeMux
 	if internal.Instrumentation.AppSecEnabled() {
-		// A route registered on a caller-provided *http.ServeMux reports no path
-		// parameters (see NewServeMux). ServeMux sets the pattern and the path
-		// values of the request that it serves: give them to API Security, which
-		// does not send them to the WAF.
-		h = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			mux.ServeMux.ServeHTTP(w, r)
-			httpsec.ReportRouteParams(r.Context(), pattern.PathParameters(r.Pattern, r))
-		})
+		h = reportingServeMux{mux.ServeMux}
 	}
 	TraceAndServe(h, w, r, &httptrace.ServeConfig{
 		Service:              mux.cfg.ServiceName,
