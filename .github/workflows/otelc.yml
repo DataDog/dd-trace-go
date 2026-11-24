@@ -173,8 +173,8 @@ jobs:
         uses: ./.github/actions/setup-go
         with:
           # oldstable (the supported floor), not the 1.26.4 corruption-era
-          # pin from #5056/#5066: golang/go#77168 is fixed and the rest of
-          # the repository runs the latest 1.26.x patch.
+          # pin from #5056/#5066: the rest of CI runs the latest 1.26.x
+          # without the #77168 corruption, so the pin is no longer needed.
           go-version: oldstable
           workload: otelc-matrix
           cache-provider: github-cache
@@ -395,8 +395,8 @@ jobs:
         uses: ./.github/actions/setup-go
         with:
           # oldstable (the supported floor), not the 1.26.4 corruption-era
-          # pin from #5056/#5066: golang/go#77168 is fixed and the rest of
-          # the repository runs the latest 1.26.x patch.
+          # pin from #5056/#5066: the rest of CI runs the latest 1.26.x
+          # without the #77168 corruption, so the pin is no longer needed.
           go-version: oldstable
           workload: otelc-external-app
           variant: |-

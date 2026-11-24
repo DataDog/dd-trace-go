@@ -43,10 +43,12 @@ canonical="$(printf '{"variant":%s}' "$variant_json" \
 digest="$(printf '%s' "$canonical" \
   | openssl dgst -sha256 | awk '{print $NF}' | cut -c1-16)"
 
-# cx2: keys carry the resolved Go version class (resolve-version.sh)
-# instead of the caller's go-version input; bumped from cx1 so the
-# migration window stays observable in restore_source instead of mixing
-# layouts in one prefix.
-prefix="ddtg-cx2-${FAMILY}-${digest}"
+# The cx1 marker is kept on purpose: cx1 keyed on the caller's raw
+# go-version input, and the seeding callers all passed numeric minors,
+# which equal the resolved version class. The cx1 pool entries therefore
+# keep matching the new keys byte for byte — no re-seed window. Only the
+# layout's meaning changed (resolved class, never an alias or a patch),
+# which the marker does not need to record.
+prefix="ddtg-cx1-${FAMILY}-${digest}"
 printf 'prefix=%s\n' "$prefix" >> "$GITHUB_OUTPUT"
 printf 'Computed cache key prefix: %s\n' "$prefix"

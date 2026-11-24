@@ -78,7 +78,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version-key }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Compile dd-trace-go with updated dependencies (sandboxed)
@@ -160,7 +160,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version-key }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Capture trusted commit SHA
@@ -305,7 +305,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version-key }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       # The gotesting fixture tests resolve orchestrion through their `go run`
@@ -378,7 +378,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version-key }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Run generate scripts and check diff

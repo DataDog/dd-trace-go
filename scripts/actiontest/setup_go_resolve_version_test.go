@@ -9,8 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
 
 const resolveVersionScript = "../../.github/actions/setup-go/resolve-version.sh"
@@ -159,6 +163,21 @@ func TestResolveVersionProviderPreservesExactPatches(t *testing.T) {
 			wantKey: "1.27", wantProv: "1.27.1",
 		},
 		{
+			name:      "equals-constrained request passes its exact patch",
+			requested: "=1.27.1", goversion: "go1.27.1",
+			wantKey: "1.27", wantProv: "1.27.1",
+		},
+		{
+			name:      "v-prefixed request passes its exact patch",
+			requested: "v1.27.1", goversion: "go1.27.1",
+			wantKey: "1.27", wantProv: "1.27.1",
+		},
+		{
+			name:      "padded request passes its exact patch",
+			requested: "1.27.01", goversion: "go1.27.1",
+			wantKey: "1.27", wantProv: "1.27.1",
+		},
+		{
 			name:      "prerelease request passes its exact semver",
 			requested: "1.28.0-rc.1", goversion: "go1.28rc1",
 			wantKey: "1.28.0-rc.1", wantProv: "1.28.0-rc.1",
@@ -180,4 +199,73 @@ func TestResolveVersionProviderPreservesExactPatches(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestResolveStepPassesRequestedVersion pins the resolve step's env: the
+// script reads REQUESTED_VERSION to separate unconstrained spellings
+// from exact ones. If the env line is dropped, the script sees an empty
+// request, cloudx gets the class for every spelling, and the
+// exact-patch failure returns while every other test still passes.
+func TestResolveStepPassesRequestedVersion(t *testing.T) {
+	step := setupGoStep(t, "Resolve cache-key version")
+	const want = "${{ inputs.go-version }}"
+	if got := step.Env["REQUESTED_VERSION"]; got != want {
+		t.Fatalf("REQUESTED_VERSION = %q, want %q", got, want)
+	}
+}
+
+// TestActionStepOutputReferencesAreDeclared walks every
+// steps.<id>.outputs.* reference in the action's run blocks and env
+// values, and checks that an earlier step in the same action declares
+// that id. A renamed step id silently breaks wiring that actionlint
+// cannot see (it does not lint composite action files).
+func TestActionStepOutputReferencesAreDeclared(t *testing.T) {
+	raw, err := os.ReadFile(setupGoAction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var action struct {
+		Runs struct {
+			Steps []struct {
+				ID   string            `yaml:"id"`
+				Name string            `yaml:"name"`
+				Env  map[string]string `yaml:"env"`
+				With map[string]string `yaml:"with"`
+				Run  string            `yaml:"run"`
+			} `yaml:"steps"`
+		} `yaml:"runs"`
+	}
+	if err := yaml.Unmarshal(raw, &action); err != nil {
+		t.Fatal(err)
+	}
+	refRe := regexp.MustCompile(`steps\.([A-Za-z0-9_-]+)\.outputs\.[A-Za-z0-9_-]+`)
+	seen := map[string]bool{}
+	for _, step := range action.Runs.Steps {
+		if step.ID != "" {
+			seen[step.ID] = true
+		}
+		for _, text := range append(
+			collectStrings(step.Env),
+			collectStrings(step.With)...,
+		) {
+			text += "\n" + step.Run
+			for _, m := range refRe.FindAllStringSubmatch(text, -1) {
+				id := m[1]
+				if !seen[id] {
+					t.Errorf("step %q references outputs of step id %q, which no earlier step declares",
+						step.Name, id)
+				}
+			}
+		}
+	}
+}
+
+// collectStrings returns the map's values in a stable order.
+func collectStrings(m map[string]string) []string {
+	vals := make([]string, 0, len(m))
+	for _, v := range m {
+		vals = append(vals, v)
+	}
+	sort.Strings(vals)
+	return vals
 }

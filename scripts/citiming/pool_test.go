@@ -80,13 +80,14 @@ func TestClassifyPoolKeyEveryKind(t *testing.T) {
 				"60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380-38402253726",
 			kind: "go_build", workload: "unit-contrib", osX: "macos", variant: "92572337d046055a",
 		},
-		// cx2: the resolved-minor layout. The version segment is the
-		// resolved minor (no patch), and both markers parse while the
-		// pool holds entries from the migration window.
+		// A resolved-minor layout under a different cx marker: the regex
+		// accepts any cx number, and the version segment is the resolved
+		// minor (no patch) rather than an exact toolchain.
 		{
-			key: "go-cache-Linux-X64-ddtg-cx2-dynamic-locking-3fbd9a1f5e4b23c6-1.27-main-" +
+			key: "go-cache-Linux-X64-ddtg-cx7-dynamic-locking-3fbd9a1f5e4b23c6-1.27-main-" +
 				"60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380-38403036811",
 			kind: "go_build", workload: "dynamic-locking", osX: "linux",
+			variant: "3fbd9a1f5e4b23c6",
 		},
 		// A go-cache key that predates the layout: still go_build, but no
 		// workload and no OS.

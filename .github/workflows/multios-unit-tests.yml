@@ -131,7 +131,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version-key }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
       # The gotesting fixture tests invoke this binary directly; without it
       # they pay `go run` module resolution inside their per-test timeouts.

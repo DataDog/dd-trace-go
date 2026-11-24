@@ -92,9 +92,11 @@
 # Callers must describe the workload itself — runner class, module selection,
 # build tags, workspace/instrumentation/coverage mode — and never the workflow
 # title, SHA, run ID, or branch: the provider already keys on branch/run
-# identity, OS/architecture and the resolved Go minor (cx2; cx1 keyed on the
-# raw go-version input). Identical nightly and PR workloads must therefore
-# pass identical family+variant so default-branch seeding stays possible.
+# identity, OS/architecture and the resolved version class (the cx1
+# marker is kept: the seeding callers' numeric minors equal the class,
+# so existing cx1 pool entries keep matching). Identical nightly and PR
+# workloads must therefore pass identical family+variant so
+# default-branch seeding stays possible.
 #
 # Observability: emits the same structured `cache-observation:` record as the
 # pre-migration action, so scripts/citiming keeps working unchanged. The
@@ -264,11 +266,12 @@ runs:
         echo "GOROOT=${goroot}" >> "$GITHUB_ENV"
         echo "goroot=${goroot}" >> "$GITHUB_OUTPUT"
 
-    # The cache-key version is the resolved Go minor of the toolchain that
-    # actually ran, not the caller's input: `stable`, `oldstable`, `1.27`
-    # and `1.27.4` all key on `1.27`. Reading GOVERSION after selection
-    # makes the key follow the real compiler even when a go.mod `toolchain`
-    # directive switches it away from the requested version.
+    # The cache-key version is the resolved version class of the
+    # toolchain that actually ran, not the caller's input: `stable`,
+    # `oldstable` and `1.27` all key on `1.27`. setup-go pins
+    # GOTOOLCHAIN=local, so GOVERSION reports the toolchain the request
+    # resolved to on this runner. Writes go-version-key (the class) and
+    # go-version-provider (what cloudx receives).
     - name: Resolve cache-key version
       id: resolve-version
       shell: bash
@@ -321,11 +324,12 @@ runs:
         fi
 
         # Floor guard: a resolved minor below the go.mod `go` directive
-        # cannot seed. Toolchain selection already fails such a request
-        # first; the guard keeps a stale pinned caller that slips through
-        # from writing a seed no supported job can use. A missing or
-        # malformed go.mod (bootstrap jobs before checkout) skips the
-        # guard: it is not the seed policy's signal.
+        # cannot seed. setup-go exports GOTOOLCHAIN=local, so nothing in
+        # this action rejects such a request — later builds fail on
+        # go.mod. The guard keeps a stale pinned caller from writing a
+        # seed that no supported job can use. A missing or malformed
+        # go.mod (bootstrap jobs before checkout) skips the guard: it is
+        # not the seed policy's signal.
         ver_num() {
           # "1.27" or "1.26.4" -> a comparable number (major*1000+minor).
           local v="$1" major minor

@@ -1879,9 +1879,11 @@ func TestToolsCacheVersionKeyComesFromRepoAction(t *testing.T) {
 					continue
 				}
 				with, _ := step["with"].(map[string]any)
-				version, _ := with["go-version"].(string)
+				version, _ := with["go-version-key"].(string)
 				m := refRe.FindStringSubmatch(version)
 				if m == nil {
+					t.Errorf("%s job %s: tools-cache go-version-key = %q, want steps.<id>.outputs.go-version-key",
+						filepath.Base(file), jobName, version)
 					continue
 				}
 				source, ok := usesByID[m[1]]
@@ -1894,6 +1896,42 @@ func TestToolsCacheVersionKeyComesFromRepoAction(t *testing.T) {
 					t.Errorf("%s job %s: tools-cache reads go-version-key from %q, want the repository's setup-go action",
 						filepath.Base(file), jobName, source)
 				}
+			}
+		}
+	}
+}
+
+// TestGoFloorPinsMatchGoModDirective checks the deliberate numeric
+// floor pins (appsec Docker matrices and the smoke floor probe) against
+// the root go.mod go directive. When a Go release moves oldstable, these
+// pins and the directive move together on release day; a silent drift
+// leaves the floor untested.
+func TestGoFloorPinsMatchGoModDirective(t *testing.T) {
+	root, _ := workflowPaths(t)
+	directiveBytes, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	directive := regexp.MustCompile(`(?m)^go (1\.[0-9]+)`).FindSubmatch(directiveBytes)
+	if directive == nil {
+		t.Fatal("root go.mod has no go directive")
+	}
+	floor := string(directive[1])
+	pins := map[string]string{
+		"appsec.yml":      `(?m)^\s*go-version: \[ "1\.27", "(1\.[0-9]+)" \]$`,
+		"smoke-tests.yml": `(?m)^\s*go-version: "(1\.[0-9]+)" # lowest supported version`,
+	}
+	for name, pinRe := range pins {
+		body := readText(t, filepath.Join(root, workflowDir), name)
+		re := regexp.MustCompile(pinRe)
+		m := re.FindAllStringSubmatch(body, -1)
+		if len(m) == 0 {
+			t.Errorf("%s has no numeric floor pin matching %s", name, pinRe)
+			continue
+		}
+		for _, match := range m {
+			if match[1] != floor {
+				t.Errorf("%s floor pin %q does not match the go.mod directive %q", name, match[1], floor)
 			}
 		}
 	}

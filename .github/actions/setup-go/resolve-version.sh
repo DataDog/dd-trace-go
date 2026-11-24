@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 # Derives the cache-key version from the toolchain that actually ran, and
-# writes `go-version-key=<value>` to GITHUB_OUTPUT.
+# writes `go-version-key=<value>` and `go-version-provider=<value>` to
+# GITHUB_OUTPUT.
 #
 # Stable toolchains key on the resolved MINOR: `stable`, `oldstable`,
-# `1.27` and `1.27.4` all key on `1.27`. The minor rotates only when the
+# `1.27` and `1.27.4` all key on `1.27` (an exact patch keys the cloudx
+# cache on that patch; see below). The minor rotates only when the
 # toolchain minor changes, and patch releases change nothing. Reading
-# `go env GOVERSION` (not the input string) makes the key follow the
-# toolchain that compiled: with GOTOOLCHAIN=auto, a go.mod `toolchain`
-# directive can switch the real compiler away from the requested version,
-# and a key derived from the input would then describe a toolchain that
-# never ran.
+# `go env GOVERSION` (not the input string) reports the installed
+# toolchain: setup-go pins GOTOOLCHAIN=local, so GOVERSION is what the
+# request resolved to on this runner.
 #
 # Prerelease toolchains key on their exact semver (go1.28rc1 -> 1.28.0-rc.1):
 # the cloudx provider's nested installer resolves the go-version input as a
 # semver range, and a range cannot match a prerelease, so only the exact
 # spec finds the rc binary the select-go step installed. Prerelease legs
-# therefore hold their own keys — no prerelease workload seeds, so this
-# costs the pool nothing.
+# therefore hold their own keys — today no seeding caller passes a
+# prerelease, but nothing blocks one.
 #
 # A fully-specified request (e.g. "1.27.1") installs exactly that patch —
 # check-latest never upgrades a full version — but a minor key would let
@@ -59,10 +59,18 @@ else
   exit 1
 fi
 
-# The provider version: the exact installed version for a
-# fully-specified request, the version class for every other spelling.
+# The provider version: the version class for the known unconstrained
+# spellings (stable, oldstable, 1.N), the exact installed version for
+# everything else. actions/setup-go also treats spellings such as
+# =1.27.1, v1.27.1 and padded values as exact versions, so the check is
+# inverted: anything the resolver does not know to be unconstrained
+# passes the exact toolchain that ran, which the nested installer can
+# always find. Prereleases keep the class (their key is already the
+# exact semver).
 provider="$key"
-if [[ "${REQUESTED_VERSION:-}" =~ ^1\.[0-9]+\.[0-9]+$ ]]; then
+if [[ "$key" =~ ^1\.[0-9]+$ &&
+      -n "${REQUESTED_VERSION:-}" &&
+      ! "${REQUESTED_VERSION}" =~ ^(stable|oldstable|1\.[0-9]+)$ ]]; then
   provider="$version"
 fi
 

@@ -20,8 +20,8 @@ import (
 const depHashFixture = "60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380"
 
 // cacheKeyPrefixFixture is the setup-go wrapper's computed prefix
-// (ddtg-cx2-<family>-<digest16>) for the multi-os workload.
-const cacheKeyPrefixFixture = "ddtg-cx2-multi-os-314198ec86eada43"
+// (ddtg-cx1-<family>-<digest16>) for the multi-os workload.
+const cacheKeyPrefixFixture = "ddtg-cx1-multi-os-314198ec86eada43"
 
 // matchedKeyFixture builds a cloudx save key in the layout verified at the
 // pinned provider revision:
@@ -421,33 +421,14 @@ func TestSetupGoSavePolicyTruthTable(t *testing.T) {
 
 // TestSetupGoSavePolicyFloorGuard covers the go.mod floor guard: a seeding
 // run whose resolved minor is below the go directive must not save, and the
-// guard must never disable a supported run. Toolchain selection fails
-// below-floor requests first; the guard is the second lock on the same door.
+// guard must never disable a supported run. setup-go exports
+// GOTOOLCHAIN=local, so nothing in the action rejects a below-floor
+// request — later builds fail on go.mod — and this guard is the only
+// in-action check.
 func TestSetupGoSavePolicyFloorGuard(t *testing.T) {
-	step := setupGoStep(t, "Resolve save policy")
-	seeded := map[string]string{
-		"SEED":           "true",
-		"EVENT":          "schedule",
-		"REF":            "refs/heads/main",
-		"DEFAULT_BRANCH": "main",
-		"KEY_VERSION":    "1.27",
-	}
 	withGoMod := func(t *testing.T, directive string) string {
 		t.Helper()
-		dir := t.TempDir()
-		if err := os.WriteFile(filepath.Join(dir, "go.mod"),
-			[]byte("module example.com/x\n\ngo "+directive+"\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		written, out, err := runSetupGoStepInDir(t, step, seeded, dir)
-		if err != nil {
-			t.Fatalf("save-policy step failed: %v\n%s", err, out)
-		}
-		value, ok := strings.CutPrefix(strings.TrimSpace(written), "save=")
-		if !ok {
-			t.Fatalf("GITHUB_OUTPUT has no save= line: %q", written)
-		}
-		return value
+		return withGoModBody(t, "module example.com/x\n\ngo "+directive+"\n")
 	}
 	if got := withGoMod(t, "1.27"); got != "true" {
 		t.Errorf("save at the floor = %q, want true (the floor itself seeds)", got)
@@ -462,6 +443,40 @@ func TestSetupGoSavePolicyFloorGuard(t *testing.T) {
 	if got := withGoMod(t, "1.27.4"); got != "true" {
 		t.Errorf("save against a patched directive = %q, want true", got)
 	}
+	// A go.mod without a go line skips the guard: it is not the seed
+	// policy's signal.
+	if got := withGoModBody(t, "module example.com/x\n\nrequire example.com/y v1.0.0\n"); got != "true" {
+		t.Errorf("save with no go directive = %q, want true (guard skipped)", got)
+	}
+	// A malformed directive skips the guard the same way.
+	if got := withGoModBody(t, "module example.com/x\n\ngo abc\n"); got != "true" {
+		t.Errorf("save with a malformed go directive = %q, want true (guard skipped)", got)
+	}
+}
+
+// withGoModBody is withGoMod with raw go.mod content.
+func withGoModBody(t *testing.T, body string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	step := setupGoStep(t, "Resolve save policy")
+	written, out, err := runSetupGoStepInDir(t, step, map[string]string{
+		"SEED":           "true",
+		"EVENT":          "schedule",
+		"REF":            "refs/heads/main",
+		"DEFAULT_BRANCH": "main",
+		"KEY_VERSION":    "1.27",
+	}, dir)
+	if err != nil {
+		t.Fatalf("save-policy step failed: %v\n%s", err, out)
+	}
+	value, ok := strings.CutPrefix(strings.TrimSpace(written), "save=")
+	if !ok {
+		t.Fatalf("GITHUB_OUTPUT has no save= line: %q", written)
+	}
+	return value
 }
 
 // TestSetupGoObservationSeedFields: the observation carries the seed-key

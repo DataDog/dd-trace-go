@@ -17,9 +17,9 @@ import (
 
 const cacheKeyPrefixScript = "../../.github/actions/setup-go/cache-key-prefix.sh"
 
-// emptyVariantPrefix is ddtg-cx2-<family>-<digest>, where the digest is the
+// emptyVariantPrefix is ddtg-cx1-<family>-<digest>, where the digest is the
 // first 16 hex characters of SHA-256 over `{"variant":{}}`.
-const emptyVariantPrefix = "ddtg-cx2-unit-core-c4dca83bdf2018a1"
+const emptyVariantPrefix = "ddtg-cx1-unit-core-c4dca83bdf2018a1"
 
 // runCacheKeyPrefix executes the setup-go key script the way the action does
 // and returns the prefix it wrote to GITHUB_OUTPUT, or its combined output and

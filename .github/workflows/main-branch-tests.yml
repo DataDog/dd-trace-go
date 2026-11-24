@@ -121,7 +121,8 @@ jobs:
       - name: Restore and install development tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version-key }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
       # The JUnit file makes failures of this nightly job visible in Datadog
       # CI Visibility, not only in the GitHub Actions log.
       - name: Verify dependent-modules
