@@ -702,12 +702,8 @@ func TestStreamSendsErrorCode(t *testing.T) {
 	err = stream.CloseSend()
 	require.NoError(t, err, "should not return error after closing stream")
 
-	// to flush the spans
-	_, _ = stream.Recv()
-
-	// The server span finishes in the server's handler goroutine, which can
-	// run after the client has seen the error. Wait for it instead of reading
-	// FinishedSpans() once.
+	// Poll as a guard. The interceptor finishes the server span before
+	// grpc-go writes the status, so the span is normally present already.
 	hasServerErrorSpan := func() bool {
 		for _, s := range mt.FinishedSpans() {
 			if s.Tag(ext.SpanKind) == ext.SpanKindServer && s.Tag(tagCode) == wantCode {
