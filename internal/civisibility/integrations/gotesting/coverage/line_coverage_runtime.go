@@ -40,8 +40,9 @@ var runtimeLineCoverageSlotRefs func(slot uint32) int32
 var runtimeLineCoverageRetarget func(from uint32) (moved int, running bool)
 
 // runtimeLineCoveragePackage returns the counters of the i-th instrumented
-// package: one row of rowSize bytes per slot, one byte per block, and the
-// encoded table of its blocks. ok is false past the last package.
+// package: one row of rowSize bytes per slot, with one counter per block, and
+// the encoded table of its blocks, which gives the counter size. ok is false
+// past the last package.
 //
 //go:linkname runtimeLineCoveragePackage __dd_linecov_package.V1
 var runtimeLineCoveragePackage func(i int) (counters *byte, numBlocks int, rowSize int, pkgPath string, meta string, ok bool)

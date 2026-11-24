@@ -13,8 +13,9 @@ import (
 
 const (
 	// lineCoverageMetaVersion is the version of the block table encoding.
-	// Version 1 has no credited lines.
-	lineCoverageMetaVersion = 2
+	// Version 1 has no credited lines, and versions before 3 have one-byte
+	// counters.
+	lineCoverageMetaVersion = 3
 	// lineCoverageBlockFlagInit marks the blocks of the body of a `func init()`.
 	lineCoverageBlockFlagInit = 1
 	// lineCoverageBlockFlagLines marks blocks that credit lines outside their
@@ -44,38 +45,48 @@ type lineCoverageBlock struct {
 // each instrumented package:
 //
 //	uvarint version
+//	uvarint counter size in bytes, 1 or 4 (from version 3)
 //	uvarint file count, then for each file: uvarint length, bytes
 //	uvarint block count, then for each block:
 //	  uvarint file index, uvarint start line, uvarint end line - start line, byte flags
 //	  with lineCoverageBlockFlagLines: uvarint line count, then each line as a uvarint
 //
 // fileIndex maps a file name of the table to an index of the collector's files.
-func decodeLineCoverageMeta(meta string, numBlocks int, fileIndex func(name string) int32) ([]lineCoverageBlock, error) {
+func decodeLineCoverageMeta(meta string, numBlocks int, fileIndex func(name string) int32) (blocks []lineCoverageBlock, counterSize int, err error) {
 	r := metaReader{data: meta}
 	version := r.uvarint()
-	if r.err == nil && version != 1 && version != lineCoverageMetaVersion {
-		return nil, errors.New("unsupported line coverage block table version " + strconv.FormatUint(version, 10))
+	if r.err == nil && (version == 0 || version > lineCoverageMetaVersion) {
+		return nil, 0, errors.New("unsupported line coverage block table version " + strconv.FormatUint(version, 10))
+	}
+	counterSize = 1
+	if version >= 3 {
+		switch size := r.uvarint(); size {
+		case 1, 4:
+			counterSize = int(size)
+		default:
+			return nil, 0, errInvalidLineCoverageMeta
+		}
 	}
 	fileCount := r.uvarint()
 	if r.err != nil || fileCount > uint64(len(meta)) {
-		return nil, errInvalidLineCoverageMeta
+		return nil, 0, errInvalidLineCoverageMeta
 	}
 	files := make([]int32, fileCount)
 	for i := range files {
 		name := r.string(r.uvarint())
 		if r.err != nil {
-			return nil, r.err
+			return nil, 0, r.err
 		}
 		files[i] = fileIndex(name)
 	}
 	if blockCount := r.uvarint(); r.err != nil || blockCount != uint64(numBlocks) {
-		return nil, errInvalidLineCoverageMeta
+		return nil, 0, errInvalidLineCoverageMeta
 	}
-	blocks := make([]lineCoverageBlock, numBlocks)
+	blocks = make([]lineCoverageBlock, numBlocks)
 	for i := range blocks {
 		file, start, span, flags := r.uvarint(), r.uvarint(), r.uvarint(), r.byte()
 		if r.err != nil || file >= fileCount || start > math.MaxInt32 || span > math.MaxInt32-start {
-			return nil, errInvalidLineCoverageMeta
+			return nil, 0, errInvalidLineCoverageMeta
 		}
 		b := lineCoverageBlock{
 			file:      files[file],
@@ -89,13 +100,13 @@ func decodeLineCoverageMeta(meta string, numBlocks int, fileIndex func(name stri
 		if version > 1 && flags&lineCoverageBlockFlagLines != 0 {
 			count := r.uvarint()
 			if r.err != nil || count > uint64(len(meta)) {
-				return nil, errInvalidLineCoverageMeta
+				return nil, 0, errInvalidLineCoverageMeta
 			}
 			b.lines = make([]int32, count)
 			for j := range b.lines {
 				line := r.uvarint()
 				if r.err != nil || line == 0 || line > math.MaxInt32 {
-					return nil, errInvalidLineCoverageMeta
+					return nil, 0, errInvalidLineCoverageMeta
 				}
 				b.lines[j] = int32(line)
 			}
@@ -103,9 +114,9 @@ func decodeLineCoverageMeta(meta string, numBlocks int, fileIndex func(name stri
 		blocks[i] = b
 	}
 	if r.pos != len(r.data) {
-		return nil, errInvalidLineCoverageMeta
+		return nil, 0, errInvalidLineCoverageMeta
 	}
-	return blocks, nil
+	return blocks, counterSize, nil
 }
 
 // metaReader reads a block table. Its first error sticks.

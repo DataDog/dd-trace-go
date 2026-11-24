@@ -58,9 +58,12 @@ type (
 	// lineCoveragePackage is the counter array of one instrumented package.
 	lineCoveragePackage struct {
 		counters unsafe.Pointer
-		rowSize  int
+		rowSize  int // in bytes
 		blocks   []lineCoverageBlock
 		aligned  bool // the rows start at word boundaries
+		// wide is true for uint32 counters, which builds with the race detector
+		// store into atomically; they are then read atomically too.
+		wide bool
 	}
 
 	// lineCoverageFile is a source file with instrumented blocks.
@@ -152,13 +155,18 @@ func newLineCoverageCollector(sessionID uint64) *lineCoverageCollector {
 		if !ok {
 			break
 		}
-		if counters == nil || numBlocks <= 0 || rowSize < numBlocks || rowSize%wordSize != 0 {
+		if counters == nil || numBlocks <= 0 || rowSize%wordSize != 0 {
 			log.Debug("civisibility.linecov: skipping package %s: invalid counters", pkgPath)
 			continue
 		}
-		blocks, err := decodeLineCoverageMeta(meta, numBlocks, indexOf)
+		blocks, counterSize, err := decodeLineCoverageMeta(meta, numBlocks, indexOf)
 		if err != nil {
 			log.Debug("civisibility.linecov: skipping package %s: %s", pkgPath, err.Error())
+			continue
+		}
+		wide := counterSize == 4
+		if rowSize < numBlocks*counterSize || (wide && uintptr(unsafe.Pointer(counters))%4 != 0) {
+			log.Debug("civisibility.linecov: skipping package %s: invalid counters", pkgPath)
 			continue
 		}
 		c.packages = append(c.packages, lineCoveragePackage{
@@ -166,6 +174,7 @@ func newLineCoverageCollector(sessionID uint64) *lineCoverageCollector {
 			rowSize:  rowSize,
 			blocks:   blocks,
 			aligned:  uintptr(unsafe.Pointer(counters))%uintptr(wordSize) == 0,
+			wide:     wide,
 		})
 	}
 	if len(c.packages) == 0 {
@@ -461,6 +470,19 @@ func (c *lineCoverageCollector) collect(slot uint32, reset bool, dst []blockRef)
 		p := &c.packages[pi]
 		row := unsafe.Add(p.counters, int(slot)*p.rowSize)
 		n := len(p.blocks)
+		if p.wide {
+			for i := range n {
+				counter := (*uint32)(unsafe.Add(row, 4*i))
+				if atomic.LoadUint32(counter) == 0 {
+					continue
+				}
+				if reset {
+					atomic.StoreUint32(counter, 0)
+				}
+				dst = append(dst, newBlockRef(pi, i))
+			}
+			continue
+		}
 		if !p.aligned {
 			for i := range n {
 				b := (*byte)(unsafe.Add(row, i))

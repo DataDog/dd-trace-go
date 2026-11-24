@@ -42,7 +42,13 @@ func encodeTestMeta(files []string, blocks []testBlock) string {
 // encodeTestMetaLines encodes a block table whose blocks credit the lines of
 // extras, by block index.
 func encodeTestMetaLines(files []string, blocks []testBlock, extras map[int]testLines) string {
+	return encodeTestMetaSized(files, blocks, extras, 1)
+}
+
+// encodeTestMetaSized encodes a block table with counters of counterSize bytes.
+func encodeTestMetaSized(files []string, blocks []testBlock, extras map[int]testLines, counterSize int) string {
 	buf := binary.AppendUvarint(nil, lineCoverageMetaVersion)
+	buf = binary.AppendUvarint(buf, uint64(counterSize))
 	buf = binary.AppendUvarint(buf, uint64(len(files)))
 	for _, f := range files {
 		buf = binary.AppendUvarint(buf, uint64(len(f)))
@@ -78,11 +84,12 @@ func encodeTestMetaLines(files []string, blocks []testBlock, extras map[int]test
 // fakePackage is the counter array and block table of a fake instrumented
 // package.
 type fakePackage struct {
-	counters  []byte
-	numBlocks int
-	rowSize   int
-	path      string
-	meta      string
+	counters    []byte
+	numBlocks   int
+	rowSize     int // in bytes
+	counterSize int
+	path        string
+	meta        string
 }
 
 // fakeRuntime stands in for the runtime accessors, for a single goroutine
@@ -111,13 +118,26 @@ func newFakePackage(path string, files []string, blocks []testBlock, misalign bo
 }
 
 func newFakePackageLines(path string, files []string, blocks []testBlock, extras map[int]testLines, misalign bool) fakePackage {
-	rowSize := (len(blocks) + 63) / 64 * 64
+	return newFakePackageSized(path, files, blocks, extras, misalign, 1)
+}
+
+// newFakePackageSized returns a fake package with counters of counterSize
+// bytes.
+func newFakePackageSized(path string, files []string, blocks []testBlock, extras map[int]testLines, misalign bool, counterSize int) fakePackage {
+	rowSize := (len(blocks)*counterSize + 63) / 64 * 64
 	buf := make([]byte, lineCoverageSlotCount*rowSize+wordSize)
 	counters := buf[:lineCoverageSlotCount*rowSize]
 	if misalign {
 		counters = buf[1 : 1+lineCoverageSlotCount*rowSize]
 	}
-	return fakePackage{counters: counters, numBlocks: len(blocks), rowSize: rowSize, path: path, meta: encodeTestMetaLines(files, blocks, extras)}
+	return fakePackage{
+		counters:    counters,
+		numBlocks:   len(blocks),
+		rowSize:     rowSize,
+		counterSize: counterSize,
+		path:        path,
+		meta:        encodeTestMetaSized(files, blocks, extras, counterSize),
+	}
 }
 
 func installFakeRuntime(t *testing.T, rt *fakeRuntime) {
@@ -177,8 +197,16 @@ func installFakeRuntime(t *testing.T, rt *fakeRuntime) {
 
 // probe marks block of package pkg in the row of the current slot.
 func (rt *fakeRuntime) probe(pkg, block int) {
-	p := rt.packages[pkg]
-	p.counters[int(rt.slot)*p.rowSize+block] = 1
+	rt.packages[pkg].store(rt.slot, block)
+}
+
+// store marks block in the row of slot.
+func (p fakePackage) store(slot uint32, block int) {
+	if p.counterSize == 4 {
+		binary.NativeEndian.PutUint32(p.counters[int(slot)*p.rowSize+4*block:], 1)
+		return
+	}
+	p.counters[int(slot)*p.rowSize+block] = 1
 }
 
 // startGoroutine simulates a goroutine started by the current one.
@@ -244,11 +272,12 @@ func TestDecodeLineCoverageMeta(t *testing.T) {
 	files := []string{"/repo/a.go", "/repo/b.go"}
 	blocks := []testBlock{{0, 3, 5, false}, {1, 10, 10, true}, {0, 0, 0, false}}
 	var names []string
-	decoded, err := decodeLineCoverageMeta(encodeTestMeta(files, blocks), len(blocks), func(name string) int32 {
+	decoded, counterSize, err := decodeLineCoverageMeta(encodeTestMeta(files, blocks), len(blocks), func(name string) int32 {
 		names = append(names, name)
 		return int32(len(names) - 1)
 	})
 	require.NoError(t, err)
+	assert.Equal(t, 1, counterSize)
 	assert.Equal(t, files, names)
 	assert.Equal(t, []lineCoverageBlock{
 		{file: 0, startLine: 3, endLine: 5},
@@ -256,17 +285,25 @@ func TestDecodeLineCoverageMeta(t *testing.T) {
 		{file: 0, startLine: 1, endLine: 0},
 	}, decoded)
 
-	// Version 1 tables have the same layout, without credited lines.
-	meta := encodeTestMeta(files, blocks)
-	decodedV1, err := decodeLineCoverageMeta("\x01"+meta[1:], len(blocks), func(string) int32 { return 0 })
+	_, counterSize, err = decodeLineCoverageMeta(encodeTestMetaSized(files, blocks, nil, 4), len(blocks), func(string) int32 { return 0 })
 	require.NoError(t, err)
-	assert.Len(t, decodedV1, len(blocks))
+	assert.Equal(t, 4, counterSize)
+
+	// Versions 1 and 2 tables have no counter size: their counters are bytes.
+	// Version 1 tables have no credited lines either.
+	meta := encodeTestMeta(files, blocks)
+	for _, version := range []string{"\x01", "\x02"} {
+		decodedOld, counterSize, err := decodeLineCoverageMeta(version+meta[2:], len(blocks), func(string) int32 { return 0 })
+		require.NoError(t, err)
+		assert.Len(t, decodedOld, len(blocks))
+		assert.Equal(t, 1, counterSize)
+	}
 
 	withLines := encodeTestMetaLines(files, blocks, map[int]testLines{
 		0: {lines: []int{2}},
 		2: {lines: []int{7, 9}, noRange: true},
 	})
-	decoded, err = decodeLineCoverageMeta(withLines, len(blocks), func(string) int32 { return 0 })
+	decoded, _, err = decodeLineCoverageMeta(withLines, len(blocks), func(string) int32 { return 0 })
 	require.NoError(t, err)
 	assert.Equal(t, []lineCoverageBlock{
 		{file: 0, startLine: 3, endLine: 5, lines: []int32{2}},
@@ -283,7 +320,9 @@ func TestDecodeLineCoverageMeta(t *testing.T) {
 		"truncated lines": {withLines[:len(withLines)-1], len(blocks)},
 		"trailing bytes":  {meta + "x", len(blocks)},
 		"block count":     {meta, len(blocks) + 1},
-		"version":         {"\x03" + meta[1:], len(blocks)},
+		"version":         {"\x04" + meta[1:], len(blocks)},
+		"version zero":    {"\x00" + meta[1:], len(blocks)},
+		"counter size":    {meta[:1] + "\x02" + meta[2:], len(blocks)},
 		"file index":      {encodeTestMeta(files[:1], blocks[1:2]), 1},
 		"line zero":       {zeroLine, 1},
 		"line count":      {zeroLine[:len(zeroLine)-2] + "\x7f\x01", 1},
@@ -291,7 +330,7 @@ func TestDecodeLineCoverageMeta(t *testing.T) {
 		"varint overflow": {"\x01\xff\xff\xff\xff\xff\xff\xff\xff\xff\x7f", 0},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := decodeLineCoverageMeta(tc.meta, tc.numBlocks, func(string) int32 { return 0 })
+			_, _, err := decodeLineCoverageMeta(tc.meta, tc.numBlocks, func(string) int32 { return 0 })
 			assert.Error(t, err)
 		})
 	}
@@ -439,6 +478,36 @@ func TestLineCoverageDetach(t *testing.T) {
 	assert.Equal(t, map[string][]int32{"a.go": {1}}, recordLines(t, records[0]))
 	assert.Equal(t, "unowned", records[3]["shared"])
 	assert.Equal(t, map[string][]int32{"a.go": {2}}, recordLines(t, records[3]))
+}
+
+// TestLineCoverageWideCounters checks the uint32 counters of builds with the
+// race detector.
+func TestLineCoverageWideCounters(t *testing.T) {
+	workspace := setTestWorkspace(t)
+	file := filepath.Join(workspace, "a.go")
+	blocks := []testBlock{{0, 1, 1, false}, {0, 2, 2, false}, {0, 3, 3, false}}
+	short := newFakePackageSized("example/short", []string{file}, blocks, nil, false, 4)
+	short.rowSize = 8 // fewer bytes than three uint32 counters
+	rt := &fakeRuntime{packages: []fakePackage{
+		newFakePackageSized("example/a", []string{file}, blocks, nil, false, 4),
+		short,
+	}}
+	c, sent := startTestCollector(t, rt)
+	require.Len(t, c.packages, 1)
+	require.True(t, c.packages[0].wide)
+
+	w := OpenLineCoverageWindow()
+	slot := rt.slot
+	rt.probe(0, 0)
+	rt.probe(0, 2)
+	w.Close(1, 1)
+	p := rt.packages[0]
+	assert.Equal(t, make([]byte, p.rowSize), p.counters[int(slot)*p.rowSize:int(slot+1)*p.rowSize], "rows are cleared")
+
+	c.stop()
+	records := (*sent)[0]
+	require.NotEmpty(t, records)
+	assert.Equal(t, map[string][]int32{"a.go": {1, 3}}, recordLines(t, records[0]))
 }
 
 func TestLineCoverageDirtySlotReuse(t *testing.T) {
