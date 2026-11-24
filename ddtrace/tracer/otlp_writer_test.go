@@ -18,6 +18,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tinylib/msgp/msgp"
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/proto"
@@ -26,6 +27,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
@@ -182,6 +184,54 @@ func TestOTLPWriterFlush(t *testing.T) {
 	assert.Equal(t, version.Tag, scope.Version)
 
 	assert.Equal(t, 2, len(rs[0].ScopeSpans[0].Spans))
+}
+
+func TestOTLPWriterMetaStruct(t *testing.T) {
+	srv := newTestOTLPServer()
+	defer srv.Close()
+	trc, _, _, stop, err := startTestTracer(t, func(c *config) {
+		c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode)
+	})
+	require.NoError(t, err)
+	stop = sync.OnceFunc(stop)
+	defer stop()
+	trc.traceWriter.(*otlpTraceWriter).transport = newOTLPTransport(srv.Client(), srv.URL, nil)
+	af := trc.config.agent.load()
+	af.metaStructAvailable = true
+	trc.config.agent.store(af)
+
+	s := trc.StartSpan("request")
+	stacktrace.AddToSpan(s,
+		&stacktrace.Event{Category: stacktrace.ExploitEvent, ID: "rasp-1"},
+		&stacktrace.Event{Category: stacktrace.VulnerabilityEvent, ID: "iast-1"},
+	)
+	report, err := msgp.AppendIntf(nil, map[string]any{"vulnerabilities": []any{map[string]string{"type": "example"}}})
+	require.NoError(t, err)
+	require.True(t, s.SetMetaStruct("iast", msgp.Raw(report)))
+	const wafReport = `{"triggers":[]}`
+	s.SetTag("_dd.appsec.json", wafReport)
+	s.Finish()
+	stop()
+
+	payloads := srv.getPayloads()
+	require.Len(t, payloads, 1)
+	var td otlptrace.TracesData
+	require.NoError(t, proto.Unmarshal(payloads[0], &td))
+	require.Len(t, td.ResourceSpans, 1)
+	require.Len(t, td.ResourceSpans[0].ScopeSpans, 1)
+	spans := td.ResourceSpans[0].ScopeSpans[0].Spans
+	require.Len(t, spans, 1)
+	attrs := keyValuesToMap(spans[0].Attributes)
+	assert.Equal(t, wafReport, attrs["_dd.appsec.json"])
+	assert.Equal(t, report, attrs["iast"])
+	require.IsType(t, []byte(nil), attrs["_dd.stack"])
+	stacks, rest, err := msgp.ReadIntfBytes(attrs["_dd.stack"].([]byte))
+	require.NoError(t, err)
+	assert.Empty(t, rest)
+	assert.Equal(t, map[string]any{
+		"exploit":       []any{map[string]any{"id": "rasp-1", "frames": []any{}}},
+		"vulnerability": []any{map[string]any{"id": "iast-1", "frames": []any{}}},
+	}, stacks)
 }
 
 func TestOTLPExportGlobalTagsOnResource(t *testing.T) {

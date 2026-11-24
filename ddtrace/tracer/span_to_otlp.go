@@ -7,13 +7,12 @@ package tracer
 
 import (
 	"encoding/binary"
-	"encoding/json"
-	"fmt"
 	"maps"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/tinylib/msgp/msgp"
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlpresource "go.opentelemetry.io/proto/otlp/resource/v1"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
@@ -362,7 +361,12 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 		}
 	}
 	for key, value := range s.metaStruct {
-		if !addAttribute(&attrs, key, anyToOTLPValue(value)) {
+		// Carry the same per-entry MessagePack bytes as the native span encoder.
+		data, err := msgp.AppendIntf(nil, value)
+		if err != nil {
+			continue
+		}
+		if !addAttribute(&attrs, key, &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_BytesValue{BytesValue: data}}) {
 			return attrs
 		}
 	}
@@ -446,62 +450,6 @@ func otlpArrayValue(arr *spanEventArrayAttribute) *otlpcommon.AnyValue {
 		}
 	}
 	return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_ArrayValue{ArrayValue: &otlpcommon.ArrayValue{Values: values}}}
-}
-
-// anyToOTLPValue converts an arbitrary Go value to an OTLP AnyValue.
-// Handles primitives, maps, and slices recursively. For types that don't map
-// directly to OTLP, falls back to JSON-encoding as a string.
-func anyToOTLPValue(v any) *otlpcommon.AnyValue {
-	switch val := v.(type) {
-	case string:
-		return otlpStringValue(val)
-	case bool:
-		return otlpBoolValue(val)
-	case int64:
-		return otlpIntValue(val)
-	case uint64:
-		return otlpIntValue(int64(val))
-	case float32:
-		return otlpDoubleValue(float64(val))
-	case float64:
-		return otlpDoubleValue(val)
-	case []any:
-		values := make([]*otlpcommon.AnyValue, 0, len(val))
-		for _, elem := range val {
-			if av := anyToOTLPValue(elem); av != nil {
-				values = append(values, av)
-			}
-		}
-		return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_ArrayValue{
-			ArrayValue: &otlpcommon.ArrayValue{Values: values},
-		}}
-	case map[string]any:
-		kvs := make([]*otlpcommon.KeyValue, 0, len(val))
-		for k, elem := range val {
-			if av := anyToOTLPValue(elem); av != nil {
-				kvs = append(kvs, otlpKeyValue(k, av))
-			}
-		}
-		return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_KvlistValue{
-			KvlistValue: &otlpcommon.KeyValueList{Values: kvs},
-		}}
-	case map[string]string:
-		kvs := make([]*otlpcommon.KeyValue, 0, len(val))
-		for k, elem := range val {
-			kvs = append(kvs, otlpKeyValue(k, otlpStringValue(elem)))
-		}
-		return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_KvlistValue{
-			KvlistValue: &otlpcommon.KeyValueList{Values: kvs},
-		}}
-	default:
-		// Types without a natural OTLP mapping (e.g. custom structs) are
-		// JSON-encoded into a string as a best-effort fallback.
-		b, err := json.Marshal(val)
-		if err != nil {
-			return otlpStringValue(fmt.Sprintf("%v", val))
-		}
-		return otlpStringValue(string(b))
-	}
 }
 
 func spanEventArrayAttributeValueToAnyValue(v *spanEventArrayAttributeValue) *otlpcommon.AnyValue {

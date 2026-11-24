@@ -12,6 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tinylib/msgp/msgp"
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlpresource "go.opentelemetry.io/proto/otlp/resource/v1"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
@@ -534,35 +535,18 @@ func TestConvertSpanAttributesOtelSemanticsFiltersDatadogOnlyMetrics(t *testing.
 
 func TestConvertSpanAttributesWithMetaStruct(t *testing.T) {
 	s := newBasicSpan("op")
-	s.meta = tinternal.NewSpanMetaFromMap(map[string]string{"tag": "val"})
-	s.metaStruct = map[string]any{
-		"nested": map[string]any{"a": "b"},
-		"simple": map[string]string{"x": "y"},
+	s.metaStruct = metaStructMap{
+		"custom":  map[string]any{"nested": []any{"value", true}},
+		"invalid": failingMarshaler{},
 	}
 
-	attrs := convertSpanAttributes(s, "", false, nil)
-
-	var nestedKV, simpleKV *otlpcommon.KeyValue
-	for _, kv := range attrs {
-		switch kv.Key {
-		case "nested":
-			nestedKV = kv
-		case "simple":
-			simpleKV = kv
-		}
-	}
-
-	require.NotNil(t, nestedKV, "nested metaStruct key should be present")
-	kvlist := nestedKV.Value.GetKvlistValue()
-	require.NotNil(t, kvlist)
-	assert.Equal(t, "a", kvlist.Values[0].Key)
-	assert.Equal(t, "b", kvlist.Values[0].Value.GetStringValue())
-
-	require.NotNil(t, simpleKV, "simple metaStruct key should be present")
-	kvlist = simpleKV.Value.GetKvlistValue()
-	require.NotNil(t, kvlist)
-	assert.Equal(t, "x", kvlist.Values[0].Key)
-	assert.Equal(t, "y", kvlist.Values[0].Value.GetStringValue())
+	attrs := keyValuesToMap(convertSpanAttributes(s, "", false, nil))
+	assert.NotContains(t, attrs, "invalid")
+	require.IsType(t, []byte(nil), attrs["custom"])
+	value, rest, err := msgp.ReadIntfBytes(attrs["custom"].([]byte))
+	require.NoError(t, err)
+	assert.Empty(t, rest)
+	assert.Equal(t, s.metaStruct["custom"], value)
 }
 
 func TestConvertSpanAttributesMaxLimit(t *testing.T) {
@@ -791,90 +775,7 @@ func TestConvertSpanTraceStateOtel(t *testing.T) {
 	})
 }
 
-func TestAnyToOTLPValue(t *testing.T) {
-	t.Run("string", func(t *testing.T) {
-		av := anyToOTLPValue("hello")
-		assert.Equal(t, "hello", av.GetStringValue())
-	})
-
-	t.Run("bool", func(t *testing.T) {
-		av := anyToOTLPValue(true)
-		assert.Equal(t, true, av.GetBoolValue())
-	})
-
-	t.Run("int64", func(t *testing.T) {
-		av := anyToOTLPValue(int64(42))
-		assert.Equal(t, int64(42), av.GetIntValue())
-	})
-
-	t.Run("uint64", func(t *testing.T) {
-		av := anyToOTLPValue(uint64(64))
-		assert.Equal(t, int64(64), av.GetIntValue())
-	})
-
-	t.Run("float32", func(t *testing.T) {
-		av := anyToOTLPValue(float32(2.5))
-		assert.InDelta(t, 2.5, av.GetDoubleValue(), 1e-6)
-	})
-
-	t.Run("float64", func(t *testing.T) {
-		av := anyToOTLPValue(3.14)
-		assert.Equal(t, 3.14, av.GetDoubleValue())
-	})
-
-	t.Run("[]any", func(t *testing.T) {
-		av := anyToOTLPValue([]any{"a", int64(1), true})
-		arr := av.GetArrayValue()
-		require.NotNil(t, arr)
-		require.Len(t, arr.Values, 3)
-		assert.Equal(t, "a", arr.Values[0].GetStringValue())
-		assert.Equal(t, int64(1), arr.Values[1].GetIntValue())
-		assert.Equal(t, true, arr.Values[2].GetBoolValue())
-	})
-
-	t.Run("map[string]any", func(t *testing.T) {
-		av := anyToOTLPValue(map[string]any{"k": "v"})
-		kvlist := av.GetKvlistValue()
-		require.NotNil(t, kvlist)
-		require.Len(t, kvlist.Values, 1)
-		assert.Equal(t, "k", kvlist.Values[0].Key)
-		assert.Equal(t, "v", kvlist.Values[0].Value.GetStringValue())
-	})
-
-	t.Run("map[string]string", func(t *testing.T) {
-		av := anyToOTLPValue(map[string]string{"x": "y"})
-		kvlist := av.GetKvlistValue()
-		require.NotNil(t, kvlist)
-		require.Len(t, kvlist.Values, 1)
-		assert.Equal(t, "x", kvlist.Values[0].Key)
-		assert.Equal(t, "y", kvlist.Values[0].Value.GetStringValue())
-	})
-
-	t.Run("nested map", func(t *testing.T) {
-		av := anyToOTLPValue(map[string]any{
-			"triggers": []any{map[string]any{"id": "1"}},
-		})
-		kvlist := av.GetKvlistValue()
-		require.NotNil(t, kvlist)
-		require.Len(t, kvlist.Values, 1)
-		assert.Equal(t, "triggers", kvlist.Values[0].Key)
-		inner := kvlist.Values[0].Value.GetArrayValue()
-		require.NotNil(t, inner)
-		require.Len(t, inner.Values, 1)
-		innerMap := inner.Values[0].GetKvlistValue()
-		require.NotNil(t, innerMap)
-		assert.Equal(t, "1", innerMap.Values[0].Value.GetStringValue())
-	})
-
-	t.Run("default JSON fallback", func(t *testing.T) {
-		type custom struct{ A string }
-		av := anyToOTLPValue(custom{A: "test"})
-		assert.Contains(t, av.GetStringValue(), `"A":"test"`)
-	})
-}
-
 // keyValuesToMap converts []*otlpcommon.KeyValue into a map for easier assertion.
-// Values are returned as any (string or float64 for double).
 func keyValuesToMap(kvs []*otlpcommon.KeyValue) map[string]any {
 	m := make(map[string]any)
 	for _, kv := range kvs {
@@ -884,6 +785,8 @@ func keyValuesToMap(kvs []*otlpcommon.KeyValue) map[string]any {
 		switch v := kv.Value.Value.(type) {
 		case *otlpcommon.AnyValue_StringValue:
 			m[kv.Key] = v.StringValue
+		case *otlpcommon.AnyValue_BytesValue:
+			m[kv.Key] = v.BytesValue
 		case *otlpcommon.AnyValue_DoubleValue:
 			m[kv.Key] = v.DoubleValue
 		case *otlpcommon.AnyValue_IntValue:

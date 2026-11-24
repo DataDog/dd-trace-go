@@ -18,6 +18,7 @@ import (
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
@@ -36,6 +37,15 @@ func newBenchOTLPWriter(b *testing.B) *otlpTraceWriter {
 		scope:     &otlpcommon.InstrumentationScope{Name: "dd-trace-go", Version: version.Tag},
 		spans:     make([]*otlptrace.Span, 0),
 		climit:    make(chan struct{}, concurrentConnectionLimit),
+	}
+}
+
+func BenchmarkOTLPMetaStructAttributes(b *testing.B) {
+	s := newBasicSpan("op")
+	stacktrace.AddToSpan(s, &stacktrace.Event{Category: stacktrace.ExploitEvent, ID: "event-1", Language: "go"})
+	b.ReportAllocs()
+	for b.Loop() {
+		convertSpanAttributes(s, "", false, nil)
 	}
 }
 

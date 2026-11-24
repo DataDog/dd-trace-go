@@ -427,10 +427,8 @@ func (t *tracer) startAppSec() {
 	appsec.Start(appsecopts...)
 }
 
-// metaStructAvailable reports whether spans can carry meta_struct to the backend. OTLP has no
-// meta_struct field: the OTLP exporter writes a meta_struct value as a JSON string attribute under
-// its own key, which Datadog does not read. Without meta_struct, App and API Protection writes the
-// _dd.appsec.json span tag, which OTLP ingestion keeps.
+// App and API Protection uses _dd.appsec.json in OTLP mode: agent discovery does not
+// tell us whether the OTLP receiver can restore structured report bytes.
 func (t *tracer) metaStructAvailable() bool {
 	return t.config.agent.load().metaStructAvailable && !t.otlpExportMode
 }
