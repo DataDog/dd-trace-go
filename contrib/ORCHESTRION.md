@@ -38,7 +38,8 @@ its surroundings:
 
 - `{{ . }}`: the matched node itself. For `wrap-expression`, this is the expression being wrapped.
 - `{{ .AST }}`: the matched syntax node. Which fields exist depends on the node type. For a call
-  match (`function-call`) the node is a call expression, so `{{ .AST.Fun }}` and
+  match (`function-call` or `method-call`) the node is a call expression, so `{{ .AST.Fun }}`,
+  `{{ .AST.Fun.X }}` (the receiver, for a `method-call` match) and
   `{{ index .AST.Args 0 }}` (first argument) are available. Orchestrion uses the
   [github.com/dave/dst](https://pkg.go.dev/github.com/dave/dst) library, whose node types mirror the
   standard library [go/ast](https://pkg.go.dev/go/ast); use those references for the full set of
@@ -47,7 +48,12 @@ its surroundings:
   function body (for example a `function-body` join point). Its accessors return an error when they
   do not apply: `{{ .Function.Receiver }}` fails if the function is not a method,
   `{{ .Function.Argument 0 }}` fails if there is no such argument. Also `Name`, `Result`,
-  `ArgumentOfType`, `ResultOfType`.
+  `ResultOfType`. The search accessors return the name of the first argument or result matching,
+  or an empty string when none does, so a template can branch on the result with `{{ if $v }}`:
+  `ArgumentOfType` matches a declared type exactly, while
+  `ArgumentThatImplements` matches any argument whose type implements the given interface —
+  `{{ .Function.ArgumentThatImplements "context.Context" }}` finds a context argument even when the
+  caller passes a concrete type of its own.
 - `{{ .DirectiveArgs "name" }}`: the arguments of a matching directive comment.
 - `{{ Version }}`: the version of Orchestrion weaving the build, as a plain function call.
 
@@ -63,14 +69,25 @@ Read the referenced `orchestrion.yml` files for the full aspect code.
   (`wrap-expression`) so it still returns the same value. See
   [redis.v9](./redis/go-redis.v9/orchestrion.yml), [gin](./gin-gonic/gin/orchestrion.yml),
   [chi.v5](./go-chi/chi.v5/orchestrion.yml).
+- **Wrap a method call on a concrete library type.** When the integration exposes free functions
+  taking the library's own types, swap `receiver.Method(args...)` one-to-one with `wrap-expression`
+  and a `method-call` join point. Unlike `function-call`, it matches on the receiver's
+  fully-qualified type, so same-named methods on other types do not match, and an optional `match`
+  field selects pointer or value receivers. The receiver expression is `{{ .AST.Fun.X }}`. See
+  [amqp091-go](./rabbitmq/amqp091-go/orchestrion.yml),
+  [streadway/amqp](./streadway/amqp/orchestrion.yml) and
+  [aerospike](./aerospike/aerospike-client-go.v7/orchestrion.yml).
 - **Replace a constructor.** When you provide a drop-in with the same signature and return type, swap
   the call one-to-one (`replace-function`). See [database/sql](./database/sql/orchestrion.yml)
   (`sql.Open`, `sql.OpenDB`) and [pgx.v5](./jackc/pgx.v5/orchestrion.yml).
 - **Grab the surrounding context.** Some calls take no `context.Context` (for example `http.Get`,
   `http.Post`). An aspect can pull a context from the enclosing function with
-  `.Function.ArgumentOfType "context.Context"` (or from a `*http.Request` via its `Context()`) and
-  thread it into the traced call, so context propagates even where the original call has no context
-  argument. See the `Get|Head|Post|PostForm` aspect in [net/http](./net/http/orchestrion.client.yml).
+  `.Function.ArgumentOfType "context.Context"`, falling back to
+  `.Function.ArgumentThatImplements "context.Context"` when the argument is a caller-defined
+  implementation of the interface (or from a `*http.Request` via its `Context()`) and thread it
+  into the traced call, so context propagates even where the original call has no context argument.
+  See the `Get|Head|Post|PostForm` aspect in [net/http](./net/http/orchestrion.client.yml) and the
+  `Publish` aspect in [streadway/amqp](./streadway/amqp/orchestrion.yml).
 - **Modify library code.** Instead of wrapping from the outside, inject tracing into the library's
   own functions and types (`add-struct-field`, `function-body`, `prepend-statements`). Choose this
   when the library has no hook and cannot be wrapped safely (the concrete-wrapper case in

@@ -350,6 +350,70 @@ func TestConsumeWithContextCancel(t *testing.T) {
 	}, 10*time.Second, 50*time.Millisecond)
 }
 
+func TestConsumeWithContextCancelPreservesDelivery(t *testing.T) {
+	ch := openChannel(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	queue := declareQueue(t, ch, "")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	deliveries, err := ConsumeWithContext(ctx, ch, queue, t.Name(), true, false, false, false, nil)
+	require.NoError(t, err)
+	require.NoError(t, Publish(ch, "", queue, false, false, amqp.Publishing{Body: []byte("hello")}))
+	waitForOpenConsumeSpan(t, mt)
+
+	cancel()
+
+	select {
+	case d, ok := <-deliveries:
+		require.True(t, ok)
+		assert.Equal(t, "hello", string(d.Body))
+	case <-time.After(10 * time.Second):
+		t.Fatal("the delivery held by the relay was dropped when the context was canceled")
+	}
+}
+
+func TestConsumeRelayExitsOnChannelClose(t *testing.T) {
+	ch := openChannel(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	queue := declareQueue(t, ch, "")
+
+	deliveries, err := Consume(ch, queue, t.Name(), true, false, false, false, nil)
+	require.NoError(t, err)
+	require.NoError(t, Publish(ch, "", queue, false, false, amqp.Publishing{Body: []byte("hello")}))
+	waitForOpenConsumeSpan(t, mt)
+
+	require.NoError(t, ch.Close())
+
+	require.Eventually(t, func() bool {
+		for _, s := range mt.FinishedSpans() {
+			if s.OperationName() == "amqp.consume" {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 50*time.Millisecond, "the relay leaked with an unfinished consume span after the channel closed")
+	select {
+	case _, ok := <-deliveries:
+		assert.False(t, ok)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the relay never closed the delivery channel after the channel closed")
+	}
+}
+
+func waitForOpenConsumeSpan(t *testing.T, mt mocktracer.Tracer) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		for _, s := range mt.OpenSpans() {
+			if s.OperationName() == "amqp.consume" {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 50*time.Millisecond, "no delivery reached the relay")
+}
+
 func TestConsumeSpanFinishesOnHandoff(t *testing.T) {
 	ch := openChannel(t)
 	mt := mocktracer.Start()

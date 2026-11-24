@@ -305,3 +305,39 @@ func TestPublishGet(t *testing.T) {
 	assert.Equal(t, "basic.get "+queue, spans[1].Tag(ext.ResourceName))
 	assert.Equal(t, spans[0].SpanID(), spans[1].ParentID())
 }
+
+func TestConsumeRelayExitsOnChannelClose(t *testing.T) {
+	ch := openChannel(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	queue := declareQueue(t, ch, "")
+
+	deliveries, err := Consume(ch, queue, t.Name(), true, false, false, false, nil)
+	require.NoError(t, err)
+	require.NoError(t, Publish(ch, "", queue, false, false, amqp.Publishing{Body: []byte("hello")}))
+	require.Eventually(t, func() bool {
+		for _, s := range mt.OpenSpans() {
+			if s.OperationName() == "amqp.consume" {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 50*time.Millisecond, "no delivery reached the relay")
+
+	require.NoError(t, ch.Close())
+
+	require.Eventually(t, func() bool {
+		for _, s := range mt.FinishedSpans() {
+			if s.OperationName() == "amqp.consume" {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 50*time.Millisecond, "the relay leaked with an unfinished consume span after the channel closed")
+	select {
+	case _, ok := <-deliveries:
+		assert.False(t, ok)
+	case <-time.After(10 * time.Second):
+		t.Fatal("the relay never closed the delivery channel after the channel closed")
+	}
+}

@@ -62,7 +62,7 @@ func Consume(ch *amqp.Channel, queue, consumer string, autoAck, exclusive, noLoc
 	if err != nil {
 		return deliveries, err
 	}
-	return traceDeliveries(context.Background(), newConfig(opts), queue, deliveries), nil
+	return traceDeliveries(context.Background(), newConfig(opts), queue, ch, deliveries), nil
 }
 
 func ConsumeWithContext(ctx context.Context, ch *amqp.Channel, queue, consumer string, autoAck, exclusive, noLocal, noWait bool, args amqp.Table, opts ...Option) (<-chan amqp.Delivery, error) {
@@ -70,7 +70,7 @@ func ConsumeWithContext(ctx context.Context, ch *amqp.Channel, queue, consumer s
 	if err != nil {
 		return deliveries, err
 	}
-	return traceDeliveries(ctx, newConfig(opts), queue, deliveries), nil
+	return traceDeliveries(ctx, newConfig(opts), queue, ch, deliveries), nil
 }
 
 func Get(ch *amqp.Channel, queue string, autoAck bool, opts ...Option) (amqp.Delivery, bool, error) {
@@ -93,8 +93,9 @@ func ContextFromDelivery(ctx context.Context, d amqp.Delivery) context.Context {
 	return datastreams.ExtractFromBase64Carrier(ctx, carrier)
 }
 
-func traceDeliveries(ctx context.Context, cfg *config, queue string, in <-chan amqp.Delivery) <-chan amqp.Delivery {
+func traceDeliveries(ctx context.Context, cfg *config, queue string, ch *amqp.Channel, in <-chan amqp.Delivery) <-chan amqp.Delivery {
 	out := make(chan amqp.Delivery)
+	closed := ch.NotifyClose(make(chan *amqp.Error, 1))
 	go func() {
 		defer close(out)
 		for d := range in {
@@ -102,11 +103,25 @@ func traceDeliveries(ctx context.Context, cfg *config, queue string, in <-chan a
 			select {
 			case out <- d:
 				span.Finish()
-			case <-ctx.Done():
+			case <-closed:
 				span.Finish()
-				for range in {
-				}
 				return
+			case <-ctx.Done():
+				for {
+					select {
+					case out <- d:
+						span.Finish()
+					case <-closed:
+						span.Finish()
+						return
+					}
+					next, ok := <-in
+					if !ok {
+						return
+					}
+					d = next
+					span = startConsumeSpan(cfg, "basic.deliver", queue, &d)
+				}
 			}
 		}
 	}()
