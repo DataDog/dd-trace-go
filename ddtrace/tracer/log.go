@@ -480,9 +480,17 @@ func otlpScheme(insecure bool) string {
 	return "https"
 }
 
+// otlpHTTPProtocol returns the HTTP protocol to report for protocol: "http/json"
+// or "http/protobuf", which is also what "http" means.
+func otlpHTTPProtocol(protocol string) string {
+	if protocol == "http/json" {
+		return "http/json"
+	}
+	return "http/protobuf"
+}
+
 // runtimeMetricsExporterInfo returns the transport of the OTel MeterProvider
-// exporter, built the way ddtrace/opentelemetry/metric builds it, including
-// its http/protobuf fallback for unsupported protocols.
+// exporter, built the way ddtrace/opentelemetry/metric builds it.
 func runtimeMetricsExporterInfo(cfg *internalconfig.Config) otlpExporterInfo {
 	if cfg.RuntimeMetricsProtocol() == "grpc" {
 		return otlpExporterInfo{
@@ -493,7 +501,7 @@ func runtimeMetricsExporterInfo(cfg *internalconfig.Config) otlpExporterInfo {
 	}
 	return otlpExporterInfo{
 		endpoint: sanitizeOTLPEndpoint(cfg.RuntimeMetricsHTTPURL()),
-		protocol: "http/protobuf",
+		protocol: otlpHTTPProtocol(cfg.RuntimeMetricsProtocol()),
 		headers:  cfg.RuntimeMetricsHeaders(),
 	}
 }
@@ -511,10 +519,11 @@ func otlpLogsEndpoint(cfg *internalconfig.Config) (endpoint, protocol string) {
 		}
 		return sanitizeOTLPEndpoint(otlpScheme(insecure) + "://" + target), "grpc"
 	}
+	httpProtocol := otlpHTTPProtocol(cfg.OTLPLogsProtocol())
 	if raw := cfg.OTLPLogsHTTPURL(); raw != "" {
 		u, err := url.Parse(raw)
 		if err != nil {
-			return "", "http/protobuf"
+			return "", httpProtocol
 		}
 		// The SDK keeps only the decoded path, so /a%2Fb is sent as /a/b.
 		u.RawPath = ""
@@ -522,10 +531,10 @@ func otlpLogsEndpoint(cfg *internalconfig.Config) (endpoint, protocol string) {
 		if u.Scheme != "" {
 			u.Scheme = otlpScheme(u.Scheme != "https")
 		}
-		return sanitizeOTLPEndpoint(u.String()), "http/protobuf"
+		return sanitizeOTLPEndpoint(u.String()), httpProtocol
 	}
 	host, path, insecure := cfg.OTLPLogsAgentHTTPEndpoint()
-	return (&url.URL{Scheme: otlpScheme(insecure), Host: host, Path: path}).String(), "http/protobuf"
+	return (&url.URL{Scheme: otlpScheme(insecure), Host: host, Path: path}).String(), httpProtocol
 }
 
 // redactOTLPHeaders returns headers with every value redacted. It never
