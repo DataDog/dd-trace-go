@@ -523,3 +523,29 @@ func TestProviderGoroutines_FindsRunningProvider(t *testing.T) {
 	// Every matcher has a subtest above.
 	assert.ElementsMatch(t, strayProviderGoroutines, covered, "add a subtest for every strayProviderGoroutines entry")
 }
+
+// selectivePanickingLogger panics only on lines that contain substr.
+type selectivePanickingLogger struct{ substr string }
+
+func (l selectivePanickingLogger) Log(msg string) {
+	if strings.Contains(msg, l.substr) {
+		panic("logger failure")
+	}
+}
+
+// The line that reports a provider's switches must not let a failing
+// application logger break construction of an inspection provider.
+func TestNewProvider_ContainsSwitchesLogPanic(t *testing.T) {
+	requireNoStrayProviderGoroutines(t)
+	undo := log.UseLogger(selectivePanickingLogger{substr: "provider created with"})
+	t.Cleanup(undo)
+
+	var p *DatadogProvider
+	require.NotPanics(t, func() {
+		p = newDatadogProviderWithSourceAndEVP(ProviderConfig{
+			EvaluationTelemetryEnabled: new(false),
+			ExposuresEnabled:           new(false),
+		}, internalffe.SourceRemoteConfig, newEVPClient())
+	})
+	cleanupProvider(t, p)
+}

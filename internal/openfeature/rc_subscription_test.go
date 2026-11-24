@@ -30,20 +30,6 @@ func TestForwardingCallbackBuffersWhenNoCallback(t *testing.T) {
 	rcState.Unlock()
 }
 
-func TestForwardingCallbackBuffersOnlyLatest(t *testing.T) {
-	ResetForTest()
-	defer ResetForTest()
-
-	forwardingCallback(remoteconfig.ProductUpdate{"path/old": []byte(`old`)})
-	forwardingCallback(remoteconfig.ProductUpdate{"path/new": []byte(`new`)})
-
-	rcState.Lock()
-	require.NotNil(t, rcState.buffered)
-	assert.NotContains(t, rcState.buffered, "path/old")
-	assert.Contains(t, rcState.buffered, "path/new")
-	rcState.Unlock()
-}
-
 func TestForwardingCallbackForwardsWhenCallbackAttached(t *testing.T) {
 	ResetForTest()
 	defer ResetForTest()
@@ -111,11 +97,11 @@ func TestForwardingCallbackFansOutToEveryProvider(t *testing.T) {
 	assert.Equal(t, []string{"path/a"}, first, "a detached provider gets no updates")
 	assert.Equal(t, []string{"path/a", "path/b"}, second)
 
-	// A provider attaching later starts from the latest update.
+	// A provider attaching later gets only what the attached providers accepted.
 	var late []string
 	_, ok = AttachCallback(record(&late, rc.ApplyStateAcknowledged))
 	require.True(t, ok)
-	assert.Equal(t, []string{"path/b"}, late)
+	assert.Empty(t, late, "path/b was rejected, so it is not replayed")
 }
 
 func TestDetachLastCallbackUnregistersCapability(t *testing.T) {
@@ -244,4 +230,80 @@ func TestSubscribeRCAfterTracerRestart(t *testing.T) {
 	has, err := remoteconfig.HasProduct(FFEProductName)
 	require.NoError(t, err)
 	assert.True(t, has, "FFE_FLAGS should be subscribed on the new RC client after restart")
+}
+
+// A provider created after the RC client stopped, for example after
+// tracer.Stop, must subscribe again on a new client rather than trust the
+// previous subscription.
+func TestSubscribeProviderAfterRCStop(t *testing.T) {
+	ResetForTest()
+	defer ResetForTest()
+	defer remoteconfig.Reset()
+
+	require.NoError(t, SubscribeProvider())
+	remoteconfig.Stop()
+
+	require.NoError(t, SubscribeProvider())
+	has, err := remoteconfig.HasProduct(FFEProductName)
+	require.NoError(t, err)
+	assert.True(t, has, "FFE_FLAGS should be subscribed on the new RC client")
+}
+
+// rejectingCallback acknowledges every payload except "bad" and nil deletions
+// it is told to reject, as a provider rejecting an invalid configuration does.
+func rejectingCallback(received *[]remoteconfig.ProductUpdate) Callback {
+	return func(update remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
+		if received != nil {
+			*received = append(*received, update)
+		}
+		statuses := make(map[string]rc.ApplyStatus, len(update))
+		for path, data := range update {
+			if string(data) == "bad" {
+				statuses[path] = rc.ApplyStatus{State: rc.ApplyStateError, Error: "invalid"}
+				continue
+			}
+			statuses[path] = rc.ApplyStatus{State: rc.ApplyStateAcknowledged}
+		}
+		return statuses
+	}
+}
+
+// A rejected replacement must not reach providers that attach later: they get
+// the configuration the attached providers kept.
+func TestAttachCallbackReplaysLastAcceptedConfig(t *testing.T) {
+	ResetForTest()
+	defer ResetForTest()
+	SetSubscribedForTest(true)
+
+	detach, ok := AttachCallback(rejectingCallback(nil))
+	require.True(t, ok)
+	defer detach()
+
+	forwardingCallback(remoteconfig.ProductUpdate{"path/1": []byte("good")})
+	statuses := forwardingCallback(remoteconfig.ProductUpdate{"path/1": []byte("bad")})
+	require.Equal(t, rc.ApplyStateError, statuses["path/1"].State)
+
+	var received []remoteconfig.ProductUpdate
+	detachLate, ok := AttachCallback(rejectingCallback(&received))
+	require.True(t, ok)
+	defer detachLate()
+	require.Len(t, received, 1)
+	assert.Equal(t, remoteconfig.ProductUpdate{"path/1": []byte("good")}, received[0])
+}
+
+// RC sends only changed files and nil for removed ones, so the replay buffer
+// keeps unchanged paths and drops the ones RC removed.
+func TestForwardingCallbackMergesUpdatesIntoBuffer(t *testing.T) {
+	ResetForTest()
+	defer ResetForTest()
+
+	forwardingCallback(remoteconfig.ProductUpdate{"path/a": []byte("a1"), "path/b": []byte("b1")})
+	forwardingCallback(remoteconfig.ProductUpdate{"path/a": []byte("a2")})
+	assert.Equal(t, remoteconfig.ProductUpdate{"path/a": []byte("a2"), "path/b": []byte("b1")}, GetBufferedForTest())
+
+	forwardingCallback(remoteconfig.ProductUpdate{"path/b": nil})
+	assert.Equal(t, remoteconfig.ProductUpdate{"path/a": []byte("a2")}, GetBufferedForTest())
+
+	forwardingCallback(remoteconfig.ProductUpdate{"path/a": nil})
+	assert.Empty(t, GetBufferedForTest())
 }

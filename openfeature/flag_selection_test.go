@@ -27,6 +27,7 @@ import (
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	internalffe "github.com/DataDog/dd-trace-go/v2/internal/openfeature"
+	"github.com/DataDog/dd-trace-go/v2/internal/remoteconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
@@ -778,6 +779,7 @@ func TestNewDatadogProvider_FlagSelectionWithRemoteConfig(t *testing.T) {
 		t.Helper()
 		internalffe.ResetForTest()
 		internalffe.SetSubscribedForTest(true)
+		t.Cleanup(remoteconfig.Stop)
 		t.Cleanup(internalffe.ResetForTest)
 		p, err := NewDatadogProvider(ProviderConfig{FlagSelection: selection})
 		require.NoError(t, err)

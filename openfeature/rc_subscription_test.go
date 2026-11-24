@@ -32,6 +32,7 @@ func TestAttachProviderSubscribed(t *testing.T) {
 	defer internalffe.ResetForTest()
 
 	internalffe.SetSubscribedForTest(true)
+	t.Cleanup(remoteconfig.Stop)
 
 	provider := newDatadogProvider(ProviderConfig{})
 	cleanupProvider(t, provider)
@@ -64,6 +65,7 @@ func TestAttachProviderReplaysBufferedConfig(t *testing.T) {
 
 	// Simulate SubscribeRC + a buffered update arriving before provider exists.
 	internalffe.SetSubscribedForTest(true)
+	t.Cleanup(remoteconfig.Stop)
 	internalffe.SetBufferedForTest(remoteconfig.ProductUpdate{"path/config": data})
 
 	provider := newDatadogProvider(ProviderConfig{})
@@ -85,6 +87,7 @@ func TestAttachProviderNoBuffer(t *testing.T) {
 	defer internalffe.ResetForTest()
 
 	internalffe.SetSubscribedForTest(true)
+	t.Cleanup(remoteconfig.Stop)
 
 	provider := newDatadogProvider(ProviderConfig{})
 	cleanupProvider(t, provider)
@@ -115,6 +118,7 @@ func TestStartWithRemoteConfigFastPath(t *testing.T) {
 	require.NoError(t, err)
 
 	internalffe.SetSubscribedForTest(true)
+	t.Cleanup(remoteconfig.Stop)
 	internalffe.SetBufferedForTest(remoteconfig.ProductUpdate{"path/fast": data})
 
 	// Verify SubscribeProvider returns fast path (tracer subscribed)
@@ -137,6 +141,7 @@ func TestStartWithRemoteConfig_ConfiguresAgentEVP(t *testing.T) {
 	internalffe.ResetForTest()
 	defer internalffe.ResetForTest()
 	internalffe.SetSubscribedForTest(true)
+	t.Cleanup(remoteconfig.Stop)
 
 	provider, err := startWithRemoteConfig(ProviderConfig{})
 	require.NoError(t, err)
@@ -159,6 +164,7 @@ func TestStartWithRemoteConfigSeveralProviders(t *testing.T) {
 	internalffe.ResetForTest()
 	defer internalffe.ResetForTest()
 	internalffe.SetSubscribedForTest(true)
+	t.Cleanup(remoteconfig.Stop)
 
 	encode := func(key string) []byte {
 		data, err := json.Marshal(&universalFlagsConfiguration{
@@ -193,4 +199,36 @@ func TestStartWithRemoteConfigSeveralProviders(t *testing.T) {
 	shutdownAndWait(t, peek)
 	internalffe.ForwardForTest(remoteconfig.ProductUpdate{"path/config": encode("third")})
 	assert.Contains(t, live.getConfiguration().Flags, "third", "shutting one provider down keeps the other attached")
+}
+
+// A provider attached after Remote Config delivered an invalid replacement gets
+// the configuration the attached provider kept, so both evaluate the same flags.
+func TestStartWithRemoteConfigLateProviderSkipsRejectedConfig(t *testing.T) {
+	internalffe.ResetForTest()
+	defer internalffe.ResetForTest()
+	internalffe.SetSubscribedForTest(true)
+	t.Cleanup(remoteconfig.Stop)
+
+	data, err := json.Marshal(&universalFlagsConfiguration{
+		Format: "SERVER",
+		Flags: map[string]*flag{"kept": {
+			Key: "kept", Enabled: true, VariationType: valueTypeBoolean,
+			Variations:  map[string]*variant{"on": {Key: "on", Value: true}},
+			Allocations: []*allocation{},
+		}},
+	})
+	require.NoError(t, err)
+
+	live, err := startWithRemoteConfig(ProviderConfig{})
+	require.NoError(t, err)
+	cleanupProvider(t, live)
+	internalffe.ForwardForTest(remoteconfig.ProductUpdate{"path/config": data})
+	internalffe.ForwardForTest(remoteconfig.ProductUpdate{"path/config": []byte(`{"format":"CLIENT"}`)})
+	require.Contains(t, live.getConfiguration().Flags, "kept", "the live provider keeps its last known configuration")
+
+	peek, err := startWithRemoteConfig(ProviderConfig{ExposuresEnabled: new(false)})
+	require.NoError(t, err)
+	cleanupProvider(t, peek)
+	require.NotNil(t, peek.getConfiguration())
+	assert.Contains(t, peek.getConfiguration().Flags, "kept")
 }

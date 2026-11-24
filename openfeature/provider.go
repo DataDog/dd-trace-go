@@ -334,8 +334,10 @@ func newDatadogProviderWithSourceAndEVP(
 	evaluationTelemetryEnabled := config.EvaluationTelemetryEnabled == nil || *config.EvaluationTelemetryEnabled
 	exposuresEnabled := config.ExposuresEnabled == nil || *config.ExposuresEnabled
 	if !evaluationTelemetryEnabled || !exposuresEnabled {
-		log.Info("openfeature: %s provider created with evaluation telemetry %s and exposures %s (ProviderConfig)",
-			source.String(), enabledText(evaluationTelemetryEnabled), enabledText(exposuresEnabled))
+		containLoggerPanic(func() {
+			log.Info("openfeature: %s provider created with evaluation telemetry %s and exposures %s (ProviderConfig)",
+				source.String(), enabledText(evaluationTelemetryEnabled), enabledText(exposuresEnabled))
+		})
 	}
 
 	// With exposures disabled, the provider has no exposure writer or hook, so

@@ -41,8 +41,9 @@ var rcState struct {
 	subscribed bool
 	callbacks  map[uint64]Callback
 	nextID     uint64
-	// buffered is the latest snapshot; RC sends full state each time. It is
-	// replayed to each provider that attaches after it arrived.
+	// buffered holds, per path, the last configuration the attached providers
+	// accepted. RC sends only changed files and nil for removed ones, so each
+	// update is merged in. It is replayed to each provider that attaches later.
 	buffered remoteconfig.ProductUpdate
 	// capabilityUnregistered records that the last provider detached and
 	// unregistered FFE_FLAGS evaluation, so the next one registers it again.
@@ -83,18 +84,14 @@ func SubscribeRC() error {
 }
 
 // forwardingCallback is the RC callback registered by SubscribeRC or
-// SubscribeProvider. It keeps the latest update for providers that attach
-// later and forwards it to every attached provider. A path is acknowledged
-// unless a provider reports another state for it.
+// SubscribeProvider. It forwards the update to every attached provider and
+// keeps what they accepted for providers that attach later. A path is
+// acknowledged unless a provider reports another state for it; a path a
+// provider rejected keeps its previous replay value, as the providers keep
+// their last known configuration.
 func forwardingCallback(update remoteconfig.ProductUpdate) map[string]rc.ApplyStatus {
 	rcState.Lock()
 	defer rcState.Unlock()
-
-	cpy := make(remoteconfig.ProductUpdate, len(update))
-	for k, v := range update {
-		cpy[k] = bytes.Clone(v)
-	}
-	rcState.buffered = cpy
 
 	statuses := make(map[string]rc.ApplyStatus, len(update))
 	for path := range update {
@@ -105,6 +102,19 @@ func forwardingCallback(update remoteconfig.ProductUpdate) map[string]rc.ApplySt
 			if status.State != rc.ApplyStateAcknowledged {
 				statuses[path] = status
 			}
+		}
+	}
+
+	if rcState.buffered == nil {
+		rcState.buffered = make(remoteconfig.ProductUpdate, len(update))
+	}
+	for path, data := range update {
+		switch {
+		case statuses[path].State == rc.ApplyStateError:
+		case data == nil:
+			delete(rcState.buffered, path)
+		default:
+			rcState.buffered[path] = bytes.Clone(data)
 		}
 	}
 	return statuses
@@ -146,7 +156,7 @@ func AttachCallback(cb Callback) (detach func(), ok bool) {
 	rcState.nextID++
 	rcState.callbacks[id] = cb
 
-	if rcState.buffered != nil {
+	if len(rcState.buffered) > 0 {
 		log.Debug("openfeature: replaying buffered RC config to provider")
 		// Apply statuses are intentionally discarded: the RC client already received
 		// statuses for this update from forwardingCallback.
@@ -178,7 +188,12 @@ func SubscribeProvider() error {
 	defer rcState.Unlock()
 
 	if rcState.subscribed {
-		return nil
+		// The subscription is gone once the RC client stops, for example on
+		// tracer.Stop; subscribe again on a new client.
+		if has, _ := remoteconfig.HasProduct(FFEProductName); has {
+			return nil
+		}
+		rcState.subscribed = false
 	}
 
 	// Slow path: tracer didn't subscribe, so we need to start RC and subscribe ourselves.
