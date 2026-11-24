@@ -1160,9 +1160,6 @@ const (
 	// tracestateMemberMaxSize bounds the length of a single non-dd list-member
 	// kept from an incoming tracestate, per the W3C recommendation.
 	tracestateMemberMaxSize = 512
-	// tracestateHeaderReserve is the byte budget consumed by the fixed dd= prefix
-	// (e.g. "dd=s:1;p:<16-hex-chars>") before any t.* tag entries are written.
-	tracestateHeaderReserve = 28
 )
 
 // propagatorW3c implements Propagator and injects/extracts span contexts
@@ -1577,7 +1574,9 @@ func appendLLMObsTracestateTags(b *strings.Builder, tags map[string]string) {
 			size += len(entries[n].key) + len(entries[n].value) + 4
 			n++
 		}
-		if n == 0 || b.Len()+size > tracestateDDMaxSize {
+		// An incomplete group, such as a decision that arrived without its rate, is
+		// left out rather than forwarded in part.
+		if n != len(group) || b.Len()+size > tracestateDDMaxSize {
 			continue
 		}
 		for _, e := range entries[:n] {

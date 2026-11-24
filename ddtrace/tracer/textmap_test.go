@@ -4186,3 +4186,15 @@ func BenchmarkAppendLLMObsTracestateTags(b *testing.B) {
 		appendLLMObsTracestateTags(&sb, tags)
 	}
 }
+
+func TestAppendLLMObsTracestateTagsSkipsIncompleteSamplingPair(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("dd=s:1")
+	appendLLMObsTracestateTags(&b, map[string]string{
+		keyPropagatedLLMObsSamplingDecision: "0", // arrived without its rate
+		keyPropagatedLLMObsMLAPP:            "x",
+	})
+	out := b.String()
+	assert.NotContains(t, out, "llmobs_sd")
+	assert.Contains(t, out, ";t.llmobs_ml_app:x")
+}

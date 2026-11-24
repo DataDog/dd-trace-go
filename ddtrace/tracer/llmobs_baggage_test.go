@@ -377,3 +377,27 @@ func TestLLMObsPartialFlushForgetsFlushedSpans(t *testing.T) {
 	defer s.mu.RUnlock()
 	assert.Empty(t, s.spans)
 }
+
+func TestLLMObsSamplingPairIsInjectedTogether(t *testing.T) {
+	defer illmobs.SetEnabledForTesting(true)()
+	t.Run("both-fit", func(t *testing.T) {
+		sc := &SpanContext{trace: newTrace()}
+		sc.setLLMObsPropagated(&illmobs.PropagatedLLMSpan{
+			SpanID: "555", TraceID: "12345", WireTraceID: "12345",
+			SampleRate: "0.5", SamplingDecision: "0",
+			ParentAgentSpanID: "777", ParentAgentName: strings.Repeat("a", 300),
+		}, true)
+		setLLMObsTagsForInjection(sc)
+		assert.Equal(t, "0.5", sc.trace.propagatingTag(keyPropagatedLLMObsSampleRate))
+		assert.Equal(t, "0", sc.trace.propagatingTag(keyPropagatedLLMObsSamplingDecision))
+	})
+	t.Run("rate-missing", func(t *testing.T) {
+		sc := &SpanContext{trace: newTrace()}
+		sc.setLLMObsPropagated(&illmobs.PropagatedLLMSpan{
+			SpanID: "555", TraceID: "12345", WireTraceID: "12345", SamplingDecision: "0",
+		}, true)
+		setLLMObsTagsForInjection(sc)
+		assert.Empty(t, sc.trace.propagatingTag(keyPropagatedLLMObsSampleRate))
+		assert.Empty(t, sc.trace.propagatingTag(keyPropagatedLLMObsSamplingDecision))
+	})
+}

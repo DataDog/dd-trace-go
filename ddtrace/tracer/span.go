@@ -1445,7 +1445,7 @@ func setPropagatingParentAgentTags(spanCtx *SpanContext, parentAgentSpanID, name
 			spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
 			return
 		}
-		// Only propagate the name when it fits within the x-datadog-tags and W3C tracestate budgets.
+		// Only propagate the name when it fits within the x-datadog-tags budget.
 		if fitsPropagatingTagBudget(spanCtx, keyPropagatedLLMObsParentAgentName, name) {
 			spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentAgentName, name)
 		} else {
@@ -1456,25 +1456,23 @@ func setPropagatingParentAgentTags(spanCtx *SpanContext, parentAgentSpanID, name
 }
 
 // fitsPropagatingTagBudget reports whether setting key to value keeps the
-// propagating tags within the x-datadog-tags and W3C tracestate budgets. Over
-// either budget, the encoder drops every propagating tag, not only this one.
+// propagating tags within the x-datadog-tags budget. Over it, the encoder drops
+// every propagating tag, not only this one. The W3C tracestate dd= member is not
+// checked here: composeTracestate fits the LLMObs tags into it by priority (see
+// llmobsTracestatePriority), so a full dd= member doesn't cost x-datadog-tags a tag.
 func fitsPropagatingTagBudget(spanCtx *SpanContext, key, value string) bool {
-	used, tsUsed := spanCtx.trace.propagatingTagsByteLens()
+	used := spanCtx.trace.propagatingTagsHeaderLen()
 	// _dd.p.tid is stamped during Inject, after this check — reserve its space on 128-bit traces.
 	if spanCtx.traceID.HasUpper() && spanCtx.trace.propagatingTag(keyTraceID128) == "" {
 		used += 27
-		tsUsed += 23
 	}
 	var xTagsLen int
 	if prior := spanCtx.trace.propagatingTag(key); prior != "" {
 		xTagsLen = used - len(prior) + len(value)
-		tsUsed -= len(key) - len("_dd.p.") + len(prior) + 4
 	} else {
 		xTagsLen = used + len(key) + len(value) + 2
 	}
-	tracestateLen := len(key) - len("_dd.p.") + len(value) + 4
-	return xTagsLen <= internalconfig.Get().MaxTagsHeaderLen() &&
-		tsUsed+tracestateLen+tracestateHeaderReserve <= tracestateDDMaxSize
+	return xTagsLen <= internalconfig.Get().MaxTagsHeaderLen()
 }
 
 // used in internal/civisibility/integrations/manual_api_common.go using linkname
