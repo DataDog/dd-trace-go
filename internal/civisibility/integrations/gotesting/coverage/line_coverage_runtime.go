@@ -46,6 +46,16 @@ var runtimeLineCoverageRetarget func(from uint32) (moved int, running bool)
 //go:linkname runtimeLineCoveragePackage __dd_linecov_package.V1
 var runtimeLineCoveragePackage func(i int) (counters *byte, numBlocks int, rowSize int, pkgPath string, meta string, ok bool)
 
+// runtimeLineCoverageLines reports the lines the line table of the binary maps
+// code to, in the files wantFile accepts: for each run of instructions of a
+// function that map to one line, it calls line with the name of the function,
+// the file and the line, and whether the instructions come from a function
+// inlined into it. Probes map to no file of the repository. It is nil in test
+// binaries built by orchestrion versions that predate it.
+//
+//go:linkname runtimeLineCoverageLines __dd_linecov_lines.V1
+var runtimeLineCoverageLines func(wantFile func(file string) bool, line func(funcName string, file string, line int32, inlined bool))
+
 // lineCoverageRuntimeAvailable reports whether the runtime has the line
 // coverage accessors.
 func lineCoverageRuntimeAvailable() bool {

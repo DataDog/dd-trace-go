@@ -9,7 +9,9 @@ import (
 	"cmp"
 	"runtime"
 	"slices"
+	"strings"
 	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
@@ -63,9 +65,15 @@ type (
 
 	// lineCoverageFile is a source file with instrumented blocks.
 	lineCoverageFile struct {
-		name      string  // path relative to the repository root
-		maxLine   int32   // last line of the file's blocks
-		initLines []int32 // executed lines of the file's init functions, sorted
+		name    string // path relative to the repository root
+		maxLine int32  // last line of the file's blocks and init lines
+		// initLines are the executed lines of the file's initialisers, sorted:
+		// its init functions and package variable initialisers.
+		initLines []int32
+		// codeLines is the bitmap of the lines the line table of the binary maps
+		// code to, or nil when the table has none for the file. Lines without
+		// code never count.
+		codeLines []byte
 	}
 
 	// blockRef identifies a block: the package index in the high 32 bits, the
@@ -122,14 +130,21 @@ func IsLineCoverageActive() bool {
 func newLineCoverageCollector(sessionID uint64) *lineCoverageCollector {
 	c := &lineCoverageCollector{sessionID: sessionID}
 	fileIndex := map[string]int32{}
-	indexOf := func(name string) int32 {
-		name = utils.GetRelativePathFromCITagsSourceRoot(name)
-		if idx, ok := fileIndex[name]; ok {
+	// metaNames maps the file names of the block tables, which are the names
+	// the line table of the binary uses, to file indexes.
+	metaNames := map[string]int32{}
+	indexOf := func(metaName string) int32 {
+		if idx, ok := metaNames[metaName]; ok {
 			return idx
 		}
-		idx := int32(len(c.files))
-		c.files = append(c.files, lineCoverageFile{name: name})
-		fileIndex[name] = idx
+		name := utils.GetRelativePathFromCITagsSourceRoot(metaName)
+		idx, ok := fileIndex[name]
+		if !ok {
+			idx = int32(len(c.files))
+			c.files = append(c.files, lineCoverageFile{name: name})
+			fileIndex[name] = idx
+		}
+		metaNames[metaName] = idx
 		return idx
 	}
 	for i := 0; ; i++ {
@@ -157,12 +172,16 @@ func newLineCoverageCollector(sessionID uint64) *lineCoverageCollector {
 		return nil
 	}
 	for _, p := range c.packages {
-		for _, b := range p.blocks {
-			if f := &c.files[b.file]; b.endLine > f.maxLine {
-				f.maxLine = b.endLine
+		for i := range p.blocks {
+			b := &p.blocks[i]
+			f := &c.files[b.file]
+			f.maxLine = max(f.maxLine, b.endLine)
+			for _, line := range b.lines {
+				f.maxLine = max(f.maxLine, line)
 			}
 		}
 	}
+	varInitLines := c.loadLineTable(metaNames)
 
 	c.free = make([]uint32, 0, lineCoverageSlotCount-1)
 	for slot := uint32(lineCoverageSlotCount - 1); slot > 0; slot-- {
@@ -171,15 +190,95 @@ func newLineCoverageCollector(sessionID uint64) *lineCoverageCollector {
 
 	// Package initialization ran in slot 0, and is over when the tests start.
 	bitmaps := map[int32][]byte{}
+	for file, lines := range varInitLines {
+		bitmap := c.bitmap(bitmaps, file)
+		for _, line := range lines {
+			setLine(bitmap, line)
+		}
+	}
 	for _, ref := range c.collect(0, false, nil) {
 		if b := c.block(ref); b.isInit {
-			setBlockLines(c.bitmap(bitmaps, b.file), b)
+			c.setBlockLines(c.bitmap(bitmaps, b.file), b)
 		}
 	}
 	for file, bitmap := range bitmaps {
 		c.files[file].initLines = bitmapLines(bitmap)
 	}
 	return c
+}
+
+// loadLineTable reads from the line table of the binary which lines of the
+// files have code. It returns, per file, the lines of the package variable
+// initialisers, which ran during package initialization. Files the table has
+// no lines for keep a nil code bitmap.
+func (c *lineCoverageCollector) loadLineTable(metaNames map[string]int32) map[int32][]int32 {
+	if runtimeLineCoverageLines == nil {
+		return nil
+	}
+	start := time.Now()
+	varInit := map[int32][]byte{}
+	lastName, lastFile := "", int32(-1)
+	runtimeLineCoverageLines(
+		func(name string) bool {
+			_, ok := metaNames[name]
+			return ok
+		},
+		func(funcName, name string, line int32, inlined bool) {
+			if lastFile < 0 || name != lastName {
+				idx, ok := metaNames[name]
+				if !ok {
+					return
+				}
+				lastName, lastFile = name, idx
+			}
+			f := &c.files[lastFile]
+			f.codeLines = setLineGrow(f.codeLines, line)
+			if !inlined && isPackageVarInitFunc(funcName) {
+				varInit[lastFile] = setLineGrow(varInit[lastFile], line)
+			}
+		})
+	lines := make(map[int32][]int32, len(varInit))
+	for file, bitmap := range varInit {
+		lines[file] = bitmapLines(bitmap)
+		f := &c.files[file]
+		f.maxLine = max(f.maxLine, lines[file][len(lines[file])-1])
+	}
+	withTable := 0
+	for i := range c.files {
+		if c.files[i].codeLines != nil {
+			withTable++
+		}
+	}
+	log.Debug("civisibility.linecov: read the line table of %d of %d files in %s", withTable, len(c.files), time.Since(start))
+	return lines
+}
+
+// isPackageVarInitFunc reports whether funcName is a function that the
+// compiler generates for the package variable initialisers of a package:
+// <pkg>.init, or <pkg>.map.init.<n> for large map literals. Dots in the last
+// element of the package path are escaped in function names, and the user's
+// init functions are <pkg>.init.<n>.
+func isPackageVarInitFunc(funcName string) bool {
+	pkg, ok := strings.CutSuffix(funcName, ".init")
+	if !ok {
+		i := strings.LastIndexByte(funcName, '.')
+		if i < 0 || !isDecimal(funcName[i+1:]) {
+			return false
+		}
+		if pkg, ok = strings.CutSuffix(funcName[:i], ".map.init"); !ok {
+			return false
+		}
+	}
+	return pkg != "" && !strings.Contains(pkg[strings.LastIndexByte(pkg, '/')+1:], ".")
+}
+
+func isDecimal(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return s != ""
 }
 
 // OpenLineCoverageWindow opens the line coverage window of a test execution on
@@ -419,7 +518,7 @@ func (c *lineCoverageCollector) fileCoverage(refs []blockRef, withInit bool) []*
 	bitmaps := map[int32][]byte{}
 	for _, ref := range refs {
 		if b := c.block(ref); !b.isInit {
-			setBlockLines(c.bitmap(bitmaps, b.file), b)
+			c.setBlockLines(c.bitmap(bitmaps, b.file), b)
 		}
 	}
 	if withInit {
@@ -449,18 +548,50 @@ func (c *lineCoverageCollector) coverageFiles(bitmaps map[int32][]byte) []*ciTes
 	return files
 }
 
-// setBlockLines sets the lines of b in bitmap, in FileBitmap order: line L is
-// bit L-1, most significant bit first.
-func setBlockLines(bitmap []byte, b *lineCoverageBlock) {
+// setBlockLines sets in bitmap the lines of b that have code: the lines of its
+// range, and the lines it credits besides. Without a line table for the file,
+// it sets every line of the range, and none of the others.
+func (c *lineCoverageCollector) setBlockLines(bitmap []byte, b *lineCoverageBlock) {
+	code := c.files[b.file].codeLines
 	for line := b.startLine; line <= b.endLine; line++ {
-		setLine(bitmap, line)
+		if code == nil || hasLine(code, line) {
+			setLine(bitmap, line)
+		}
+	}
+	if code == nil {
+		return
+	}
+	for _, line := range b.lines {
+		if hasLine(code, line) {
+			setLine(bitmap, line)
+		}
 	}
 }
 
+// setLine sets line in bitmap, in FileBitmap order: line L is bit L-1, most
+// significant bit first. Lines past the end of bitmap are left out.
 func setLine(bitmap []byte, line int32) {
 	if idx := int(line) - 1; idx >= 0 && idx/8 < len(bitmap) {
 		bitmap[idx/8] |= 0x80 >> (idx % 8)
 	}
+}
+
+// setLineGrow sets line in bitmap, growing bitmap to hold it.
+func setLineGrow(bitmap []byte, line int32) []byte {
+	idx := int(line) - 1
+	if idx < 0 {
+		return bitmap
+	}
+	if n := idx/8 + 1; n > len(bitmap) {
+		bitmap = append(bitmap, make([]byte, n-len(bitmap))...)
+	}
+	bitmap[idx/8] |= 0x80 >> (idx % 8)
+	return bitmap
+}
+
+func hasLine(bitmap []byte, line int32) bool {
+	idx := int(line) - 1
+	return idx >= 0 && idx/8 < len(bitmap) && bitmap[idx/8]&(0x80>>(idx%8)) != 0
 }
 
 // bitmapLines returns the lines set in bitmap, in increasing order.

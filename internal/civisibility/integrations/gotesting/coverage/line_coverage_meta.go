@@ -13,9 +13,15 @@ import (
 
 const (
 	// lineCoverageMetaVersion is the version of the block table encoding.
-	lineCoverageMetaVersion = 1
+	// Version 1 has no credited lines.
+	lineCoverageMetaVersion = 2
 	// lineCoverageBlockFlagInit marks the blocks of the body of a `func init()`.
 	lineCoverageBlockFlagInit = 1
+	// lineCoverageBlockFlagLines marks blocks that credit lines outside their
+	// range.
+	lineCoverageBlockFlagLines = 2
+	// lineCoverageBlockFlagNoRange marks blocks without lines of their own.
+	lineCoverageBlockFlagNoRange = 4
 )
 
 var errInvalidLineCoverageMeta = errors.New("invalid line coverage block table")
@@ -27,6 +33,11 @@ type lineCoverageBlock struct {
 	startLine int32
 	endLine   int32
 	isInit    bool
+	// lines are lines of the file the block credits besides its range: the
+	// header of the function it starts, case lines, or the closing brace of
+	// the function it ends. They count only where the line table maps code to
+	// them.
+	lines []int32
 }
 
 // decodeLineCoverageMeta decodes the block table that orchestrion embeds in
@@ -36,11 +47,13 @@ type lineCoverageBlock struct {
 //	uvarint file count, then for each file: uvarint length, bytes
 //	uvarint block count, then for each block:
 //	  uvarint file index, uvarint start line, uvarint end line - start line, byte flags
+//	  with lineCoverageBlockFlagLines: uvarint line count, then each line as a uvarint
 //
 // fileIndex maps a file name of the table to an index of the collector's files.
 func decodeLineCoverageMeta(meta string, numBlocks int, fileIndex func(name string) int32) ([]lineCoverageBlock, error) {
 	r := metaReader{data: meta}
-	if version := r.uvarint(); r.err == nil && version != lineCoverageMetaVersion {
+	version := r.uvarint()
+	if r.err == nil && version != 1 && version != lineCoverageMetaVersion {
 		return nil, errors.New("unsupported line coverage block table version " + strconv.FormatUint(version, 10))
 	}
 	fileCount := r.uvarint()
@@ -70,8 +83,22 @@ func decodeLineCoverageMeta(meta string, numBlocks int, fileIndex func(name stri
 			endLine:   int32(start + span),
 			isInit:    flags&lineCoverageBlockFlagInit != 0,
 		}
-		if b.startLine == 0 {
+		if b.startLine == 0 || (version > 1 && flags&lineCoverageBlockFlagNoRange != 0) {
 			b.startLine, b.endLine = 1, 0
+		}
+		if version > 1 && flags&lineCoverageBlockFlagLines != 0 {
+			count := r.uvarint()
+			if r.err != nil || count > uint64(len(meta)) {
+				return nil, errInvalidLineCoverageMeta
+			}
+			b.lines = make([]int32, count)
+			for j := range b.lines {
+				line := r.uvarint()
+				if r.err != nil || line == 0 || line > math.MaxInt32 {
+					return nil, errInvalidLineCoverageMeta
+				}
+				b.lines[j] = int32(line)
+			}
 		}
 		blocks[i] = b
 	}
