@@ -74,9 +74,6 @@ func startTelemetry(c *config) telemetry.Client {
 		telemetryConfigs = append(telemetryConfigs,
 			telemetry.Configuration{Name: "trace_propagation_behavior_extract", Value: chained.propagationBehaviorExtract})
 	}
-	for k, v := range c.internalConfig.FeatureFlags() {
-		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: k, Value: v})
-	}
 	for k, v := range c.internalConfig.ServiceMappings() {
 		telemetryConfigs = append(telemetryConfigs, telemetry.Configuration{Name: "service_mapping_" + k, Value: v})
 	}
