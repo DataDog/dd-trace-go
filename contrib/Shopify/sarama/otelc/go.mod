@@ -10,7 +10,7 @@ replace github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 => ./..
 // caused by the IBM/sarama fork.
 replace github.com/Shopify/sarama => github.com/Shopify/sarama v1.38.1
 
-require github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.13.0-dev
+require github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.14.0-dev
 
 require (
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.82.0 // indirect
@@ -23,7 +23,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace/stats v0.82.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.82.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.9.0 // indirect
-	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev.1 // indirect
+	github.com/DataDog/dd-trace-go/v2 v2.14.0-dev // indirect
 	github.com/DataDog/go-libddwaf/v5 v5.1.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
 	github.com/DataDog/go-sqllexer v0.2.3 // indirect

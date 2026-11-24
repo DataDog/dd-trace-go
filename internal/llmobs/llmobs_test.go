@@ -561,12 +561,15 @@ func TestStartSpan(t *testing.T) {
 		assert.Contains(t, capturedTags, "_dd.p.llmobs_pagent_span_id=")
 		assert.Contains(t, capturedTags, "_dd.p.llmobs_pagent_name=")
 	})
-	t.Run("distributed-context-propagation-id-only-when-name-unsafe", func(t *testing.T) {
-		// When the agent name contains wire-unsafe bytes (e.g. comma), only the span ID is
-		// propagated. The downstream span reports id-only attribution (pagent_name == nil).
+	t.Run("distributed-context-propagation-tag-unsafe-name-arrives-in-baggage", func(t *testing.T) {
+		// A comma cannot go into x-datadog-tags, so the tag carries the span ID only.
+		// Baggage percent-encodes values, so it carries the name, and the downstream
+		// span reads both from baggage.
 		_, coll, ll := testTracer(t)
 
+		var capturedTags string
 		h := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			capturedTags = req.Header.Get("X-Datadog-Tags")
 			tool, _ := ll.StartSpan(req.Context(), llmobs.SpanKindTool, "server_tool", llmobs.StartSpanConfig{})
 			tool.Finish(llmobs.FinishSpanConfig{})
 			w.WriteHeader(http.StatusOK)
@@ -590,8 +593,9 @@ func TestStartSpan(t *testing.T) {
 		tracer.Flush()
 
 		attr, ok := coll.RequireSpan(t, "server_tool").Meta["agent_attribution"].(map[string]any)
-		require.True(t, ok, "server-side tool must have agent_attribution even with an unsafe name (id-only)")
-		assert.Nil(t, attr["pagent_name"], "unsafe name must not propagate; pagent_name must be nil (id-only)")
+		require.True(t, ok, "server-side tool must have agent_attribution")
+		assert.NotContains(t, capturedTags, "_dd.p.llmobs_pagent_name=")
+		assert.Equal(t, "bad,name", attr["pagent_name"])
 		assert.Equal(t, agentSpanID, attr["pagent_span_id"])
 	})
 	t.Run("distributed-context-propagation-agent-name-dropped-when-over-budget", func(t *testing.T) {

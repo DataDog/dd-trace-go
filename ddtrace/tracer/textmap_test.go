@@ -3439,7 +3439,9 @@ func TestInjectBaggagePropagatorEncoding(t *testing.T) {
 	actualBaggage := headers.Get("baggage")
 	// Instead of checking equality of the whole string, assert that both key/value pairs are present.
 	assert.Contains(actualBaggage, "userId=Am%C3%A9lie")
-	assert.Contains(actualBaggage, "serverNode=DF+28")
+	// A space is %20, as system-tests test_baggage_inject_header_D004 expects; "+" would be
+	// read as a literal plus sign by other tracers.
+	assert.Contains(actualBaggage, "serverNode=DF%2028")
 }
 
 func TestInjectBaggagePropagatorEncodingSpecialCharacters(t *testing.T) {
