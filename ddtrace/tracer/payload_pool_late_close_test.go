@@ -113,36 +113,76 @@ func heldPayloadPasses(t *testing.T, writer *agentTraceWriter, payloadA *payload
 	}
 }
 
-func TestPayloadV1PoolLateCloseAcrossSendRetries(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		var tg statsdtest.TestStatsdClient
-		trip := &lateCloseTripper{}
-		cfg, err := newTestConfig(
-			WithHTTPClient(&http.Client{Transport: trip}),
-			WithSendRetries(1),
-			WithRetryInterval(1),
-			func(c *config) {
-				c.internalConfig.SetTraceProtocol(traceProtocolV1, internalconfig.OriginCode)
-			},
-		)
-		require.NoError(t, err)
+func newLateCloseWriter(t *testing.T, trip *lateCloseTripper) *agentTraceWriter {
+	t.Helper()
+	var tg statsdtest.TestStatsdClient
+	cfg, err := newTestConfig(
+		WithHTTPClient(&http.Client{Transport: trip}),
+		WithSendRetries(1),
+		WithRetryInterval(1),
+		func(c *config) {
+			c.internalConfig.SetTraceProtocol(traceProtocolV1, internalconfig.OriginCode)
+		},
+	)
+	require.NoError(t, err)
 
-		setTraceProtocolStateForTest(cfg, protoV1)
-		require.Equal(t, traceProtocolV1, cfg.effectiveTraceProtocol())
-		require.IsType(t, &httpTransport{}, cfg.ddTransport)
+	setTraceProtocolStateForTest(cfg, protoV1)
+	require.Equal(t, traceProtocolV1, cfg.effectiveTraceProtocol())
+	require.IsType(t, &httpTransport{}, cfg.ddTransport)
 
-		writer := newAgentTraceWriter(cfg, newPrioritySampler(), &tg)
-		require.Equal(t, traceProtocolV1, writer.payload.protocol(),
-			"the writer must encode with protocol v1")
+	writer := newAgentTraceWriter(cfg, newPrioritySampler(), &tg)
+	require.Equal(t, traceProtocolV1, writer.payload.protocol(),
+		"the writer must encode with protocol v1")
+	return writer
+}
 
-		trip.failNext = true
+func lateCloseFailedAttempt(t *testing.T, trip *lateCloseTripper, writer *agentTraceWriter) (io.ReadCloser, *payloadV1) {
+	t.Helper()
+	trip.failNext = true
+	writer.add([]*Span{makeSpan(1)})
+	writer.flush()
+	writer.wg.Wait()
+	attempt1Body := trip.bodies[len(trip.bodies)-2]
+	payloadA := v1PayloadOf(t, attempt1Body)
+	require.Same(t, payloadA, v1PayloadOf(t, trip.bodies[len(trip.bodies)-1]),
+		"the retry must reuse the payload of the failed attempt")
+	return attempt1Body, payloadA
+}
+
+func lateCloseReused(t *testing.T, writer *agentTraceWriter, payloadA *payloadV1) bool {
+	t.Helper()
+	for range 100 {
 		writer.add([]*Span{makeSpan(1)})
 		writer.flush()
 		writer.wg.Wait()
-		attempt1Body := trip.bodies[len(trip.bodies)-2]
-		payloadA := v1PayloadOf(t, attempt1Body)
-		require.Same(t, payloadA, v1PayloadOf(t, trip.bodies[len(trip.bodies)-1]),
-			"the retry must reuse the payload of the failed attempt")
+		if v1PayloadOf(t, writer.payload) == payloadA {
+			return true
+		}
+	}
+	return false
+}
+
+func lateCloseRecycleCheck(t *testing.T, trip *lateCloseTripper, writer *agentTraceWriter, payloadA *payloadV1) {
+	t.Helper()
+	for _, b := range trip.bodies {
+		_ = b.Close()
+	}
+
+	writer.add([]*Span{makeSpan(1)})
+	writer.flush()
+	writer.wg.Wait()
+	nextFlushBody := trip.bodies[len(trip.bodies)-1]
+	require.Same(t, payloadA, v1PayloadOf(t, nextFlushBody),
+		"the next flush must send the recycled payload")
+
+	heldPayloadPasses(t, writer, payloadA, "the request body of the current send")
+}
+
+func TestPayloadV1PoolLateCloseAcrossSendRetries(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		trip := &lateCloseTripper{}
+		writer := newLateCloseWriter(t, trip)
+		attempt1Body, payloadA := lateCloseFailedAttempt(t, trip, writer)
 
 		heldPayloadPasses(t, writer, payloadA, "the request body of the failed attempt")
 
@@ -159,31 +199,10 @@ func TestPayloadV1PoolLateCloseAcrossSendRetries(t *testing.T) {
 		require.True(t, payloadA.handoff.put.Load(),
 			"the handoff did not return the payload after every request body closed")
 
-		var reused bool
-		for range 100 {
-			writer.add([]*Span{makeSpan(1)})
-			writer.flush()
-			writer.wg.Wait()
-			if v1PayloadOf(t, writer.payload) == payloadA {
-				reused = true
-				break
-			}
-		}
-		if !reused {
+		if !lateCloseReused(t, writer, payloadA) {
 			t.Log("the pool ignored the Put of the payload; skipping the new lifecycle checks")
 		} else {
-			for _, b := range trip.bodies {
-				_ = b.Close()
-			}
-
-			writer.add([]*Span{makeSpan(1)})
-			writer.flush()
-			writer.wg.Wait()
-			nextFlushBody := trip.bodies[len(trip.bodies)-1]
-			require.Same(t, payloadA, v1PayloadOf(t, nextFlushBody),
-				"the next flush must send the recycled payload")
-
-			heldPayloadPasses(t, writer, payloadA, "the request body of the current send")
+			lateCloseRecycleCheck(t, trip, writer, payloadA)
 		}
 
 		for _, b := range trip.bodies {
