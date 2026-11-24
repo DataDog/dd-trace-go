@@ -414,7 +414,10 @@ missing_run_alert() {
 }
 
 main() {
-  command -v gh >/dev/null || { log 'gh not installed'; exit 1; }
+  command -v gh >/dev/null || {
+    log 'gh not installed'
+    exit 1
+  }
   # Before any create: gh issue create fails outright on a missing
   # label, and the first real triage must not die on one.
   ensure_label "$FAILURE_LABEL" 'D93F0B'
