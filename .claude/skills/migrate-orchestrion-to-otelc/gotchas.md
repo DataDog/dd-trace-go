@@ -33,10 +33,11 @@ workaround are in `feature-gaps.md`.
 - `function_call` and `method_call` only match qualified calls (`pkg.Func()`). Calls inside the
   library itself, and calls through a dot import, are never matched, so a constructor that calls
   another one internally is not wrapped twice.
-- A rule's `imports:` alias for a path the file already imports is replaced by the file's own
-  alias, and the build then fails if the matched function declares a local with that name. Only a
-  path the rule adds can collide with an import or a local name, so give it a private alias such
-  as `__dd_tracer`. Rules that add the same path to one file must use the same alias.
+- Injected code uses a rule's `imports:` aliases as written. When the file already imports the
+  path under another alias, otelc imports it again under the rule's alias. The build fails when a
+  parameter, result or local at the injection point, or a declaration in the file, has the same
+  name as an alias the code uses, so give every rule import a private alias such as
+  `__dd_tracer`.
 - `target: $root` never matches `package main`, whose compile-time import path is the literal
   string `main`. Only a `main` entry reaches it, so a rule for the root module and its main package
   lists both (`target: [$root, main]`). It also needs a main app test (see "Package main and

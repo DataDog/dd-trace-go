@@ -84,8 +84,9 @@ For `wrap_call` templates:
 - `{{ .CallReceiver }}` rebuilds a method call around a wrapped receiver.
 - Read the caller's context with `{{ .FuncArgumentOfType "context.Context" }}` or
   `{{ .FuncArgumentThatImplements "context.Context" }}`.
-- Give an import that the rule adds a private alias, such as `__dd_<name>`, so it cannot collide
-  with a name in the user's file.
+- Give every rule import a private alias, such as `__dd_<name>`. Injected code uses the aliases as
+  written, and the build fails when a name at the injection point or a declaration in the user's
+  file has the same name as one of them.
 
 ## Avoiding double spans
 
