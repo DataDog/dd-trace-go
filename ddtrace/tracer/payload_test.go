@@ -1429,91 +1429,93 @@ func BenchmarkPayloads(b *testing.B) {
 }
 
 func TestPayloadV1Handoff(t *testing.T) {
-	newHandoff := func() (*payloadV1, *pv1Handoff) {
-		p := getPayloadV1()
-		return p, p.handoff
-	}
-	newBodies := func(h *pv1Handoff, n int) []io.ReadCloser {
-		sp := &safePayload{p: h.p}
+	newBodies := func(p *payloadV1, n int) []io.ReadCloser {
+		sp := &safePayload{p: p}
 		bodies := make([]io.ReadCloser, 0, n)
 		for range n {
-			bodies = append(bodies, h.newBody(sp))
+			bodies = append(bodies, p.newBody(sp))
 		}
 		return bodies
 	}
 
 	t.Run("flush before bodies close", func(t *testing.T) {
-		_, h := newHandoff()
-		bodies := newBodies(h, 2)
-		h.markFlushed()
-		assert.False(t, h.put.Load(), "flush alone must not release")
+		p := getPayloadV1()
+		bodies := newBodies(p, 2)
+		p.releaseRef()
+		assert.EqualValues(t, 2, p.refs.Load(), "flush alone must not release")
 		require.NoError(t, bodies[0].Close())
-		assert.False(t, h.put.Load(), "one open body must hold the payload")
+		assert.EqualValues(t, 1, p.refs.Load(), "one open body must hold the payload")
 		require.NoError(t, bodies[1].Close())
-		assert.True(t, h.put.Load(), "the close of the last open body must release")
+		assert.Zero(t, p.refs.Load(), "the close of the last open body must release")
+	})
+
+	t.Run("late close of an earlier request does not release while another body is open", func(t *testing.T) {
+		p := getPayloadV1()
+		bodies := newBodies(p, 3)
+		p.releaseRef()
+		require.NoError(t, bodies[2].Close())
+		require.NoError(t, bodies[0].Close())
+		assert.EqualValues(t, 1, p.refs.Load(), "the second request still holds the payload")
+		require.NoError(t, bodies[1].Close())
+		assert.Zero(t, p.refs.Load(), "the close of the last open body must release")
 	})
 
 	t.Run("bodies close before flush", func(t *testing.T) {
-		_, h := newHandoff()
-		bodies := newBodies(h, 2)
+		p := getPayloadV1()
+		bodies := newBodies(p, 2)
 		require.NoError(t, bodies[0].Close())
 		require.NoError(t, bodies[1].Close())
-		assert.False(t, h.put.Load(), "closed bodies alone must not release")
-		h.markFlushed()
-		assert.True(t, h.put.Load(), "flush after every body closed must release")
+		assert.EqualValues(t, 1, p.refs.Load(), "closed bodies alone must not release")
+		p.releaseRef()
+		assert.Zero(t, p.refs.Load(), "flush after every body closed must release")
 	})
 
 	t.Run("repeated close of one body counts once", func(t *testing.T) {
-		_, h := newHandoff()
-		bodies := newBodies(h, 2)
+		p := getPayloadV1()
+		bodies := newBodies(p, 2)
 		require.NoError(t, bodies[0].Close())
 		require.NoError(t, bodies[0].Close())
-		h.markFlushed()
-		assert.False(t, h.put.Load(), "the repeated close must not release while one body is open")
+		p.releaseRef()
+		assert.EqualValues(t, 1, p.refs.Load(), "the repeated close must not release while one body is open")
 		require.NoError(t, bodies[1].Close())
-		assert.True(t, h.put.Load(), "the close of the last open body must release")
+		assert.Zero(t, p.refs.Load(), "the close of the last open body must release")
 	})
 
 	t.Run("close after the pool return does not put again", func(t *testing.T) {
-		_, h := newHandoff()
-		bodies := newBodies(h, 1)
-		h.markFlushed()
+		p := getPayloadV1()
+		bodies := newBodies(p, 1)
+		p.releaseRef()
 		require.NoError(t, bodies[0].Close())
-		require.True(t, h.put.Load(), "the pool return must happen once")
+		require.Zero(t, p.refs.Load(), "the pool return must happen once")
 		require.NoError(t, bodies[0].Close())
+		assert.Zero(t, p.refs.Load(), "the repeated close must not change the reference count")
 	})
 
 	t.Run("late close of an old cycle does not touch the new cycle", func(t *testing.T) {
-		p, h1 := newHandoff()
-		bodies := newBodies(h1, 1)
-		h1.markFlushed()
+		p := getPayloadV1()
+		bodies := newBodies(p, 1)
+		p.releaseRef()
 		require.NoError(t, bodies[0].Close())
-		require.True(t, h1.put.Load(), "the first cycle must release")
+		require.Zero(t, p.refs.Load(), "the first cycle must release")
 
 		p.clear()
-		h2 := p.handoff
-		require.False(t, h2.put.Load(), "the new cycle must start unreleased")
+		require.EqualValues(t, 1, p.refs.Load(), "the new cycle must start with the flush reference")
 		require.NoError(t, bodies[0].Close())
-		assert.False(t, h2.put.Load(), "a close of the old cycle must not release the new cycle")
+		assert.EqualValues(t, 1, p.refs.Load(), "a close of the old cycle must not release the new cycle")
 	})
 
 	t.Run("concurrent flush and body close", func(t *testing.T) {
 		const iterations = 10000
 		for range iterations {
-			_, h := newHandoff()
-			bodies := newBodies(h, 1)
+			p := getPayloadV1()
+			bodies := newBodies(p, 1)
 			var wg sync.WaitGroup
-			wg.Add(2)
-			go func() {
-				defer wg.Done()
-				h.markFlushed()
-			}()
-			go func() {
-				defer wg.Done()
+			wg.Go(p.releaseRef)
+			wg.Go(func() {
 				_ = bodies[0].Close()
-			}()
+			})
 			wg.Wait()
-			if !assert.True(t, h.put.Load(), "the handoff must release after both sides are done") {
+			if !assert.Zero(t, p.refs.Load(), "the handoff must release after both sides are done") {
 				return
 			}
 		}

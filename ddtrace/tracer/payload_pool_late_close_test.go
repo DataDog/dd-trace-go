@@ -196,7 +196,7 @@ func TestPayloadV1PoolLateCloseAcrossSendRetries(t *testing.T) {
 		close(fireLateClose)
 		<-lateCloseDone
 
-		require.True(t, payloadA.handoff.put.Load(),
+		require.Zero(t, payloadA.refs.Load(),
 			"the handoff did not return the payload after every request body closed")
 
 		if !lateCloseReused(t, writer, payloadA) {
@@ -247,7 +247,7 @@ func TestPayloadV1PoolLateCloseAcrossStaleConnReplays(t *testing.T) {
 
 		_ = firstBody.Close()
 
-		require.True(t, payloadA.handoff.put.Load(),
+		require.Zero(t, payloadA.refs.Load(),
 			"the handoff did not return the payload after every request body closed")
 
 		for _, b := range trip.bodies {

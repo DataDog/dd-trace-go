@@ -217,7 +217,7 @@ func (t *httpTransport) sendStats(p *pb.ClientStatsPayload, tracerObfuscationVer
 func newTraceRequestBody(p payload) io.ReadCloser {
 	if sp, ok := p.(*safePayload); ok {
 		if pv1, ok := sp.p.(*payloadV1); ok {
-			return pv1.handoff.newBody(sp)
+			return pv1.newBody(sp)
 		}
 	}
 	return p

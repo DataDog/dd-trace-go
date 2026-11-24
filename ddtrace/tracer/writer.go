@@ -211,7 +211,7 @@ func (h *agentTraceWriter) flush() {
 
 func (h *agentTraceWriter) retirePayload(p payload) {
 	if p.protocol() == traceProtocolV1 {
-		p.(*safePayload).p.(*payloadV1).handoff.markFlushed()
+		p.(*safePayload).p.(*payloadV1).releaseRef()
 	} else {
 		p.clear()
 	}

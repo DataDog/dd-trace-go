@@ -125,44 +125,23 @@ type payloadV1 struct {
 	processTagsCached anyValue
 	processTagsStr    string
 
-	handoff *pv1Handoff
+	refs atomic.Int32
 }
 
-type pv1Handoff struct {
-	p       *payloadV1
-	open    atomic.Int32
-	flushed atomic.Bool
-	put     atomic.Bool
+func (p *payloadV1) newBody(reader io.Reader) io.ReadCloser {
+	p.refs.Add(1)
+	return &pv1Body{p: reader, owner: p}
 }
 
-func (h *pv1Handoff) newBody(p io.Reader) io.ReadCloser {
-	h.open.Add(1)
-	return &pv1Body{p: p, h: h}
-}
-
-func (h *pv1Handoff) closeBody() {
-	if h.open.Add(-1) == 0 {
-		h.tryPut()
-	}
-}
-
-func (h *pv1Handoff) markFlushed() {
-	h.flushed.Store(true)
-	h.tryPut()
-}
-
-func (h *pv1Handoff) tryPut() {
-	if !h.flushed.Load() || h.open.Load() != 0 {
-		return
-	}
-	if h.put.CompareAndSwap(false, true) {
-		putPayloadV1(h.p)
+func (p *payloadV1) releaseRef() {
+	if p.refs.Add(-1) == 0 {
+		putPayloadV1(p)
 	}
 }
 
 type pv1Body struct {
 	p      io.Reader
-	h      *pv1Handoff
+	owner  *payloadV1
 	closed atomic.Bool
 }
 
@@ -170,7 +149,7 @@ func (b *pv1Body) Read(bs []byte) (int, error) { return b.p.Read(bs) }
 
 func (b *pv1Body) Close() error {
 	if b.closed.CompareAndSwap(false, true) {
-		b.h.closeBody()
+		b.owner.releaseRef()
 	}
 	return nil
 }
@@ -187,7 +166,7 @@ func newPayloadV1() *payloadV1 {
 		header:     make([]byte, 0, 8),
 		chunkAttr:  make(map[string]anyValue),
 	}
-	p.handoff = &pv1Handoff{p: p}
+	p.refs.Store(1)
 	return p
 }
 
@@ -391,7 +370,7 @@ func (p *payloadV1) clear() {
 	atomic.StoreUint32(&p.fields, 0)
 	atomic.StoreUint32(&p.count, 0)
 	p.sizeHint = 0
-	p.handoff = &pv1Handoff{p: p}
+	p.refs.Store(1)
 }
 
 // recordItem records that a new chunk was added to the payload.
