@@ -394,7 +394,7 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/datadog_ci@24a28b649fb74c109ee0401f5051ef89c8009ff9
+        uses: DataDog/system-tests/.github/actions/datadog_ci@4f44b5cfa65975eb868fa1a9a4151a62bca9d2eb
         with:
           push_to_test_optimization: true
 
@@ -512,7 +512,7 @@ jobs:
       - build-service-extensions-callout
       - build-haproxy
       - build-apim-callout
-    uses: DataDog/system-tests/.github/workflows/system-tests.yml@659a95d20927010a163ffdc5906d37600e81ee0b # Automated: Updated by .github/workflows/update-system-tests.yml.
+    uses: DataDog/system-tests/.github/workflows/system-tests.yml@4f44b5cfa65975eb868fa1a9a4151a62bca9d2eb # Automated: Updated by .github/workflows/update-system-tests.yml.
     permissions:
       contents: read
       id-token: write

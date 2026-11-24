@@ -44,7 +44,7 @@ jobs:
           role-chaining: true
 
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version: '1.27'
 
@@ -78,7 +78,7 @@ jobs:
 
       - name: Notify Slack on failure
         if: failure() && steps.integration-tests.outcome == 'failure'
-        uses: slackapi/slack-github-action@dcb1066f776dd043e64d0e8ba94ca15cc7e1875d # v4.0.0
+        uses: slackapi/slack-github-action@0bc3581177d9a0f8d555e07689384b376528e8fa # v4.1.0
         with:
           webhook-type: incoming-webhook
           payload: |
