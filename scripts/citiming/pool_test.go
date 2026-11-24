@@ -38,8 +38,8 @@ func poolCachesPage(entries ...string) string {
 
 func TestClassifyPoolKeyEveryKind(t *testing.T) {
 	cases := []struct {
-		key                 string
-		kind, workload, osX string
+		key                          string
+		kind, workload, osX, variant string
 	}{
 		// go_build in the ddtg-cx1 layout: the family carries dashes and
 		// the branch carries slashes, so only the fixed-length segments
@@ -47,25 +47,38 @@ func TestClassifyPoolKeyEveryKind(t *testing.T) {
 		{
 			key: "go-cache-Linux-X64-ddtg-cx1-otelc-external-app-c3177be3f8c1532f-1.26.4-eliottness/appsec-disable-features-" +
 				"60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380-38403036804",
-			kind: "go_build", workload: "otelc-external-app", osX: "linux",
+			kind: "go_build", workload: "otelc-external-app", osX: "linux", variant: "c3177be3f8c1532f",
 		},
 		{
 			key: "go-cache-Windows-ARM64-ddtg-cx1-multi-os-314198ec86eada43-1.27.2-main-" +
 				"60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380-38402253744",
-			kind: "go_build", workload: "multi-os", osX: "windows",
+			kind: "go_build", workload: "multi-os", osX: "windows", variant: "314198ec86eada43",
+		},
+		{
+			// The integration lanes key on the go-version alias, not a
+			// resolved version, so the pool must classify alias keys and
+			// report their seed presence like any other stratum.
+			key: "go-cache-macOS-ARM64-ddtg-cx1-otelc-integration-9deb6d42dc405b6d-stable-main-" +
+				"60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380-134199557670",
+			kind: "go_build", workload: "otelc-integration", osX: "macos", variant: "9deb6d42dc405b6d",
+		},
+		{
+			key: "go-cache-Linux-X64-ddtg-cx1-orchestrion-integration-9deb6d42dc405b6e-oldstable-main-" +
+				"60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380-134199557670",
+			kind: "go_build", workload: "orchestrion-integration", osX: "linux", variant: "9deb6d42dc405b6e",
 		},
 		{
 			// Prerelease versions carry one hyphen cluster; the branch
 			// must still parse after it.
 			key: "go-cache-Windows-X64-ddtg-cx1-multi-os-314198ec86eada43-1.28.0-rc.1-main-" +
 				"60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380-38402253744",
-			kind: "go_build", workload: "multi-os", osX: "windows",
+			kind: "go_build", workload: "multi-os", osX: "windows", variant: "314198ec86eada43",
 		},
 		{
 			key: "go-cache-macOS-ARM64-ddtg-cx1-unit-contrib-92572337d046055a-1.27.2-" +
 				"brian.marks/otel-deployment-environment-name-" +
 				"60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380-38402253726",
-			kind: "go_build", workload: "unit-contrib", osX: "macos",
+			kind: "go_build", workload: "unit-contrib", osX: "macos", variant: "92572337d046055a",
 		},
 		// A go-cache key that predates the layout: still go_build, but no
 		// workload and no OS.
@@ -100,6 +113,13 @@ func TestClassifyPoolKeyEveryKind(t *testing.T) {
 			kind: "appsec_modules", workload: poolNA, osX: "unknown",
 		},
 		{
+			// The multios Windows module archive gets its own kind, so
+			// its seed-presence cell cannot merge with the AppSec
+			// archive and one side mask the eviction of the other.
+			key:  "go-pkg-mod-multios-f6762d137b5e43d204c8afcb41b910685777f80c7feb64a2771c1ed664283657",
+			kind: "go_modules", workload: "multi-os", osX: "windows",
+		},
+		{
 			key: "datadog-ci-Linux-X64-v5.25.0", kind: "datadog_ci", workload: poolNA, osX: "unknown",
 		},
 		{
@@ -127,11 +147,58 @@ func TestClassifyPoolKeyEveryKind(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		kind, workload, osPlatform := classifyPoolKey(c.key)
-		if kind != c.kind || workload != c.workload || osPlatform != c.osX {
-			t.Errorf("classifyPoolKey(%q) = (%q, %q, %q), want (%q, %q, %q)",
-				c.key, kind, workload, osPlatform, c.kind, c.workload, c.osX)
+		kind, workload, osPlatform, variant := classifyPoolKey(c.key)
+		if kind != c.kind || workload != c.workload || osPlatform != c.osX || variant != c.variant {
+			t.Errorf("classifyPoolKey(%q) = (%q, %q, %q, %q), want (%q, %q, %q, %q)",
+				c.key, kind, workload, osPlatform, variant, c.kind, c.workload, c.osX, c.variant)
 		}
+	}
+}
+
+// TestPoolVariantCellsExposePerStratumSeeds pins the eviction-visibility
+// behavior the seed gauges depend on: a family that seeds several
+// variants (several runner classes or Go versions) must report each
+// stratum's seed presence separately, or the newest surviving variant
+// hides the eviction of its siblings.
+func TestPoolVariantCellsExposePerStratumSeeds(t *testing.T) {
+	at := mustTime(t, "2026-11-17T12:00:00Z")
+	fresh := "2026-11-17T06:00:00Z"
+	stale := "2026-11-14T06:00:00Z"
+	snap := cacheSnapshot{
+		Kind: "cache_snapshot", Schema: 2, CollectedAt: "2026-11-17T12:00:00Z",
+		Usage: cacheUsage{ActiveCachesSizeInBytes: 4 * giB, ActiveCachesCount: 2},
+		Entries: []cacheEntry{
+			{
+				ID: 1, Key: "go-cache-macOS-ARM64-ddtg-cx1-appsec-macos-9deb6d42dc405b6d-1.27-main-" +
+					"60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380-134199557670",
+				Ref: "refs/heads/main", SizeInBytes: giB,
+				CreatedAt: fresh, LastAccessedAt: fresh,
+			},
+			{
+				ID: 2, Key: "go-cache-macOS-ARM64-ddtg-cx1-appsec-macos-1e7914d0e91643a1-1.26-main-" +
+					"60e668c987fcc72f27a63db16f95cea76a22700c35ae41b32482e8e04c9f6380-134199557671",
+				Ref: "refs/heads/main", SizeInBytes: giB,
+				CreatedAt: stale, LastAccessedAt: stale,
+			},
+		},
+	}
+	report := buildPoolReport(snap, at, "main")
+	if len(report.defaultGroup) != 2 {
+		t.Fatalf("default groups = %d, want one per variant: %+v", len(report.defaultGroup), report.defaultGroup)
+	}
+	for _, g := range report.defaultGroup {
+		if g.variant == "" {
+			t.Errorf("default cell %+v has no variant digest", g)
+		}
+	}
+	// The stale variant must stay visible: 3 days old, not hidden behind
+	// the fresh sibling's 6 hours.
+	found := map[string]float64{}
+	for _, g := range report.defaultGroup {
+		found[g.variant] = g.ageSeconds
+	}
+	if got := found["1e7914d0e91643a1"]; got < 3*24*3600 {
+		t.Errorf("stale variant age = %fs, want at least 3 days (its eviction must stay visible)", got)
 	}
 }
 
@@ -396,8 +463,8 @@ func TestPoolTextRendersSeedPresence(t *testing.T) {
 		"Cache pool snapshot for DataDog/dd-trace-go",
 		"usage endpoint: 5 active caches, 4.00 GiB",
 		"oldest last access: 5h0m0s",
-		"go_build         multi-os                 windows  default    1 entries     2.00 GiB",
-		"default-branch entries (newest per kind/workload/os):",
+		"go_build         multi-os                 windows  314198ec86eada43  default    1 entries     2.00 GiB",
+		"default-branch entries (newest per kind/workload/os/variant):",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("text report lacks %q:\n%s", want, text)
