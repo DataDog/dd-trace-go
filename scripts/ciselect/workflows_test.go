@@ -102,8 +102,8 @@ func TestCacheSeedAndDisableLiterals(t *testing.T) {
 		"multios-unit-tests.yml":     1,
 		"smoke-tests.yml":            4,
 		"unit-integration-tests.yml": 3,
-		"orchestrion.yml":            1, // The integration-test job; gated on a non-Windows runner.
-		"otelc.yml":                  1, // The integration-test job; gated on a non-Windows runner.
+		"orchestrion-lane.yml":       1, // The integration-test job; gated on a non-Windows runner.
+		"otelc-lane.yml":             1, // The integration-test job; gated on a non-Windows runner.
 	}
 	for name, want := range seedLiterals {
 		body := readText(t, filepath.Join(root, workflowDir), name)
@@ -182,12 +182,12 @@ func TestGoCachePolicyPerOS(t *testing.T) {
 	// pinned tool version).
 	lanes := []struct{ name, jobID, cacheWant, seedWant string }{
 		{
-			name: "orchestrion.yml", jobID: "integration-test",
+			name: "orchestrion-lane.yml", jobID: "integration-test",
 			cacheWant: "${{ matrix.runs-on != 'windows' }}",
 			seedWant:  "${{ matrix.runs-on != 'windows' && matrix.go-version == 'stable' && matrix.mode == 'DRIVER' }}",
 		},
 		{
-			name: "otelc.yml", jobID: "integration-test",
+			name: "otelc-lane.yml", jobID: "integration-test",
 			cacheWant: "${{ matrix.runs-on != 'windows' }}",
 			seedWant:  "${{ matrix.runs-on != 'windows' && matrix.go-version == 'stable' && inputs.otelc-version == '' }}",
 		},
