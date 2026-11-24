@@ -118,7 +118,7 @@ jobs:
       - go-mod-caching
     strategy:
       matrix:
-        runs-on: [ macos-14, macos-latest ] # oldest and newest macos runners available
+        runs-on: [ macos-15, macos-latest ] # oldest and newest macos runners available
         go-version: [ "1.27", "1.26" ]
       fail-fast: true # saving some CI time - macos runners are too long to get
     steps:
@@ -368,7 +368,7 @@ jobs:
           sudo apt update
           sudo apt install -y ca-certificates curl
           sudo install -m 0755 -d /etc/apt/keyrings
-          sudo curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 --retry-connrefused "https://download.docker.com/linux/ubuntu/gpg" -o /etc/apt/keyrings/docker.asc
+          sudo curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 60 "https://download.docker.com/linux/ubuntu/gpg" -o /etc/apt/keyrings/docker.asc
           sudo chmod a+r /etc/apt/keyrings/docker.asc
           echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list
           sudo apt update
@@ -507,6 +507,10 @@ jobs:
   test-app-smoke-tests:
     name: Smoke Tests
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.owner == 'DataDog'
+    # Exempt from SHA pinning (actions_pinned): appsec-go-test-app is a
+    # team-owned repository. The smoke tests must track the test app's main
+    # branch. A SHA pin would lag behind between dependabot's weekly
+    # github-actions bumps, so this ref stays at main.
     uses: DataDog/appsec-go-test-app/.github/workflows/smoke-tests.yml@main
     with:
       dd-trace-go-version: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || '' }}

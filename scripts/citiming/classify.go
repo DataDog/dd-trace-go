@@ -61,18 +61,33 @@ type cacheObservation struct {
 // pointer so its presence is distinguishable from an empty string. Restored
 // is set by the cloudx setup step ("true" when the module cache is non-empty
 // after the restore) and is empty when the record does not carry it.
+// restore_source (exact / default / branch / none) and dep_match come from
+// the setup-go wrapper's derive step and are empty for records emitted
+// before that step existed or by other providers.
 type restoreObs struct {
 	Name            string  `json:"name"`
 	Enabled         string  `json:"enabled"`
 	Outcome         string  `json:"outcome"`
 	CacheHit        string  `json:"cache_hit"`
 	CacheMatchedKey *string `json:"cache_matched_key"`
+	RestoreSource   string  `json:"restore_source"`
+	DepMatch        string  `json:"dep_match"`
 	Restored        string  `json:"restored"`
 }
 
+// restoreClassification is one restore as stored in the observation
+// record. restore_source and dep_match are carried through from the raw
+// observation when present. disagreement marks a cloudx setup_go entry
+// whose matched key and restored cross-check contradict each other: a
+// matched key with restored "false", or an empty matched key with
+// restored "true". Such a record is evidence of a provider or wrapper
+// defect, never a normal outcome.
 type restoreClassification struct {
-	Name   string `json:"name"`
-	Result string `json:"result"`
+	Name          string `json:"name"`
+	Result        string `json:"result"`
+	RestoreSource string `json:"restore_source,omitempty"`
+	DepMatch      string `json:"dep_match,omitempty"`
+	Disagreement  bool   `json:"disagreement,omitempty"`
 }
 
 // classifyRestore classifies one restore observation from provider outputs.
@@ -134,6 +149,26 @@ func classifyRestore(obs *restoreObs, provider string) string {
 	default:
 		return "unknown"
 	}
+}
+
+// restoreDisagrees reports whether the matched key and the restored
+// cross-check contradict each other on a cloudx setup_go entry: a matched
+// key with restored "false" (an entry matched but the module cache stayed
+// empty), or an empty matched key with restored "true" (no entry matched
+// but the module cache was non-empty). Only a cloudx setup_go entry can
+// disagree: it is the only entry whose matched key and restored flag
+// describe the same restore.
+func restoreDisagrees(obs *restoreObs, provider string) bool {
+	if provider != "cloudx" || obs == nil || obs.Name != "setup_go" || obs.CacheMatchedKey == nil {
+		return false
+	}
+	switch {
+	case *obs.CacheMatchedKey != "" && strings.EqualFold(obs.Restored, "false"):
+		return true
+	case *obs.CacheMatchedKey == "" && strings.EqualFold(obs.Restored, "true"):
+		return true
+	}
+	return false
 }
 
 // classifySaves classifies every cache save event in the log, in order. One
@@ -225,8 +260,6 @@ func secondsBetween(start, end string) *float64 {
 	secs := e.Sub(s).Seconds()
 	return &secs
 }
-
-func strPtr(s string) *string { return new(s) }
 
 func fmtSeconds(v *float64) string {
 	if v == nil {

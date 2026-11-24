@@ -20,9 +20,10 @@ import (
 const setupGoAction = "../../.github/actions/setup-go/action.yml"
 
 type actionStep struct {
-	Name string `yaml:"name"`
-	If   string `yaml:"if"`
-	Run  string `yaml:"run"`
+	Name string            `yaml:"name"`
+	If   string            `yaml:"if"`
+	Run  string            `yaml:"run"`
+	Env  map[string]string `yaml:"env"`
 }
 
 func setupGoStep(t *testing.T, name string) actionStep {
@@ -157,6 +158,11 @@ func TestSetupGoObservationGitHubCache(t *testing.T) {
 		"SETUP_OUTCOME":     "success",
 		"SETUP_CACHE_HIT":   "true",
 		"RESTORED":          "",
+		"MATCHED_KEY":       "",
+		"RESTORE_SOURCE":    "",
+		"DEP_MATCH":         "",
+		"SEED_KEY":          "",
+		"SAVE_RESOLVED":     "",
 	})
 	if record["provider"] != "github-cache" {
 		t.Errorf("provider = %v, want github-cache", record["provider"])
@@ -179,6 +185,14 @@ func TestSetupGoObservationCloudxRestored(t *testing.T) {
 		"CACHE_ENABLED":     "true",
 		"SETUP_OUTCOME":     "success",
 		"SETUP_CACHE_HIT":   "false",
+		// The restore-source fields stay empty here: these records predate
+		// the derive step or its outputs were empty, matching records the
+		// collector reads from older runs.
+		"MATCHED_KEY":    "",
+		"RESTORE_SOURCE": "",
+		"DEP_MATCH":      "",
+		"SEED_KEY":       "",
+		"SAVE_RESOLVED":  "",
 	}
 	for _, restored := range []string{"true", "false"} {
 		env := map[string]string{"RESTORED": restored}

@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/envoyproxy/go-control-plane
+display_name: go-control-plane
+description: Instruments Envoy External Processing (ext_proc) gRPC servers, tracing proxied HTTP requests as server spans
+  with trace-context propagation, App and API Protection inspection and blocking, and optional inferred API Gateway or Pub/Sub
+  push spans.
+packages:
+- name: github.com/envoyproxy/go-control-plane/envoy
+category:
+- http.server
+systems: []
+creation_date: '2024-12-16'

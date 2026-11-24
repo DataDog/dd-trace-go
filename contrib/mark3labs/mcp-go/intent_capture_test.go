@@ -232,6 +232,37 @@ func TestIntentCaptureSkipsUIOnlyTools(t *testing.T) {
 	}
 }
 
+func TestIntentCaptureStripsBoundArguments(t *testing.T) {
+	tt := testTracer(t)
+
+	srv := server.NewMCPServer("test-server", "1.0.0", WithMCPServerTracing(&TracingConfig{IntentCaptureEnabled: true}))
+
+	type echoArgs struct {
+		Text      string         `json:"text"`
+		Telemetry map[string]any `json:"telemetry"`
+	}
+	var bound echoArgs
+	srv.AddTool(mcp.NewTool("echo", mcp.WithString("text")), func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		require.NoError(t, request.BindArguments(&bound))
+		return mcp.NewToolResultText(bound.Text), nil
+	})
+
+	session := &mockSession{id: "bind-session"}
+	session.Initialize()
+	ctx := srv.WithContext(context.Background(), session)
+	srv.HandleMessage(ctx, []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"echo","arguments":{"text":"hello","telemetry":{"intent":"test bind intent"}}}}`))
+
+	assert.Equal(t, "hello", bound.Text)
+	assert.Nil(t, bound.Telemetry)
+
+	tracer.Flush()
+	toolSpan := tt.RequireSpan(t, "echo")
+	assert.Equal(t, "test bind intent", toolSpan.Meta["intent"])
+	input := toolSpan.Meta["input"].(map[string]any)["value"].(string)
+	assert.NotContains(t, input, "telemetry")
+	assert.Contains(t, input, `"text":"hello"`)
+}
+
 func TestIntentFromContext(t *testing.T) {
 	ctx := context.Background()
 

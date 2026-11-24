@@ -1,6 +1,6 @@
 services:
   aerospike:
-    image: aerospike:ce-8.1.2.5_1@sha256:de6efea0692dfc91f1f5b993b333a5c82040d5a7c282a643492f8bbc626a7aa4
+    image: aerospike:ce-8.2.0.1_1@sha256:5c11b9b11a4d76ef9484d1367c3be3f902d446204ad1b33bb01566327516acf8
     healthcheck:
       test: ["CMD", "asinfo", "-v", "status"]
       interval: 10s
@@ -10,7 +10,7 @@ services:
     ports:
       - "3000:3000"
   cassandra:
-    image: cassandra:5@sha256:8819d1b7877ee6621751a761cc163332e9c3eaf671c8ef672f7c77a7c5bff05f
+    image: cassandra:5@sha256:7ec032283c56c9ea7c022007b2fecdf5ca69c7a9871e0634f41ae05833dc1638
     environment:
       JVM_OPTS: "-Xms750m -Xmx750m"
       CASSANDRA_CLUSTER_NAME: "dd-trace-go-test-cluster"
@@ -25,7 +25,7 @@ services:
     ports:
       - "9042:9042"
   mysql:
-    image: mysql:26@sha256:ade067ae2fb15eeb6143e81185afe22573e3b3addc58aaf90c41999fa6883991
+    image: mysql:26@sha256:3819b2b23835c4a73c8b022fafc33c8095c0f81c929a8b7a84613d2fba6c52f5
     environment:
       MYSQL_ROOT_PASSWORD: admin
       MYSQL_PASSWORD: test
@@ -40,7 +40,7 @@ services:
     ports:
       - "3306:3306"
   postgres:
-    image: postgres:18@sha256:5a5a84b19854a9ffaa54082c166ff4ec27473a361e496e5ea167f298f2da9722
+    image: postgres:19@sha256:bb6e70add742cd868fb62cb3b2f67d1dd2bdd2b65a521e778420748753687c60
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
@@ -54,7 +54,7 @@ services:
     ports:
       - "5432:5432"
   mssql:
-    image: mcr.microsoft.com/mssql/server:2025-latest@sha256:2b5b581621126574f3d1f75e78d3eebe8d05aedb59ad0cfdf9aa42cb0634d726
+    image: mcr.microsoft.com/mssql/server:2025-latest@sha256:05644dad1266ca3d445d1e8f6d2ebb9a6a03df9a39376e0f7b48917356dca9d9
     environment:
       SA_PASSWORD: myPassw0rd
       ACCEPT_EULA: Y
@@ -77,7 +77,7 @@ services:
     ports:
       - "8500:8500"
   redis:
-    image: redis:8-alpine@sha256:0bf6577d7774e592b29d093e3ac9390eb91e13d72c21e506afce736de5e0eeb0
+    image: redis:8-alpine@sha256:7958cfbb9d152f87dadfbc89f1b0b15938f0b81ff8982feb327476f4911935c3
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -87,7 +87,7 @@ services:
     ports:
       - "6379:6379"
   valkey:
-    image: valkey/valkey:9@sha256:418652cfb58ef879d4978c33553735d7147016032d5aefaa14c828e611eb9dfd
+    image: valkey/valkey:9@sha256:1c2b25b09f354c66fe994733acdf12fcfd4bdf6f3bd92b88a93a70378d884056
     environment:
       VALKEY_EXTRA_FLAGS: "--port 6380 --requirepass password-for-default"
     healthcheck:
@@ -131,7 +131,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch6:
-    image: elasticsearch:9.5.3@sha256:a4e2b3d21ad0f779f3044bb6828b5289d5f1c241b3ddd7efae7adaf81bcff412
+    image: elasticsearch:9.5.5@sha256:6f11b295d5099c18b8774d280a82725d1184d0d5cb08373b12785ce7cd7a9bfb
     environment:
       http.port: 9202-9300
       discovery.type: single-node
@@ -149,7 +149,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch7:
-    image: elasticsearch:9.5.3@sha256:a4e2b3d21ad0f779f3044bb6828b5289d5f1c241b3ddd7efae7adaf81bcff412
+    image: elasticsearch:9.5.5@sha256:6f11b295d5099c18b8774d280a82725d1184d0d5cb08373b12785ce7cd7a9bfb
     environment:
       http.port: 9203-9300
       discovery.type: single-node
@@ -167,7 +167,7 @@ services:
         soft: 65536
         hard: 65536
   elasticsearch8:
-    image: elasticsearch:9.5.3@sha256:a4e2b3d21ad0f779f3044bb6828b5289d5f1c241b3ddd7efae7adaf81bcff412
+    image: elasticsearch:9.5.5@sha256:6f11b295d5099c18b8774d280a82725d1184d0d5cb08373b12785ce7cd7a9bfb
     environment:
       http.port: 9204-9300
       discovery.type: single-node
@@ -186,7 +186,7 @@ services:
         soft: 65536
         hard: 65536
   datadog-agent:
-    image: registry.datadoghq.com/agent:latest@sha256:c5bf5ec9be0c51d3d2d47bdadbb82680b5c83ceb9cae8457fe44aa736a1784ad
+    image: datadog/agent:latest@sha256:109bb519784f413a3520ebb582010a273fb30cd4169a39ea29a949c3e566452a
     environment:
       DD_APM_ENABLED: "true"
       DD_BIND_HOST: "0.0.0.0"
@@ -202,7 +202,7 @@ services:
     ports:
       - "8126:8126"
   testagent:
-    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.66.0@sha256:80126beab0e39b171ab86601a99fa599317c5f6ee4cff9e26758ec8e567852ef
+    image: ghcr.io/datadog/dd-apm-test-agent/ddapm-test-agent:v1.70.0@sha256:fbd7d376d4b4df2516309dac8558d458a0f673b87c455f42a6eb6364a3a40284
     environment:
       LOG_LEVEL: DEBUG
       TRACE_LANGUAGE: golang
@@ -222,7 +222,7 @@ services:
     ports:
       - "127.0.0.1:9126:9126"
   mongodb3:
-    image: mongo:8@sha256:5d7043a4ffe02b9ed1b6e0bab057546981af5ca0a79107e9c461e49bc44c0a7b
+    image: mongo:9@sha256:b0c835c26e5997413e985000f1013c275377cd9607761c1784d486f6dd620b7f
     healthcheck:
       test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q 1"]
       interval: 10s
@@ -232,7 +232,7 @@ services:
     ports:
       - "27018:27017"
   mongodb:
-    image: mongo:8@sha256:5d7043a4ffe02b9ed1b6e0bab057546981af5ca0a79107e9c461e49bc44c0a7b
+    image: mongo:9@sha256:b0c835c26e5997413e985000f1013c275377cd9607761c1784d486f6dd620b7f
     healthcheck:
       test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ ping: 1 }).ok' | grep -q 1"]
       interval: 10s
@@ -242,7 +242,7 @@ services:
     ports:
       - "27017:27017"
   memcached:
-    image: memcached:1.6-alpine@sha256:6d687bc26426d092694743054fc674fc54d3c161fefa1ad20b54192f8580a8c1
+    image: memcached:1.6-alpine@sha256:084fb554292d1447bc2c68b80c2331b98834514f56c866bc21a61be3c2ee376d
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 11211"]
       interval: 5s
@@ -252,7 +252,7 @@ services:
     ports:
       - "11211:11211"
   kafka:
-    image: confluentinc/confluent-local:8.3.2@sha256:2d623f09f1cc46a38b3ace3ee055016617b8f749db1596440bd9ecbe57601d3f
+    image: confluentinc/confluent-local:8.4.1@sha256:1b899456b71e81380e0fc5cf9173e936848b630a3d9bf631805157fb1d067999
     container_name: kafka
     environment:
       KAFKA_LISTENERS: "PLAINTEXT://0.0.0.0:9093,BROKER://0.0.0.0:9092,CONTROLLER://0.0.0.0:9094"

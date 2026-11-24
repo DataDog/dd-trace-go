@@ -351,6 +351,83 @@ func TestSetCheckpoint(t *testing.T) {
 	assert.Equal(t, statsPt2.hash, pathway.GetHash())
 }
 
+func TestSetCheckpointDoesNotMutateEdgeTags(t *testing.T) {
+	newTestProcessor := func() *Processor {
+		return &Processor{
+			hashCache:  newHashCache(),
+			stopped:    1,
+			in:         newFastQueue(defaultQueueSize),
+			service:    "service-1",
+			env:        "env",
+			timeSource: time.Now,
+		}
+	}
+	unsorted := func() []string { return []string{"type:kafka", "topic:t", "direction:out"} }
+
+	t.Run("caller slice keeps its order", func(t *testing.T) {
+		edgeTags := unsorted()
+		pathway, _ := PathwayFromContext(newTestProcessor().SetCheckpoint(context.Background(), edgeTags...))
+		assert.Equal(t, unsorted(), edgeTags)
+
+		sorted := unsorted()
+		sort.Strings(sorted)
+		want, _ := PathwayFromContext(newTestProcessor().SetCheckpoint(context.Background(), sorted...))
+		assert.Equal(t, want.GetHash(), pathway.GetHash(), "hash must not depend on edge-tag order")
+	})
+
+	t.Run("shared slice across goroutines", func(t *testing.T) {
+		// Run with -race: each goroutine misses its own cache, so every call reaches nodeHash with the same slice.
+		edgeTags := unsorted()
+		var wg sync.WaitGroup
+		for range 8 {
+			wg.Go(func() {
+				newTestProcessor().SetCheckpoint(context.Background(), edgeTags...)
+			})
+		}
+		wg.Wait()
+		assert.Equal(t, unsorted(), edgeTags)
+	})
+}
+
+func TestSetCheckpointServiceOverride(t *testing.T) {
+	edgeTags := []string{"direction:in", "topic:topic1", "type:kafka"}
+	checkpoint := func(p *Processor, service string) (statsPoint, uint64) {
+		pathway, _ := PathwayFromContext(p.SetCheckpointWithParams(context.Background(), options.CheckpointParams{ServiceOverride: service}, edgeTags...))
+		return p.in.pop().point, pathway.GetHash()
+	}
+	newProcessor := func() *Processor {
+		return &Processor{
+			hashCache:  newHashCache(),
+			stopped:    1,
+			in:         newFastQueue(defaultQueueSize),
+			service:    "service-1",
+			env:        "env",
+			timeSource: time.Now,
+		}
+	}
+	processTags := processtags.GlobalTags().Slice()
+	containerTagsHash := processtags.ContainerTagsHash()
+	defaultHash := pathwayHash(nodeHash("service-1", "env", edgeTags, processTags, containerTagsHash), 0)
+	overrideHash := pathwayHash(nodeHash("service-2", "env", edgeTags, processTags, containerTagsHash), 0)
+	require.NotEqual(t, defaultHash, overrideHash)
+
+	for _, order := range [][]string{{"", "service-2"}, {"service-2", ""}} {
+		t.Run(fmt.Sprintf("%q then %q", order[0], order[1]), func(t *testing.T) {
+			p := newProcessor()
+			for _, override := range order {
+				wantService, wantHash := "service-1", defaultHash
+				if override != "" {
+					wantService, wantHash = override, overrideHash
+				}
+				pt, propagated := checkpoint(p, override)
+				assert.Equal(t, wantService, pt.serviceName)
+				assert.Equal(t, wantHash, pt.hash, "stats point hash for service %s", wantService)
+				assert.Equal(t, wantHash, propagated, "propagated pathway hash for service %s", wantService)
+			}
+		})
+	}
+}
+
 func TestSetCheckpointProcessTags(t *testing.T) {
 	processtags.Reload()
 	pTags := processtags.GlobalTags().Slice()

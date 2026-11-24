@@ -8,6 +8,7 @@ package openfeature
 import (
 	"cmp"
 	"container/list"
+	"errors"
 	"os"
 	"sync"
 	"time"
@@ -176,6 +177,11 @@ type exposureWriter struct {
 	context       exposureContext
 	ticker        *time.Ticker
 	stopChan      chan struct{}
+	// workerDone is closed when the goroutine started by start exits; nil
+	// until start runs. stop does not wait on it, so a periodic send may
+	// still be in flight when stop returns. stop cannot join it: the
+	// worker's panic path calls stop itself, so joining would deadlock.
+	workerDone    chan struct{}
 	stopped       bool
 	featureValues featureValuesCache
 	// Keep the cache active when only the customer records exposures.
@@ -211,10 +217,13 @@ func (w *exposureWriter) start() {
 		return
 	}
 	w.ticker = time.NewTicker(w.flushInterval)
+	workerDone := make(chan struct{})
+	w.workerDone = workerDone
 	go func() {
+		defer close(workerDone)
 		defer func() {
 			if r := recover(); r != nil {
-				telemetrylog.LogAndReportPanic("openfeature: exposure writer recovered panic", r)
+				containLoggerPanic(func() { telemetrylog.LogAndReportPanic("openfeature: exposure writer recovered panic", r) })
 			}
 			w.stop()
 		}()
@@ -222,12 +231,29 @@ func (w *exposureWriter) start() {
 		for {
 			select {
 			case <-w.ticker.C:
-				w.flush()
+				w.periodicFlush()
 			case <-w.stopChan:
 				return
 			}
 		}
 	}()
+}
+
+// periodicFlush flushes on the writer's timer and logs the outcome.
+func (w *exposureWriter) periodicFlush() {
+	n, err := w.flush()
+	switch {
+	case err != nil:
+		// log.Error keeps only the first message's arguments when it
+		// aggregates repeats, so the per-batch count is logged at debug
+		// instead of in the error.
+		logOnboarding("dropped %d exposure event(s) after a failed send: %s", n, err.Error())
+		containLoggerPanic(func() {
+			log.Error("openfeature: failed to send exposure events, dropping them: %v", err.Error()) //errtrack:ignore remote request failure
+		})
+	case n > 0:
+		logOnboarding("sent %d exposure event(s)", n)
+	}
 }
 
 // append adds an exposure event to the buffer with deduplication
@@ -274,12 +300,19 @@ func (w *exposureWriter) appendWithDecision(event exposureEvent) (added, known b
 	return true, true
 }
 
-// flush sends all buffered exposure events to the agent
-func (w *exposureWriter) flush() {
+// flush sends all buffered exposure events to the agent. It returns how many
+// events were pending and, if they were not delivered, why; events are
+// dropped, not requeued, when delivery fails. Callers log the outcome.
+func (w *exposureWriter) flush() (int, error) {
 	w.mu.Lock()
-	if len(w.buffer) == 0 || w.stopped {
+	if len(w.buffer) == 0 {
 		w.mu.Unlock()
-		return
+		return 0, nil
+	}
+	if w.stopped {
+		n := len(w.buffer)
+		w.mu.Unlock()
+		return n, errors.New("exposure writer already stopped")
 	}
 
 	// Move buffer to local variable and create new buffer
@@ -289,14 +322,11 @@ func (w *exposureWriter) flush() {
 	w.mu.Unlock()
 
 	// Send to agent
-	if err := w.sendToAgent(exposurePayload{
+	err := w.sendToAgent(exposurePayload{
 		Context:   w.context,
 		Exposures: events,
-	}); err != nil {
-		log.Error("openfeature: failed to send exposure events: %v", err.Error()) //errtrack:ignore remote request failure
-	} else {
-		log.Debug("openfeature: successfully sent %d exposure events", len(events))
-	}
+	})
+	return len(events), err
 }
 
 // sendToAgent sends the exposure payload to the Datadog Agent via EVP proxy
@@ -304,7 +334,8 @@ func (w *exposureWriter) sendToAgent(payload exposurePayload) error {
 	return w.evp.post(exposureEndpoint, "exposure", payload)
 }
 
-// stop stops the exposure writer and flushes any remaining events
+// stop stops the exposure writer. The shutdown teardown flushes pending events
+// separately, before calling stop.
 func (w *exposureWriter) stop() {
 	w.mu.Lock()
 	if w.stopped {
@@ -322,5 +353,5 @@ func (w *exposureWriter) stop() {
 		w.ticker.Stop()
 	}
 
-	log.Debug("openfeature: exposure writer stopped")
+	containLoggerPanic(func() { log.Debug("openfeature: exposure writer stopped") })
 }

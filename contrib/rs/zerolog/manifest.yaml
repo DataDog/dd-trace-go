@@ -1,0 +1,11 @@
+_v: 1
+name: github.com/rs/zerolog
+display_name: zerolog
+description: Instruments zerolog log events by adding trace and span identifiers from their context through manual hooks or
+  Orchestrion instrumentation.
+packages:
+- name: github.com/rs/zerolog
+category:
+- log.emission
+systems: []
+creation_date: '2026-02-13'

@@ -17,6 +17,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/namingschema"
 	"github.com/DataDog/dd-trace-go/v2/internal/normalizer"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/stacktrace"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -77,6 +78,13 @@ func Version() string {
 	return version.Tag
 }
 
+// OtelcEnabled reports whether the application was built with otelc
+// (OpenTelemetry Go compile-time instrumentation). Integrations use it to run
+// code that only otelc builds need.
+func OtelcEnabled() bool {
+	return otelc.Enabled()
+}
+
 // Instrumentation represents instrumentation for a package.
 type Instrumentation struct {
 	logger           Logger
@@ -122,9 +130,7 @@ type ServiceOverride = internal.ServiceOverride
 // name and its source. The source tracks the origin of the service name
 // override for _dd.svc_src.
 func ServiceNameWithSource(name string, source string) tracer.StartSpanOption {
-	return func(cfg *tracer.StartSpanConfig) {
-		tracer.Tag(ext.KeyServiceSource, internal.ServiceOverride{Name: name, Source: source})(cfg)
-	}
+	return tracer.Tag(ext.KeyServiceSource, internal.ServiceOverride{Name: name, Source: source})
 }
 
 // OperationName returns the operation name to be set for the given instrumentation component. It
@@ -221,6 +227,36 @@ func (i *Instrumentation) GlobalAnalyticsRate() float64 {
 // are used when `false`.
 func (i *Instrumentation) OTelSemanticsEnabled() bool {
 	return internalconfig.Get().OTelSemanticsEnabled()
+}
+
+// KinesisInjectDatadogAttributeEnabled reports whether the trace context may be injected into
+// Kinesis records.
+func (i *Instrumentation) KinesisInjectDatadogAttributeEnabled() bool {
+	return internalconfig.Get().KinesisInjectDatadogAttributeEnabled()
+}
+
+// EventBridgeInjectDatadogAttributeEnabled reports whether the trace context may be injected into
+// EventBridge event details.
+func (i *Instrumentation) EventBridgeInjectDatadogAttributeEnabled() bool {
+	return internalconfig.Get().EventBridgeInjectDatadogAttributeEnabled()
+}
+
+// SQSInjectDatadogAttributeEnabled reports whether the trace context may be injected into SQS
+// message attributes.
+func (i *Instrumentation) SQSInjectDatadogAttributeEnabled() bool {
+	return internalconfig.Get().SQSInjectDatadogAttributeEnabled()
+}
+
+// SNSInjectDatadogAttributeEnabled reports whether the trace context may be injected into SNS
+// message attributes.
+func (i *Instrumentation) SNSInjectDatadogAttributeEnabled() bool {
+	return internalconfig.Get().SNSInjectDatadogAttributeEnabled()
+}
+
+// SFNInjectDatadogAttributeEnabled reports whether the trace context may be injected into the
+// input of Step Functions executions.
+func (i *Instrumentation) SFNInjectDatadogAttributeEnabled() bool {
+	return internalconfig.Get().SFNInjectDatadogAttributeEnabled()
 }
 
 func (i *Instrumentation) AppSecEnabled() bool {

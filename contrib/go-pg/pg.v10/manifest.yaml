@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/go-pg/pg/v10
+display_name: go-pg v10
+description: Instruments PostgreSQL queries made through go-pg v10, creating spans with query text, parent trace context,
+  execution timing, and errors.
+packages:
+- name: github.com/go-pg/pg/v10
+category:
+- db.client
+systems:
+- postgresql
+creation_date: '2020-11-03'

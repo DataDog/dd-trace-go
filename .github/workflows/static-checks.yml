@@ -32,7 +32,7 @@ env:
   # without having to download a newer one.
   GOTOOLCHAIN: local
   GODEBUG: "x509negativeserial=1"
-  GOLANGCI_LINT_VERSION: v2.12.2 # NOTICE: Make sure this is synced with the version in the _tools/go.mod file.
+  GOLANGCI_LINT_VERSION: v2.15.0 # NOTICE: Make sure this is synced with the version in the _tools/go.mod file.
 
 permissions:
   contents: read
@@ -118,7 +118,12 @@ jobs:
           go-version: ${{ inputs.go-version || 'stable' }}
           check-latest: "true"
           workload: static-copyright
+          # No Go build cache: this job compiles almost nothing, and every
+          # saved entry costs the shared pool space a seed needs. The
+          # provider label stays for the observation record; a rollback is
+          # setting cache back to "true".
           cache-provider: github-cache
+          cache: "false"
 
       - name: Restore and install development tools
         id: tools
@@ -153,6 +158,7 @@ jobs:
           check-latest: "true"
           workload: static-check-github-actions
           cache-provider: github-cache
+          cache: "false"
 
       - name: Restore and install development tools
         id: tools
@@ -165,6 +171,9 @@ jobs:
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
           make lint/action
+      - name: Test workflows apps
+        working-directory: .github/workflows/apps
+        run: go test ./pr-triage-board/
       # These validate CI configuration, not Go code: that every workflow is
       # registered in .github/ci-components.yml, that native paths: filters are
       # declared and still live, that each join job depends on `changes`, and
@@ -228,6 +237,7 @@ jobs:
           check-latest: "true"
           workload: static-check-docs
           cache-provider: github-cache
+          cache: "false"
 
       - name: Restore and install development tools
         id: tools
@@ -261,6 +271,7 @@ jobs:
           check-latest: "true"
           workload: static-check-format
           cache-provider: github-cache
+          cache: "false"
 
       - name: Restore and install development tools
         id: tools
@@ -295,7 +306,7 @@ jobs:
           fetch-depth: 2 # HEAD^1 is the base for the nested-modules lint step
 
       - name: golangci-lint
-        uses: reviewdog/action-golangci-lint@c76cceaaab89abe74e649d2e34c6c9adc26662d2 # v2.10.0
+        uses: reviewdog/action-golangci-lint@284129a3ac23bc5d8ac1522e0b6511df74a8836d # v2.10.2
         with:
           cache: false
           golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
@@ -306,7 +317,7 @@ jobs:
           filter_mode: nofilter
 
       - name: golangci-lint (internal/orchestrion/_integration)
-        uses: reviewdog/action-golangci-lint@c76cceaaab89abe74e649d2e34c6c9adc26662d2 # v2.10.0
+        uses: reviewdog/action-golangci-lint@284129a3ac23bc5d8ac1522e0b6511df74a8836d # v2.10.2
         with:
           cache: false
           golangci_lint_flags: "--timeout 10m --disable=gocritic" # We are hitting timeout when there is no cache
@@ -340,6 +351,9 @@ jobs:
       # Lint only the nested modules this change touches, and report only the
       # issues it adds: those modules still carry pre-existing findings.
       - name: golangci-lint (nested modules)
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_BEFORE: ${{ github.event.before }}
         run: |-
           export PATH="${{ github.workspace }}/bin:${PATH}"
           # The reviewdog steps install golangci-lint from
@@ -352,8 +366,8 @@ jobs:
             exit 1
           fi
           base="HEAD~1"
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            before="${{ github.event.before }}"
+          if [[ "$EVENT_NAME" == "push" ]]; then
+            before="$EVENT_BEFORE"
             if [[ "$before" == "0000000000000000000000000000000000000000" ]]; then
               # The push creates the branch, so no earlier tip exists to
               # diff against. The step lints nothing.
@@ -379,7 +393,7 @@ jobs:
           policy: self.static-checks-shellcheck
 
       - name: shellcheck
-        uses: reviewdog/action-shellcheck@0a90156c6e0553996a217f0a9e09be6b0f6bee4c # v1.34.0
+        uses: reviewdog/action-shellcheck@950c9d71535c8c49e5c029c33a438ade63b9009c # v1.35.1
         with:
           github_token: ${{ steps.generate-token.outputs.token }}
           reporter: github-pr-review

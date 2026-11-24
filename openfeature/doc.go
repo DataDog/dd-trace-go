@@ -380,27 +380,35 @@
 //
 // Set DD_TRACE_DEBUG=true and call tracer.Start before creating the provider
 // to log, at debug level, each step of its setup and every flag evaluation.
-// Alternatively, use tracer.Start(tracer.WithDebugMode(true)). The provider
+// Alternatively, use tracer.Start(tracer.WithDebugMode(true)). Setting
+// OTEL_LOG_LEVEL=debug also enables these logs. The provider
 // does not change the shared log level. Enabling debug logging after provider
 // construction also enables subsequent evaluation logs.
 // Every such line starts with "openfeature:",
 // so they can be filtered from other tracer output. It covers:
 //
 //   - The selected configuration source, or that feature flagging is disabled
-//   - Each Agentless poll attempt and its outcome: the HTTP status or the
-//     transport error, plus any retry delay
-//   - Each configuration applied, with its flag count, how many flags were
-//     rejected as invalid, and its createdAt (and, for Agentless, the
-//     effective DD_ENV and ETag)
+//   - Each Agentless poll attempt and its outcome: the HTTP status, the
+//     transport error, or the reason a response was malformed, plus any retry
+//     delay
+//   - Each configuration applied, with its flag count, each flag rejected as
+//     invalid and why, its createdAt, the SDK's DD_ENV (sdk_env), and the
+//     environment the configuration names (config_env). For Agentless, it
+//     also logs the ETag and the environment requested from the endpoint
+//     (requested_env): a custom endpoint never receives DD_ENV.
 //   - Initialization start and its outcome, with the failure reason
 //   - Lifecycle changes: recovery after a failed initialization, configuration
-//     becoming unavailable, and shutdown
-//   - Every flag the provider resolves, with its value, variant, reason,
-//     allocation, and error
-//   - Every evaluation failure, with the evaluation's default value. This
-//     includes failures the provider never sees, such as evaluating before it
-//     is ready, and an application hook returning an error after the provider
-//     resolved the flag
+//     becoming unavailable, and shutdown, including whether pending exposure
+//     events were sent or dropped
+//   - Every flag the provider resolves, with its value, the default value,
+//     variant, reason, allocation, error, and the evaluation context it
+//     resolved against: the targeting key and the other attributes
+//   - Every evaluation failure, with the evaluation's default value and
+//     context. This includes failures the provider never sees, such as
+//     evaluating before it is ready, and an application hook returning an
+//     error after the provider resolved the flag
+//   - Each exposure event queued for delivery, or skipped with the reason,
+//     and each batch sent or dropped after failed delivery
 //
 // A failure line does not say which value the application received, since
 // that depends on how the flag was evaluated. Typed evaluations and
@@ -412,13 +420,14 @@
 // telemetry.
 //
 // Credentials and the endpoint's path and query are never logged; only the
-// endpoint's scheme and host are logged. Onboarding lines never include the
-// evaluation's targeting key or context attributes, but an error returned by
-// an application hook is logged with its message as is: if your hook puts
-// targeting data in an error message, it appears in the debug log. The
-// exposure tracking debug line, which is not an onboarding line, includes the
-// targeting key. Scalar flag values are logged directly and other values as
-// JSON, truncated to 256 bytes. A value that cannot be encoded, including a
+// endpoint's scheme and host are logged. Debug logging is meant to explain an
+// evaluation result, so it logs the raw evaluation inputs and outputs: the
+// targeting key, context attributes, and flag values, in full. Enable it only
+// where these may appear in your logs. Each provider logs a one-time warning
+// about this, at construction or, if debug logging is enabled later, before
+// its first such line. An error returned by an application
+// hook is logged with its message as is. Scalar values are logged directly
+// and other values as JSON. A value that cannot be encoded, including a
 // default value whose MarshalJSON method fails or panics, is logged as
 // <unserializable> without affecting the evaluation. When debug logging is
 // off, evaluations skip formatting these details.
@@ -451,6 +460,37 @@
 // first: the tracer eagerly subscribes to the FFE_FLAGS Remote Config product
 // and may fetch and buffer configuration before NewDatadogProvider is called.
 //
+// # Flag Selection
+//
+// A service that needs only some of its flags can pass a flag selection when it
+// creates the provider. The provider then downloads and holds only the flags
+// that have any of the selected tags or whose key matches any of the selected
+// key patterns:
+//
+//	provider, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{
+//	    FlagSelection: &ddopenfeature.FlagSelection{
+//	        Tags:        []string{"checkout"},
+//	        KeyPatterns: []string{"checkout.*"},
+//	    },
+//	})
+//
+// Evaluating a flag outside the selection returns the default value with
+// FLAG_NOT_FOUND. Tags match exactly. In a key pattern, * matches any run of
+// characters and every other character is literal. Values are trimmed of white
+// space, and empty values and duplicates are dropped. Each list holds at most
+// 31 values, each at most 200 UTF-8 bytes. A selection over a limit, with a
+// value that is not valid UTF-8, or that makes the request URL longer than 8192
+// bytes is not sent: the provider logs an error and loads every flag. When the
+// server cannot apply a selection, it sends every flag, and the provider logs
+// an error once per reason.
+//
+// The selection is set in code only; there is no environment variable. Each
+// provider sends its own selection, fixed at construction. The selection
+// applies to the agentless configuration source; with Remote Config, the
+// provider logs a warning and loads every flag. When the provider is the
+// default OpenFeature provider, LLM Observability prompt flags are evaluated
+// through it and share its selection.
+//
 // # Configuration
 //
 // The provider can be configured using ProviderConfig when creating a new instance:
@@ -466,6 +506,9 @@
 //     to the Datadog agent. Defaults to 1 second if not specified. Exposure events
 //     track which feature flags are evaluated and by which users, providing visibility
 //     into feature flag usage. Set to 0 to disable automatic flushing (not recommended).
+//
+//   - FlagSelection: Limits the flags the provider loads to the selected tags and
+//     key patterns. Nil loads every flag. See "# Flag Selection" above.
 //
 // # Environment Variables
 //

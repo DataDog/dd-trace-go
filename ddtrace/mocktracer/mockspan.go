@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2016 Datadog, Inc.
 
-package mocktracer // import "github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+package mocktracer
 
 import (
 	"encoding/json"

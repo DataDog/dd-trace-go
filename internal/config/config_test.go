@@ -1299,66 +1299,53 @@ func TestOTLPSpanMetricsConfig(t *testing.T) {
 		assert.False(t, cfg.OTLPSpanMetricsEnabled())
 	})
 
-	t.Run("auto-enabled when OTEL_TRACES_EXPORTER=otlp and DD_METRICS_OTEL_ENABLED=true", func(t *testing.T) {
+	for _, spanMetrics := range []string{"", "true", "false"} {
+		for _, statsComputation := range []string{"", "true", "false"} {
+			for _, generalMetrics := range []string{"", "true", "false"} {
+				name := "span metrics=" + spanMetrics + "/stats computation=" + statsComputation + "/general metrics=" + generalMetrics
+				t.Run(name, func(t *testing.T) {
+					resetGlobalState()
+					defer resetGlobalState()
+
+					t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
+					t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", spanMetrics)
+					t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", statsComputation)
+					t.Setenv("DD_METRICS_OTEL_ENABLED", generalMetrics)
+
+					assert.Equal(t, spanMetrics == "true", Get().OTLPSpanMetricsEnabled())
+					// Explicit span-metrics=false must not disable explicitly-enabled native stats.
+					if spanMetrics == "false" && statsComputation == "true" {
+						assert.True(t, Get().StatsComputationEnabled())
+					}
+				})
+			}
+		}
+	}
+
+	for _, generalMetrics := range []string{"", "true", "false"} {
+		t.Run("native stats default with general metrics="+generalMetrics, func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+
+			t.Setenv("OTEL_TRACES_EXPORTER", "")
+			t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", "")
+			t.Setenv("DD_TRACE_STATS_COMPUTATION_ENABLED", "")
+			t.Setenv("DD_METRICS_OTEL_ENABLED", generalMetrics)
+
+			cfg := Get()
+			assert.True(t, cfg.StatsComputationEnabled())
+			assert.False(t, cfg.OTLPSpanMetricsEnabled())
+		})
+	}
+
+	t.Run("explicit true enables OTLP span metrics with native traces", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
 
-		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
-		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
-
-		cfg := Get()
-		require.NotNil(t, cfg)
-
-		assert.True(t, cfg.OTLPSpanMetricsEnabled())
-	})
-
-	t.Run("not auto-enabled when OTEL_TRACES_EXPORTER=otlp but DD_METRICS_OTEL_ENABLED unset", func(t *testing.T) {
-		resetGlobalState()
-		defer resetGlobalState()
-
-		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
-
-		cfg := Get()
-		require.NotNil(t, cfg)
-
-		assert.False(t, cfg.OTLPSpanMetricsEnabled())
-	})
-
-	t.Run("auto-disabled when OTLP trace export is off even if DD_METRICS_OTEL_ENABLED=true", func(t *testing.T) {
-		resetGlobalState()
-		defer resetGlobalState()
-
-		t.Setenv("DD_METRICS_OTEL_ENABLED", "true")
-
-		cfg := Get()
-		require.NotNil(t, cfg)
-
-		assert.False(t, cfg.OTLPSpanMetricsEnabled())
-	})
-
-	t.Run("explicit true overrides auto-detection", func(t *testing.T) {
-		resetGlobalState()
-		defer resetGlobalState()
-
+		t.Setenv("OTEL_TRACES_EXPORTER", "")
 		t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", "true")
 
-		cfg := Get()
-		require.NotNil(t, cfg)
-
-		assert.True(t, cfg.OTLPSpanMetricsEnabled())
-	})
-
-	t.Run("explicit false overrides auto-detection", func(t *testing.T) {
-		resetGlobalState()
-		defer resetGlobalState()
-
-		t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
-		t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", "false")
-
-		cfg := Get()
-		require.NotNil(t, cfg)
-
-		assert.False(t, cfg.OTLPSpanMetricsEnabled())
+		assert.True(t, Get().OTLPSpanMetricsEnabled())
 	})
 
 	t.Run("explicit false reports calculated stats-computation via setter", func(t *testing.T) {
@@ -3197,6 +3184,48 @@ func TestOTLPTraceURLInvalidSignalFallback(t *testing.T) {
 			t.Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", endpoint)
 			t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://collector:4318/base")
 			assert.Equal(t, "http://collector:4318/base/v1/traces", loadConfig().OTLPTraceURL())
+		})
+	}
+}
+
+func TestInjectDatadogAttributeEnabled(t *testing.T) {
+	services := []struct {
+		name    string
+		env     string
+		enabled func(*Config) bool
+	}{
+		{"kinesis", "DD_TRACE_KINESIS_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).KinesisInjectDatadogAttributeEnabled},
+		{"eventbridge", "DD_TRACE_EVENTBRIDGE_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).EventBridgeInjectDatadogAttributeEnabled},
+		{"sqs", "DD_TRACE_SQS_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).SQSInjectDatadogAttributeEnabled},
+		{"sns", "DD_TRACE_SNS_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).SNSInjectDatadogAttributeEnabled},
+		{"sfn", "DD_TRACE_SFN_INJECT_DATADOG_ATTRIBUTE_ENABLED", (*Config).SFNInjectDatadogAttributeEnabled},
+	}
+	// Neutralize values inherited from the environment of the test process. The subtests set the
+	// one they need.
+	for _, s := range services {
+		t.Setenv(s.env, "")
+	}
+
+	t.Run("default", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		cfg := Get()
+		for _, s := range services {
+			assert.True(t, s.enabled(cfg), s.name)
+		}
+	})
+
+	for _, disabled := range services {
+		t.Run("only "+disabled.name+" disabled", func(t *testing.T) {
+			resetGlobalState()
+			defer resetGlobalState()
+			t.Setenv(disabled.env, "false")
+
+			cfg := Get()
+			for _, s := range services {
+				assert.Equal(t, s.name != disabled.name, s.enabled(cfg), s.name)
+			}
 		})
 	}
 }

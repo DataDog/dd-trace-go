@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/bradfitz/gomemcache
+display_name: gomemcache
+description: Instruments gomemcache client cache reads, writes, atomic updates, expiration changes, deletions, and flushes,
+  creating operation spans with parent context and errors.
+packages:
+- name: github.com/bradfitz/gomemcache
+category:
+- db.client
+systems:
+- memcached
+creation_date: '2018-08-08'

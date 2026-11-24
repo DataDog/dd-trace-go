@@ -43,6 +43,15 @@ const (
 
 	// DefaultMaxTagsHeaderLen is the default value for DD_TRACE_X_DATADOG_TAGS_MAX_LENGTH.
 	DefaultMaxTagsHeaderLen = 512
+	// DefaultPayloadQueueSize is the default buffer size of the trace payload queue
+	// (DD_TRACE_PAYLOAD_QUEUE_SIZE).
+	DefaultPayloadQueueSize = 1000
+	// MaxPayloadQueueSize is the largest accepted buffer size for the trace payload
+	// queue. Every slot retains a whole chunk (its spans, contexts, and tags) until
+	// the worker drains it, so even at this size the queue can retain tens of
+	// megabytes of trace data while the worker is stalled. A larger value is
+	// rejected.
+	MaxPayloadQueueSize = 10000
 	// defaultStatsAdditionalTagsCardinalityLimit is the default per-bucket cap for additional metric tag cardinality.
 	defaultStatsAdditionalTagsCardinalityLimit = 100
 	// maxAdditionalTagKeys is the maximum number of configured additional metric tag keys.
@@ -263,6 +272,18 @@ func validatePartialFlushMinSpans(minSpans int) bool {
 	return true
 }
 
+func validatePayloadQueueSize(size int) bool {
+	if size < 1 {
+		log.Warn("ignoring DD_TRACE_PAYLOAD_QUEUE_SIZE: value %d is less than 1. A value below 1 would leave the queue unbuffered and drop almost every trace.", size)
+		return false
+	}
+	if size > MaxPayloadQueueSize {
+		log.Warn("ignoring DD_TRACE_PAYLOAD_QUEUE_SIZE: value %d is above the maximum %d. A value above the maximum can panic with \"makechan: size out of range\" or exhaust memory when the queue is allocated.", size, MaxPayloadQueueSize)
+		return false
+	}
+	return true
+}
+
 func validateTraceProtocolVersion(v string) bool {
 	return v == TraceProtocolVersionStringV04 || v == TraceProtocolVersionStringV1
 }
@@ -343,7 +364,7 @@ func detectUDSURL() *url.URL {
 // initialDogstatsdURL builds the resolved DogStatsD URL from env inputs.
 // Precedence: addr (DD_DOGSTATSD_URL) > host/port (DD_DOGSTATSD_HOST/PORT) >
 // UDS auto-discovery > agentHost:DefaultStatsdPort. The returned URL is
-// always complete: host+port for TCP, or unix scheme + path for UDS.
+// always complete: host+port for UDP, or unix scheme + path for UDS.
 func initialDogstatsdURL(addr, host, port, agentHost, socketPath string) *url.URL {
 	if addr != "" {
 		return parseDogstatsdAddr(addr)
@@ -370,7 +391,9 @@ func initialDogstatsdURL(addr, host, port, agentHost, socketPath string) *url.UR
 	return &url.URL{Host: net.JoinHostPort(host, DefaultStatsdPort)}
 }
 
-// parseDogstatsdAddr accepts "host:port" or "unix:///path/to/socket".
+// parseDogstatsdAddr accepts "host:port", "udp://host[:port]" or
+// "unix:///path/to/socket". As in datadog-go, a udp:// address without a port
+// uses DefaultStatsdPort. udp:// addresses are returned in the host:port form.
 func parseDogstatsdAddr(addr string) *url.URL {
 	if strings.HasPrefix(addr, "unix://") {
 		if u, err := url.Parse(addr); err == nil {
@@ -378,6 +401,22 @@ func parseDogstatsdAddr(addr string) *url.URL {
 		} else {
 			log.Warn("Failed to parse DogStatsD unix address %q: %s", addr, err) //errtrack:ignore invalid user configuration
 		}
+	}
+	if hostPort, ok := strings.CutPrefix(addr, "udp://"); ok {
+		u, err := url.Parse(addr)
+		if err != nil {
+			log.Warn("Failed to parse DogStatsD udp address %q: %s", addr, err)
+			return &url.URL{Host: hostPort}
+		}
+		host, port := u.Hostname(), u.Port()
+		if host == "" {
+			log.Warn("DogStatsD udp address %q has no host, using %s", addr, internal.DefaultAgentHostname)
+			host = internal.DefaultAgentHostname
+		}
+		if port == "" {
+			port = DefaultStatsdPort
+		}
+		return &url.URL{Host: net.JoinHostPort(host, port)}
 	}
 	return &url.URL{Host: addr}
 }

@@ -100,7 +100,7 @@ func (h *exposureHook) Finally(
 	// successful resolution must not discard an exposure for the returned value.
 	evaluation := ExposureEvaluation{Details: flagEvaluationDetails}
 	if !evaluation.IsExposure() {
-		log.Debug("openfeature: skipping ineligible exposure event for flag %q", hookContext.FlagKey())
+		logOnboarding("skipping ineligible exposure event for flag %q", hookContext.FlagKey())
 		return
 	}
 
@@ -154,8 +154,24 @@ func (h *exposureHook) Finally(
 		flagEvaluationDetails.FlagMetadata[metadataExposureCacheHitKey] = !isNew
 	}
 
-	log.Debug("openfeature: recorded exposure event for flag %q (allocation=%s, variant=%s, subject=%s)",
-		hookContext.FlagKey(), allocationKey, flagEvaluationDetails.Variant, targetingKey)
+	// Checked first: duplicates are the common case, and boxing the
+	// arguments would allocate on every evaluation while debug logging is off.
+	if !log.DebugEnabled() {
+		return
+	}
+	switch {
+	case !known:
+		logOnboarding("skipping exposure event (exposure writer stopped) for flag %q", hookContext.FlagKey())
+	case !isNew:
+		logOnboarding("skipping exposure event (duplicate of an earlier exposure for this subject, allocation, and variant) for flag %q (subject=%q)",
+			hookContext.FlagKey(), targetingKey)
+	case !h.writer.datadogLoggingEnabled:
+		logOnboarding("recorded exposure event for flag %q without queuing it for Datadog, which has exposure logging disabled (allocation=%q, variant=%q, subject=%q)",
+			hookContext.FlagKey(), allocationKey, flagEvaluationDetails.Variant, targetingKey)
+	default:
+		logOnboarding("queued exposure event for flag %q (allocation=%q, variant=%q, subject=%q)",
+			hookContext.FlagKey(), allocationKey, flagEvaluationDetails.Variant, targetingKey)
+	}
 }
 
 // ExposureEvaluation describes a completed evaluation. Its cache decision

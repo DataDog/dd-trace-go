@@ -118,7 +118,7 @@ func (s *Span) spanEventsAsJSONString() string {
 	}
 	events, err := json.Marshal(s.spanEvents)
 	if err != nil {
-		log.Error("failed to marshal span events: %s", err.Error())
+		log.Error("failed to marshal span events: %s", err.Error()) //errtrack:ignore unsupported user-provided span event value
 		return ""
 	}
 	return string(events)
@@ -440,6 +440,32 @@ func safeStringerValue(v fmt.Stringer, original any) (result string) {
 	return v.String()
 }
 
+// safeErrorMessage returns err.Error(). If Error panics, for example on a
+// typed-nil pointer or a struct with a nil field, it returns a placeholder
+// naming the error type, so the span lock is not left held and the trace is
+// not lost. Unlike safeStringerValue, every panic is recovered on purpose: a
+// re-raised panic would skip finishing the span, and the trace would be lost.
+func safeErrorMessage(err error) (msg string) {
+	defer func() {
+		if recover() != nil {
+			msg = fmt.Sprintf("<error message unavailable: %T.Error panicked>", err)
+		}
+	}()
+	return err.Error()
+}
+
+// safeErrorDetails returns fmt.Sprintf("%+v", err). fmt recovers panics in
+// Format, but re-panics when rendering the panic value itself panics. In that
+// case it returns a placeholder naming the error type.
+func safeErrorDetails(err error) (details string) {
+	defer func() {
+		if recover() != nil {
+			details = fmt.Sprintf("<error details unavailable: %T formatting panicked>", err)
+		}
+	}()
+	return fmt.Sprintf("%+v", err)
+}
+
 // SetTag adds a set of key/value metadata to the span.
 func (s *Span) SetTag(key string, value any) {
 	if s == nil {
@@ -480,7 +506,14 @@ func (s *Span) setTags(tags map[string]any) {
 	}
 	s.mu.Lock()
 	for k, v := range tags {
+		if k == ext.ServiceName {
+			continue
+		}
 		s.setTagLocked(k, v)
+	}
+	// An explicit service name takes precedence over an integration's service override.
+	if service, ok := tags[ext.ServiceName]; ok {
+		s.setTagLocked(ext.ServiceName, service)
 	}
 	s.mu.Unlock()
 }
@@ -779,14 +812,14 @@ func (s *Span) setTagErrorLocked(value any, cfg errorConfig) {
 		// if anyone sets an error value as the tag, be nice here
 		// and provide all the benefits.
 		s.setErrorFlagLocked(true)
-		s.setMetaLocked(ext.ErrorMsg, v.Error())
+		s.setMetaLocked(ext.ErrorMsg, safeErrorMessage(v))
 		s.setMetaLocked(ext.ErrorType, reflect.TypeOf(v).String())
 		if cfg.noDebugStack {
 			return
 		}
 		switch v.(type) {
 		case xerrors.Formatter, fmt.Formatter, *errortrace.TracerError:
-			s.setMetaLocked(ext.ErrorStack, fmt.Sprintf("%+v", v))
+			s.setMetaLocked(ext.ErrorStack, safeErrorDetails(v))
 		}
 		handlingStack := takeStacktrace(cfg.stackFrames, cfg.stackSkip)
 		s.setMetaLocked(ext.ErrorHandlingStack, handlingStack)
@@ -1014,6 +1047,18 @@ func (s *Span) serializeSpanEvents() {
 	s.meta.Set("events", string(b))
 }
 
+// spanFinished reports whether s finished. It is used by github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry
+// via go:linkname, because a borrowed OpenTelemetry span must stop recording when the
+// integration that owns it finishes it.
+func spanFinished(s *Span) bool {
+	if s == nil {
+		return true
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.finished
+}
+
 // recordFFEEvaluation records a feature flag evaluation for FFE span enrichment.
 // Used by github.com/DataDog/dd-trace-go/v2/openfeature via go:linkname.
 //
@@ -1175,6 +1220,8 @@ func (s *Span) finish(finishTime int64) {
 	tracer, hasTracer := concreteTracerForTrace(getGlobalTracer(), s.context.trace, s.spanType).(*tracer)
 	if hasTracer {
 		if !tracer.config.internalConfig.TracingEnabled() {
+			// The tracer drops the span, but the span is finished.
+			s.finished = true
 			return
 		}
 		if tracer.config.canDropP0s() {
@@ -1222,7 +1269,7 @@ func obfuscatedResource(o *obfuscate.Obfuscator, typ, resource string) string {
 	case "sql", "cassandra":
 		oq, err := o.ObfuscateSQLString(resource)
 		if err != nil {
-			log.Error("Error obfuscating stats group resource %q: %v", resource, err.Error())
+			log.Error("Error obfuscating stats group resource %q: %v", resource, err.Error()) //errtrack:ignore unparseable user-provided resource
 			return textNonParsable
 		}
 		return oq.Query
@@ -1373,30 +1420,15 @@ func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
 }
 
 func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
-	llmSpan, ok := illmobs.ActiveLLMSpanFromContext(ctx)
-	if !ok {
-		return
+	// Only record which LLMObs context requests injected from spanCtx carry. The
+	// _dd.p.llmobs_* tags are written at injection (setLLMObsTagsForInjection):
+	// trace-wide tags written here would let a finished or concurrent LLMObs span
+	// leave its parent behind for other requests of the trace.
+	if llmSpan, ok := illmobs.ActiveLLMSpanFromContext(ctx); ok {
+		spanCtx.setLLMObsSpan(llmSpan)
+	} else if p, ok := illmobs.PropagatedLLMSpanFromContext(ctx); ok {
+		spanCtx.setLLMObsPropagated(p, false)
 	}
-	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, llmSpan.SpanID())
-	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.TraceID())
-	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, llmSpan.MLApp())
-	// session_id is optional. Propagating tags are trace-scoped, so unset the key when the active
-	// span has no session; otherwise a predecessor's value lingers and propagates downstream.
-	if sessionID := llmSpan.SessionID(); sessionID != "" {
-		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSessionID, sessionID)
-	} else {
-		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSessionID)
-	}
-	// The sampling decision is trace-scoped too: unset it for an undecided span so a
-	// sibling's decision can't leak downstream.
-	if decision := llmSpan.SamplingDecision(); decision != "" {
-		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSampleRate, llmSpan.SampleRate())
-		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSamplingDecision, decision)
-	} else {
-		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSampleRate)
-		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSamplingDecision)
-	}
-	setPropagatingParentAgentTags(spanCtx, llmSpan.PropagatedParentAgentSpanID(), llmSpan.PropagatedParentAgentName())
 }
 
 // setPropagatingParentAgentTags writes the parent-agent attribution tags onto the trace's
@@ -1413,27 +1445,36 @@ func setPropagatingParentAgentTags(spanCtx *SpanContext, parentAgentSpanID, name
 			spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
 			return
 		}
-		// Only propagate the name when it fits within the x-datadog-tags budget. The dd=
-		// tracestate member is budgeted at injection time (see appendLLMObsTracestateTags),
-		// where the name is the first LLMObs tag to give way.
-		used := spanCtx.trace.propagatingTagsHeaderLen()
-		// _dd.p.tid is stamped during Inject, not here — reserve its space on 128-bit traces.
-		if spanCtx.traceID.HasUpper() && spanCtx.trace.propagatingTag(keyTraceID128) == "" {
-			used += 27
-		}
-		var nameXTagsLen int
-		if prior := spanCtx.trace.propagatingTag(keyPropagatedLLMObsParentAgentName); prior != "" {
-			nameXTagsLen = used - len(prior) + len(name)
-		} else {
-			nameXTagsLen = used + len(keyPropagatedLLMObsParentAgentName) + len(name) + 2
-		}
-		if nameXTagsLen <= internalconfig.Get().MaxTagsHeaderLen() {
+		// Only propagate the name when it fits within the x-datadog-tags and W3C tracestate budgets.
+		if fitsPropagatingTagBudget(spanCtx, keyPropagatedLLMObsParentAgentName, name) {
 			spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentAgentName, name)
 		} else {
 			spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
 			log.Debug("LLMObs: parent agent name dropped from propagation — x-datadog-tags budget exceeded (name=%q)", name)
 		}
 	}
+}
+
+// fitsPropagatingTagBudget reports whether setting key to value keeps the
+// propagating tags within the x-datadog-tags and W3C tracestate budgets. Over
+// either budget, the encoder drops every propagating tag, not only this one.
+func fitsPropagatingTagBudget(spanCtx *SpanContext, key, value string) bool {
+	used, tsUsed := spanCtx.trace.propagatingTagsByteLens()
+	// _dd.p.tid is stamped during Inject, after this check — reserve its space on 128-bit traces.
+	if spanCtx.traceID.HasUpper() && spanCtx.trace.propagatingTag(keyTraceID128) == "" {
+		used += 27
+		tsUsed += 23
+	}
+	var xTagsLen int
+	if prior := spanCtx.trace.propagatingTag(key); prior != "" {
+		xTagsLen = used - len(prior) + len(value)
+		tsUsed -= len(key) - len("_dd.p.") + len(prior) + 4
+	} else {
+		xTagsLen = used + len(key) + len(value) + 2
+	}
+	tracestateLen := len(key) - len("_dd.p.") + len(value) + 4
+	return xTagsLen <= internalconfig.Get().MaxTagsHeaderLen() &&
+		tsUsed+tracestateLen+tracestateHeaderReserve <= tracestateDDMaxSize
 }
 
 // used in internal/civisibility/integrations/manual_api_common.go using linkname

@@ -133,7 +133,8 @@ Some things worth knowing before editing the table:
   `go test -tags depgraph ./scripts/ciselect/` in the `Main Branch and Release
   Tests` workflow.
 - The merge queue is not gated. Everything gating a pull request still runs in
-  full on `mq-working-branch-*` before a commit can land on `main`.
+  full on `mq-working-branch-*` before a commit can land on `main`, unless the
+  queue deliberately excludes the lane (see [`.github/AGENTS.md`](./.github/AGENTS.md)).
 
 To see what a change set resolves to, without pushing:
 
@@ -400,9 +401,11 @@ Please view our contrib [README.md](contrib/README.md) for information on integr
 
 When working with environment variables, direct use of `os.Getenv` and `os.LookupEnv` is not permitted. Instead, all environment variables must be validated against an [allowed list](./internal/env/supported_configurations.gen.go) using `env.Get` and `env.Lookup` from the [`internal/env`](./internal/env.go) package (or [`instrumentation/env`](./instrumentation/env/env.go) when working on contrib packages). This validation system helps us automatically detect newly introduced variables and ensures they are properly documented and tracked.
 
+Tracer configuration belongs in `internal/config`, the single source of truth (see its [README](./internal/config/README.md)).
+
 Once a new environment variable is added to the codebase, Datadog maintainers will also add it to Datadog's internal configuration registry for tracking and documentation purposes.
 
-Upon each tracer release, new configuration keys are automatically tagged by our [CI pipeline](./.gitlab/config-validation.yml) to track when they were introduced.
+Upon each tracer release, new configuration keys are automatically tagged by the GitLab `update_central_configurations_version_range_v2` job (declared in [.gitlab-ci.yml](./.gitlab-ci.yml), extending the one-pipeline template pinned in [.gitlab/one-pipeline.locked.yml](./.gitlab/one-pipeline.locked.yml)) to track when they were introduced.
 
 #### Overriding automatic test retries
 
@@ -428,8 +431,10 @@ The `configinverter` tool provides a command to add new environment variable key
 go run ./scripts/configinverter/main.go add DD_MY_NEW_KEY
 ```
 
+`add`, like test auto-detection (below), writes `FIX_ME` placeholders for the key's `type` and `default` in the JSON file. Replace them, set `"sensitive": true` for keys whose values are secrets so configuration telemetry omits them, then run `go run ./scripts/configinverter/main.go generate` again.
+
 After adding it to the codebase the key also needs to be added to the [registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) by an **internal contributor**.
-If the key already exists in the registry because another language already registred it this step can be skipped.
+If the key already exists in the registry because another language already registered it this step can be skipped.
 Not adding the key to the registry will fail the CI step in charge of checking the local file against the registry.
 
 #### Auto-detection via tests
@@ -451,12 +456,12 @@ go run ./scripts/configinverter/main.go generate
 ```
 
 After adding it to the codebase the key also needs to be added to the [registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) by an **internal contributor**.
-If the key already exists in the registry because another language already registred it this step can be skipped.
+If the key already exists in the registry because another language already registered it this step can be skipped.
 Not adding the key to the registry will fail the CI step in charge of checking the local file against the registry.
 
 #### Handling related CI failures
 
-The GitLab `validate_supported_configurations_local_file` job validates the JSON file content against Datadog's [configuration registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) to ensure every configuration key is properly registered and documented. If keys are missing from the registry, the job will fail and display the list of missing keys in the output. These keys must be added to the internal registry by Datadog maintainers for the check to pass, the key will need to be documented before merging the PR onto main.
+The GitLab `validate_supported_configurations_v2_local_file` job validates the JSON file content against Datadog's [configuration registry](https://feature-parity.us1.prod.dog/#/configurations?viewType=configurations) to ensure every configuration key is properly registered and documented. If keys are missing from the registry, the job will fail and display the list of missing keys in the output. These keys must be added to the internal registry by Datadog maintainers for the check to pass, the key will need to be documented before merging the PR onto main.
 
 Additionally, multiple CI jobs include a [step](./.github/actions/supported_configurations_validation/action.yml) that checks for newly discovered environment variables during test execution and will fail if keys are missing from the generated list. To resolve this failure, use one of the two methods described above to add the key to the generated list.
 
@@ -487,7 +492,7 @@ make fix-modules
 make generate
 ```
 
-This is neccessary because dd-trace-go is a multi-module repository.
+This is necessary because dd-trace-go is a multi-module repository.
 
 ### Benchmarks
 

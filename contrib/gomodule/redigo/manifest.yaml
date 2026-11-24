@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/gomodule/redigo
+display_name: Redigo
+description: Instruments Redis command execution and buffered pipeline flushing through Redigo connections, including timeout
+  and context-aware calls, with command metadata and errors.
+packages:
+- name: github.com/gomodule/redigo
+category:
+- db.client
+systems:
+- redis
+creation_date: '2019-04-03'

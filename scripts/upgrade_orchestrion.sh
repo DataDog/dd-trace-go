@@ -12,7 +12,7 @@ else
   ORCHESTRION_VERSION="${ORCHESTRION_VERSION:-latest}"
 fi
 
-ORCHESTRION_DIRS="${ORCHESTRION_DIRS:-internal/orchestrion/_integration orchestrion/all}"
+ORCHESTRION_DIRS="${ORCHESTRION_DIRS:-internal/orchestrion/_integration orchestrion/all internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion}"
 
 echo "Checking Orchestrion upgrade to ${ORCHESTRION_VERSION}"
 TARGET_VERSION="$(cd "$ROOT_DIR" && go list -m "github.com/DataDog/orchestrion@${ORCHESTRION_VERSION}" 2> /dev/null | awk '{print $2}')"
@@ -31,7 +31,10 @@ for dir in ${ORCHESTRION_DIRS}; do
   fi
 
   CURRENT_VERSION=""
-  if ! CURRENT_VERSION="$(cd "$module_dir" && go list -m github.com/DataDog/orchestrion 2> /dev/null | awk '{print $2}')"; then
+  # The fixture module is not part of go.work, so GOWORK=off keeps this read in
+  # module mode: workspace mode resolves the workspace's orchestrion version
+  # instead of the module's go.mod pin.
+  if ! CURRENT_VERSION="$(cd "$module_dir" && GOWORK=off go list -m github.com/DataDog/orchestrion 2> /dev/null | awk '{print $2}')"; then
     CURRENT_VERSION=""
   fi
 
@@ -65,7 +68,13 @@ for dir in ${ORCHESTRION_DIRS}; do
   (
     echo "Upgrading Orchestrion in ${dir}"
     cd "$module_dir"
-    go get "github.com/DataDog/orchestrion@${ORCHESTRION_VERSION}"
+    # GOWORK=off keeps the upgrade in module mode for modules outside go.work
+    # (see the version read above).
+    export GOWORK=off
+    # TARGET_VERSION is the snapshot taken above; pinning the get to it keeps
+    # the go.mod files and .orchestrion-version consistent when a release lands
+    # between the resolve and this get.
+    go get "github.com/DataDog/orchestrion@${TARGET_VERSION}"
     go mod tidy
     go mod verify
     echo "Orchestrion upgraded in ${dir}"

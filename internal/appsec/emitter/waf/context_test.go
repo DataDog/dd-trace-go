@@ -162,3 +162,131 @@ func (r *recordingTagSetter) Get(key string) (any, bool) {
 	value, ok := r.tags[key]
 	return value, ok
 }
+
+// TestAddEventsCap checks that AddEvents accepts no new batch once the request has 10 stored events,
+// and that it never calls the limiter.
+func TestAddEventsCap(t *testing.T) {
+	t.Run("single-events", func(t *testing.T) {
+		lim := new(countingLimiter)
+		lim.deny.Store(true)
+		op := &ContextOperation{limiter: lim}
+
+		for range 20 {
+			op.AddEvents("e")
+		}
+
+		if got := lim.calls.Load(); got != 0 {
+			t.Errorf("limiter calls = %d, want 0", got)
+		}
+		if got := len(op.Events()); got != expectedEventCap {
+			t.Errorf("stored events = %d, want %d", got, expectedEventCap)
+		}
+	})
+
+	t.Run("batches", func(t *testing.T) {
+		lim := new(countingLimiter)
+		op := &ContextOperation{limiter: lim}
+
+		op.AddEvents(1, 2, 3, 4, 5, 6, 7, 8, 9)
+		// The cap works on the stored count: the batch of 2 is stored as a whole.
+		op.AddEvents("a", "b")
+		if got := len(op.Events()); got != 11 {
+			t.Fatalf("stored events = %d, want 11", got)
+		}
+		op.AddEvents("c")
+		if got := len(op.Events()); got != 11 {
+			t.Errorf("stored events after the cap = %d, want 11 (no new batch is accepted)", got)
+		}
+		if got := lim.calls.Load(); got != 0 {
+			t.Errorf("limiter calls = %d, want 0", got)
+		}
+	})
+
+	t.Run("no-events", func(t *testing.T) {
+		op := &ContextOperation{limiter: new(countingLimiter)}
+		op.AddEvents()
+		if got := len(op.Events()); got != 0 {
+			t.Errorf("stored events = %d, want 0", got)
+		}
+	})
+}
+
+func TestAddEventsConcurrent(t *testing.T) {
+	const goroutines = 64
+	op := &ContextOperation{limiter: new(countingLimiter)}
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range goroutines {
+		wg.Go(func() {
+			<-start
+			op.AddEvents("e")
+		})
+	}
+	close(start)
+	wg.Wait()
+
+	if got := len(op.Events()); got != expectedEventCap {
+		t.Errorf("stored events = %d, want %d", got, expectedEventCap)
+	}
+}
+
+func TestAllowKeep(t *testing.T) {
+	t.Run("one-admission-per-request", func(t *testing.T) {
+		lim := new(countingLimiter)
+		op := &ContextOperation{limiter: lim}
+
+		for i := range 5 {
+			if !op.allowKeep() {
+				t.Fatalf("allowKeep() #%d = false, want true", i)
+			}
+		}
+		if got := lim.calls.Load(); got != 1 {
+			t.Errorf("limiter calls = %d, want 1", got)
+		}
+	})
+
+	t.Run("denied-calls-the-limiter-each-time", func(t *testing.T) {
+		lim := new(countingLimiter)
+		lim.deny.Store(true)
+		op := &ContextOperation{limiter: lim}
+
+		for i := range 3 {
+			if op.allowKeep() {
+				t.Fatalf("allowKeep() #%d = true, want false", i)
+			}
+		}
+		if got := lim.calls.Load(); got != 3 {
+			t.Errorf("limiter calls = %d, want 3", got)
+		}
+
+		lim.deny.Store(false)
+		if !op.allowKeep() || !op.allowKeep() {
+			t.Fatal("allowKeep() = false after the limiter allows, want true")
+		}
+		if got := lim.calls.Load(); got != 4 {
+			t.Errorf("limiter calls = %d, want 4 (no call after the first admission)", got)
+		}
+	})
+}
+
+func TestAllowKeepConcurrent(t *testing.T) {
+	const goroutines = 64
+	lim := new(countingLimiter)
+	op := &ContextOperation{limiter: lim}
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range goroutines {
+		wg.Go(func() {
+			<-start
+			if !op.allowKeep() {
+				t.Error("allowKeep() = false, want true")
+			}
+		})
+	}
+	close(start)
+	wg.Wait()
+
+	if got := lim.calls.Load(); got != 1 {
+		t.Errorf("limiter calls = %d, want 1", got)
+	}
+}

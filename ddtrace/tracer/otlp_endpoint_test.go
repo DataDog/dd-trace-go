@@ -67,7 +67,7 @@ func TestOTLPHTTPEndpointPaths(t *testing.T) {
 			exp := newOTLPMetricsExporter(internalconfig.CreateNew())
 			exp.transport.client = client
 			stats := &pb.ClientGroupedStats{Service: "svc", Resource: "request", OkSummary: encodeSketch(t, 50e6)}
-			require.NoError(t, exp.export(makePayload("svc", "", "", []*pb.ClientGroupedStats{stats})))
+			require.NoError(t, exportPayload(t, exp, makePayload("svc", "", "", []*pb.ClientGroupedStats{stats})))
 			select {
 			case request := <-requests:
 				assert.Equal(t, http.MethodPost, request.Method)

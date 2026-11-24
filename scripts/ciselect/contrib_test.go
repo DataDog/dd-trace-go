@@ -36,12 +36,18 @@ func TestSelectContribModules(t *testing.T) {
 			notWant: []string{"contrib/net/http", "contrib/database/sql"},
 		},
 		{
+			name:    "an otelc hook module narrows to its own module",
+			files:   []string{"contrib/database/sql/otelc/hooks.go"},
+			want:    []string{"contrib/database/sql/otelc"},
+			notWant: []string{"contrib/gin-gonic/gin/otelc"},
+		},
+		{
 			name:  "a widely required contrib pulls in its dependents",
 			files: []string{"contrib/net/http/http.go"},
 			want: []string{
 				"contrib/net/http",
 				"contrib/labstack/echo.v4",
-				"contrib/gorilla/mux",
+				"contrib/dimfeld/httptreemux.v5",
 			},
 			notWant: []string{"contrib/database/sql"},
 		},

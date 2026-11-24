@@ -1,0 +1,10 @@
+_v: 1
+name: log/slog
+display_name: log/slog
+description: Instruments log/slog handlers to correlate application logs with traces by adding the active span's trace and
+  span identifiers to log records.
+packages: []
+category:
+- log.emission
+systems: []
+creation_date: '2024-07-01'

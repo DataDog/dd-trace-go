@@ -3,8 +3,11 @@ name: Pull Request Tests
 on:
   pull_request:
 
+# Group names are repository-scoped, so a bare ref group can collide with
+# another workflow's (the 2026-10-30 incident: two nightlies cancelled each
+# other). The workflow name keeps the per-PR dedupe: refs are refs/pull/N/merge.
 concurrency:
-  group: ${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:

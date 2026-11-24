@@ -117,9 +117,10 @@ func NewWriter(config WriterConfig) (Writer, error) {
 		config.HTTPClient = internal.DefaultHTTPClient(5*time.Second, true)
 	}
 
-	// Don't allow the client to have a timeout higher than 5 seconds
-	// This is to avoid blocking the client for too long in case of network issues
-	if config.HTTPClient.Timeout > 5*time.Second {
+	// Don't allow the client to have a timeout higher than 5 seconds, or no
+	// timeout at all. This avoids blocking the client (and shutdown, which
+	// waits for the startup flush) for too long in case of network issues.
+	if t := config.HTTPClient.Timeout; t <= 0 || t > 5*time.Second {
 		copyClient := *config.HTTPClient
 		config.HTTPClient = &copyClient
 		config.HTTPClient.Timeout = 5 * time.Second

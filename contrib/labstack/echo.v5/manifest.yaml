@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/labstack/echo/v5
+display_name: Echo v5
+description: Instruments Echo v5 inbound HTTP request handling via middleware with distributed context extraction, optional
+  inferred API Gateway proxy and Pub/Sub push-delivery spans (with optional span links), route registration for API Catalog,
+  and optional AppSec request and parsed-body monitoring (body interception installed by Wrap).
+packages:
+- name: github.com/labstack/echo/v5
+category:
+- http.server
+systems: []
+creation_date: '2026-06-19'

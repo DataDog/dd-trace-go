@@ -980,7 +980,7 @@ func BenchmarkSpanPoolEndToEnd(b *testing.B) {
 		// concurrent measures pool throughput under goroutine contention.
 		// delivery% is expected to be well below 100% because pushChunk
 		// (tracer.go) drops trace chunks when the tracer.out channel
-		// (capacity payloadQueueSize=1000) is full. Under RunParallel,
+		// (default capacity 1000) is full. Under RunParallel,
 		// goroutines produce spans far faster than the single worker can
 		// drain the channel, so most chunks are silently dropped. This is
 		// intentional production back-pressure behaviour; the metric
@@ -1007,11 +1007,11 @@ func BenchmarkSpanPoolEndToEnd(b *testing.B) {
 
 // TestSpanPoolEndToEndConcurrentCorrectness verifies that spans created from
 // multiple goroutines are delivered without corruption or duplication. The total
-// span count (500) is kept well below payloadQueueSize (1000) so that pushChunk
+// span count (500) is kept well below the payload queue capacity (1000) so that pushChunk
 // never drops chunks and we can assert exact delivery.
 func TestSpanPoolEndToEndConcurrentCorrectness(t *testing.T) {
 	const numGoroutines = 10
-	const spansPerGoroutine = 50 // 500 total, well within payloadQueueSize
+	const spansPerGoroutine = 50 // 500 total, well within the payload queue capacity
 
 	agent := startTestAgent(t)
 	// The send loop drops a payload after one failed attempt when send retries
@@ -1063,7 +1063,7 @@ func TestSpanPoolEndToEndConcurrentCorrectness(t *testing.T) {
 // TestSpanPoolEndToEndParentChild verifies that parent-child span relationships
 // survive pooling: traceIDs match, parentIDs are set, and pair tags don't leak
 // across unrelated trace trees. Like the concurrent test, the total span count
-// (400) stays below payloadQueueSize to guarantee full delivery.
+// (400) stays below the payload queue capacity to guarantee full delivery.
 func TestSpanPoolEndToEndParentChild(t *testing.T) {
 	const numPairs = 200
 

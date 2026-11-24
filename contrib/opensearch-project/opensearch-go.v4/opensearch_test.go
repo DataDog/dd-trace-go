@@ -540,7 +540,10 @@ type discoveryLogger struct{ done chan error }
 
 func (l *discoveryLogger) LogRoundTrip(req *http.Request, _ *http.Response, err error, _ time.Time, _ time.Duration) error {
 	if req == nil {
-		l.done <- err
+		select {
+		case l.done <- err:
+		default:
+		}
 	}
 	return nil
 }

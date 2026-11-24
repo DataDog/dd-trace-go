@@ -6,7 +6,10 @@
 package osinfo_test
 
 import (
+	"os"
+	"os/exec"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -38,5 +41,23 @@ func Test(t *testing.T) {
 		require.Truef(t, semver.IsValid("v"+kernelRelease), "invalid kernel version: %s", kernelRelease)
 	case "darwin":
 		require.Equal(t, "Darwin", kernelName)
+		cmd := exec.Command("/usr/bin/sw_vers", "-productVersion")
+		cmd.Env = append(cmd.Environ(), "SYSTEM_VERSION_COMPAT=0")
+		out, err := cmd.Output()
+		require.NoError(t, err)
+		require.Equal(t, strings.TrimSpace(string(out)), osVersion)
 	}
+}
+
+func TestDarwinVersionCompatibility(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("requires macOS")
+	}
+	// macOS selects compatibility mode at process startup, before osinfo initializes.
+	exe, err := os.Executable()
+	require.NoError(t, err)
+	cmd := exec.Command(exe, "-test.run=^Test$")
+	cmd.Env = append(cmd.Environ(), "SYSTEM_VERSION_COMPAT=1", "PATH=")
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "%s", out)
 }

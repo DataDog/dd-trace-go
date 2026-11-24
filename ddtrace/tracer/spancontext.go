@@ -135,6 +135,9 @@ type SpanContext struct {
 	errors      atomic.Int32 // number of spans with errors in this trace
 	// atomic int for quick checking presence of baggage. 0 indicates no baggage, otherwise baggage exists.
 	hasBaggage uint32 // +checkatomic
+	// bridgeState is the state of a borrowed OpenTelemetry view of the span: 0 open, 1 pinned,
+	// 2 released to the span pool, 3 pinned with Ok status. It is in the padding after hasBaggage.
+	bridgeState atomic.Uint32
 
 	trace *trace // reference to the trace that this span belongs too
 
@@ -167,6 +170,11 @@ type SpanContext struct {
 	// links to related spans in separate|external|disconnected traces
 	// +checklocks:mu
 	spanLinks []SpanLink
+
+	// bridgeOwner is the span of this context. Only builds made with Orchestrion set it. The
+	// OpenTelemetry bridge uses it to get the span from the context snapshot. Unlike spanSnapshot,
+	// it keeps the whole span alive as long as the context lives.
+	bridgeOwner *Span
 }
 
 // Private interface for span contexts that can propagate sampling decisions.
@@ -181,6 +189,12 @@ type spanContextV1Adapter interface {
 	Origin() string
 	PropagatingTags() map[string]string
 	Tags() map[string]string
+}
+
+// spanContextWithTracestate is implemented by span contexts from other
+// tracers that carry a W3C tracestate, such as OpenTelemetry span contexts.
+type spanContextWithTracestate interface {
+	Tracestate() string
 }
 
 // FromGenericCtx converts a ddtrace.SpanContext to a *SpanContext, which can be used
@@ -240,6 +254,12 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 
 		if p := ctxSpl.Priority(); p != nil {
 			sc.setSamplingPriority(int(*p), samplernames.Unknown)
+			// Restore the Datadog sampling priority, decision maker, origin and
+			// propagating tags from the dd= tracestate member, as the W3C
+			// propagator does, before locking the priority.
+			if ts, ok := c.(spanContextWithTracestate); ok {
+				parseTracestate(&sc, ts.Tracestate())
+			}
 			sc.trace.setLocked(true)
 		}
 	}
@@ -286,6 +306,7 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 			context.trace = parent.trace
 			context.origin = parent.origin // +checklocksignore - Initialization time, not shared yet. Parent origin is read-only after init.
 			context.errors.Store(parent.errors.Load())
+			inheritLLMObsSpan(context, parent)
 		}
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
@@ -635,6 +656,10 @@ type trace struct {
 	dm uint32
 	// samplingDecision indicates whether to send the trace to the agent.
 	samplingDecision samplingDecision // +checkatomic
+
+	// llmobs is the LLMObs context of this local trace. It is allocated only for
+	// traces that carry one, so other traces and every span pay nothing.
+	llmobs atomic.Pointer[traceLLMObs]
 
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in
@@ -1141,6 +1166,8 @@ func (t *trace) finishedOneLocked(s *Span) {
 	// partial-flush chunks through unfiltered and applies the root's decision once
 	// it is known — same as the full-flush path above.
 	filterRejected := t.filterReject
+
+	t.forgetLLMObsSpans(finishedSpans)
 
 	// Update trace state and release lock BEFORE acquiring fSpan lock
 	// Clear the tail so the GC can collect the flushed spans; without this the

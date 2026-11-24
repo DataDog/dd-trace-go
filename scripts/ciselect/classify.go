@@ -7,6 +7,7 @@ package main
 
 import (
 	"path"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -21,6 +22,14 @@ type result struct {
 	Reasons []string `json:"reasons"`
 	// Explain maps each changed path to the component that claimed it.
 	Explain map[string]string `json:"explain"`
+	// PathGates maps each changed path to the expanded gates of the component
+	// that claimed it, including the resolved gates of a self-referencing
+	// workflow edit. The integration-suite selection uses it for its fail-open
+	// rule; -json surfaces it for the same reason.
+	PathGates map[string][]string `json:"path_gates,omitempty"`
+	// Suites is each integration lane's selection of
+	// internal/orchestrion/_integration suites. Filled by selectSuites.
+	Suites map[string]SuiteVerdict `json:"suites,omitempty"`
 	// SeedPaths are paths claimed by a module-scoped component; the contrib
 	// matrix resolves them to modules. Empty whenever RunAll is set.
 	SeedPaths []string `json:"seed_paths"`
@@ -53,8 +62,9 @@ func (t *table) classify(changed []string, g *workflowGraph) (*result, error) {
 	}
 
 	r := &result{
-		Gates:   make(map[string]bool, len(t.Gates)),
-		Explain: make(map[string]string, len(changed)),
+		Gates:     make(map[string]bool, len(t.Gates)),
+		Explain:   make(map[string]string, len(changed)),
+		PathGates: make(map[string][]string, len(changed)),
 	}
 	for _, gate := range t.Gates {
 		r.Gates[gate] = false
@@ -100,6 +110,7 @@ func (t *table) classify(changed []string, g *workflowGraph) (*result, error) {
 		for _, gate := range expanded {
 			r.Gates[gate] = true
 		}
+		r.PathGates[file] = expanded
 
 		if c.ModuleScoped {
 			seeds = append(seeds, file)
@@ -136,6 +147,11 @@ func (t *table) classify(changed []string, g *workflowGraph) (*result, error) {
 		sort.Strings(r.DependentModules)
 	}
 	return r, nil
+}
+
+// pathGatesHave reports whether the component that claimed file enables gate.
+func (r *result) pathGatesHave(file, gate string) bool {
+	return slices.Contains(r.PathGates[file], gate)
 }
 
 // anyGateWithPrefix reports whether any enabled gate starts with prefix.

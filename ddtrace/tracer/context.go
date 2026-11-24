@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sync/atomic"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -127,50 +128,34 @@ func contextWithPropagatedLLMSpan(ctx context.Context, s *Span) context.Context 
 	if s == nil {
 		return ctx
 	}
+	if s.context == nil || s.context.trace == nil || !illmobs.Enabled() {
+		return ctx
+	}
+	// An APM span under an LLMObs span, attached to a context that lost it (for
+	// example context.Background()), keeps that LLMObs span as the parent.
+	if span, _ := s.context.llmobsContext(); span != nil {
+		if _, ok := illmobs.ActiveLLMSpanFromContext(ctx); !ok {
+			return illmobs.ContextWithActiveLLMSpan(ctx, span)
+		}
+		return ctx
+	}
 	// if there is a propagated llm span already just skip
 	if _, ok := illmobs.PropagatedLLMSpanFromContext(ctx); ok {
 		return ctx
 	}
-	// Fast path: peek at the two required tags before allocating.
-	// Most spans carry no LLMObs propagation, so we skip the heap allocation on that hot path.
-	if s.context == nil || s.context.trace == nil {
+	if _, p := s.context.llmobsContext(); p != nil {
+		// The local root of an inbound request already decoded it.
+		return illmobs.ContextWithPropagatedLLMSpan(ctx, p)
+	}
+	// Fast path for the common span without LLMObs propagation: no baggage, and no tag.
+	if atomic.LoadUint32(&s.context.hasBaggage) == 0 && s.context.trace.propagatingTag(keyPropagatedLLMObsParentID) == "" {
 		return ctx
 	}
-	if s.context.trace.propagatingTag(keyPropagatedLLMObsParentID) == "" ||
-		s.context.trace.propagatingTag(keyPropagatedLLMObsTraceID) == "" {
+	p, _, _ := propagatedLLMSpan(s.context)
+	if p == nil {
 		return ctx
 	}
-	return illmobs.ContextWithPropagatedLLMSpan(ctx, propagatedLLMSpanFromTags(s))
-}
-
-// propagatedLLMSpanFromTags extracts LLMObs propagation information from the trace propagating tags.
-// This is used during distributed tracing to set the correct parent span for the current span.
-func propagatedLLMSpanFromTags(s *Span) *illmobs.PropagatedLLMSpan {
-	propagatedLLMObs := &illmobs.PropagatedLLMSpan{}
-	if s.context == nil || s.context.trace == nil {
-		return propagatedLLMObs
-	}
-	if parentID := s.context.trace.propagatingTag(keyPropagatedLLMObsParentID); parentID != "" {
-		propagatedLLMObs.SpanID = parentID
-	}
-	if mlApp := s.context.trace.propagatingTag(keyPropagatedLLMObsMLAPP); mlApp != "" {
-		propagatedLLMObs.MLApp = mlApp
-	}
-	if trID := s.context.trace.propagatingTag(keyPropagatedLLMObsTraceID); trID != "" {
-		propagatedLLMObs.TraceID = trID
-	}
-	if sessionID := s.context.trace.propagatingTag(keyPropagatedLLMObsSessionID); sessionID != "" {
-		propagatedLLMObs.SessionID = sessionID
-	}
-	if decision := s.context.trace.propagatingTag(keyPropagatedLLMObsSamplingDecision); decision != "" {
-		propagatedLLMObs.SamplingDecision = decision
-		propagatedLLMObs.SampleRate = s.context.trace.propagatingTag(keyPropagatedLLMObsSampleRate)
-	}
-	if parentAgentID := s.context.trace.propagatingTag(keyPropagatedLLMObsParentAgentSpanID); parentAgentID != "" {
-		propagatedLLMObs.ParentAgentSpanID = parentAgentID
-		propagatedLLMObs.ParentAgentName = s.context.trace.propagatingTag(keyPropagatedLLMObsParentAgentName)
-	}
-	return propagatedLLMObs
+	return illmobs.ContextWithPropagatedLLMSpan(ctx, p)
 }
 
 // SpanFromContext returns the span contained in the given context. A second return
@@ -197,6 +182,17 @@ func SpanFromContext(ctx context.Context) (*Span, bool) {
 		return s, true
 	}
 	return nil, false
+}
+
+// spanContextSnapshot returns the span context that ContextWithSpan stored with the active span
+// in ctx. It returns nil when ctx has no snapshot. The Orchestrion goroutine-local stack never
+// stores the snapshot, so the lookup reads only ctx. The OpenTelemetry bridge uses it.
+func spanContextSnapshot(ctx context.Context) *SpanContext {
+	if ctx == nil {
+		return nil
+	}
+	sc, _ := ctx.Value(activeSpanContextKey{}).(*SpanContext)
+	return sc
 }
 
 // StartSpanFromContext returns a new span with the given operation name and options. If a span

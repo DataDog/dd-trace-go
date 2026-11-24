@@ -1,0 +1,12 @@
+_v: 1
+name: github.com/julienschmidt/httprouter
+display_name: httprouter
+description: Instruments httprouter request dispatch through a traced Router or Orchestrion, creating HTTP server spans with
+  parameterized route resources, inbound trace-context extraction, optional AppSec protection, and optional inferred API Gateway
+  proxy or Pub/Sub push-delivery spans from the shared HTTP helper.
+packages:
+- name: github.com/julienschmidt/httprouter
+category:
+- http.server
+systems: []
+creation_date: '2017-09-06'

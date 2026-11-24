@@ -3036,6 +3036,11 @@ func FuzzComposeTracestate(f *testing.F) {
 			k2: "KeyTwo", v2: "123123",
 			k3: "table", v3: "chair",
 			oldState: "dd=s:-2;o:synthetics___web"},
+		{priority: 1,
+			k1: "0", v1: "0",
+			k2: "0", v2: "=",
+			k3: "1", v3: "0",
+			oldState: "0"},
 	}
 	for _, tc := range testCases {
 		f.Add(tc.priority, tc.k1, tc.v1, tc.k2, tc.v2, tc.k3, tc.v3, tc.oldState)
@@ -3052,7 +3057,14 @@ func FuzzComposeTracestate(f *testing.F) {
 		totalLen := 0
 		for key, val := range tags {
 			k := "_dd.p." + sanitizeTagKey(key)
-			v := sanitizeTagValue(val)
+			// '~' only exists on the wire as the encoding of '=', so a value
+			// survives the round trip once sanitized and decoded back.
+			v := strings.ReplaceAll(sanitizeTagValue(val), "~", "=")
+			// parseTracestate maps any t.dm* key to the decision maker and may
+			// drop it based on the traceparent priority, which isn't set here.
+			if strings.HasPrefix(k, "_dd.p.dm") {
+				t.Skipf("Skipping decision maker tags")
+			}
 			if strings.ContainsAny(k, ":;") {
 				t.Skipf("Skipping invalid tags")
 			}
@@ -3111,6 +3123,36 @@ func TestParseTraceparentCaseInsensitive(t *testing.T) {
 	assert.Equal(t, "4bf92f3577b34da6a3ce929d0e0e4736", upperCtx.TraceID())
 }
 
+func TestParseTraceparentHighFlagBits(t *testing.T) {
+	// Only the lowest flag bit is defined, the rest must be ignored by the
+	// parser instead of failing the whole header.
+	for flags, want := range map[string]int{
+		"80": 0,
+		"81": 1,
+		"ff": 1,
+		"fe": 0,
+		"FF": 1,
+	} {
+		t.Run(flags, func(t *testing.T) {
+			ctx := new(SpanContext)
+			ctx.trace = newTrace()
+			header := "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-" + flags
+			require.NoError(t, parseTraceparent(ctx, header))
+			p, ok := ctx.SamplingPriority()
+			require.True(t, ok)
+			assert.Equal(t, want, p)
+		})
+	}
+	for _, flags := range []string{"+1", "-1"} {
+		t.Run("signed "+flags, func(t *testing.T) {
+			ctx := new(SpanContext)
+			ctx.trace = newTrace()
+			err := parseTraceparent(ctx, "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-"+flags)
+			assert.Equal(t, ErrSpanContextCorrupted, err)
+		})
+	}
+}
+
 func FuzzParseTraceparent(f *testing.F) {
 	testCases := []struct {
 		version, traceID, spanID, flags string
@@ -3140,7 +3182,7 @@ func FuzzParseTraceparent(f *testing.F) {
 		if err != nil {
 			t.Skipf("Error parsing span ID")
 		}
-		expectedFlag, err := strconv.ParseInt(flags, 16, 8)
+		expectedFlag, err := strconv.ParseUint(flags, 16, 8)
 		if err != nil {
 			t.Skipf("Error parsing flag")
 		}
@@ -3397,7 +3439,9 @@ func TestInjectBaggagePropagatorEncoding(t *testing.T) {
 	actualBaggage := headers.Get("baggage")
 	// Instead of checking equality of the whole string, assert that both key/value pairs are present.
 	assert.Contains(actualBaggage, "userId=Am%C3%A9lie")
-	assert.Contains(actualBaggage, "serverNode=DF+28")
+	// A space is %20, as system-tests test_baggage_inject_header_D004 expects; "+" would be
+	// read as a literal plus sign by other tracers.
+	assert.Contains(actualBaggage, "serverNode=DF%2028")
 }
 
 func TestInjectBaggagePropagatorEncodingSpecialCharacters(t *testing.T) {

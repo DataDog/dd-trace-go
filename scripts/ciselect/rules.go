@@ -39,7 +39,19 @@ type table struct {
 	Groups            map[string][]string `yaml:"groups"`
 	WorkflowGates     map[string][]string `yaml:"workflow-gates"`
 	NativePathFilters []string            `yaml:"native-path-filters"`
-	Components        []component         `yaml:"components"`
+	// IntegrationSuites maps changed paths to the
+	// internal/orchestrion/_integration suites that exercise them, per lane.
+	IntegrationSuites struct {
+		// SharedModules are contrib modules so cross-cutting that a change
+		// affects suites which never import them; such a change escalates
+		// both lanes to every suite.
+		SharedModules []string `yaml:"shared-modules"`
+		// Modules maps every contrib module directory to the suites that
+		// exercise it. An empty list means no information, so a change to the
+		// module fails its lanes open to every suite.
+		Modules map[string][]string `yaml:"modules"`
+	} `yaml:"integration-suites"`
+	Components []component `yaml:"components"`
 
 	gateSet map[string]bool
 }

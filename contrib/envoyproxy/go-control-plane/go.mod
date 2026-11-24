@@ -3,10 +3,10 @@ module github.com/DataDog/dd-trace-go/contrib/envoyproxy/go-control-plane/v2
 go 1.26.0
 
 require (
-	github.com/DataDog/dd-trace-go/v2 v2.13.0-dev
+	github.com/DataDog/dd-trace-go/v2 v2.14.0-dev
 	github.com/envoyproxy/go-control-plane/envoy v1.37.0
-	github.com/stretchr/testify v1.11.1
-	golang.org/x/sync v0.23.0
+	github.com/stretchr/testify v1.12.1
+	golang.org/x/sync v0.24.0
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12-0.20260116114154-8c4c4ae446ca
 )
@@ -22,7 +22,7 @@ require (
 	github.com/DataDog/datadog-agent/pkg/trace/stats v0.82.0 // indirect
 	github.com/DataDog/datadog-agent/pkg/trace/traceutil v0.82.0 // indirect
 	github.com/DataDog/datadog-go/v5 v5.9.0 // indirect
-	github.com/DataDog/go-libddwaf/v5 v5.0.0 // indirect
+	github.com/DataDog/go-libddwaf/v5 v5.1.0 // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
 	github.com/DataDog/go-sqllexer v0.2.3 // indirect
 	github.com/DataDog/go-tuf v1.1.1-0.5.2 // indirect
@@ -32,7 +32,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
-	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.10.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect
@@ -40,7 +39,7 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/compress v1.18.7 // indirect
+	github.com/klauspost/compress v1.20.2 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/linkdata/deadlock v0.5.5 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260330125221-c963978e514e // indirect
@@ -52,7 +51,6 @@ require (
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
-	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/puzpuzpuz/xsync/v4 v4.5.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.11.0 // indirect
@@ -75,16 +73,15 @@ require (
 	go.uber.org/mock v0.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.4 // indirect
+	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/exp v0.0.0-20260529124908-c761662dc8c9 // indirect
 	golang.org/x/mod v0.41.0 // indirect
-	golang.org/x/net v0.60.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	golang.org/x/text v0.42.0 // indirect
+	golang.org/x/net v0.62.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/text v0.43.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 replace github.com/DataDog/dd-trace-go/v2 => ../../..

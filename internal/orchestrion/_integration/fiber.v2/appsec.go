@@ -97,6 +97,12 @@ func (tc *TestCaseAppSec) Run(_ context.Context, t *testing.T) {
 	require.Equal(t, int32(2), tc.handled.Load())
 }
 
+// ExpectedSpanCount pins one client span and one Fiber server span for each
+// of the four requests. The mounted app must not add a span of its own.
+func (*TestCaseAppSec) ExpectedSpanCount() int {
+	return 8
+}
+
 func (*TestCaseAppSec) ExpectedTraces() trace.Traces {
 	traces := make(trace.Traces, 0, 4)
 	for _, request := range []struct {

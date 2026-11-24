@@ -30,6 +30,9 @@ aspects:
   # FastHTTP Server instrumentation
   # All server startup methods (ListenAndServe, ServeTLS, etc.) eventually call Serve(ln)
   # By targeting only Serve(), we avoid hot-path overhead and ensure complete coverage
+  # TODO: connections served with Server.ServeConn or the package-level
+  # fasthttp.ServeConn are not traced, since neither calls Serve. The otelc rules
+  # in otelc/otelc.yaml cover both.
   - id: Serve
     join-point:
       function-body:
