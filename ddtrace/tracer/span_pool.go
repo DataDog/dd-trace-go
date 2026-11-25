@@ -18,6 +18,22 @@ var spanPool = sync.Pool{
 	New: func() any { return &Span{} },
 }
 
+// spanAlloc co-allocates a Span and its SpanContext in a single heap object
+// for non-pooled child spans.
+type spanAlloc struct {
+	span Span
+	ctx  SpanContext
+}
+
+// rootSpanAlloc co-allocates a Span, its SpanContext, and its trace in a single
+// heap object for non-pooled root spans. The trace already retains root via
+// trace.root, so all three share the same lifetime.
+type rootSpanAlloc struct {
+	span Span
+	ctx  SpanContext
+	tr   trace
+}
+
 func acquireSpan(poolEnabled bool) *Span {
 	// maybeTestAcquireSpan is a no-op (returns nil, inlined away) outside the
 	// deadlock build; under -tags deadlock it lets the lock-ordering test inject
@@ -29,6 +45,21 @@ func acquireSpan(poolEnabled bool) *Span {
 		return spanPool.Get().(*Span)
 	}
 	return &Span{}
+}
+
+func acquireSpanWithContext(poolEnabled, needsNewTrace bool) (*Span, *SpanContext, *trace) {
+	if s := maybeTestAcquireSpan(); s != nil {
+		return s, nil, nil
+	}
+	if poolEnabled {
+		return spanPool.Get().(*Span), nil, nil
+	}
+	if needsNewTrace {
+		a := new(rootSpanAlloc)
+		return &a.span, &a.ctx, &a.tr
+	}
+	a := new(spanAlloc)
+	return &a.span, &a.ctx, nil
 }
 
 func releaseSpans(poolEnabled bool, spans []*Span) {

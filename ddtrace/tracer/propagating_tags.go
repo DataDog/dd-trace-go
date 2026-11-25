@@ -25,6 +25,49 @@ func (t *trace) loadPropagatingTags() map[string]string {
 	return nil
 }
 
+// Pre-allocated immutable single-entry maps boxed as any so storing the
+// common _dd.p.dm tag on a fresh root trace avoids both map and interface
+// allocations in atomic.Value.Store.
+var (
+	prebuiltDM0  any = map[string]string{keyDecisionMaker: "-0"}
+	prebuiltDM1  any = map[string]string{keyDecisionMaker: "-1"}
+	prebuiltDM2  any = map[string]string{keyDecisionMaker: "-2"}
+	prebuiltDM3  any = map[string]string{keyDecisionMaker: "-3"}
+	prebuiltDM4  any = map[string]string{keyDecisionMaker: "-4"}
+	prebuiltDM5  any = map[string]string{keyDecisionMaker: "-5"}
+	prebuiltDM6  any = map[string]string{keyDecisionMaker: "-6"}
+	prebuiltDM8  any = map[string]string{keyDecisionMaker: "-8"}
+	prebuiltDM11 any = map[string]string{keyDecisionMaker: "-11"}
+	prebuiltDM12 any = map[string]string{keyDecisionMaker: "-12"}
+)
+
+func prebuiltDMSnap(dm string) any {
+	switch dm {
+	case "-0":
+		return prebuiltDM0
+	case "-1":
+		return prebuiltDM1
+	case "-2":
+		return prebuiltDM2
+	case "-3":
+		return prebuiltDM3
+	case "-4":
+		return prebuiltDM4
+	case "-5":
+		return prebuiltDM5
+	case "-6":
+		return prebuiltDM6
+	case "-8":
+		return prebuiltDM8
+	case "-11":
+		return prebuiltDM11
+	case "-12":
+		return prebuiltDM12
+	default:
+		return nil
+	}
+}
+
 // copyOnWriteSet stores key=value in the propagating-tags map using
 // copy-on-write so concurrent readers remain lock-free. Caller must hold t.mu.
 // +checklocks:t.mu
@@ -34,18 +77,23 @@ func (t *trace) copyOnWriteSet(key, value string) {
 	if oldMap != nil && oldMap[key] == value {
 		return // value unchanged — skip allocation
 	}
-	var m map[string]string
 	if oldMap == nil {
-		m = map[string]string{key: value}
-	} else {
-		n := len(oldMap)
-		if _, exists := oldMap[key]; !exists {
-			n++ // new key, not an update
+		if key == keyDecisionMaker {
+			if pre := prebuiltDMSnap(value); pre != nil {
+				t.propagatingTags.Store(pre)
+				return
+			}
 		}
-		m = make(map[string]string, n)
-		maps.Copy(m, oldMap)
-		m[key] = value
+		t.propagatingTags.Store(map[string]string{key: value})
+		return
 	}
+	n := len(oldMap)
+	if _, exists := oldMap[key]; !exists {
+		n++ // new key, not an update
+	}
+	m := make(map[string]string, n)
+	maps.Copy(m, oldMap)
+	m[key] = value
 	t.propagatingTags.Store(m)
 }
 
@@ -109,6 +157,14 @@ func (t *trace) setPropagatingTagUnsafe(key, value string) {
 	if m == nil {
 		m = make(map[string]string, 4)
 		t.propagatingTags.Store(m)
+	} else if len(m) == 1 {
+		// Copy if m could be a shared prebuilt DM snapshot.
+		if dm, ok := m[keyDecisionMaker]; ok && prebuiltDMSnap(dm) != nil {
+			cp := make(map[string]string, 4)
+			cp[keyDecisionMaker] = dm
+			m = cp
+			t.propagatingTags.Store(m)
+		}
 	}
 	m[key] = value
 	if key == keyDecisionMaker {

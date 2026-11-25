@@ -110,7 +110,32 @@ func (t *traceID) HasUpper() bool {
 	return false
 }
 
-func (t *traceID) UpperHex() string { return t.HexEncoded()[:16] }
+type upperHexEntry struct {
+	sec uint32
+	hex string
+}
+
+// upperHexCache caches the 16-char hex string for the most recent unix second
+// of locally-generated 128-bit trace IDs (<32-bit unix seconds><32 bits zero>).
+var upperHexCache atomic.Pointer[upperHexEntry]
+
+func (t *traceID) UpperHex() string {
+	if t.hexEncoded != "" {
+		return t.hexEncoded[:16]
+	}
+	// Fast path for locally-generated 128-bit trace IDs whose upper 64 bits
+	// have 32-bit unix seconds followed by 32 zero bits.
+	if t.value[4] == 0 && t.value[5] == 0 && t.value[6] == 0 && t.value[7] == 0 {
+		sec := binary.BigEndian.Uint32(t.value[:4])
+		if cached := upperHexCache.Load(); cached != nil && cached.sec == sec {
+			return cached.hex
+		}
+		h := hex.EncodeToString(t.value[:8])
+		upperHexCache.Store(&upperHexEntry{sec: sec, hex: h})
+		return h
+	}
+	return t.HexEncoded()[:16]
+}
 
 // cacheHex populates the hexEncoded cache. It must be called at traceID
 // construction finalization, before the enclosing SpanContext is shared with
@@ -295,9 +320,17 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 // for the same span.
 // +checklocksignore — Initialization time, context not yet shared.
 func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
-	context := &SpanContext{
-		spanID: span.spanID,
+	return initSpanContext(&SpanContext{}, nil, span, parent)
+}
+
+// initSpanContext initializes ctx (allocating one if nil) and optionally uses
+// preallocated tr when a new trace is needed.
+// +checklocksignore — Initialization time, context not yet shared.
+func initSpanContext(context *SpanContext, preTrace *trace, span *Span, parent *SpanContext) *SpanContext {
+	if context == nil {
+		context = &SpanContext{}
 	}
+	context.spanID = span.spanID
 
 	context.traceID.SetLower(span.traceID)
 	if parent != nil {
@@ -340,7 +373,12 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 		context.traceID.cacheHex()
 	}
 	if context.trace == nil {
-		context.trace = newTrace()
+		if preTrace != nil {
+			initTrace(preTrace)
+			context.trace = preTrace
+		} else {
+			context.trace = newTrace()
+		}
 	}
 	if context.trace.root == nil {
 		// first span in the trace can safely be assumed to be the root
@@ -630,6 +668,9 @@ type trace struct {
 	// all the spans that are part of this trace
 	// +checklocks:mu
 	spans []*Span
+	// inline backing array for the initial span slice to avoid a separate heap allocation
+	// +checklocks:mu
+	initialSpans [defaultTraceStartSize]*Span
 	// trace level tags
 	// +checklocks:mu
 	tags map[string]string
@@ -682,6 +723,15 @@ type trace struct {
 	// when the trace carries none. See otelTraceState.
 	// +checklocks:mu
 	otel *otelTraceState
+
+	// finalChunk holds the chunk submitted on the first full flush of this trace,
+	// avoiding a separate heap allocation for &chunk{...}. If late child spans
+	// trigger a second full flush after finalChunkUsed is set, a fresh chunk is
+	// allocated so the worker's read of finalChunk never races.
+	// +checklocks:mu
+	finalChunk chunk
+	// +checklocks:mu
+	finalChunkUsed bool
 }
 
 // otelTraceState is the OpenTelemetry consistent probability sampling state
@@ -791,12 +841,14 @@ func (t *trace) otelTracestate() (rv, th *uint64, unknown string) {
 	return t.otel.rv, t.otel.th, t.otel.unknown
 }
 
+const defaultTraceStartSize = 10
+
 var (
 	// traceStartSize is the initial size of our trace buffer,
 	// by default we allocate for a handful of spans within the trace,
 	// reasonable as span is actually way bigger, and avoids re-allocating
 	// over and over. Could be fine-tuned at runtime.
-	traceStartSize = 10
+	traceStartSize = defaultTraceStartSize
 	traceMaxSize   = internalconfig.TraceMaxSize // +checklocksignore — package-level config knob, read under t.mu in trace.push; only ever mutated by tests, never concurrently with a running trace.
 )
 
@@ -830,10 +882,23 @@ func samplingPriorityPtr(p int) *float64 {
 	return &v
 }
 
+// initTrace initializes a freshly zeroed trace's span slice.
+// +checklocksignore — Initialization time, trace not yet shared.
+func initTrace(t *trace) {
+	if traceStartSize <= len(t.initialSpans) {
+		t.spans = t.initialSpans[:0:traceStartSize]
+	} else {
+		t.spans = make([]*Span, 0, traceStartSize)
+	}
+}
+
 // newTrace creates a new trace using the given callback which will be called
 // upon completion of the trace.
+// +checklocksignore — Initialization time, trace not yet shared.
 func newTrace() *trace {
-	return &trace{spans: make([]*Span, 0, traceStartSize)}
+	t := &trace{}
+	initTrace(t)
+	return t
 }
 
 // samplingPriority returns the sampling priority of the trace, if set.
@@ -968,6 +1033,7 @@ func (t *trace) push(sp *Span) {
 		// capacity is reached, we will not be able to complete this trace.
 		t.full = true
 		t.spans = nil                                                           // allow our spans to be collected by GC.
+		clear(t.initialSpans[:])                                                // drop inline references to spans.
 		log.Error("trace buffer full (%d spans), dropping trace", traceMaxSize) //errtrack:ignore per-span capacity limit
 		if tr != nil {
 			tracerstats.Signal(tracerstats.TracesDropped, 1)
@@ -1111,8 +1177,16 @@ func (t *trace) finishedOneLocked(s *Span) {
 		filterRejected := t.filterReject
 		t.spans = nil
 		t.finished = 0 // important, because a buffer can be used for several flushes
+		var ch *chunk
+		if !t.finalChunkUsed {
+			t.finalChunkUsed = true
+			t.finalChunk = chunk{spans: spans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected}
+			ch = &t.finalChunk
+		} else {
+			ch = &chunk{spans: spans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected}
+		}
 		t.mu.Unlock()
-		submitChunkWithTracer(tr, &chunk{spans: spans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected})
+		submitChunkWithTracer(tr, ch)
 		return
 	}
 

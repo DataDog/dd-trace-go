@@ -9,10 +9,20 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"sync"
 	"sync/atomic"
 
 	"github.com/tinylib/msgp/msgp"
 )
+
+// msgpWriterPool recycles msgp.Writer instances used by payloadV04.push so
+// encoding spanList avoids both the msgp.Encodable interface-boxing allocation
+// of msgp.Encode and per-payload writer buffer allocations.
+var msgpWriterPool = sync.Pool{
+	New: func() any {
+		return msgp.NewWriter(io.Discard)
+	},
+}
 
 // payloadV04 is a wrapper on top of the msgpack encoder which allows constructing an
 // encoded array by pushing its entries sequentially, one at a time. It basically
@@ -112,7 +122,15 @@ func (p *payloadV04) push(t spanList) (stats payloadStats, err error) {
 	// completes encoding before releaseSpans clears and recycles these spans.
 	// This is what makes push safe with the span pool, mirroring payloadV1.push's
 	// incremental chunk encoding.
-	if err := msgp.Encode(&p.buf, t); err != nil {
+	en := msgpWriterPool.Get().(*msgp.Writer)
+	en.Reset(&p.buf)
+	err = t.EncodeMsg(en)
+	if err == nil {
+		err = en.Flush()
+	}
+	en.Reset(io.Discard)
+	msgpWriterPool.Put(en)
+	if err != nil {
 		return payloadStats{}, err
 	}
 	p.recordItem()
