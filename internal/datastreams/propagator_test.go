@@ -37,3 +37,30 @@ func TestEncodeBase64(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, p, decoded)
 }
+
+func BenchmarkEncodeBase64(b *testing.B) {
+	p := testPathway()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		_ = p.EncodeBase64()
+	}
+}
+
+func BenchmarkDecodeBase64(b *testing.B) {
+	p := testPathway()
+	encoded := p.EncodeBase64()
+	ctx := context.Background()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		_, _, _ = DecodeBase64(ctx, encoded)
+	}
+}
+
+func BenchmarkPathwayHash(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = pathwayHash(123456789, 987654321)
+	}
+}
