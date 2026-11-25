@@ -18,6 +18,11 @@
 //	ciselect -changed-files <file> -explain         # human-readable, for job summaries
 //	ciselect -changed-files <file> -contrib-modules # module dirs, or ALL
 //	ciselect -changed-files <file> -otelc-suites    # otelc lane suites, or ALL/NONE
+//	ciselect -list-otelc-modules                    # full otelc module list, then exit
+//	ciselect -list-otelc-suites                     # full otelc suite list, then exit
+//
+// -list-otelc-modules and -list-otelc-suites print the full otelc module or
+// suite list and exit before reading -changed-files.
 //
 // With no -changed-files, the list is read from stdin. An empty list means
 // "unknown", which enables every gate.
@@ -29,7 +34,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 )
@@ -50,6 +57,8 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	asContrib := fs.Bool("contrib-modules", false, "emit contrib module directories to test, or ALL")
 	asOtelcSuites := fs.Bool("otelc-suites", false, "emit the otelc lane's integration suites, or ALL/NONE")
 	asOrchestrionSuites := fs.Bool("orchestrion-suites", false, "emit the orchestrion lane's integration suites, or ALL/NONE")
+	asListOtelcModules := fs.Bool("list-otelc-modules", false, "emit the full otelc module list, one per line, and exit")
+	asListOtelcSuites := fs.Bool("list-otelc-suites", false, "emit the full otelc suite list, one per line, and exit")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -58,6 +67,30 @@ func run(args []string, stdin io.Reader, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+
+	// -list-otelc-modules and -list-otelc-suites are discovery flags: they do
+	// not read a change set and return before the classifier runs.
+	if *asListOtelcModules {
+		mods, err := discoverOtelcModules(root)
+		if err != nil {
+			return err
+		}
+		for _, m := range mods {
+			fmt.Fprintln(stdout, m)
+		}
+		return nil
+	}
+	if *asListOtelcSuites {
+		suites, err := loadOtelcSuitesOnly(root)
+		if err != nil {
+			return err
+		}
+		for _, s := range slices.Sorted(maps.Keys(suites)) {
+			fmt.Fprintln(stdout, s)
+		}
+		return nil
+	}
+
 	t, err := loadTable(root)
 	if err != nil {
 		return err

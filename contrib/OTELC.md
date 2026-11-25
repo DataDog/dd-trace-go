@@ -115,10 +115,12 @@ fallback works and where it stops.
 - Blank-import the module from `otelc/all/otel.instrumentation.go`, and add its `require` and
   `replace` to `otelc/all/go.mod`.
 - Add the module to `go.work`.
-- Add the contrib and its `otelc` module to `OTELC_MODULES`, and the suite to
-  `OTELC_TEST_PACKAGES`, in `.github/workflows/otelc.yml`.
-- In `.github/ci-components.yml`, map both modules to the suite, and add `contrib/<name>/**` to the
-  `otelc-integrations` component.
+- In `.github/ci-components.yml`, map both modules to the suite (a non-empty suite list for
+  `contrib/<name>/otelc` registers the suite in the OTelc lane), and add `contrib/<name>/**` to the
+  `otelc-integrations` component. For a suite covering code outside `contrib/` (or without a
+  `*/otelc` module entry, such as `otelc-autostart` or `gls`), add the suite to
+  `integration-suites.otelc-extra-suites`. CI discovers `**/otelc` modules and their suites
+  automatically via `scripts/ciselect`, so `.github/workflows/otelc.yml` needs no edit.
 - When a rule adds an import of the contrib, or the hooks use it, add a new `lib_<name>.go` file in
   `internal/apps/otelc-external-app` that calls `registerLibrary` from `init()` with a call that
   needs no network, and add its `replace`. The External Application Build job then checks that the
