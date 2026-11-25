@@ -15,14 +15,12 @@ on:
     # .github/AGENTS.md): the queue runs the ubuntu legs of this lane, so
     # a queued commit cannot land without them.
     branches:
+      # Merge-queue branches only: a tags-ignore block would also make
+      # this workflow run on release tag pushes (v2.13.0-rc.1 ran the
+      # old lane this way this week), duplicating the full matrix that
+      # orchestrion.yml already runs on those tags with a second,
+      # ubuntu-only run of every suite.
       - mq-working-branch-**
-    tags-ignore:
-      - 'contrib/**'
-      - 'instrumentation/**'
-      - 'internal/**'
-      - 'orchestrion/**'
-      - 'otelc/**'
-      - 'scripts/**'
 
 permissions:
   id-token: write
@@ -46,10 +44,11 @@ jobs:
              startsWith(github.ref_name, 'mq-working-branch-release-v')) &&
             '["ubuntu", "macos", "windows"]' || '["ubuntu"]' }}
 
-  # A top-level join with the check name the lane used to report
-  # directly, so a branch protection rule on it keeps resolving: the
-  # called workflow's own join is gated on the classifier, and a
-  # skipped check satisfies no required-check rule.
+  # A top-level join with the bare check name the lane's own join can
+  # no longer report: inside the reusable workflow it reports as
+  # "lane / Orchestrion Integration Tests", which no branch
+  # protection rule matches, and it is gated on the classifier while
+  # this one runs on !cancelled() so the name always reports.
   integration-test-done:
     name: Orchestrion Integration Tests
     needs: [lane]

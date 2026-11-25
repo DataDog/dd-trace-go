@@ -35,10 +35,11 @@ jobs:
         ${{ startsWith(github.base_ref, 'release-v') &&
             '["ubuntu", "macos", "windows"]' || '["ubuntu"]' }}
 
-  # A top-level join with the check name the lane used to report
-  # directly, so a branch protection rule on it keeps resolving: the
-  # called workflow's own join is gated on the classifier, and a
-  # skipped check satisfies no required-check rule.
+  # A top-level join with the bare check name the lane's own join can
+  # no longer report: inside the reusable workflow it reports as
+  # "lane / OTelc Integration Tests", which no branch protection rule
+  # matches, and it is gated on the classifier while this one runs on
+  # !cancelled() so the name always reports.
   integration-test-done:
     name: OTelc Integration Tests
     needs: [lane]

@@ -215,9 +215,12 @@ is_newest_completed_lane_run() {
 # this run's: a newer failure spoke on record, and no close may bury it.
 issue_has_newer_failure() {
   local issue=$1 record newer
+  # A read that exhausts its retries must abort recovery: an empty
+  # record would read as "no newer failure" and close an issue whose
+  # history could not be verified.
   record=$(read_gh issue view "$issue" --repo "$REPO" \
     --json body,comments \
-    --jq '.body, (.comments[] | .body // "")' 2>/dev/null || true)
+    --jq '.body, (.comments[] | .body // "")') || exit 1
   for newer in $(printf '%s' "$record" \
     | grep -oE '/actions/runs/[0-9]+' | grep -oE '[0-9]+'); do
     if [ "$newer" -gt "$RUN_ID" ]; then
@@ -329,6 +332,18 @@ triage_run() {
         body+=" $(lane_run_url "$RUN_ID"). Closing."
         gh issue comment "$issue" --repo "$REPO" --body "$body" >/dev/null
         gh issue close "$issue" --repo "$REPO" >/dev/null
+        # Reconcile after the mutation: a newer failure may have
+        # recorded while this close was in flight. A failure recording
+        # after this re-read is covered by its own triage's reopen,
+        # so every interleaving converges to the newer state.
+        if issue_has_newer_failure "$issue"; then
+          log "newer failure recorded during close: reopening #$issue"
+          gh issue reopen "$issue" --repo "$REPO" >/dev/null
+          body="Reopened: a newer failure recorded while this"
+          body+=" close was in flight."
+          gh issue comment "$issue" --repo "$REPO" --body "$body" \
+            >/dev/null
+        fi
       fi
     done <<<"$green"
   fi
