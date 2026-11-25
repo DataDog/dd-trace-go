@@ -14,10 +14,11 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2/internal/endpointhook"
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/go-chi/chi"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 )
 
 func endpointRule(id, address, key, value, action string) string {

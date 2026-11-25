@@ -9,9 +9,10 @@ import (
 	"net/http"
 	"sync/atomic"
 
+	"github.com/go-chi/chi"
+
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
-	"github.com/go-chi/chi"
 )
 
 var woven atomic.Bool

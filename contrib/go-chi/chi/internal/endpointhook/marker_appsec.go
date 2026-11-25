@@ -10,8 +10,9 @@ package endpointhook
 import (
 	"context"
 
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/go-chi/chi"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 )
 
 type Reporter interface {

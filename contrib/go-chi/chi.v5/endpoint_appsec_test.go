@@ -18,11 +18,12 @@ import (
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2/internal/endpointhook"
+	"github.com/go-chi/chi/v5"
+	"github.com/stretchr/testify/require"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
-	"github.com/go-chi/chi/v5"
-	"github.com/stretchr/testify/require"
 )
 
 func recordEndpointLogs(t *testing.T) *metricsRecorder {
