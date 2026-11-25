@@ -1127,7 +1127,8 @@ func spanStartWithContext(operationName string, sharedAttrs *traceinternal.SpanA
 	if id == 0 {
 		id = generateSpanID(startTime)
 	}
-	span := acquireSpan(poolEnabled)
+	needsNewTrace := context == nil || context.baggageOnly || context.trace == nil
+	span := acquireSpanForContext(poolEnabled, needsNewTrace)
 	span.name = operationName
 	span.service = parentService // inherit from parent if available
 	span.serviceSource = parentServiceSource

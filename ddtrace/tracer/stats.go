@@ -371,6 +371,13 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 	}
 	origin, _ := s.meta.Get(keyOrigin)
 	version, _ := s.meta.Version()
+	if ts := s.inlineStatSpan; ts != nil {
+		s.inlineStatSpan = nil
+		ts.statSpan = statSpan
+		ts.origin = origin
+		ts.version = version
+		return ts, true
+	}
 	return &tracerStatSpan{
 		statSpan: statSpan,
 		origin:   origin,

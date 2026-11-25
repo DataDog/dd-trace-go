@@ -320,9 +320,11 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 // for the same span.
 // +checklocksignore — Initialization time, context not yet shared.
 func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
-	context := &SpanContext{
-		spanID: span.spanID,
+	context := span.context
+	if context == nil {
+		context = &SpanContext{}
 	}
+	context.spanID = span.spanID
 
 	context.traceID.SetLower(span.traceID)
 	if parent != nil {
@@ -875,6 +877,8 @@ func samplingPriorityPtr(p int) *float64 {
 	return &v
 }
 
+// newTrace creates a new trace using the given callback which will be called
+// upon completion of the trace.
 // +checklocksignore — Initialization time, trace not yet shared.
 func (t *trace) initSpans() {
 	if traceStartSize <= len(t.inlineSpans) {
@@ -884,8 +888,6 @@ func (t *trace) initSpans() {
 	}
 }
 
-// newTrace creates a new trace using the given callback which will be called
-// upon completion of the trace.
 func newTrace() *trace {
 	t := &trace{}
 	t.initSpans()

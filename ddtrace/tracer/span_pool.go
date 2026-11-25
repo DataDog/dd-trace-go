@@ -18,6 +18,52 @@ var spanPool = sync.Pool{
 	New: func() any { return &Span{} },
 }
 
+// rootSpanBlock fuses a Span, its SpanContext, its trace, its initial spanCtx,
+// and its tracerStatSpan into one heap allocation when span pooling is disabled
+// and a brand-new trace is started.
+type rootSpanBlock struct {
+	span     Span
+	ctx      SpanContext
+	tr       trace
+	sCtx     spanCtx
+	statSpan tracerStatSpan
+}
+
+// childSpanBlock fuses a Span, its SpanContext, and its initial spanCtx into
+// one heap allocation when span pooling is disabled and the span joins an
+// existing trace.
+type childSpanBlock struct {
+	span Span
+	ctx  SpanContext
+	sCtx spanCtx
+}
+
+// +checklocksignore — Initialization time, span not yet shared.
+func acquireSpanForContext(poolEnabled, needsNewTrace bool) *Span {
+	if s := maybeTestAcquireSpan(); s != nil {
+		s.context = nil
+		return s
+	}
+	if poolEnabled {
+		s := spanPool.Get().(*Span)
+		s.context = nil
+		return s
+	}
+	if needsNewTrace {
+		b := &rootSpanBlock{}
+		b.tr.initSpans()
+		b.ctx.trace = &b.tr
+		b.span.context = &b.ctx
+		b.span.inlineStatSpan = &b.statSpan
+		b.span.inlineSpanCtx.Store(&b.sCtx)
+		return &b.span
+	}
+	b := &childSpanBlock{}
+	b.span.context = &b.ctx
+	b.span.inlineSpanCtx.Store(&b.sCtx)
+	return &b.span
+}
+
 func acquireSpan(poolEnabled bool) *Span {
 	// maybeTestAcquireSpan is a no-op (returns nil, inlined away) outside the
 	// deadlock build; under -tags deadlock it lets the lock-ordering test inject

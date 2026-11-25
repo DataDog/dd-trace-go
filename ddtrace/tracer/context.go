@@ -115,12 +115,25 @@ func ContextWithSpan(ctx context.Context, s *Span) context.Context {
 	// SpanFromContext is extended analogously ("Span SpanFromContext GLS read").
 	// Without orchestrion there is no GLS; ctx.Value only ever consults the
 	// spanCtx node constructed below.
-	var snapshot *SpanContext
+	var (
+		snapshot *SpanContext
+		newCtx   *spanCtx
+	)
 	if s != nil {
 		// Snapshot the SpanContext so it survives span pool recycling.
 		snapshot = s.Context()
+		if s.inlineSpanCtx.Load() != nil {
+			if sc := s.inlineSpanCtx.Swap(nil); sc != nil {
+				sc.Context = ctx
+				sc.span = s
+				sc.snapshot = snapshot
+				newCtx = sc
+			}
+		}
 	}
-	newCtx := &spanCtx{Context: ctx, span: s, snapshot: snapshot}
+	if newCtx == nil {
+		newCtx = &spanCtx{Context: ctx, span: s, snapshot: snapshot}
+	}
 	return contextWithPropagatedLLMSpan(newCtx, s)
 }
 
