@@ -14,6 +14,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/coveragepropagation"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
@@ -53,6 +54,9 @@ type (
 		late     []blockRef // blocks that dirty slots got after their windows closed
 		missed   int        // windows that ran without a slot for a while
 		stopped  bool
+		// requests are the in-flight requests that goroutines of open windows
+		// sent, by the span ID they carry; see line_coverage_propagation.go.
+		requests map[uint64]sentRequest
 	}
 
 	// lineCoveragePackage is the counter array of one instrumented package.
@@ -93,6 +97,9 @@ type (
 		blocks    []blockRef // blocks of the slots the window held before
 		missed    bool
 		closed    bool
+		// closing is set, under the collector's mutex, once the window starts
+		// giving up its slot: from then on no request handler moves into it.
+		closing bool
 	}
 )
 
@@ -121,6 +128,7 @@ func StartLineCoverage(sessionID uint64) (started bool) {
 	}
 	c.writer = newCoverageWriter()
 	lineCoverage.Store(c)
+	coveragepropagation.Set(c)
 	integrations.PushCiVisibilityCloseAction(c.stop)
 	log.Debug("civisibility.linecov: started with %d packages and %d files", len(c.packages), len(c.files))
 	return true
@@ -419,9 +427,18 @@ func PauseLineCoverageWindow() (resume func()) {
 // other goroutines carry it.
 func (w *LineCoverageWindow) pause() bool {
 	slot := w.slot
-	if w.closed || slot == 0 || runtimeLineCoverageSlot() != slot || runtimeLineCoverageSlotRefs(slot) != 1 {
+	if w.closed || slot == 0 || runtimeLineCoverageSlot() != slot {
 		return false
 	}
+	// Under the mutex, so that no request handler moves into the slot between
+	// the check and the release.
+	w.collector.mu.Lock()
+	if runtimeLineCoverageSlotRefs(slot) != 1 {
+		w.collector.mu.Unlock()
+		return false
+	}
+	w.closing = true
+	w.collector.mu.Unlock()
 	runtimeLineCoverageSetSlot(0)
 	w.slot = 0
 	w.blocks = w.collector.collect(slot, true, w.blocks)
@@ -454,6 +471,10 @@ func (w *LineCoverageWindow) Close(suiteID, testID uint64) {
 	w.closed = true
 	c := w.collector
 	if slot := w.slot; slot != 0 {
+		// Before the detach, so that it also moves a handler that moved in.
+		c.mu.Lock()
+		w.closing = true
+		c.mu.Unlock()
 		w.slot = 0
 		if runtimeLineCoverageSlot() == slot {
 			runtimeLineCoverageSetSlot(0)
@@ -514,6 +535,7 @@ func (c *lineCoverageCollector) lease(w *LineCoverageWindow) uint32 {
 		return 0
 	}
 	c.windows[slot] = w
+	w.closing = false
 	return slot
 }
 
@@ -718,6 +740,7 @@ func (c *lineCoverageCollector) stop() {
 	if !lineCoverage.CompareAndSwap(c, nil) {
 		return
 	}
+	coveragepropagation.Set(nil)
 
 	c.mu.Lock()
 	unowned := c.collect(0, false, nil)

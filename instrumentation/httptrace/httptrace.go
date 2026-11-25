@@ -21,6 +21,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	appsechttpsec "github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/httpsec"
 	listenerhttpsec "github.com/DataDog/dd-trace-go/v2/internal/appsec/listener/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/coveragepropagation"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -100,6 +101,7 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 	}
 
 	parentCtx, extractErr := tracer.Extract(tracer.HTTPHeadersCarrier(r.Header))
+	var restoreCoverage func()
 	if extractErr == nil && parentCtx != nil {
 		ctx2 := r.Context()
 		parentCtx.ForeachBaggageItem(func(k, v string) bool {
@@ -107,6 +109,8 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 			return true
 		})
 		r = r.WithContext(ctx2)
+		// A request that a test of this process sent runs in its line coverage.
+		restoreCoverage = coveragepropagation.Received(parentCtx.SpanID())
 	}
 
 	nopts := make([]tracer.StartSpanOption, 0, len(opts)+1+len(ipTags))
@@ -157,6 +161,9 @@ func StartRequestSpan(r *http.Request, opts ...tracer.StartSpanOption) (*tracer.
 		FinishRequestSpan(span, status, errorFn, opts...)
 		if inferredProxySpan != nil {
 			FinishRequestSpan(inferredProxySpan, status, errorFn, opts...)
+		}
+		if restoreCoverage != nil {
+			restoreCoverage()
 		}
 	}
 }
@@ -221,6 +228,15 @@ func URLFromRequest(r *http.Request, queryString bool) string {
 // See https://docs.datadoghq.com/tracing/configure_data_security/?tab=net#redact-query-strings for more information.
 func URLFromClientRequest(r *http.Request, queryString bool) string {
 	return urlFromRequest(r, queryString, true)
+}
+
+// ObserveClientRequest is called by HTTP client integrations on the goroutine
+// that sends a request, once the span context of spanID is injected into its
+// headers. A server of the same process that handles the request then runs the
+// handler in the Test Optimization line coverage of the sending goroutine's
+// test. Call the returned function when the round trip ends.
+func ObserveClientRequest(spanID uint64) (end func()) {
+	return coveragepropagation.Sent(spanID)
 }
 
 func urlFromRequest(r *http.Request, queryString bool, isClient bool) string {

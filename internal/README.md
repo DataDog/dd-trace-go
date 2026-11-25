@@ -20,7 +20,7 @@ The config package also supports reporting telemetry. This functionality is buil
 
 ### CI Visibility
 
-Contains Test Optimization internals, including Go `testing` instrumentation, CI metadata collection, backend feature negotiation, ITR skippable-test handling, code coverage payloads, and subprocess fixtures. The [overview](./civisibility/CIVISIBILITY_OVERVIEW.md) documents the ITR coverage backfill safety model and its manual and Orchestrion validation fixtures.
+Contains Test Optimization internals, including Go `testing` instrumentation, CI metadata collection, backend feature negotiation, ITR skippable-test handling, code coverage payloads, and subprocess fixtures. Its `coveragepropagation` package lets per-test line coverage follow a request from a test to a server in the same process, through the span ID that the HTTP integrations already propagate. The [overview](./civisibility/CIVISIBILITY_OVERVIEW.md) documents the ITR coverage backfill safety model and its manual and Orchestrion validation fixtures.
 
 ### Env
 

@@ -187,12 +187,15 @@ func ObserveRoundTrip(cfg *config.RoundTripperConfig, req *http.Request) (*http.
 	for k, v := range baggage.All(ctx) {
 		span.SetBaggageItem(k, v)
 	}
+	endObservation := func() {}
 	if cfg.Propagation {
 		// inject the span context into the http request copy
 		err := tracer.Inject(span.Context(), tracer.HTTPHeadersCarrier(req.Header))
 		if err != nil {
 			// this should never happen
 			fmt.Fprintf(os.Stderr, "contrib/net/http.Roundtrip: failed to inject http headers: %s\n", err.Error())
+		} else {
+			endObservation = instrumentationhttptrace.ObserveClientRequest(span.Context().SpanID())
 		}
 	}
 
@@ -204,11 +207,13 @@ func ObserveRoundTrip(cfg *config.RoundTripperConfig, req *http.Request) (*http.
 		afterAppsec, err = httpsec.ProtectRoundTrip(ctx, req)
 		if err != nil {
 			span.Finish() // Finish the span as we're blocking the request...
+			endObservation()
 			return nil, nil, err
 		}
 	}
 
 	after := func(resp *http.Response, err error) (*http.Response, error) {
+		endObservation()
 		if afterAppsec != nil {
 			afterAppsec(resp)
 		}
