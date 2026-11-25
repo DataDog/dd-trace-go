@@ -1,0 +1,29 @@
+name: 'Windows Dev Drive'
+description: >-
+  Provision a Windows Dev Drive and redirect the Go caches onto it, so
+  cache restores and builds land on a volume tuned for developer workloads
+  instead of the OS volume under the user profile. A no-op on other
+  operating systems, so jobs can call it unconditionally.
+inputs:
+  redirect:
+    required: false
+    default: gocache,gomodcache
+    description: >-
+      Comma-separated Go caches to redirect onto the Dev Drive: gocache,
+      gomodcache. Jobs that manage GOMODCACHE themselves (appsec restores
+      the module cache into the workspace) pass gocache so only the build
+      cache moves.
+runs:
+  using: composite
+  steps:
+    - name: Provision Windows Dev Drive
+      id: dev-drive
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        DEV_DRIVE_REDIRECT: ${{ inputs.redirect }}
+      # The script is invoked by path, not through a nested local action
+      # reference: those resolve from the workspace root, which breaks when
+      # this repository is checked out under a subdirectory (the orchestrion
+      # integration job checks it out under dd-trace-go/).
+      run: '& "$env:GITHUB_ACTION_PATH\dev-drive.ps1"'

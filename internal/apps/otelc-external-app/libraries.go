@@ -20,9 +20,13 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/gin-gonic/gin"
+	redisv6 "github.com/go-redis/redis"
+	redisv7 "github.com/go-redis/redis/v7"
+	redisv8 "github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/julienschmidt/httprouter"
+	redisv9 "github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 	"github.com/segmentio/kafka-go"
 	"github.com/valyala/fasthttp"
@@ -69,6 +73,10 @@ func useLibraries() {
 	}
 	_ = zerolog.New(io.Discard)
 	_ = &rest.Config{Host: "http://127.0.0.1"}
+	_ = redisv6.NewClient(&redisv6.Options{}).Close()
+	_ = redisv7.NewClient(&redisv7.Options{}).Close()
+	_ = redisv8.NewClient(&redisv8.Options{}).Close()
+	_ = redisv9.NewClient(&redisv9.Options{}).Close()
 	_, _ = gorm.Open(gormtests.DummyDialector{})
 	// The pool opens no connection until first used.
 	if pool, err := pgxpool.New(context.Background(), "postgres://localhost/db"); err == nil {

@@ -117,7 +117,8 @@ jobs:
       dockerfile: ./contrib/k8s.io/gateway-api/cmd/request-mirror/Dockerfile
       artifact_prefix: request-mirror
       commit_sha: ${{ github.event.inputs.commit_sha || github.sha }}
-      version: ${{ needs.prepare-tag.outputs.request_mirroring_image_tag }}
+      # no `version`: this image ignores DD_VERSION and reports the compiled tracer version,
+      # so its version label must come from version.Tag, not from the git tag
       tags: >-
         ${{ needs.prepare-tag.outputs.request_mirroring_image_tag }}
         ${{ (github.event.inputs.set_as_latest == 'true' || github.event_name == 'push') && 'latest' || '' }}

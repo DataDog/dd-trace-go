@@ -6,6 +6,7 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -67,27 +68,32 @@ type poolKey struct {
 	kind       string
 	workload   string
 	osPlatform string
+	variant    string
 	refType    string
 }
 
-// poolCell is a (cache_kind, workload, os.platform) cell, used for the
-// default-branch seed gauges.
+// poolCell is a (cache_kind, workload, os.platform, variant) cell, used
+// for the default-branch seed gauges. The variant digest is part of the
+// cell so one family cannot hide the eviction of one of its strata: a
+// family that seeds several variants (several runner classes or Go
+// versions) reports each stratum's seed presence separately.
 type poolCell struct {
 	kind       string
 	workload   string
 	osPlatform string
+	variant    string
 }
 
 func poolGroupLess(a, b poolGroup) int {
 	return strings.Compare(
-		a.kind+"\x00"+a.workload+"\x00"+a.osPlatform+"\x00"+a.refType,
-		b.kind+"\x00"+b.workload+"\x00"+b.osPlatform+"\x00"+b.refType)
+		a.kind+"\x00"+a.workload+"\x00"+a.osPlatform+"\x00"+a.variant+"\x00"+a.refType,
+		b.kind+"\x00"+b.workload+"\x00"+b.osPlatform+"\x00"+b.variant+"\x00"+b.refType)
 }
 
 func poolCellLess(a, b poolCell) int {
 	return strings.Compare(
-		a.kind+"\x00"+a.workload+"\x00"+a.osPlatform,
-		b.kind+"\x00"+b.workload+"\x00"+b.osPlatform)
+		a.kind+"\x00"+a.workload+"\x00"+a.osPlatform+"\x00"+a.variant,
+		b.kind+"\x00"+b.workload+"\x00"+b.osPlatform+"\x00"+b.variant)
 }
 
 // poolDefaultGroup is one (cache_kind, workload, os.platform) cell of the
@@ -122,10 +128,11 @@ type poolReport struct {
 // Family and branch may contain dashes (the branch may contain slashes),
 // so the fixed-length hex segments and the numeric run ID anchor the
 // match from both ends. The version segment allows one prerelease
-// cluster (1.28.0-rc.1); a longer hyphen tail belongs to the branch.
+// cluster (1.28.0-rc.1) and the stable/oldstable aliases the
+// integration lanes key on; a longer hyphen tail belongs to the branch.
 var goBuildKeyRe = regexp.MustCompile(
 	`^go-cache-(Linux|macOS|Windows)-(X64|ARM64)-ddtg-cx1-(.*)-([0-9a-f]{16})-` +
-		`([0-9.]+[0-9A-Za-z.]*-[0-9A-Za-z.]+|[0-9.]+[0-9A-Za-z.]*)-(.*)-([0-9a-f]{40,64})-([0-9]+)$`)
+		`(stable|oldstable|[0-9.]+[0-9A-Za-z.]*-[0-9A-Za-z.]+|[0-9.]+[0-9A-Za-z.]*)-(.*)-([0-9a-f]{40,64})-([0-9]+)$`)
 
 // toolsKeyRe parses the tools-cache key <os>-<arch>-go-<version>-tools-<hash>.
 var toolsKeyRe = regexp.MustCompile(`^(Linux|macOS|Windows)-(X64|ARM64)-go-.*-tools-`)
@@ -150,43 +157,50 @@ func poolOS(segment string) string {
 	}
 }
 
-// classifyPoolKey classifies one cache key into cache_kind, workload and
-// os.platform. Workload is the cloudx family of a go_build entry in the
-// ddtg-cx1 layout; a go-cache key that predates the layout is still
-// go_build but carries no workload.
-func classifyPoolKey(key string) (kind, workload, osPlatform string) {
+// classifyPoolKey classifies one cache key into cache_kind, workload,
+// os.platform and variant. Workload is the cloudx family of a go_build
+// entry in the ddtg-cx1 layout, and variant is that entry's 16-hex
+// variant digest; a go-cache key that predates the layout is still
+// go_build but carries neither.
+func classifyPoolKey(key string) (kind, workload, osPlatform, variant string) {
 	switch {
 	case strings.HasPrefix(key, "go-cache-"):
 		if m := goBuildKeyRe.FindStringSubmatch(key); m != nil {
 			// Group 3 is the family; group 4 is the 16-hex digest.
-			return "go_build", m[3], poolOS(m[1])
+			return "go_build", m[3], poolOS(m[1]), m[4]
 		}
-		return "go_build", poolNA, "unknown"
+		return "go_build", poolNA, "unknown", ""
 	case strings.HasPrefix(key, "setup-go-"):
 		os := "unknown"
 		if m := setupGoBuiltinKeyRe.FindStringSubmatch(key); m != nil {
 			os = poolOS(m[1])
 		}
-		return "setup_go_builtin", poolNA, os
+		return "setup_go_builtin", poolNA, os, ""
 	case toolsKeyRe.MatchString(key):
 		os := "unknown"
 		if m := toolsKeyRe.FindStringSubmatch(key); m != nil {
 			os = poolOS(m[1])
 		}
-		return "tools", poolNA, os
+		return "tools", poolNA, os, ""
 	// build-metrics.yml saves its own module cache under a
 	// go-pkg-mod-build-metrics- prefix; it is not the AppSec module cache.
 	case strings.HasPrefix(key, "go-pkg-mod-build-metrics-"):
-		return "other", poolNA, "unknown"
+		return "other", poolNA, "unknown", ""
+	// The multios Windows module archive gets its own kind and cell: the
+	// generic go-pkg-mod- prefix would merge its bytes and seed presence
+	// with the AppSec archive, so a surviving AppSec entry could mask the
+	// eviction of the Windows seed (and the other way around).
+	case strings.HasPrefix(key, "go-pkg-mod-multios-"):
+		return "go_modules", "multi-os", "windows", ""
 	case strings.HasPrefix(key, "go-pkg-mod-"):
-		return "appsec_modules", poolNA, "unknown"
+		return "appsec_modules", poolNA, "unknown", ""
 	// system-tests.yml caches the npm-installed datadog-ci CLI.
 	case strings.HasPrefix(key, "npm-datadog-ci"), strings.HasPrefix(key, "datadog-ci"):
-		return "datadog_ci", poolNA, "unknown"
+		return "datadog_ci", poolNA, "unknown", ""
 	case strings.HasPrefix(key, "gitdb"):
-		return "gitdb", poolNA, "unknown"
+		return "gitdb", poolNA, "unknown", ""
 	default:
-		return "other", poolNA, "unknown"
+		return "other", poolNA, "unknown", ""
 	}
 }
 
@@ -252,23 +266,23 @@ func fetchStorageLimit(c client) (int64, error) {
 
 // buildPoolReport classifies a snapshot into the gauge groups. The
 // default-branch cells keep the newest entry's created_at per
-// (cache_kind, workload, os.platform), so the seed gauge reports presence
-// and freshness at once.
+// (cache_kind, workload, os.platform, variant), so the seed gauge
+// reports presence and freshness at once, per seeded stratum.
 func buildPoolReport(snap cacheSnapshot, at time.Time, defaultBranch string) poolReport {
 	groupSums := map[poolKey]poolGroup{}
 	newestDefault := map[poolCell]time.Time{}
 	var oldestAccess time.Time
 	for _, e := range snap.Entries {
-		kind, workload, osPlatform := classifyPoolKey(e.Key)
+		kind, workload, osPlatform, variant := classifyPoolKey(e.Key)
 		refType := classifyPoolRef(e.Ref, defaultBranch)
-		key := poolKey{kind: kind, workload: workload, osPlatform: osPlatform, refType: refType}
+		key := poolKey{kind: kind, workload: workload, osPlatform: osPlatform, variant: variant, refType: refType}
 		g := groupSums[key]
 		g.poolKey = key
 		g.entries++
 		g.sizeBytes += e.SizeInBytes
 		groupSums[key] = g
 		if created, err := parseTS(e.CreatedAt); err == nil && refType == "default" {
-			cell := poolCell{kind: kind, workload: workload, osPlatform: osPlatform}
+			cell := poolCell{kind: kind, workload: workload, osPlatform: osPlatform, variant: variant}
 			if prev, ok := newestDefault[cell]; !ok || created.After(prev) {
 				newestDefault[cell] = created
 			}
@@ -382,6 +396,9 @@ func buildPoolPayload(r poolReport, repo string) poolPayload {
 			"os.platform:" + normalizeTag(g.osPlatform),
 			"ref_type:" + normalizeTag(g.refType),
 		}
+		if g.variant != "" {
+			tags = append(tags, "variant:"+g.variant)
+		}
 		series = append(series,
 			gauge(poolMetricSize, float64(g.sizeBytes), tags...),
 			gauge(poolMetricEntries, float64(g.entries), tags...))
@@ -400,10 +417,15 @@ func buildPoolPayload(r poolReport, repo string) poolPayload {
 		series = append(series, gauge(poolMetricOldest, r.oldestAccessSeconds))
 	}
 	for _, g := range r.defaultGroup {
-		series = append(series, gauge(poolMetricDefaultAge, g.ageSeconds,
-			"cache_kind:"+normalizeTag(g.kind),
-			"workload:"+normalizeTag(g.workload),
-			"os.platform:"+normalizeTag(g.osPlatform)))
+		tags := []string{
+			"cache_kind:" + normalizeTag(g.kind),
+			"workload:" + normalizeTag(g.workload),
+			"os.platform:" + normalizeTag(g.osPlatform),
+		}
+		if g.variant != "" {
+			tags = append(tags, "variant:"+g.variant)
+		}
+		series = append(series, gauge(poolMetricDefaultAge, g.ageSeconds, tags...))
 	}
 	return poolPayload{Series: series}
 }
@@ -436,16 +458,16 @@ func renderPoolText(r poolReport, repo string) string {
 	if len(r.defaultGroup) == 0 {
 		b.WriteString("  default-branch entries: none\n")
 	} else {
-		b.WriteString("  default-branch entries (newest per kind/workload/os):\n")
+		b.WriteString("  default-branch entries (newest per kind/workload/os/variant):\n")
 		for _, g := range r.defaultGroup {
-			fmt.Fprintf(&b, "    %-16s %-24s %-8s %10s old\n",
-				g.kind, g.workload, g.osPlatform, fmtPoolAge(g.ageSeconds))
+			fmt.Fprintf(&b, "    %-16s %-24s %-8s %-17s %10s old\n",
+				g.kind, g.workload, g.osPlatform, cmp.Or(g.variant, "-"), fmtPoolAge(g.ageSeconds))
 		}
 	}
-	b.WriteString("  by cache_kind/workload/os.platform/ref_type:\n")
+	b.WriteString("  by cache_kind/workload/os.platform/variant/ref_type:\n")
 	for _, g := range r.groups {
-		fmt.Fprintf(&b, "    %-16s %-24s %-8s %-8s %3d entries %8.2f GiB\n",
-			g.kind, g.workload, g.osPlatform, g.refType, g.entries, float64(g.sizeBytes)/giB)
+		fmt.Fprintf(&b, "    %-16s %-24s %-8s %-17s %-8s %3d entries %8.2f GiB\n",
+			g.kind, g.workload, g.osPlatform, cmp.Or(g.variant, "-"), g.refType, g.entries, float64(g.sizeBytes)/giB)
 	}
 	return b.String()
 }
