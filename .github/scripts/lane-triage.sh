@@ -87,7 +87,10 @@ find_issue() {
 # issue and both create one. Healing is cheaper than locking: keep the
 # lowest-numbered issue, close the rest as duplicates.
 collapse_duplicates() {
-  local title=$1 label=$2 first=1 issue
+  # The here-string expands before the loop body runs, so the list is
+  # initialized here, never inside the body.
+  local title=$1 label=$2 first=1 issue list
+  list=$(issues_with_title open "$title" "$label")
   while IFS= read -r issue; do
     [ -n "$issue" ] || continue
     if [ "$first" -eq 1 ]; then
@@ -99,8 +102,6 @@ collapse_duplicates() {
       'Closed as a duplicate created by a race between two triage
 runs; the lowest-numbered issue stays open.' \
       >/dev/null
-  local list
-  list=$(issues_with_title open "$title" "$label")
   done <<<"$list"
 }
 
@@ -246,6 +247,17 @@ triage_run() {
       fi
       is_lane_leg "$name" || continue
       issue=$(find_issue "lane: $lane — $name" "$FAILURE_LABEL")
+      if [ -z "$issue" ]; then
+        # A stale recovery from an older run may have closed this
+        # issue after this failure opened it: reopen it rather than
+        # minting a duplicate, so the two loops reconcile.
+        issue=$(issues_with_title all \
+          "lane: $lane — $name" "$FAILURE_LABEL" | head -n 1)
+        if [ -n "$issue" ]; then
+          log "reopening closed issue #$issue: $lane / $name"
+          gh issue reopen "$issue" --repo "$REPO" >/dev/null
+        fi
+      fi
       if [ -n "$issue" ]; then
         log "still failing: $lane / $name; commenting on issue #$issue"
         body="Failed again at $(commit_line "$HEAD_SHA"):"
@@ -307,8 +319,16 @@ triage_run() {
 # Close every open failure issue of this lane whose leg name no longer
 # appears among the current run's job names.
 close_absent_legs() {
-  local lane=$1 issue title leg jobnames
+  local lane=$1 issue title leg jobnames open
+  # Both inputs initialize before their loops: the here-strings expand
+  # before the first iteration runs.
   jobnames=$(run_job_conclusions "$RUN_ID" | jq -r 'keys[]')
+  open=$(read_gh issue list --state open \
+    --label "$FAILURE_LABEL" --repo "$REPO" \
+    --json number,title --limit 200 \
+    | jq -r --arg l "$lane" \
+      '.[] | select(.title | startswith("lane: " + $l + " — "))
+        | "\(.number)\t\(.title)"')
   while IFS=$'\t' read -r issue title; do
     [ -n "$issue" ] || continue
     leg=${title#* — }
@@ -320,13 +340,6 @@ close_absent_legs() {
       "The ${lane} lane no longer runs a leg with this name; closing. \
 Reopen or open a new issue if the leg returns." \
       >/dev/null
-  local open
-  open=$(read_gh issue list --state open \
-    --label "$FAILURE_LABEL" --repo "$REPO" \
-    --json number,title --limit 200 \
-    | jq -r --arg l "$lane" \
-      '.[] | select(.title | startswith("lane: " + $l + " — "))
-        | "\(.number)\t\(.title)"')
   done <<<"$open"
 }
 
@@ -356,7 +369,13 @@ last_run_line() {
 }
 
 tracking_body() {
-  local lane any=0 number title
+  local lane any=0 number title open
+  # Initialize before the block: a failed read here aborts the
+  # rendering instead of printing empty content over the issue.
+  open=$(read_gh issue list --state open \
+    --label "$FAILURE_LABEL" --repo "$REPO" \
+    --json number,title --limit 200 \
+    | jq -r '.[] | [.number, .title] | @tsv')
   {
     printf 'Status of the macOS/Windows legs of the Orchestrion and OTelc'
     printf ' integration lanes (main-based runs only).\n\n'
@@ -370,19 +389,17 @@ tracking_body() {
       [ -n "$number" ] || continue
       printf -- '- #%s %s\n' "$number" "$title"
       any=1
-    done <<<"$(read_gh issue list --state open \
-      --label "$FAILURE_LABEL" --repo "$REPO" \
-      --json number,title --limit 200 \
-      | jq -r '.[] | [.number, .title] | @tsv')"
+    done <<<"$open"
     [ "$any" -eq 1 ] || printf 'None.\n'
   }
 }
 
 refresh_tracking_issue() {
-  local issue footer body
+  local issue footer tb body
   footer='Kept up to date by the CI Lane Triage workflow; do not close.'
   issue=$(find_issue "$TRACKING_TITLE" "$DASHBOARD_LABEL")
-  body="$(printf '%s\n\n%s\n' "$(tracking_body)" "$footer")"
+  tb=$(tracking_body)
+  body="$(printf '%s\n\n%s\n' "$tb" "$footer")"
   if [ -n "$issue" ]; then
     log "refreshing tracking issue #$issue"
     gh issue edit "$issue" --repo "$REPO" --body "$body" >/dev/null
