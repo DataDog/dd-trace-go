@@ -220,6 +220,26 @@ is_newest_completed_lane_run() {
   [ -n "$latest" ] && [ "$latest" = "$RUN_ID" ]
 }
 
+# True when the issue's record carries a newer recovery: a "Green
+# again" comment with a run id above this run's. An older failure's
+# reopen must not undo a newer run's recovery close.
+issue_has_newer_recovery() {
+  local issue=$1 record newer
+  record=$(read_gh issue view "$issue" --repo "$REPO" \
+    --json body,comments \
+    --jq '.body, (.comments[] | .body // "")') || exit 1
+  local greens
+  greens=$(printf '%s' "$record" \
+    | grep -E 'Green again' || true)
+  for newer in $(printf '%s' "$greens" \
+    | grep -oE '/actions/runs/[0-9]+' | grep -oE '[0-9]+'); do
+    if [ "$newer" -gt "$RUN_ID" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 # True when the issue's body or comments mention a run id newer than
 # this run's: a newer failure spoke on record, and no close may bury it.
 issue_has_newer_failure() {
@@ -304,9 +324,20 @@ triage_run() {
         body+=" $(lane_run_url "$RUN_ID")"
         gh issue comment "$issue" --repo "$REPO" --body "$body" >/dev/null
         # A recovery can close the issue between this triage's lookup
-        # and its comment; the reopen is a no-op when the issue is
-        # still open, and guarantees a failure ends with it open.
-        gh issue reopen "$issue" --repo "$REPO" >/dev/null 2>&1 || true
+        # and its comment. Restore visibility only when no newer run
+        # has recovered the leg (that close is real, not stale) and the
+        # live state is closed: gh fails a reopen of an open issue, so
+        # the state read keeps the common no-op case off the error
+        # path, and a real reopen failure stops the job instead of
+        # reporting success with the failure left hidden.
+        if ! issue_has_newer_recovery "$issue"; then
+          state=$(read_gh issue view "$issue" --repo "$REPO" \
+            --json state --jq '.state')
+          if [ "$state" = 'CLOSED' ]; then
+            log "issue closed meanwhile: reopening #$issue"
+            gh issue reopen "$issue" --repo "$REPO" >/dev/null
+          fi
+        fi
       else
         log "opening issue: lane: $lane — $name"
         body=$(
