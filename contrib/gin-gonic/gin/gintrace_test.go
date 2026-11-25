@@ -9,9 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -323,6 +326,10 @@ func TestError(t *testing.T) {
 	})
 }
 
+// panicWith panics with v. It keeps the nilness analyzer quiet about the
+// deliberate panic(nil) in the panicnil=1 test.
+func panicWith(v any) { panic(v) }
+
 func TestPanicWithRecoveryMiddleware(t *testing.T) {
 	t.Run("recovery registered before the tracer", func(t *testing.T) {
 		mt := mocktracer.Start()
@@ -343,7 +350,7 @@ func TestPanicWithRecoveryMiddleware(t *testing.T) {
 		require.Len(t, spans, 1)
 		span := spans[0]
 		assert.Equal(t, "500", span.Tag(ext.HTTPCode))
-		assert.Equal(t, "panic: boom", span.Tag(ext.ErrorMsg))
+		assert.Equal(t, "handler panicked", span.Tag(ext.ErrorMsg))
 		assert.Equal(t, "GET /boom", span.Tag(ext.ResourceName))
 	})
 
@@ -364,7 +371,116 @@ func TestPanicWithRecoveryMiddleware(t *testing.T) {
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 1)
 		assert.Equal(t, "500", spans[0].Tag(ext.HTTPCode))
-		assert.Equal(t, "kaboom", spans[0].Tag(ext.ErrorMsg))
+		assert.Equal(t, "handler panicked", spans[0].Tag(ext.ErrorMsg))
+	})
+
+	t.Run("panic value is not recorded", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := gin.New()
+		router.Use(gin.Recovery())
+		router.Use(Middleware("foobar"))
+		router.GET("/secret", func(*gin.Context) {
+			panic("token=s3cr3t")
+		})
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest("GET", "/secret", nil))
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		for k, v := range spans[0].Tags() {
+			assert.NotContains(t, fmt.Sprint(v), "s3cr3t", "tag %s", k)
+		}
+	})
+
+	t.Run("broken connection keeps the staged status", func(t *testing.T) {
+		for name, errno := range map[string]syscall.Errno{
+			"broken pipe":      syscall.EPIPE,
+			"connection reset": syscall.ECONNRESET,
+		} {
+			t.Run(name, func(t *testing.T) {
+				mt := mocktracer.Start()
+				defer mt.Stop()
+
+				router := gin.New()
+				router.Use(gin.Recovery())
+				router.Use(Middleware("foobar"))
+				router.GET("/gone", func(c *gin.Context) {
+					c.Status(http.StatusNoContent)
+					panic(&net.OpError{Op: "write", Net: "tcp", Err: os.NewSyscallError("write", errno)})
+				})
+
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, httptest.NewRequest("GET", "/gone", nil))
+
+				spans := mt.FinishedSpans()
+				require.Len(t, spans, 1)
+				assert.Equal(t, "204", spans[0].Tag(ext.HTTPCode))
+			})
+		}
+	})
+
+	t.Run("other network errors still report 500", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := gin.New()
+		router.Use(gin.Recovery())
+		router.Use(Middleware("foobar"))
+		router.GET("/net", func(c *gin.Context) {
+			c.Status(http.StatusNoContent)
+			panic(&net.OpError{Op: "dial", Net: "tcp", Err: os.NewSyscallError("connect", syscall.ECONNREFUSED)})
+		})
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest("GET", "/net", nil))
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, "500", spans[0].Tag(ext.HTTPCode))
+	})
+
+	t.Run("gin errors are kept when WithUseGinErrors is set", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := gin.New()
+		router.Use(gin.Recovery())
+		router.Use(Middleware("foobar", WithUseGinErrors()))
+		router.GET("/boom", func(c *gin.Context) {
+			_ = c.Error(errors.New("db down"))
+			panic("boom")
+		})
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest("GET", "/boom", nil))
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, "500", spans[0].Tag(ext.HTTPCode))
+		assert.Contains(t, spans[0].Tag(ext.ErrorMsg), "db down")
+	})
+
+	t.Run("nil panic is propagated with panicnil=1", func(t *testing.T) {
+		t.Setenv("GODEBUG", "panicnil=1")
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := gin.New()
+		router.Use(Middleware("foobar"))
+		router.GET("/nil", func(*gin.Context) {
+			panicWith(nil)
+		})
+
+		w := httptest.NewRecorder()
+		assert.Panics(t, func() {
+			router.ServeHTTP(w, httptest.NewRequest("GET", "/nil", nil))
+		})
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, "500", spans[0].Tag(ext.HTTPCode))
 	})
 
 	t.Run("response already sent", func(t *testing.T) {
@@ -385,7 +501,7 @@ func TestPanicWithRecoveryMiddleware(t *testing.T) {
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 1)
 		assert.Equal(t, "202", spans[0].Tag(ext.HTTPCode))
-		assert.Equal(t, "panic: late", spans[0].Tag(ext.ErrorMsg))
+		assert.Equal(t, "handler panicked", spans[0].Tag(ext.ErrorMsg))
 	})
 
 	t.Run("panic is propagated", func(t *testing.T) {

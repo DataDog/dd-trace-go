@@ -10,7 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"net/http"
+	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -24,6 +27,10 @@ import (
 const componentName = "gin-gonic/gin"
 
 var instr *instrumentation.Instrumentation
+
+// errHandlerPanic is the span error when a handler panics. It does not contain
+// the panic value, because that value can contain request data or credentials.
+var errHandlerPanic = errors.New("handler panicked")
 
 func init() {
 	instr = instrumentation.Load(instrumentation.PackageGin)
@@ -55,16 +62,21 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		opts = append(opts, cfg.routeTag(route, c.Request))
 		opts = append(opts, httptrace.HeaderTagsFromRequest(c.Request, cfg.headerTags))
 		span, ctx, finishSpans := httptrace.StartRequestSpan(c.Request, opts...)
+		completed := false
 		defer func() {
-			// A panic that unwinds through this middleware is usually turned into
-			// a 500 by a recovery middleware registered earlier in the chain, which
-			// only runs once the span is finished. Record it here so the span does
-			// not report the default 200.
-			recovered := recover()
-			finishSpan(cfg, c, finishSpans, recovered)
-			if recovered != nil {
-				panic(recovered)
+			if completed {
+				finishSpan(cfg, c, finishSpans, false, nil)
+				return
 			}
+			// c.Next did not return normally. A panic that unwinds through this
+			// middleware is usually turned into a 500 by a recovery middleware
+			// registered earlier in the chain, which only runs once the span is
+			// finished. Record it here so the span does not report the default
+			// 200, then let it continue. recover returns nil for panic(nil) when
+			// GODEBUG=panicnil=1, so completed is what tells the two cases apart.
+			recovered := recover()
+			finishSpan(cfg, c, finishSpans, true, recovered)
+			panic(recovered)
 		}()
 
 		// pass the span through the request context
@@ -77,6 +89,7 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 
 		// serve the request to the next middleware
 		c.Next()
+		completed = true
 
 		if len(c.Errors) > 0 {
 			span.SetTag("gin.errors", c.Errors.String())
@@ -101,30 +114,41 @@ func (cfg *config) routeTag(route string, req *http.Request) tracer.StartSpanOpt
 	return tracer.Tag(ext.HTTPRoute, route)
 }
 
-func finishSpan(cfg *config, c *gin.Context, finishSpans httptrace.FinishSpanFunc, recovered any) {
+func finishSpan(cfg *config, c *gin.Context, finishSpans httptrace.FinishSpanFunc, panicked bool, recovered any) {
 	status := c.Writer.Status()
-	var panicOpts []tracer.FinishOption
-	if recovered != nil && recovered != http.ErrAbortHandler {
-		if !c.Writer.Written() {
+	var finishOpts []tracer.FinishOption
+	if panicked && recovered != http.ErrAbortHandler {
+		if !c.Writer.Written() && !isBrokenConnection(recovered) {
 			// Nothing has been sent yet, so the response is going to be a 500.
 			status = http.StatusInternalServerError
 		}
-		err, ok := recovered.(error)
-		if !ok {
-			err = fmt.Errorf("panic: %v", recovered)
-		}
-		panicOpts = append(panicOpts, tracer.WithError(err))
+		finishOpts = append(finishOpts, tracer.WithError(errHandlerPanic))
 	}
 	if cfg.isStatusError == nil {
-		finishSpans(status, nil, panicOpts...)
+		finishSpans(status, nil, finishOpts...)
 		return
 	}
 	statusError := cfg.isStatusError(status)
-	finishOpts := panicOpts
-	if cfg.useGinErrors && statusError && len(c.Errors) > 0 && len(panicOpts) == 0 {
+	if cfg.useGinErrors && (statusError || len(finishOpts) > 0) && len(c.Errors) > 0 {
+		// Applied after the panic error so that the errors the user opted into win.
 		finishOpts = append(finishOpts, tracer.WithError(errors.New(c.Errors.String())))
 	}
 	finishSpans(status, func(int) bool { return statusError }, finishOpts...)
+}
+
+// isBrokenConnection reports whether v is a panic that gin.Recovery treats as a
+// dead connection, for which it aborts without writing a status.
+func isBrokenConnection(v any) bool {
+	ne, ok := v.(*net.OpError)
+	if !ok {
+		return false
+	}
+	var se *os.SyscallError
+	if !errors.As(ne, &se) {
+		return false
+	}
+	msg := strings.ToLower(se.Error())
+	return strings.Contains(msg, "broken pipe") || strings.Contains(msg, "connection reset by peer")
 }
 
 // HTML will trace the rendering of the template as a child of the span in the given context.
