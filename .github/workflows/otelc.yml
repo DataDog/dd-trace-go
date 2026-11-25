@@ -49,6 +49,10 @@ env:
     contrib/cloud.google.com/go/pubsub.v1/otelc
     contrib/cloud.google.com/go/pubsub.v2
     contrib/cloud.google.com/go/pubsub.v2/otelc
+    contrib/confluentinc/confluent-kafka-go/kafka
+    contrib/confluentinc/confluent-kafka-go/kafka/otelc
+    contrib/confluentinc/confluent-kafka-go/kafka.v2
+    contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc
     contrib/net/http
     contrib/net/http/otelc
     contrib/rs/zerolog
@@ -127,6 +131,8 @@ env:
     mongo.v2
     gcp_pubsub.v1
     gcp_pubsub.v2
+    confluent-kafka-go.v1
+    confluent-kafka-go.v2
     echo.v4
     echo.v5
     aws.v1

@@ -106,8 +106,9 @@ func TestConsumerChannel(t *testing.T) {
 
 func TestConsumerFunctional(t *testing.T) {
 	for _, tt := range []struct {
-		name   string
-		action consumerActionFn
+		name                     string
+		action                   consumerActionFn
+		useProducerEventsChannel bool
 	}{
 		{
 			name: "Poll",
@@ -126,9 +127,16 @@ func TestConsumerFunctional(t *testing.T) {
 				return c.ReadMessage(3000 * time.Millisecond)
 			},
 		},
+		{
+			name: "UseProducerEventsChannel",
+			action: func(c *Consumer) (*kafka.Message, error) {
+				return c.ReadMessage(3000 * time.Millisecond)
+			},
+			useProducerEventsChannel: true,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			spans, msg := produceThenConsume(t, tt.action, []Option{WithAnalyticsRate(0.1), WithDataStreams()}, []Option{WithDataStreams()})
+			spans, msg := produceThenConsume(t, tt.action, []Option{WithAnalyticsRate(0.1), WithDataStreams()}, []Option{WithDataStreams()}, tt.useProducerEventsChannel)
 
 			s0 := spans[0] // produce
 			assert.Equal(t, "kafka.produce", s0.OperationName())
@@ -182,6 +190,7 @@ func TestConsumerFunctionalWithClusterID(t *testing.T) {
 	spans, msg := produceThenConsume(t, action,
 		[]Option{WithDataStreams()},
 		[]Option{WithDataStreams()},
+		false,
 	)
 	require.Len(t, spans, 2)
 
@@ -369,7 +378,7 @@ func TestProduceError(t *testing.T) {
 
 type consumerActionFn func(c *Consumer) (*kafka.Message, error)
 
-func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerOpts []Option, consumerOpts []Option) ([]*mocktracer.Span, *kafka.Message) {
+func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerOpts []Option, consumerOpts []Option, useProducerEventsChannel bool) ([]*mocktracer.Span, *kafka.Message) {
 	if _, ok := os.LookupEnv("INTEGRATION"); !ok {
 		t.Skip("to enable integration test, set the INTEGRATION environment variable")
 	}
@@ -384,7 +393,10 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 	require.NoError(t, err)
 	require.Eventually(t, func() bool { return p.tracer.ClusterID() != "" }, 5*time.Second, 10*time.Millisecond)
 
-	delivery := make(chan kafka.Event, 1)
+	var delivery chan kafka.Event
+	if !useProducerEventsChannel {
+		delivery = make(chan kafka.Event, 1)
+	}
 	err = p.Produce(&kafka.Message{
 		TopicPartition: kafka.TopicPartition{
 			Topic:     &testTopic,
@@ -395,7 +407,13 @@ func produceThenConsume(t *testing.T, consumerAction consumerActionFn, producerO
 	}, delivery)
 	require.NoError(t, err)
 
-	msg1, _ := (<-delivery).(*kafka.Message)
+	var evt kafka.Event
+	select {
+	case evt = <-p.Events():
+	case evt = <-delivery:
+	}
+	msg1, ok := evt.(*kafka.Message)
+	require.True(t, ok)
 	p.Close()
 
 	// next attempt to consume the message
