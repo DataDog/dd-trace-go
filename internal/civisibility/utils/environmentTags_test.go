@@ -424,45 +424,27 @@ func TestGetCITagsDoesNotAddBazelProviderOutsideBazelMode(t *testing.T) {
 	assert.NotContains(t, tags, constants.CIProviderName)
 }
 
-func TestApplyRuntimeTagsOverrides(t *testing.T) {
-	detected := func() map[string]string {
-		return map[string]string{
-			constants.OSPlatform:     "darwin",
-			constants.OSVersion:      "24.0.0",
-			constants.OSArchitecture: "arm64",
-			constants.RuntimeName:    "gc",
-			constants.RuntimeVersion: "go1.25.0",
-		}
-	}
-
-	t.Run("overrides every supported tag", func(t *testing.T) {
+func TestParseRuntimeTagsOverrides(t *testing.T) {
+	t.Run("reads every supported tag", func(t *testing.T) {
 		t.Setenv(constants.CIVisibilityRuntimeTagsEnvironmentVariable, `{"os.platform":"linux","os.version":"6.12.0","os.architecture":"amd64","runtime.name":"gccgo","runtime.version":"go1.24.0"}`)
-		tags := detected()
-		applyRuntimeTagsOverrides(tags)
 		assert.Equal(t, map[string]string{
 			constants.OSPlatform:     "linux",
 			constants.OSVersion:      "6.12.0",
 			constants.OSArchitecture: "amd64",
 			constants.RuntimeName:    "gccgo",
 			constants.RuntimeVersion: "go1.24.0",
-		}, tags)
+		}, parseRuntimeTagsOverrides())
 	})
 
 	t.Run("trims values and ignores unsupported keys and unusable values", func(t *testing.T) {
 		t.Setenv(constants.CIVisibilityRuntimeTagsEnvironmentVariable, `{"os.version":" 6.12.0 ","runtime.version":"  ","os.platform":null,"os.architecture":64,"runtime.vendor":"ignored","custom.tag":1e400}`)
-		tags := detected()
-		applyRuntimeTagsOverrides(tags)
-		expected := detected()
-		expected[constants.OSVersion] = "6.12.0"
-		assert.Equal(t, expected, tags)
+		assert.Equal(t, map[string]string{constants.OSVersion: "6.12.0"}, parseRuntimeTagsOverrides())
 	})
 
 	for _, value := range []string{"", "  ", "{invalid json}", `["os.version"]`, `"6.12.0"`, "null"} {
-		t.Run("keeps detected tags for "+value, func(t *testing.T) {
+		t.Run("sets no override for "+value, func(t *testing.T) {
 			t.Setenv(constants.CIVisibilityRuntimeTagsEnvironmentVariable, value)
-			tags := detected()
-			applyRuntimeTagsOverrides(tags)
-			assert.Equal(t, detected(), tags)
+			assert.Empty(t, parseRuntimeTagsOverrides())
 		})
 	}
 }
@@ -490,4 +472,5 @@ func TestGetCITagsAppliesRuntimeTagsOverrides(t *testing.T) {
 	assert.Equal(t, "6.12.0", tags[constants.OSVersion])
 	assert.Equal(t, "go1.24.0", tags[constants.RuntimeVersion])
 	assert.Equal(t, runtime.GOOS, tags[constants.OSPlatform])
+	assert.Equal(t, map[string]string{constants.OSVersion: "6.12.0", constants.RuntimeVersion: "go1.24.0"}, GetRuntimeTagsOverrides())
 }
