@@ -1,750 +1,394 @@
-# Design: how AppSec gets chi path parameters (`Use` before routing)
+## Decided design v2 — Orchestrion/otelc endpoint hook + manual-`Use` docs (`chi.v5` and `chi`)
 
-> **Status: for design review only. This file has no code change. It can be
-> removed before merge.** The delivered change of this PR is documentation
-> (godoc, file comments in `appsec.go`) and 2 compiled `Example` functions per
-> package (section 2). The document has **no open decision**: the 3 decisions
-> are made in section 1.
-> Origin: ROMAIN-51 (follow-up of DD-20 / PR #5847).
+This proposal has **no open decision**: section 1 lists each decision and its reason.
 
-Code references are at dd-trace-go `main` `b3dc60f72`, chi `v5.3.0` and
-`v1.5.5`, go-libddwaf `v5.1.0`.
+**Scope:** both chi contribs (`contrib/go-chi/chi.v5` for chi v5.3.0, `contrib/go-chi/chi` for chi v1.5.5). Romain chose this: the woven builds (Orchestrion, otelc) get the path parameters through a hook, manual users get docs, and AppSec uses the standard `httpsec.RouteMatched` shared-context rules.
 
-## 1. Decisions
+**Result for users**
+- **Orchestrion or otelc users:** with no code change, the WAF gets the **matched** path parameters after routing and before the handler. A rule on a path parameter can block before the handler, and API Security can report `_dd.appsec.s.req.params`. There is still 1 chi span per request.
+- **Manual users:** no behavior change. The godoc and 2 runnable `Example`s per package show where to add `Middleware` to get the path parameters.
 
-### Decision 1: R + docs (no runtime change)
+### What changed since v1
 
-**What it is:** chi keeps the current AppSec behavior. The docs explain how to
-give the path parameters to the WAF: put `Middleware()` on the endpoint
-(`r.With(Middleware())`), or use `g.Use(Middleware())` on the `Group` that
-registers the endpoint itself.
-
-**Reasons:**
-- The other tracers (5 of 6) give the WAF the parameters **after** routing,
-  before the handler. With `Use` before routing, chi has no hook at that point.
-  The only option that needs no user code and no Orchestrion is a route
-  **prediction** (M1). The Adversarial Reviewer proved on chi v5.3.0 and v1.5.5
-  that a prediction can be wrong: a rewrite, a mount, or a middleware that
-  answers itself. A wrong prediction can block a valid request, and no fix is
-  possible.
-- Every option that adds the parameters to the shared WAF context loses some
-  protections of the current behavior:
-  - a later action can replace a pending block;
-  - the path rules use the shared 2 ms budget, so a later block can be lost;
-  - the 10-event cap can drop a later report;
-  - a rule can combine values from 2 routers.
-
-  The fix is a change of the core action rules for **all** integrations, which
-  `@DataDog/asm-go` owns. That is larger than a chi issue.
-- `r.With` and the leaf `Group.Use` already give the matched parameters today.
-  They were checked on both chi versions.
-- Cost: about 2 h, and no runtime risk.
-
-### Decision 2: no option P now, and no follow-up issue now
-
-**Reason:** P needs a core change of the action rules first. That is a separate
-initiative for the AppSec owners. Appendix A ("Why not P now") keeps the P
-analysis. It lists the 3 blockers, so that a later issue can start from it.
-
-The decisions D2–D6 of the earlier draft were only for P, so they are no longer
-decisions. They are "conditions for a later P" in Appendix A (A.8). The 2
-non-blocking reviewer notes (the mount-alias test, and the route checks per
-mechanism) are also only for P: they are in A.7.
-
-### Decision 3: add a compiled `Example` for each placement
-
-**Reason:** `go test` compiles the examples, so the docs cannot become incorrect
-without a test failure.
-
----
-
-## 2. The delivered change
-
-Files that the delivered change touches. Nothing else changes: no runtime code,
-no public API, no test expectation.
-
-| File | Change |
-|---|---|
-| `contrib/go-chi/chi.v5/chi.go` | New `Middleware` godoc (2.1) |
-| `contrib/go-chi/chi/chi.go` | New `Middleware` godoc (2.1) |
-| `contrib/go-chi/chi.v5/appsec.go` | Comment of `withAppsec`: placement table and trade-off (2.2). Comment only. |
-| `contrib/go-chi/chi/appsec.go` | The same, for chi v1 (2.2). Comment only. |
-| `contrib/go-chi/chi.v5/example_test.go` | 2 new `Example` functions and 2 helpers (2.3) |
-| `contrib/go-chi/chi/example_test.go` | The same, for chi v1 (2.3) |
-
-### 2.1 New text of the `Middleware` godoc
-
-Same text in `contrib/go-chi/chi.v5/chi.go` (replaces the lines 34–45) and in
-`contrib/go-chi/chi/chi.go` (replaces the lines 31–42). The function signature
-does not change. In chi v1, the import is `github.com/go-chi/chi` and the
-package name in the code is `chi`.
-
-```go
-// Middleware returns middleware that will trace incoming requests.
-//
-// # AppSec
-//
-// Add Middleware before any middleware that writes or flushes the response, and
-// make the response writers of the middlewares after it implement Unwrap(): AppSec
-// must see the response to decide if a block can still replace it.
-//
-// # AppSec and path parameters
-//
-// AppSec gets the route and the path parameters before the handler only when
-// chi has already selected the endpoint at the moment Middleware starts.
-//
-// With Use at the root of the router, chi selects the endpoint after Middleware
-// starts. AppSec then gets the route after the handler returns, and no path
-// parameters: rules on path parameters and the API Security schema of the path
-// parameters (_dd.appsec.s.req.params) do not apply.
-//
-// To give the path parameters to AppSec before the handler, put Middleware on
-// the mux that registers the endpoint itself. Use r.With on the endpoint:
-//
-//	r.With(chitrace.Middleware()).Get("/users/{id}", handler)
-//
-// Or use Use in a Group, and register the endpoint directly on that Group:
-//
-//	r.Group(func(g chi.Router) {
-//		g.Use(chitrace.Middleware())
-//		g.Get("/users/{id}", handler)
-//	})
-//
-// A Group middleware around Route or Mount does not get the path parameters of
-// the child router. The child router does its own routing, after the Group
-// middleware ran.
-//
-// Middleware at the root and Middleware on the endpoint can be used together.
-// The root one keeps the spans and the AppSec coverage of requests that no
-// endpoint matches (404, 405) and of the work that runs before routing. The
-// cost is 1 more span for each matched request. 2 spans do not mean 2
-// WAF contexts. If Middleware is
-// only on the endpoint, requests that no endpoint matches are not traced.
-```
-
-### 2.2 New comment in `appsec.go`
-
-The chi-specific notes go in the chi packages, next to the existing AppSec notes
-from PR #5847. `internal/appsec/README.md` does not change.
-
-Both files, `contrib/go-chi/chi.v5/appsec.go` and `contrib/go-chi/chi/appsec.go`,
-have the same doc comment on `withAppsec`. Its first paragraph says: "With Use
-before routing, chi has not selected the route when this middleware starts ... so
-a rule on path parameters does not match with a Use at the root." That is the
-existing note. The change **adds the text below as new paragraphs, right after
-that first paragraph** and before the paragraph "After the handler, it reports
-the route ...". The other lines of the comment, and the code, do not change. The
-text is the same in both files (`knownParams` is not changed).
-
-```go
-//
-// Where Middleware runs decides what the WAF gets. The results are the same on
-// chi v5.3.0 and v1.5.5. "Spans" is the number of go-chi spans of 1 matched
-// request:
-//
-//	Placement                                    Middleware sees at its start       Spans
-//	Use at the root only                         no route, no path parameters       1
-//	r.With(Middleware()) on the endpoint, or     the route (/users/{id}) and        1
-//	Use in a Group that registers the endpoint   the parameters (id=42)
-//	Use at the root and one placement above      root: no parameters; inner: id=42  2
-//	Use in a Group around Route or Mount         the mount pattern (/docs/*), not   1
-//	                                             the parameters of the child
-//	Use in a Group only, no endpoint matches     does not run (404, 405)            0
-//
-// Use at the root keeps the coverage of requests that no endpoint matches and of
-// the work before routing. Middleware only on the endpoint loses it. Using both
-// keeps it, and adds 1 child span for each matched request. Orchestrion adds
-// Use(Middleware()) at the root. 2 spans do not mean 2 WAF contexts.
-```
-
-**Checked:** I added this text to a scratch copy of both files at `b3dc60f72`.
-`gofmt -l` reports nothing, and `go build ./...` and `go vet .` pass in both
-packages. I then restored the files.
-
-### 2.3 The `Example` functions
-
-2 functions per package, in the existing `example_test.go` of each package
-(`package chi_test`). The names are the same in both packages:
-
-| Function | What it shows |
-|---|---|
-| `Example_withEndpoint` | `router.With(chitrace.Middleware()).Get("/users/{id}", userHandler)` |
-| `Example_withGroup` | `router.Group(...)`: `g.Use(chitrace.Middleware())`, then `g.Get("/users/{id}", userHandler)` on the same `Group` |
-
-Code (chi v5; for chi v1 the import paths are
-`github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2` and
-`github.com/go-chi/chi`; the code is the same). It needs 2 new imports:
-`fmt` and `net/http/httptest`.
-
-```go
-func userHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "user %s", chi.URLParam(r, "id"))
-}
-
-// serve sends 1 GET request to the router and prints the status and the body.
-func serve(router http.Handler, path string) {
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
-	fmt.Println(rec.Code, rec.Body.String())
-}
-
-// Example_withEndpoint puts the middleware on the endpoint. chi has selected
-// the endpoint when the middleware starts, so AppSec gets the route and the
-// path parameters before the handler.
-func Example_withEndpoint() {
-	router := chi.NewRouter()
-	router.With(chitrace.Middleware()).Get("/users/{id}", userHandler)
-
-	serve(router, "/users/42")
-	// Output: 200 user 42
-}
-
-// Example_withGroup puts the middleware in a Group, and registers the endpoint
-// on the same Group. The Group middleware runs after chi selects the endpoint.
-func Example_withGroup() {
-	router := chi.NewRouter()
-	router.Group(func(g chi.Router) {
-		g.Use(chitrace.Middleware())
-		g.Get("/users/{id}", userHandler)
-	})
-
-	serve(router, "/users/42")
-	// Output: 200 user 42
-}
-```
-
-**Checked:** this code was compiled and run on a scratch copy of both packages at
-`b3dc60f72`: `Example_withEndpoint` and `Example_withGroup` pass in
-`contrib/go-chi/chi.v5` and in `contrib/go-chi/chi`.
-
-**Limit:** the examples run with AppSec off and with no tracer started. They
-prove that the documented code compiles and routes, and that the handler gets
-the path parameter. They do not prove what AppSec receives. That behavior is
-the table of 2.4, which the Adversarial Reviewer measured with the real
-middleware and `mocktracer`.
-
-### 2.4 Placement table (adversarial review, round 2)
-
-The Adversarial Reviewer ran the real chi contrib middleware with `mocktracer`
-on `b3dc60f72`, with chi v5.3.0 and v1.5.5. The results are the same on both
-versions. AppSec was off for this span and dispatch check.
-
-| Placement | What the middleware saw | Chi spans |
-|---|---|---:|
-| Root `Use` only | No pattern or `id` at entry | 1 |
-| `With` on the endpoint, or `Group.Use` with `Get` registered directly on that group | `/users/{id}`, `id=42` | 1 |
-| Root `Use` **plus** either endpoint placement | Root saw no params; inner middleware saw `id=42` | **2, parent and child** |
-| `Group.Use` around `Route("/docs", child)` | `/docs/*` and the mount remainder, **not** the child's `id` | 1 |
-| Group only, unmatched path / wrong method | Group middleware never ran (404 / 405) | 0 |
-
-`Group` builds an inline mux with `With`. `Route` creates and mounts another mux
-(chi v5 `mux.go:235-278`; v1 `mux.go:224-268`).
-
-### 2.5 Trade-off: root `Use` against leaf instrumentation
-
-- **Replace** root `Use` with leaf instrumentation: the leaf gets the matched
-  parameters, but AppSec loses the coverage of **unmatched requests** (404, 405)
-  and of **work before dispatch** (for example the middlewares before routing).
-  The table shows 0 spans for an unmatched request with a group only.
-- **Stack** root `Use` and leaf instrumentation: the root keeps that coverage.
-  The cost is a child span on each matched request (2 spans).
-- Orchestrion already adds `Use(Middleware())` at the root. With Orchestrion,
-  adding leaf instrumentation is the "stack" case.
-- **2 spans do not mean 2 WAF contexts.** The child middleware reuses the WAF
-  context of the request when it finds one (`StartOperation`,
-  `instrumentation/appsec/emitter/httpsec/http.go:115-146`).
-
----
-
-## 3. Acceptance criteria (delivered change only)
-
-Numbers AC9 and AC13 are the numbers of the earlier draft. The other criteria of
-the earlier draft are for a later P: see A.9.
-
-- [ ] **AC9** `[integration test, real WAF]` All chi tests at `b3dc60f72` pass
-  with no changed expectation, in both packages. No test file other than
-  `example_test.go` changes, and `chi.go` and `appsec.go` change only in
-  comments.
-  `cd contrib/go-chi/chi.v5 && go test ./...`, and the same in
-  `contrib/go-chi/chi`.
-- [ ] **AC13** `[system-tests]` The `chi` weblog jobs of the dd-trace-go
-  system-tests workflow (`.github/workflows/system-tests.yml`) pass with no
-  manifest change in `DataDog/system-tests`.
-- [ ] **AC15** `[unit test]` The `Example` functions compile and pass in both
-  packages: `go test -run '^Example' -v .` in `contrib/go-chi/chi.v5` and in
-  `contrib/go-chi/chi`. The output lists `Example_withEndpoint` and
-  `Example_withGroup` as `PASS`.
-- [ ] **AC16** `[CI, apidiff]` apidiff shows no change: no exported symbol is
-  added, removed or changed. The `Middleware` signature is the same. The
-  `Example` functions are in `_test.go` files, so they are not public API.
-
----
-
-## 4. Review requirements for the delivered change
-
-1. The Adversarial Reviewer challenge (2 rounds) is **done**. Its result is the
-   placement table (2.4).
-2. Code review with the `code-review` skill is not required for the delivered
-   change when it only has comments (godoc and `appsec.go`) and `Example` code. The
-   reviewer of the PR checks that the text of 2.1 and 2.2 is the text in the
-   files, and that no line of code changed outside the `Example` files.
-3. Contrib owners (`@DataDog/apm-go`, `@DataDog/apm-idm-go`, `CODEOWNERS:60`)
-   approve the change in `contrib/`.
-4. `@DataDog/asm-go` (`CODEOWNERS:67-72`, pattern `*appsec.go`) reviews the
-   comment change in `contrib/go-chi/chi.v5/appsec.go` and
-   `contrib/go-chi/chi/appsec.go`.
-
----
-
-# Appendix A: Why not P now
-
-This appendix keeps the analysis of option **P** ("R + a post-routing hook": the
-path parameters go to the WAF after routing, before the handler, in the same WAF
-context). The delivered change does not do P (Decision 2). Nothing in this
-appendix is a decision. A later issue can start from it.
-
-Terms: **R** = the current behavior (no path parameters with `Use` before
-routing). **D** = an independent WAF context for the path parameters (it is not
-a subcontext: it does not inherit the state of the request context, so it loses
-the shared response-rule and schema behavior). **M1–M6** = the mechanisms in A.2.
-
-## A.1 What the other tracers do
-
-**Answer.** 5 of 6 tracers give the WAF the path parameters **at the moment
-routing selects the route, before the handler**, as an extra WAF run in the
-**same per-request WAF context**. A path-parameter rule can block before the
-handler. PHP is tied (Laravel before the handler, Symfony after it). No tracer
-uses a separate WAF context per check (D), and none stays on R. The majority is
-P: close to D in effect (early path-parameter block, `req.params` schema, route
-known) and close to R in isolation (one context, one budget, one action slot).
-
-Pinned commits (default branch HEAD when read): dd-trace-java `d4d36311`,
-dd-trace-py `c1fa08b6`, dd-trace-js `393f7ab2`, dd-trace-rb `140d0a2f`,
-dd-trace-php `d8b80648`, dd-trace-dotnet `4e3c1860`. Paths are relative to each
-repo root. Java: `dd-java-agent/…`. .NET: `tracer/src/Datadog.Trace/…`. Ruby:
-`lib/datadog/appsec/…`. Python: `ddtrace/…`. JS: `packages/…`.
-
-Columns: **(1)** WAF gets path params, and when. **(2)** Block before the
-handler. **(3)** `req.params` schema (`_dd.appsec.s.req.params`). **(4)** Route
-reported for API Security, and when. "inferred yes" = the schema processor runs
-at the end of the request over addresses already in the WAF context, and the
-path params were published into that context. No test asserting the emitted
-`req.params` value was found.
-
-| Tracer / framework | (1) Path params → WAF | (2) Block pre-handler | (3) Schema | (4) Route | Evidence |
-|---|---|---|---|---|---|
-| **Java / Spring MVC** | After handler mapping, before controller. One-shot flag per request. | Yes | inferred yes | Set when the framework reports `http.route`, fallback tag at end | `dd-java-agent/instrumentation/spring/spring-webmvc/spring-webmvc-3.1/src/main/java/datadog/trace/instrumentation/springweb/TemplateAndMatrixVariablesInstrumentation.java:72,162,174`; `dd-java-agent/appsec/src/main/java/com/datadog/appsec/gateway/GatewayBridge.java:324-329,943-950,1118-1121`; `…/api/security/AppSecSpanPostProcessor.java:86` |
-| **Java / Jersey** | During resource matching | Yes | inferred yes | same | `dd-java-agent/instrumentation/jersey/jersey-appsec/jersey-appsec-2.0/src/main/java/datadog/trace/instrumentation/jersey2/UriRoutingContextInstrumentation.java:45-77` |
-| **Java / Vert.x Web** | On route match, before the handler | Yes | inferred yes | same | `dd-java-agent/instrumentation/vertx/vertx-web/vertx-web-4.0/src/main/java/datadog/trace/instrumentation/vertx_4_0/server/PathParameterPublishingHelper.java:40-55` |
-| **Python / Django** | Before the middleware chain (own `resolver.resolve`) | Yes | yes | `REQUEST_ROUTE` address, read when the schema is built at end | `ddtrace/contrib/internal/django/utils.py:431-447`; `ddtrace/contrib/internal/django/response.py:155`; `ddtrace/appsec/_contrib/django/__init__.py:297`; `ddtrace/appsec/_api_security/api_manager.py:61,126` |
-| **Python / Flask** | Just before the view runs | Yes | yes | same | `ddtrace/contrib/internal/flask/wrappers.py:40`; `ddtrace/appsec/_contrib/flask/__init__.py:177-188` |
-| **Python / FastAPI-Starlette** | `Route.handle` (after routing, before endpoint); skipped on `Mount` | Yes | yes | route tag set at `Route.handle` | `ddtrace/contrib/internal/starlette/patch.py:346-367` |
-| **Node / Express** | In `Layer.handleRequest` / `router.param`, only when `req.params` is non-empty | Yes | inferred yes | computed before sampling at span end | `packages/datadog-instrumentations/src/router.js:631-649,686-700`; `packages/dd-trace/src/appsec/handlers/http-request.js:198-207` |
-| **Node / Fastify** | `preValidation` hook | Yes | inferred yes | same | `packages/datadog-instrumentations/src/fastify.js:224-276` |
-| **Ruby / Rails** | `process_action` (after routing, before the action) | Yes | inferred yes | from `action_dispatch.route` env, read at end | `lib/datadog/appsec/contrib/rails/patches/process_action_patch.rb:18`; `…/rails/gateway/watcher.rb:24-29`; `…/rack/request_middleware.rb:103`; `…/api_security/route_extractor.rb` |
-| **Ruby / Sinatra** | In `process_route`, after the Rack middleware ran, before the route body | Yes | inferred yes | `sinatra.route` env | `lib/datadog/appsec/contrib/sinatra/patcher.rb:75-94`; `…/sinatra/gateway/watcher.rb:76-95` |
-| **PHP / Laravel** | After `Router::findRoute`, before the controller | Yes | unverified | `http.route` set in the same hook | `src/DDTrace/Integrations/Laravel/LaravelIntegration.php:98,138`; `appsec/src/extension/request_lifecycle.c:1181` |
-| **PHP / Symfony** | In a tracing closure on `HttpKernel::handle`, **after** the handler returns | Late only; unverified | unverified | same closure | `src/DDTrace/Integrations/Symfony/SymfonyIntegration.php:457-497` |
-| **PHP / all (extra)** | At request init, **raw URI segments** under `server.request.path_params` | Yes (on segment values) | unverified | n/a | `appsec/src/extension/commands/request_init.c:131,276-310` |
-| **.NET / ASP.NET Core** | `Routing.EndpointMatched`, then again at MVC `BeforeAction` | Yes | inferred yes | read at sampling time | `DiagnosticListeners/AspNetCoreDiagnosticObserver.cs:466,620,679`; `AppSec/Coordinator/SecurityCoordinatorHelpers.Core.cs:129-137`; `AppSec/ApiSec/ApiSecurity.cs:75` |
-| **.NET / ASP.NET MVC / WebApi** | `InvokeActionMethod` / `ExecuteAsync` begin | Yes | unverified | unverified | `ClrProfiler/AutoInstrumentation/AspNet/ControllerActionInvoker_InvokeAction_Integration.cs:69`; `AppSec/ControllerContextExtensions.Framework.cs:22-97` |
-| **Go (baseline, not a vote)** | R: params never reach the WAF with `Use` before routing | No | No | Selected route reported after the handler | DD-20 / PR #5847 |
-
-**Votes** (1 per tracer, by most of its frameworks): Java P (3/3), Python P
-(3/3), Node.js P (2/2), Ruby P (2/2), .NET P (2/2), PHP tie. **P = 5, tie = 1,
-D = 0, R = 0.**
-
-All 5 P tracers reuse the request's single WAF context for the extra run (Java
-`GatewayBridge.java:943-966`; Ruby `sinatra/gateway/watcher.rb:55,83`; JS
-`http-request.js:202`; .NET `SecurityCoordinator.Get`). Per-run timeout or
-cumulative budget, and the 10-event cap, were **not checked** in the other
-tracers.
-
-## A.2 Mechanisms for chi (`Use` before routing)
-
-**Facts**
-- `Use` middlewares run before routing. `routeHTTP` calls `FindRoute`, then
-  `h.ServeHTTP`. There is no callback between the two (chi v5 `mux.go:441-478`,
-  v1 `mux.go:410-444`).
-- `Routes.Find` (v5 `mux.go:368-397`, `chi.go:132`) and `Routes.Match` (v1
-  `mux.go:349-363`) do the same tree lookup as routing. They run no handler and
-  no middleware.
-- A mount handler sets the `*` value of its level to `""` before the sub-router
-  (v5 `mux.go:309-318`, v1 `mux.go:299-312`).
-
-| # | Mechanism | Exact (after routing)? | User API change? | Limits |
-|---|---|---|---|---|
-| **M1** | Route lookup in the middleware (`Find` v5 / `Match` v1, on a scratch `chi.Context`). | no | no | A rewrite after `Middleware` can give another route. A mount stub is not an endpoint. A middleware can answer without calling `next`. 1 more tree lookup per request. |
-| M2 | `r.With(Middleware())` on each endpoint (exists today). This is Decision 1. | yes | yes (user code) | Not automatic. Orchestrion adds `Use` at the root, not `With`. |
-| M3 | New dd-trace-go router wrapper that wraps each handler when it is registered (as `fiber.v2` does with `OnRoute`, `contrib/gofiber/fiber.v2/wrap.go:85-105`) | yes | yes (new API) | chi has no `OnRoute` hook. Sub-routers made with `chi.NewRouter()` are not wrapped. The wrapper is not a `*chi.Mux`, so the Orchestrion aspect cannot return it. |
-| **M4** | Orchestrion aspect that adds a hook in chi `routeHTTP`, between `FindRoute` and `h.ServeHTTP` | yes | no | Orchestrion builds only. chi cannot import chitrace (import cycle, see `chi.v5/orchestrion.yml`). Needs a linkname hook variable. Precedent: `contrib/net/http/orchestrion.server.yml:12-33`. Needs a spike. |
-| M5 | New "route matched" hook in chi (upstream change) | yes | yes (chi API) | Depends on the go-chi maintainers and on the chi version of each user. |
-| M6 | Lazy check at the first `Write`, body `Read` or `URLParam` call | no | no | Runs after side effects of the handler, or never. Rejected. |
-
-Preferred mechanism for a later P: **M4** (with a spike first). The spike must
-prove that the new hook runs only on a leaf (chi `(*Mux).handle` also registers
-mount stubs, `mux.go:324-338`), and that it respects disabled and ignored
-instrumentation. In a traced child, an ordinary mount `*` can already occupy the
-first-write slot: the spike must specify the skip that follows, and not promise
-full endpoint coverage. M5 can be proposed upstream at the same time. M1 is not
-recommended (A.6).
-
-**Options compared**
-
-| | R + docs (`r.With`) — **chosen** | R + M1 opt-in | M4 (Orchestrion, exact) | M5 (chi upstream hook) |
-|---|---|---|---|---|
-| Parameters | matched | **predicted**, with fallbacks | matched | matched |
-| Who gets P | users who change their routes | users who set the option | all Orchestrion builds | users of a new chi and dd-trace-go |
-| User code change | yes (`r.With`, or `Use` in a `Group` that registers the leaf) | yes (1 option) | no | none, or 1 line |
-| Wrong route possible | no | yes, partly unfixable | no | no |
-| Core change | none | new function, record, lock (+ slot if the action rules change) | same as M1 | same as M1 |
-| Effort | ~2 h | ~17 h (+10 h slot, +3 h timer) | spike 8 h + ~10 h (+ the same core work) | upstream PR ~4 h + unknown wait, then ~8 h |
-
-## A.3 Which R controls P changes
-
-| Control (R result) | R test | Cause of the change | Fix |
-|---|---|---|---|
-| **B1** The parameters of an earlier integration are not replaced and not mixed | `TestEnclosingIntegrationInput`, `TestEnclosingIntegrationCombination`, `TestParentNameOmitted` | a new chi write after them | Core record + lock: chi writes only when the context has no path parameters yet (A.5). Possible for every P option. |
-| **B1'** A later integration with other values does not mix with chi values | new control (AC7) | the WAF keeps condition matches between runs | No fix while the values persist. Only R or an independent WAF context (D) keeps it. → C4 |
-| **B2** A response block is not lost to the budget | `TestFiniteBudget` | the path rules use the shared budget | Core: a path-parameter run with its own timer (A.5.4), or accept. → C1 |
-| **B3** A later report is not lost | `TestEventCapBoundary`, same-type monitor rule (AC8) | (a) path events count toward the 10-event cap; (b) the native WAF does not report a second monitor rule of the same type (`testutil_appsec_test.go:25-28`) | (a) Core: own bound for path events. (b) No fix in dd-trace-go. → C2 |
-| **B4** A pending action is not replaced | `TestPendingAction` + response variants (AC8) | the response run uses the kept path values, and the slot uses `Store` (latest wins) | Core change of action semantics (A.5.3), or accept. → C3 |
-
-**Conclusion:** no option that adds path parameters for `Use` before routing is
-safe for B4 without a change of the core action semantics. B3(b) cannot be
-fixed in dd-trace-go. If Romain requires all R controls, the answer is **R (+
-docs)**. Today, `r.With` and the dd `ServeMux`, fiber, gin, echo and gorilla
-integrations have the same core behavior for B1'–B4. This is a fact, not a
-proof that P is safe.
-
-**Conclusion:** no option that adds path parameters for `Use` before routing is
-safe for B4 without a change of the core action semantics. B3(b) cannot be fixed
-in dd-trace-go. If all R controls are required, the answer is **R (+ docs)**.
-Today, `r.With` and the dd `ServeMux`, fiber, gin, echo and gorilla integrations
-have the same core behavior for B1'–B4. This is a fact, not a proof that P is
-safe.
-
-## A.4 Challenge round 1: objections 1–5 and answers
-
-The Adversarial Reviewer challenged the first P design (M1 on by default, "v1").
-The second design ("v2") answered as follows. Mentions of "row 2" and "the
-counter" are about v1.
-
-| # | Answer | Proof |
+| # | Change | Why |
 |---|---|---|
-| 1 | Partly fixed with fallbacks F1a–F1f. **A rewrite or a method change after `Middleware` cannot be fixed with M1.** | AC1 |
-| 2 | Row 2 is deleted (fix). **Mixing with a later writer cannot be fixed with M1** (nor M4, M5) while the values persist. | AC6, AC7 |
-| 3 | **Cannot be fixed with M1** (nor M4, M5) without a core change of action semantics. | AC8, C3 |
-| 4 | Fixed by specification: lock name, scope and order; slot transitions; barrier tests. The counter is deleted. (Round 2 found gaps for a later P: A.5.) | AC3, AC4 |
-| 5 | Split into C1 and C2. Core alternatives are given. B3(b) cannot be fixed in dd-trace-go. | AC8 |
-| AC10 | Qualified: a fresh writable response, a fresh sampling key, and separate assertions. | AC12 |
-
-The details of answers 1–3 are in A.6.
-
-## A.5 Core contract proposal for a later P — not approved
-
-This section is a proposal for a later P. It is **not** an approved
-implementation contract. It applies only to options that keep path parameters
-(M1 opt-in, M4, M5).
-
-**Open blockers (challenge round 2).** These block P, not the delivered change.
-They stay open until the AppSec owners answer.
-- **#3 — slot owner.** The shared slot has no enforcement owner. "Any operation"
-  can apply a reservation to its own writer, or its `Finish` can mark a
-  sibling's action as failed. The spec must name the owning response and
-  callbacks, who can fail or finalize it, and how direct callers of
-  `StartOperation` (it returns a mutable `*atomic.Pointer[actions.BlockHTTP]`)
-  follow the CAS protocol.
-- **#4 — lock order and `added`.** The claimed order "never taken while holding
-  a dyngo lock" is false: `dyngo.emitEvent` holds its registry read lock while
-  it calls the HTTP listener, and that listener calls `op.Run` with path data
-  (`instrumentation/appsec/dyngo/operation.go:379-392`;
-  `internal/appsec/listener/httpsec/http.go:69-82`). The spec must give the real
-  order, rule out the reverse edge, and define if `added` means *attempted* or
-  *accepted* (unsupported data, close, partial timeout).
-- **#5 — the detached timer.** The own timer (A.8, condition C1) isolates only
-  the **first** run. A response-first rule can defer the path work to the
-  ordinary shared-budget response run (`testutil_appsec_test.go:57-65`). Passing
-  `TestFiniteBudget` with an uncharged first run does not prove that every
-  baseline block survives.
-
-### A.5.1 Write rule
-New function in `instrumentation/appsec/emitter/httpsec`. The AppSec owners can
-change the name.
-
-```go
-// AddPathParamsIfFirst gives params to the WAF context of ctx only if no
-// integration gave path parameters to this context before. It returns
-// added=false when it did not write. It returns a *events.BlockingSecurityEvent
-// when the WAF blocks; the action goes into the action slot (A.5.3).
-func AddPathParamsIfFirst(ctx context.Context, route string, params map[string]string) (added bool, err error)
-```
-
-- M1 opt-in calls it after `BeforeHandle` and before `next`. M4 and M5 call it
-  in the endpoint wrapper. On a block, chi emits `httpsec.EarlyBlock{}`, as gin
-  does (`contrib/gin-gonic/gin/appsec.go:47`), and does not call the handler.
-- "Gave path parameters" = a context run (not a subcontext, not RASP) whose data
-  has `server.request.path_params`. This covers `StartOperation` (direct or
-  through `BeforeHandle`), `RouteMatched` with parameters, and this function.
-- Nothing changes for the other writers. They always write, as in `main`.
-
-### A.5.2 Lock (see open blocker #4)
-- **Name:** `ContextOperation.pathParamsMu` (`sync.Mutex`), new, in
-  `internal/appsec/emitter/waf/context.go`.
-- **Who takes it:** `ContextOperation.runWAF`
-  (`internal/appsec/emitter/waf/run.go:46`), for every context run with path
-  parameters or with the if-first marker. All persistent writes go through
-  `runWAF`.
-- **Held during:** the if-first decision, `runner.Run` (the native run,
-  `run.go:56`), and the record update.
-- **Released before:** `AddEvents`, `SendActionEvents`, `EmitData`, keep and
-  metrics (`run.go:62-118`). So no callback runs while the lock is held, and no
-  callback can take it again.
-- **Order (as claimed in v2):** `pathParamsMu` → go-libddwaf `Context.mu` (inside
-  `Run`, `context.go:245`). It is never taken while a goroutine holds
-  `ContextOperation.mu` or the action slot. `AddEvents` takes
-  `ContextOperation.mu` after the release. **The claim about dyngo locks is
-  false** (blocker #4): the real order with the dyngo registry read lock is open.
-- **Not taken** by RASP runs, subcontext runs, or runs without path parameters.
-
-### A.5.3 Action slot (only if the core action rules change; see open blocker #3)
-One slot per WAF context, shared by all its `HandlerOperation`s. It replaces the
-latest-wins `blockAction` (`httpsec/http.go:58`, `:131-133`). The slot is an
-atomic state plus an action pointer. All changes are CAS. No mutex is held
-during callbacks or response writes.
-
-| From | Event | To | Effect |
-|---|---|---|---|
-| Empty | an action `a` is produced (any run) | Reserved(a) | — |
-| Reserved(a) | another action `b` is produced | Reserved(a) | `b` is dropped. If `b` reports the block outcome: `SetBlockFailed`. An applied `a` block still has precedence in `Submit`. |
-| Reserved(a) | an apply point (early block, `EarlyBlock`, `afterHandle`) of any operation of the context | Applying(a) | Exactly 1 caller wins the CAS. A losing caller returns "handled" and writes nothing. |
-| Applying(a) | `CommitBlockResponse` succeeds | Applied(a) | `blockApplied`, `SetRequestBlocked` |
-| Applying(a) | commit error, or a panic in `OnBlock` or in the handler | Failed(a) | `blockFailed` (deferred, as `http.go:327-332`) |
-| Reserved(a) | response already started, blocking unavailable, or `Finish` with no apply | Failed(a) | as `http.go:307-320` and `:199` |
-| Applied / Failed | another action `b` | no change | `b` is dropped (`SetBlockFailed` if it reports the outcome) |
-
-Reservation (CAS) is separate from callbacks and from the response write.
-
-### A.5.4 Budget and reports
-- **Condition C1 = accept:** shared budget (`DD_APPSEC_WAF_TIMEOUT`, default 2 ms).
-- **Condition C1 = core change:** the if-first run uses `TimerKey = ""`. go-libddwaf then
-  makes a timer that is not charged to the context (`runner.go:50-56`, used at
-  `context.go:194`). Cost: the WAF time of a request can be higher than the
-  budget. This needs a metric scope, because `metrics.go:356-361` uses
-  `TimerKey`. A probe on a context run is necessary: the DD-20 probe used a
-  subcontext. **Limit (blocker #5):** this isolates the first run only. It does
-  not isolate path work that a response-first rule defers to the shared-budget
-  response run.
-- **Condition C2 = accept:** the path events count toward the 10-event cap. Same-type
-  suppression can hide a later monitor event.
-- **Condition C2 = reject:** there is no P. B3(b) is native WAF behavior.
+| 1 | **Opt-outs:** when the hook is woven, a `Middleware` with `WithIgnoreRequest` (v5, v1) or `WithNoAppsec(true)` (v5) puts a **disabled marker** in the context. The wrapper obeys the nearest marker. | Blocking 1: an inner opt-out under the root `Use` did not stop the hook (B1–B3). |
+| 2 | **chi v1:** `WithNoAppsec` is removed from all v1 text, ACs and recovery steps. | Blocking 1: v1 has no such option, and AC-A1 forbids a new API. |
+| 3 | The marker is set in `Middleware`, at the existing `r.WithContext(ctx)` (v5 `chi.go:79`, v1 `chi.go:72`). It costs 1 allocation (a small context type that holds the marker by value). | Change 1 needs the marker where the options are read. This also removes the extra `r.WithContext` of v1. |
+| 4 | The placement table is split ("without" / "with Orchestrion or otelc"). The 404/405 counts are corrected. The godoc says "Orchestrion or otelc". | Blocking 2. |
+| 5 | **`*` rule changed:** `Wrap(h, includeWildcard)` keeps `*` only for method-specific routes whose registered pattern ends in `*`. It drops inherited `*` values and those for `mALL` routes (`Handle`, `HandleFunc`, `Mount`). | Non-blocking 1: `r.Get("/files/*", h)` now gives the same result as manual `r.With`. |
+| 6 | `SetWovenForTest(bool) (restore func())`. The not-woven benchmark runs with `-run '^$'`. AC-O2 mount stub check: `Route("/routed/{tenant}")`, rule on `tenant`, `GET /routed/attack`, on both chi versions. | Blocking 3. |
+| 7 | New edge-case rows and ACs: inner opt-outs (B1–B3), catch-all `*`, repeated names, wrapped non-`chi.Routes` mounts (fires 2 times). AC-W7 runs on a real server and checks the exact body. | Blocking 2, non-blocking 2 and 3. |
+| 8 | **Invariants:** `Wrap` uses only zero-value state, proved by an AST test. The contrib must keep its import of `internal/endpointhook`. | Non-blocking 4. |
+| 9 | `rep` is made in `func(next)`, next to `subrouterCache`. The non-chi mount check is only in AC-O2. `RouteMatched` calls are counted through a test hook in `internal/endpointhook`. | Non-blocking 5. |
 
 ---
 
+### 1. Decisions and reasons
 
-## A.6 M1 fallbacks, and what no fix can cover
+| # | Decision | Reason |
+|---|---|---|
+| 1 | Join point: **`function-body` on `(*Mux).handle`**, guard `method&mSTUB == 0` | See 2.1: 1 wrap per route at registration; runs after the inline middlewares; skips mount stubs and chi sub-router mounts; only existing Orchestrion features. Round 1 confirmed it on chi v5.2.2–v5.5.0, v1.5.5 and v4.1.2+incompatible. |
+| 2 | Hook code in a new **internal** package of each contrib (`internal/endpointhook`), reached from chi with **`//go:linkname`** and `links:` | No import cycle, and no new public API. Same as `contrib/net/http/orchestrion.server.yml:18-33` and `orchestrion.client.yml:58-59`. Round 1 confirmed it with `-checklinkname=1` (the linker checks only standard-library symbols). |
+| 3 | **Gate:** when the hook is woven and AppSec is on, every chitrace `Middleware` puts a marker in the context. It is **enabled** when AppSec runs in that middleware, and **disabled** for `WithIgnoreRequest` (v5, v1) or `WithNoAppsec(true)` (v5). The wrapper uses the **nearest** marker. | The nearest chi tracer of the endpoint decides, so an explicit opt-out wins over an outer root `Use` (B1–B3). With no marker, the wrapper does nothing. This covers AppSec off, a net/http-only request and a direct `ServeHTTP`. It emits 0 telemetry warnings. |
+| 4 | Markers only when the hook is woven (`Woven()`) and `instr.AppSecEnabled()` | Manual users pay nothing: 1 atomic load, 0 allocations. With AppSec off there is no marker, because no enabled marker can exist. |
+| 5 | Parameters: **last value of a name wins**. AppSec gets `*` only for a catch-all route registered with a method, such as `Get("/files/*", h)`, and it gets the value of that route. `includeWildcard = method != mALL && len(pattern) > 0 && pattern[len(pattern)-1] == '*'`. | The handler reads the last value (`chi.URLParam` reads from the end: v5 `context.go:100-107`, v1 `:99-106`). Mount levels retain their `*` keys, so a method-specific endpoint with no catch-all must drop those keys. `Mount`, `Handle` and `HandleFunc` register `mALL`; their `*` can be a non-chi mount value. `mALL` is a variable (`chi.RegisterMethod` changes it), but the guard reads it in the same `handle` call. The length check protects an empty pattern before chi validates it. |
+| 6 | **Depth rule:** the hook runs only when the endpoint is deeper (`len(rctx.RoutePatterns)`) than the depth where the nearest enabled tracer started | With `r.With` or a leaf `Group.Use`, the tracer gave the parameters at its start, so the hook skips. There is no second WAF run, and the span count is unchanged. Round 1 measured the depths. |
+| 7 | A hook block is applied with **`httpsec.EarlyBlock`**, and the handler is not called | The block response is written before the middlewares after `Middleware` can write a 200. `afterHandle` does not apply it again: the handler is consumed (`httpsec/http.go:322-323`), and `blockApplied` has precedence (`waf/metrics.go:255`). gin uses the same mechanism. |
+| 8 | The hook reports the route through the tracer's route function (`rep`) | The hook route, the late route and the span `http.route` are the same (round 1 checked this). |
+| 9 | **otelc parity in the same PR** | The `_integration` suite runs with Orchestrion and with otelc (`harness.go:70-71`; chi is in `.github/workflows/otelc.yml:60-63,102`). `inject_code` on an unexported method exists already (`ddtrace/tracer/otelc.yaml:155-161`). |
+| 10 | No new switch or env var | gin, echo, gorilla and fiber give path parameters in woven builds with no switch. False blocks use the standard AppSec tools. |
+| 11 | No system-tests change | There is no woven chi weblog. The `chi` weblog is manual, so it does not change. `_integration` tests the woven code. |
+| 12 | Docs: `Middleware` godoc, `withAppsec` comment, 2 runnable `Example`s per package. **No `internal/appsec/README.md` change.** | Romain's rule: chi docs stay next to the chi code. |
+| 13 | Keep draft PR #5961 and its branch. New title: `feat(contrib/go-chi): give AppSec the chi path parameters under Orchestrion and otelc` | A branch rename closed #5925. The branch name is not visible after a squash merge. |
+| 14 | `Wrap` uses only zero-value package state (the `woven` `atomic.Bool`). | A package can register routes in `init()` or in a package-level `var` before `internal/endpointhook` is initialized (same issue: `contrib/valyala/fasthttp/otelc/hooks.go:71-73`). |
+| 15 | Test-only setters in `internal/endpointhook`: `SetWovenForTest` and `SetRouteMatchedForTest` | `Woven()` does not go back to false by itself, and `httpsec` has no test hook. Internal, so not public API. |
 
-The M1 lookup result is used only when all these conditions are true.
-Otherwise chi uses `known` (the R result).
-- **F1a** Root only: `len(rctx.RoutePatterns) == 0`.
-- **F1b** The lookup found an endpoint (`Find != ""`, or `Match == true` in v1).
-- **F1c** The last pattern does not end with `/*` (opaque mount or catch-all
-  wildcard: the lookup cannot tell them apart).
-- **F1d** The last pattern is not a mount pattern or a mount alias such as
-  `/api` or `/api/`. Probe: `GET /api` gives `Find = "/api"` and status 404.
-- **F1e** No name is used 2 times, except mount `*` values that are all `""`.
-- **F1f** `rctx.RouteMethod == ""` when the lookup runs.
+**Accepted shared-context semantics (Romain's decision).** The hook uses `httpsec.RouteMatched`, as `r.With(Middleware())`, the dd `ServeMux`, fiber, gin, echo, gorilla and 5 of 6 other tracers do. For woven chi requests:
+- the path rules use the shared request budget (`DD_APPSEC_WAF_TIMEOUT`, 2 ms by default);
+- the path events count toward the 10-event cap;
+- the native WAF does not report a second monitor rule of the same type;
+- the action slot is latest-wins (`httpsec/http.go:131-133`). **This waives the "never replace a pending action" requirement for this hook.**
+- condition matches stay between runs;
+- there are **no prediction false blocks**: the parameters are read after chi selected the endpoint.
 
-**Cannot be fixed with M1:** a middleware after `Middleware` can change
-`rctx.RoutePath`, `r.URL.Path`, `r.URL.RawPath` or `rctx.RouteMethod` (for
-example `CleanPath`, `URLFormat`, `GetHead`, or custom code). The lookup runs
-before that code, and no chi state tells about a future change. A wrong
-prediction can block a valid request, and routing never runs after an early
-block, so no log can find it. A middleware can also **answer without calling
-`next`** (for example a cached response, or a redirect), with no rewrite: the
-predicted parameters were then sent to the WAF for a request that never reaches
-routing. A documented opt-in would have to say: "Use this option only when no
-middleware after `Middleware` changes the path or the method, and none answers
-without calling `next`."
+---
 
-**Mixing with a later writer cannot be fixed** (M1, M4 or M5) while the values
-persist in the shared context: a P write can be followed by a writer with other
-values (a second router on a changed path), and the WAF keeps the condition
-matches. Only R, or D (an independent WAF context, which is not a subcontext),
-avoids this.
+### 2. Mechanism
 
-**The action replacement cannot be fixed** without a core change of the action
-semantics. `afterHandle` runs the response WAF (`httpsec/http.go:440`) before it
-applies the slot (`:443`), and the listener uses `Store` (`:131-133`). A response
-rule that uses a P value can then replace a pending body block. The state
-machine in A.5.3 is one possible change. It is not the only one.
+#### 2.1 Join point comparison (decision 1)
 
-## A.7 Non-blocking reviewer notes (for a later P)
+| Criterion | `method-call` on `(*node).FindRoute` | `function-body` on `(*node).FindRoute` + `mSTUB` guard | **`function-body` on `(*Mux).handle` (chosen)** |
+|---|---|---|---|
+| Orchestrion support | checked only on v1.14.0; no dd-trace-go aspect uses it | used by net/http, gorilla | `function-body` + `inject-declarations`/`links` (net/http) |
+| otelc equivalent | none (a call with a receiver is otelc gap 1) | changing results with `inject_code`: not documented | `inject_code` + `add_file` with linkname (documented) |
+| Allocations per request | 1 wrapper per `FindRoute` call | same | **0** (1 wrapper per route, at registration) |
+| `r.With` / leaf `Group.Use` | runs before the inline `Middleware` (1 span instead of 2 on a block; 2 WAF runs on allow) | same | runs after it (inside `Chain(...)`, v5 `mux.go:416-435`); decision 6 skips |
+| Mount stubs / chi sub-router mounts | extra guards | `endpoints[mSTUB]`, `subroutes == nil` | `mSTUB` set (v5 `mux.go:325-335`, v1 `:315-325`) |
+| `*` of a non-chi mount | rest of path | same | decision 5 |
+| chi v5 / v1 / v4 | pass | pass (b2) | pass (round 1 checked the same `handle` and `Mount` code) |
 
-1. **F1d test:** test a named exact mount alias on the scratch context. The
-   existing `unmatchedSubrouter` fast path skips a non-wildcard pattern when
-   `RoutePath != "/"` (`chi.v5/chi.go:137-146`).
-2. **Route checks per mechanism (AC12):** keep the fresh-response and
-   sampled-schema controls, but split the route expectations by mechanism. M1
-   can stop *before* routing. An M4 leaf block returns through the router, so the
-   outer late callback **does** run and can report the selected route
-   (`contrib/go-chi/chi.v5/appsec.go:60-70`). For the failure control, flush
-   **through a visible tracker**: a flush before the first middleware is invisible
-   (`writer_appsec.go:37-42,75-83`). Assert wire status and telemetry
-   separately.
+#### 2.2 Orchestrion aspect (new, in both `orchestrion.yml`)
+This is chi v5. chi v1 uses receiver `*github.com/go-chi/chi.Mux` and the `chi/v2` contrib path.
 
-## A.8 Conditions for a later P (not decisions)
+```yaml
+  - id: Mux.handle
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/go-chi/chi/v5.Mux'
+          - name: handle
+    advice:
+      - inject-declarations:
+          # go:linkname: the contrib imports chi, so chi cannot import the contrib.
+          links:
+            - github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2/internal/endpointhook
+          template: |-
+            //go:linkname __dd_chitrace_wrapEndpoint github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2/internal/endpointhook.Wrap
+            func __dd_chitrace_wrapEndpoint(http.Handler, bool) http.Handler
+      - prepend-statements:
+          template: |-
+            {{- $method := .Function.Argument 0 -}}
+            {{- $pattern := .Function.Argument 1 -}}
+            {{- $handler := .Function.Argument 2 -}}
+            // Endpoints only: mount stubs and chi sub-router mounts have mSTUB.
+            // Keep "*" only for method-specific catch-all endpoints (decision 5).
+            if {{ $method }}&mSTUB == 0 {
+              {{ $handler }} = __dd_chitrace_wrapEndpoint({{ $handler }}, {{ $method }} != mALL && len({{ $pattern }}) > 0 && {{ $pattern }}[len({{ $pattern }})-1] == '*')
+            }
+```
+- The parameters are read through template variables. The only literal names are `mSTUB` and `mALL`, which exist in every chi version that round 1 checked.
+- If the declaration needs explicit imports (`net/http`, `unsafe`), the advice lists them in `imports:`. AC-O1 proves that the woven chi package builds.
+- The existing `NewMux` aspect does not change.
 
-Each point is a condition that a later issue must meet before P ships. None of
-them is a decision for this PR.
+#### 2.3 otelc rules (new, in both `otelc/otelc.yaml`)
+- `add_file`: a `//go:build ignore` file in the otelc rules module, with the same linkname declaration (`pattern-mapping.md:17,98`).
+- `inject_code` on `where: {func: handle, recv: "*Mux"}`: set `{{- $method := .FuncArgument 0 -}}`, `{{- $pattern := .FuncArgument 1 -}}`, and `{{- $handler := .FuncArgument 2 -}}`. Use the same `mSTUB` guard and pass `{{ $method }} != mALL && len({{ $pattern }}) > 0 && {{ $pattern }}[len({{ $pattern }})-1] == '*'` as `includeWildcard`.
+- **Link condition:** otelc blank-imports the rules module, and the rules module imports the contrib (`otelc/otelc.go`). So the contrib package must keep its import of `internal/endpointhook`. `Middleware` uses it, so the import is required by the code. The `endpointhook` package doc states this invariant.
+- No rule in the repo uses `add_file` with a linkname on a third-party library yet. The otelc runs of AC-O1–O5 are required.
 
-- **C1 — Lost baseline block (B2).** A response block of R can be lost when the
-  path rules use the shared budget (`TestFiniteBudget`: 403 → 200). Either the
-  loss is accepted explicitly, or a separate timer for the path-parameter run is
-  built. The timer needs a probe on a context run (the DD-20 probe used a
-  subcontext), and it isolates only the first run (blocker #5).
-- **C2 — Lost baseline report (B3).** A later event can be lost to the 10-event
-  cap or to native same-type suppression. The second cannot be changed in
-  dd-trace-go. Either the loss is accepted explicitly, or there is no P.
-- **C3 — Action precedence (B4).** A response action that uses a P value can
-  replace a pending action, as with `r.With` today. **To accept this waives the
-  requirement "never replace a pending action"** of ROMAIN-51. The other way is
-  a core change of the action rules, approved by the AppSec owners (A.5.3).
-- **C4 — Mixed values with a later writer (B1').** A rule can match 1 P value and
-  1 value of a later integration: the same kind of false block as DD-20 item 2.
-  Either the loss is accepted explicitly, or there is no P.
-- **C5 — Rollout and rollback.** Choose the off switch before any P ships. An M1
-  opt-in is its own off switch for M1 only. It does **not** turn off an M4 that
-  Orchestrion applies to all builds. A core change of the action rules also
-  affects requests that do not use P, and the off switch of P does not undo it.
-  Decide the rollout (opt-in, or default on), the rollback (an option, a
-  release revert, or Remote Config), and whether each core change can be
-  reverted on its own.
+#### 2.4 Hook package `internal/endpointhook` (new, in each contrib)
+- **Files:** `wrap_appsec.go` (`Wrap`, the wrapper type, `woven`) and `marker_appsec.go` (the marker, the context type, the test setters). The `*appsec.go` names make `@DataDog/asm-go` the owners (`CODEOWNERS:71`).
+- **Imports:** chi, `httpsec` and `dyngo`. chi does not import this package, so there is no cycle.
 
-**How to read a "no" on C1–C4.** Two different answers exist:
-- **Reject P:** P is not built. R + docs stays.
-- **Require a proven core fix:** P stays possible, but only after the core fix
-  for that point is built **and proven** (for example the C1 timer with a
-  deferred-evaluation control, or the A.5.3 slot with its transition tests).
-  Until then, R + docs stays.
+```go
+type Marker struct {
+	Disabled bool     // WithIgnoreRequest (v5, v1) or WithNoAppsec(true) (v5)
+	Depth    int      // len(rctx.RoutePatterns) when the tracer started
+	Route    Reporter // the tracer's route function (decision 8)
+}
+type Reporter interface{ ReportedRoute(*chi.Context) string }
 
-## A.9 Acceptance criteria and review for a later P
+func With(ctx context.Context, m Marker) context.Context // 1 allocation; the nearest marker wins
+func Woven() bool                                        // true after the first Wrap call
+func Wrap(h http.Handler, includeWildcard bool) http.Handler // linkname target; Wrap(nil, _) returns nil
 
-Acceptance criteria of the earlier draft that apply **only** to a later P. AC9
-and AC13 are also in section 3, where they apply to the delivered change.
+// Test only (internal, so not public API). Used with t.Cleanup / b.Cleanup.
+func SetWovenForTest(woven bool) (restore func())
+func SetRouteMatchedForTest(fn func(context.Context, string, map[string]string) error) (restore func())
+```
 
-**[unit test]**
-- [ ] AC1 (M1 opt-in only) Lookup controls, run on chi **v5.3.0 and v1.5.5**.
-  Each case is a pass/fail control: rewrite before a child `Use`, rewrite after
-  `Use`, mount and terminal wildcard on `/docs/*`, mount stub `/api` with no `/`
-  child, a name at 2 levels, `GetHead`, root `RoutePath` change. Expected: `known`
-  (the R result) for all cases that F1a–F1f cover. For the "change after
-  `Middleware`" cases, the test pins the wrong-prediction result, and the opt-in
-  docs list it.
-- [ ] AC2 `AddPathParamsIfFirst`: no path parameters → write. Path parameters
-  from `BeforeHandle`, a direct `StartOperation`, or `RouteMatched` → no write.
-  Subcontext and RASP runs do not count.
-- [ ] AC3 Lock barriers, with `-race` and a timeout:
-  - a hook stops inside the critical section; a concurrent `RouteMatched` with
-    parameters waits, and the result is 1 serial order;
-  - the other writer goes first → no P write;
-  - a matching rule with an action in the if-first run → no deadlock
-    (`AddEvents` and the actions run after the release).
-- [ ] AC4 (only if the action rules change) Slot transitions: each row of A.5.3. Two
-  apply points race → exactly 1 `Applying`. Panic in `OnBlock` → `Failed` +
-  telemetry. `Finish` with `Reserved` → `Failed`.
+**`Wrap` invariant (decision 14):** `wrap_appsec.go` has no `func init` and no package-level `var` with a value. `Wrap` only stores `true` in `woven` (an `atomic.Bool`) and returns a value of an unexported struct type. The `RouteMatched` test hook is in `marker_appsec.go`. The wrapper reads it only at request time, after all packages are initialized.
 
-**[integration test, real WAF]** (both packages, `httptest` server)
-- [ ] AC5 Gains (M1 opt-in on, or M4): a rule on `id` blocks before the handler;
-  [response header + `id`] gives 403; the schema has `_dd.appsec.s.req.params`.
-- [ ] AC6 B1 = R: the 3 B1 tests in A.3. New strict-superset control: an
-  enclosing non-P map that contains more than the child `known`, a child `Use`
-  with the opt-in on, and a response-first rule on the parent-only key → the
-  `main` result.
-- [ ] AC7 B1' (pinned, for C4): a successful first P write, then a second router
-  on a changed path with other values, and a rule that needs 1 value of each. The
-  test pins the result: expected 403, R gives 200.
-- [ ] AC8 R controls with P on. The test checks the wire action, the timeout and
-  the reported rule IDs separately:
-  - `TestFiniteBudget`: C1 = accept → pinned 200 and `waf_timeout:true`. C1 =
-    core change → 403 is kept.
-  - `TestEventCapBoundary`, and a new same-type monitor test below the cap (a P
-    path monitor of type T, then a header monitor of type T): C2 = accept → the
-    lost header event is pinned.
-  - Pending body block + path/response redirect, and the inverse: C3 = accept →
-    the latest-wins results are pinned. C3 = core change → the original wire
-    action and its telemetry.
-- [ ] AC9 **(also section 3)** R default: with the opt-in off, or without Orchestrion,
-  all chi tests at `b3dc60f72` pass with no changed expectation. If the action rules
-  change, the PR lists each changed test of the other integrations, with the
-  reason.
+**Wrapper steps at request time:**
+1. Look up the nearest `Marker` in `r.Context()`. If there is none, or if it is `Disabled`, call `h` and stop.
+2. Read `rctx := chi.RouteContext(r.Context())`. If `rctx == nil` or `len(rctx.RoutePatterns) <= m.Depth`, call `h` and stop.
+3. Build the parameters from `rctx.URLParams`. The last value of a name wins. `*` is included only if `includeWildcard` is true. If the set is empty, call `h` and stop: no WAF run.
+4. Call `RouteMatched(r.Context(), m.Route.ReportedRoute(rctx), params)`. This is `httpsec.RouteMatched`, or the test hook.
+5. On an error: emit `httpsec.EarlyBlock{}` on the nearest `httpsec.HandlerOperation`, and return without calling `h`. With no error: call `h`.
 
-**[benchmark]**
-- [ ] AC10 `BenchmarkMiddlewareAppSec`, `-count 10`, benchstat. Opt-in off: no
-  change in allocations; ns/op within noise. Opt-in on (or M4): report the
-  change.
-- [ ] AC11 Default rules, path values of 8, 64 and 256 bytes: report the change
-  of `_dd.appsec.waf.duration`.
+The wrapper type has `Unwrap() http.Handler`.
 
-**[telemetry]** (`testutils.StartTelemetryRecorder`)
-- [ ] AC12 (replaces v1 AC10)
-  - Positive case: a fresh writable response and a fresh sampling key (as
-    `TestAppSecSchemaPerEndpoint`, `setups_appsec_test.go:352`). A P block gives
-    1 `waf.requests` point with `request_blocked:true` and `block_failure:false`.
-  - An early-blocked request keeps the start route: the late route callback does
-    not run (`chi.v5/appsec.go:60-74`).
-  - A P block after the response started (a middleware before `Middleware`
-    flushed): `block_failure:true`, and the handler does not run
-    (`httpsec/http.go:312-320`).
-  - Route attribution is checked on the operation route and the span route, not
-    from a zero `api_security.missing_route` (it counts only 2xx,
-    `listener/httpsec/http.go:115`).
+#### 2.5 Changes in `Middleware` (`*/chi.go`) and `withAppsec` (`*/appsec.go`)
+Read `instr.AppSecEnabled()` once per request into a local variable before the ignore check. Use that same value for the marker gate and the `withAppsec` decision. Markers are set only when `endpointhook.Woven()` and that local value are both true.
 
-**[system-tests]**
-- [ ] AC13 **(also section 3)** The `chi` weblog jobs pass with no manifest change (the
-  R default does not change).
+**chi v5 (`chi.go`):**
+- In `func(next)`, next to `subrouterCache` (`:60`), make `rep`. It is a struct with `cfg` and `&subrouterCache`, and it calls `reportedRoute`. So 2 routers that use 1 `Middleware()` value do not share a cache.
+- `WithIgnoreRequest` branch (`:62-65`): `r = r.WithContext(endpointhook.With(r.Context(), endpointhook.Marker{Disabled: true}))` before `next.ServeHTTP`.
+- Before `r = r.WithContext(ctx)` (`:79`), add to `ctx`:
+  - `Marker{Disabled: true}` when `cfg.appsecDisabled`;
+  - else, when `rctx != nil`: `Marker{Depth: len(rctx.RoutePatterns), Route: rep}`.
 
-**[integration test, CI]**
-- [ ] AC14 apidiff shows additions only. Go 1.26 and 1.27, `-race`,
-  `GOWORK=off`. If M4: `internal/orchestrion/_integration/chi` and `chi.v5` pass,
-  with a new path-parameter case.
+**chi v1 (`chi.go`):**
+- Same at `:55-58` (`WithIgnoreRequest`) and `:72` (`r.WithContext`), with no `WithNoAppsec` case.
+- `rep` is a zero-size package value that returns `rc.RoutePattern()`.
 
-**Review for a later P:**
-1. Adversarial challenge (2 rounds): **done** on this analysis. The open
-   objections are the blockers #3, #4 and #5 (A.5).
-2. `@DataDog/asm-go` approves the core contract (A.5.1–A.5.4) on the dd-trace-go
-   PR (`CODEOWNERS:67-72`), and the contrib owners (`CODEOWNERS:60`) approve the
-   contrib change.
-3. If M4: `@DataDog/apm-orchestrion` (`CODEOWNERS:149`) approves the new aspect in
-   `orchestrion.yml`.
+**`withAppsec`:** the code does not change, only its comment (section 4). The late `RouteMatched(finalRoute, nil)` (v5 `appsec.go:60-72`, v1 `:58-70`) still runs after a hook block, because the hook returns through the router. It sets the final route with no WAF run.
 
-## A.10 Sequence: M4 (the preferred P mechanism)
+---
+
+### 3. Edge cases (both chi versions unless stated)
+
+| Case | Behavior |
+|---|---|
+| Root `Use` (woven default), `GET /users/{id}` | Fires 1 time: `{id}`. A block gives 403 before the handler. 1 chi span. |
+| `Route("/routed/{tenant}", …)` endpoint | Fires 1 time: `{tenant, id}`. 1 span (chi's internal `NewRouter` is not woven by `NewMux`). |
+| `Mount` of a user `chi.Routes` sub-router (Orchestrion adds its `Use`) | The inner tracer starts at depth 1. The hook fires at the endpoint (depth 2), on the inner operation, 1 time. 2 spans, as today. |
+| Mount stub: `Route("/routed/{tenant}")` with no `/` child, `GET /routed/attack` | Not wrapped (`mSTUB`): 404, no path event (round 1: E1). |
+| `Mount` of a wrapped non-`chi.Routes` handler (`http.HandlerFunc(api.ServeHTTP)`, `otelhttp.NewHandler(api, …)`, `http.StripPrefix`), or `Handle("/sub/*", sub)` | The outer `/*` is `mALL` with no `mSTUB`, so it is wrapped. It fires with the mount parameters (no `*`), if there are some. Then the inner chi endpoint fires with all of them: **2 path-parameter WAF runs**, with the same values. |
+| Non-chi mount (`r.Mount("/files", http.FileServer(…))`) | Wrapped (`mALL`). No `*` sent, so a rule on `*` does not block. |
+| Catch-all `r.Get("/files/*", h)` | `*` sent (method-specific). Same result as manual `r.With` (round 1: D1/D2 now agree). |
+| Catch-all `r.Handle("/files/*", h)` | `*` not sent (`mALL`). |
+| Repeated name: `Route("/m/{id}")` + `Get("/items/{id}")` | `id` = the endpoint value (last wins). Manual `r.With` gives the first value on v5 and the last on v1, unchanged. |
+| Inner `r.With(Middleware(WithNoAppsec(true)))` under the woven root (v5) | Disabled marker, so the hook stops: no path parameters. The root still runs its request rules. 2 spans. |
+| Inner `WithIgnoreRequest` that ignores the request (v5, v1), on `r.With` or a sub-router `Use` | Disabled marker, so the hook stops. The inner middleware starts no span. |
+| `r.With(Middleware())` or leaf `Group.Use` under the woven root | Decision 6: the hook skips. The parameters reach the WAF 1 time (inner `BeforeHandle`). 2 spans. |
+| `Group.Use` around `Route`/`Mount` | That tracer starts at the mount depth, so the hook fires at the endpoint. |
+| Enclosing integration with parameters (dd `ServeMux`) | Standard semantics: chi's set replaces the address value. Matched conditions stay. Same as `r.With` today. |
+| Block when the response already started (flush through a visible tracker) | `EarlyBlock` reports `block_failure`. The handler does not run (`httpsec/http.go:312-320`). |
+| Middlewares between the tracer and the endpoint, on an early block | They see no status and no bytes on their own writers (round 1: C1). On a real server, the block `Content-Length` (`waf/actions/block.go:233`) stops their extra bytes. |
+| 404 / 405 | No endpoint handler, so no hook. |
+| `chi.Walk`, `docgen` under a woven build | They see the wrapper. `Unwrap()` gives the original handler. |
+
+---
+
+### 4. Docs and `Example`s (both packages)
+
+**`Middleware` godoc** (v5 `chi.go:34-45`, v1 `chi.go:31-42`). Keep the first AppSec paragraph (writers and `Unwrap`). Replace the second paragraph with this (v5 text; the v1 differences are in the last 2 bullets of this section):
+
+```go
+// With Orchestrion or otelc, no code change is necessary. They add Middleware to
+// the routers that chi.NewRouter and chi.NewMux return, and they wrap the endpoint
+// handlers of chi. After chi selected the endpoint, the wrapper gives AppSec the
+// route and the path parameters, before the handler: a rule on a path parameter can
+// then block the request before the handler. For a name used at 2 levels, AppSec
+// gets the value of the endpoint. AppSec gets "*" only for a catch-all route
+// registered with a method, such as Get("/files/*", h), and it gets the value of
+// that route. The nearest Middleware decides whether the wrapper runs: one with
+// WithNoAppsec(true), or one that ignores the request with WithIgnoreRequest,
+// turns the wrapper off.
+//
+// Without Orchestrion or otelc, chi runs a Middleware added with Use before routing:
+// AppSec gets no path parameters, and it gets the route after the handler. To give
+// AppSec the path parameters before the handler, add Middleware where chi already
+// selected the endpoint: on the endpoint (r.With(Middleware()).Get(...)), or with Use
+// in the Group that registers the endpoint. AppSec then also gets "*", and for a name
+// used at 2 levels, the first value. A Group around Route or Mount does not get the
+// path parameters of the child router. If you also keep a Middleware at the root,
+// AppSec also covers the requests that match no endpoint (404, 405) and the
+// middlewares before routing, and each matched request gets 1 more span. Both
+// middlewares use the same AppSec request context.
+```
+- v1: replace "one with WithNoAppsec(true), or one that ignores the request with WithIgnoreRequest" with "one that ignores the request with WithIgnoreRequest".
+- v1: replace "the first value" with "the last value".
+
+**`withAppsec` comment** (`*/appsec.go`). Keep the current text, and add after its first paragraph (v5 text; v1 removes the `WithNoAppsec` parts and writes "last value" in table A):
+
+```go
+// With Orchestrion or otelc, chi's (*Mux).handle wraps each endpoint handler with
+// internal/endpointhook.Wrap. Middleware then puts an endpointhook.Marker in the
+// request context. A disabled marker means WithIgnoreRequest or WithNoAppsec(true).
+// Otherwise the marker has the routing depth at which Middleware started, and the
+// route function. The wrapper reads the nearest marker. When the marker is enabled and
+// chi selected an endpoint deeper than that depth, the wrapper gives the WAF the path
+// parameters of the endpoint with httpsec.RouteMatched, before the handler: the last
+// value of a name. AppSec gets "*" only for a catch-all route registered with a method,
+// such as Get("/files/*", h), and it gets the value of that route. It applies a block
+// with httpsec.EarlyBlock: the middlewares between Middleware and the
+// endpoint see no status and no bytes on their own response writers. The wrapper does
+// nothing when there is no marker (AppSec off, no chitrace Middleware), when the marker
+// is disabled, or when Middleware started at the endpoint (r.With, or Use in the
+// Group that registers the endpoint).
+//
+// A. Without Orchestrion or otelc
+//
+//	Placement                         Path parameters before the handler          Spans: match / 404, 405
+//	Use at the root                   none                                        1 / 1
+//	r.With, or Use in the leaf Group  all, "*" included; repeated name: first     1 / 0
+//	Use at the root + r.With          as r.With (inner middleware)                2 / 1
+//	Group.Use around Route or Mount   mount parameters and "*" (rest of path)      1 / 1 under the mount, else 0
+//
+// B. With Orchestrion or otelc (they add the Use at the root)
+//
+//	Placement in user code            Path parameters before the handler          Spans: match / 404, 405
+//	none                              wrapper: last value; "*" for method-specific catch-all only  1 / 1
+//	r.With, or Use in the leaf Group  as A (inner middleware); wrapper skips      2 / 1
+//	Group.Use around Route or Mount   wrapper fires at endpoint                   2 / 2 under the mount, else 1
+//	r.With(Middleware(WithNoAppsec))  none (disabled marker)                      2 / 1
+//	WithIgnoreRequest that ignores    none (disabled marker)                      1 / 1
+//	user sub-router (NewRouter+Mount) wrapper, on the inner operation             2 / 2 under the mount, else 1
+//	Mount of a wrapped non-chi.Routes wrapper, 2 times (mount, endpoint)          as its routers
+```
+
+**`Example`s** (`*/example_test.go`, with `// Output:`, so `go test` runs them; AppSec and the tracer are off; requests through `httptest.NewRecorder`):
+- `Example_orchestrion`: `chi.NewRouter()` and `Get("/users/{id}", …)` with no dd-trace-go call. The comment says what Orchestrion or otelc adds. Output: `user 42`.
+- `Example_pathParameters`: root `Use(chitrace.Middleware())`, `With(chitrace.Middleware()).Get("/users/{id}", …)`, and `Group(func(g chi.Router) { g.Use(chitrace.Middleware()); g.Get("/orders/{id}", …) })`. The comments give the span and coverage trade-off. Output: `user 42`, `order 7`.
+
+---
+
+### 5. Constraints
+
+- **Compatibility:**
+  - chi v5 ≥ v5.3.0 and chi v1.5.5. The v1 aspect also weaves v4.1.2+incompatible (same import path), and round 1 compiled it.
+  - Orchestrion ≥ `.orchestrion-version` (v1.14.0). otelc at `OTELC_VERSION`.
+  - Manual users: no behavior change.
+- **Rollout:** the next minor release. Release note: "contrib/go-chi: with Orchestrion or otelc, AppSec now gets the chi path parameters before the handler. Rules on path parameters can block before the handler, and API Security reports `req.params`." No flag (decision 10).
+- **Recovery:**
+  - False blocks: AppSec exclusion filters or rule changes through Remote Config. No release is needed.
+  - A defect in the hook, for 1 part of an app: add an inner `Middleware` that opts out on that part (v5: `r.With(chitrace.Middleware(chitrace.WithNoAppsec(true)))`; v5 and v1: `WithIgnoreRequest`).
+  - For the whole app: pin the previous dd-trace-go version, or turn AppSec off.
+  - A revert of the PR leaves no stored state.
+- **Allocations and benchmarks** (`BenchmarkMiddlewareAppSec`, new sub-benchmarks; weaving simulated with `endpointhook.Wrap`):
+  - not woven: run with `-run '^$'` and `SetWovenForTest(false)`; equal to `main` (benchstat, no significant change);
+  - woven, AppSec off: 0 more allocations per request; ns/op at most +2%;
+  - woven, `WithNoAppsec(true)` (v5) or an ignored request: at most 1 more allocation (2 for an ignored request);
+  - woven, AppSec on, root `Use`, `/users/{id}`: allocations and ns/op at most those of the manual stacked setup on `main` (root `Use` + `r.With`), which gives the WAF the same data.
+
+---
+
+### 6. Sequence: woven build, root `Use`
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant C as Client
-    participant T as chitrace Middleware (root Use)
-    participant H as httpsec (core)
+    participant S as net/http server (woven)
+    participant T as chitrace Middleware (root Use, added by the tool)
+    participant H as httpsec
     participant R as chi routeHTTP
-    participant X as Endpoint wrapper (Orchestrion, in chi handle)
+    participant X as Endpoint wrapper (woven in chi handle)
     participant E as Endpoint handler
-    C->>T: GET /users/42
-    T->>H: BeforeHandle (no path parameters, as R)
+    C->>S: GET /users/42
+    S->>T: chi Mux, Use chain, no route yet
+    T->>T: start span, enabled marker (depth 0) in the context
+    T->>H: BeforeHandle (no path parameters)
     H-->>T: no block
-    T->>R: next middlewares (rewrites can occur here), then routeHTTP
-    R->>R: FindRoute (real routing)
+    T->>R: next middlewares, then routeHTTP
+    R->>R: FindRoute selects /users/{id}
     R->>X: ServeHTTP
-    X->>H: AddPathParamsIfFirst(/users/{id}, id=42)
-    Note over H: pathParamsMu held for the decision and the native run only
-    alt the WAF returns a block
+    X->>X: nearest marker enabled, depth 1 is more than 0, params id=42
+    X->>H: RouteMatched(/users/{id}, id=42)
+    Note over H: WAF run in the shared request context
+    alt the WAF returns a block or a redirect
         X->>H: EarlyBlock
         H-->>C: 403 (the handler does not run)
-    else no block
+    else no action
         X->>E: ServeHTTP
-        E-->>T: handler returns
-        T->>H: RouteMatched(route, no parameters)
-        H->>H: response run, then apply the slot
-        H-->>C: response, or the slot action if the response is not sent
+        E-->>X: response
     end
+    X-->>T: return through the middlewares
+    T->>H: late RouteMatched(route, no parameters), only if the route changed
+    T->>H: afterHandle: response run, apply a pending action if the response is not sent
+    T->>T: finish span
 ```
+
+---
+
+### 7. Acceptance criteria (both packages unless stated)
+
+**[unit test]** (`internal/endpointhook`, no WAF; `RouteMatched` calls are counted with `SetRouteMatchedForTest`)
+- [ ] AC-U1 Gate: no marker → `h` runs 1 time, 0 `RouteMatched` calls. A nearest disabled marker under an outer enabled marker → the same.
+- [ ] AC-U2 Parameters: last value wins. `includeWildcard=false` drops every `*`. `includeWildcard=true` keeps the last `*` value. An empty set gives 0 calls.
+- [ ] AC-U3 Depth: equal depth skips, a deeper endpoint fires. `Wrap(nil, _)` returns `nil`. `Woven()` is true after `Wrap`. `SetWovenForTest` restores the old value.
+- [ ] AC-U4 `TestWrapZeroValueState`: an AST check of `wrap_appsec.go` fails on a `func init`, on a package-level `var` with a value, or if `Wrap` calls anything declared outside `wrap_appsec.go`.
+
+**[integration test, real WAF]** (contrib tests on `httptest.Server`. Endpoints are wrapped with `endpointhook.Wrap(h, includeWildcard)`, using the method and pattern rule in decision 5, to simulate weaving. Call `SetWovenForTest(true)` before the first `Wrap`, with `t.Cleanup`.)
+- [ ] AC-W1 Root `Use`, rule on `id`: 403, handler not run, 1 event, 1 chi span.
+- [ ] AC-W2 `Route` and user `chi.Routes` `Mount`: 1 call with `{tenant, id}`. Spans: 1 and 2. For `Route("/routed/{tenant}")` + `Get("/items/{id}")`, `_dd.appsec.s.req.params` has no `*` key.
+- [ ] AC-W3 Catch-all, rule on `*`: `r.Get("/files/*")` → 403, the same result as manual `r.With` (D1/D2). `r.Handle("/files/*")` → 200, no event. `Route("/routed/{tenant}")` + `Get("/files/*")` sends `{tenant, *}` with that endpoint's catch-all value, and `_dd.appsec.s.req.params` contains those two keys.
+- [ ] AC-W4 Repeated name, `Route("/m/{id}")` + `Get("/items/{id}")`, rule `id=attack`: `GET /m/attack/items/42` → 200 (the hook sends `id=42`). `GET /m/42/items/attack` → 403. The manual `r.With` results stay as in `main` (v5: 403 for the first request; v1: 200).
+- [ ] AC-W5 `r.With` and leaf `Group.Use` under root `Use`: 403 as in `main`, 2 spans, 0 hook `RouteMatched` calls.
+- [ ] AC-W6 Opt-outs. For each applicable router, send two requests: `GET /users/attack` gives 200 and no path event; `GET /users/42` with a blocked header gives 403 through the root. AppSec-off and no-chitrace cases test the path gate separately.
+  - B1 (v5): root `Use` + `r.With(Middleware(WithNoAppsec(true)))`.
+  - B2 (v5, v1): root `Use` + `r.With(Middleware(WithIgnoreRequest(…)))` that ignores the request.
+  - B3: a mounted sub-router with `Use(Middleware(WithNoAppsec(true)))` (v5), or with `WithIgnoreRequest` (v5, v1).
+  - Also: AppSec off; an outer `httpsec.WrapHandler` with no chitrace.
+- [ ] AC-W7 Early block on a real server: a middleware between root `Use` and the endpoint writes `default-body` after `next` when its own writer saw nothing. Result: status 403, body exactly the block JSON, the block applied 1 time, `block_failure:false`.
+- [ ] AC-W8 After a hook block, the span `http.route` and the operation route are `/users/{id}`.
+- [ ] AC-W9 Wrapped non-`chi.Routes` mount: `r.Handle("/t/{tenant}/*", Wrap(sub, false))`, with a wrapped endpoint in `sub` → 2 calls (`{tenant}`, then `{tenant, id}`). `sub` registers the full path (`/t/{tenant}/items/{id}`), because `Handle` does not shift the routing path as `Mount` does.
+- [ ] AC-W10 Standard semantics, pinned (a later core change shows here):
+  - pending body block + path/response redirect → 303;
+  - 5,000 path rules → 200 and `waf_timeout:true`;
+  - 9 query events + 1 path event → the header event is dropped.
+- [ ] AC-W11 All existing chi tests pass with **no** changed expectation. Each new test that weaves calls `SetWovenForTest` before its first `Wrap`, and restores the old value with `t.Cleanup`.
+
+**[Orchestrion integration test]** (`internal/orchestrion/_integration/chi.v5/appsec.go` and `chi/appsec.go`, `TestCaseAppSec` as in `fiber.v2/appsec.go`, rules in `testdata/chi-path-params.json`, `generated_test.go` regenerated. Each runs with **Orchestrion and with otelc**.)
+- [ ] AC-O1 Woven root, `/users/attack`: 403, handler 0 times, 1 chi span. `/users/42`: 200.
+- [ ] AC-O2 Mounts:
+  - `Route` and user `Mount` endpoints block.
+  - **Mount stub:** `Route("/routed/{tenant}", …)` with no `/` child, a block rule on `tenant`, `GET /routed/attack` → 404 and no path event. A wrapped stub would give 403.
+  - Non-chi mount `r.Mount("/files", http.HandlerFunc(...))` with a handler that returns 200, rule on `*` → 200, no event.
+  - `r.Mount("/w/{tenant}", http.HandlerFunc(api.ServeHTTP))`: a block on `tenant` and a block on `id` both give 403.
+- [ ] AC-O3 Opt-outs under the woven root:
+  - v5: `r.With(chitrace.Middleware(chitrace.WithNoAppsec(true))).Get("/opt/{id}", …)`: on the same router, `/opt/attack` → 200, no path event; `/opt/42` with a blocked header → 403.
+  - v5, v1: the same two requests with `WithIgnoreRequest`.
+  - A router under `//orchestrion:ignore` and `//otelc:ignore` with no chi middleware, served by `http.Server` → 200, no path event. Put this case in its own `_integration` package with no other `chitrace` import.
+- [ ] AC-O4 `r.With(chitrace.Middleware())` under the woven root → 403, 2 chi spans.
+- [ ] AC-O5 The woven chi package builds and links on both chi versions, with the linkname target found through `links:` (Orchestrion) and through the rules-module import (otelc). The isolated ignored-router package in AC-O3 has no other `chitrace` import, so an incorrect `links:` path fails to link.
+
+**[telemetry]** (`testutils.StartTelemetryRecorder`)
+- [ ] AC-T1 0 occurrences of "RouteMatched called without an active HandlerOperation" in AC-W6 and AC-O3.
+- [ ] AC-T2 A hook block gives 1 `waf.requests` point with `request_blocked:true` and `block_failure:false`. With a fresh sampling key (`DD_API_SECURITY_SAMPLE_DELAY`, as `setups_appsec_test.go:352`), the schema has `_dd.appsec.s.req.params`. No new metric name.
+
+**[benchmark]**
+- [ ] AC-B1 The 4 targets of section 5, `-count 10`, benchstat table in the PR description. The not-woven run uses `-run '^$'`.
+
+**[system-tests]**
+- [ ] AC-S1 The `chi` weblog jobs pass with no manifest change.
+
+**[apidiff]**
+- [ ] AC-A1 No exported API change in `contrib/go-chi/chi.v5`, `contrib/go-chi/chi` and the root module. chi v1 gets no `WithNoAppsec`. `internal/endpointhook` is not public.
+
+**[docs]**
+- [ ] AC-D1 The 4 `Example`s pass. `internal/appsec/README.md` does not change. The godoc and the comment have the text of section 4.
+
+---
+
+### 8. Review requirements
+1. The Adversarial Reviewer challenged v2. The squad Reviewer reviews the PR after implementation.
+2. **`@DataDog/apm-orchestrion`** (`CODEOWNERS:146-149`): the `Mux.handle` aspect, the linkname with `links:`, and the `_integration` tests.
+3. **`@DataDog/asm-go`** (`CODEOWNERS:67-72`): `internal/endpointhook/*_appsec.go`, the marker rules in `Middleware`, the `withAppsec` comment, the `EarlyBlock` use, and the stated shared-context semantics.
+4. **`@DataDog/apm-go` / `@DataDog/apm-idm-go`** (`CODEOWNERS:60`): the contribs, the otelc rules, the godoc and the `Example`s.
+
+**Effort:** about 20 h (v1: 18 h). The +2 h is for the disabled markers, the new ACs and the AST test.
+- hook package + markers: 4 h
+- aspects: 1.5 h
+- otelc rules: 2 h
+- contrib tests: 5 h
+- `_integration` tests: 3 h
+- docs + `Example`s: 1.5 h
+- benchmarks: 1 h
+- review fixes: 2 h
+
+**Out of scope:** core `httpsec` changes, a route prediction for manual `Use`, a `WithNoAppsec` option for chi v1, and a woven chi weblog in system-tests.
+
