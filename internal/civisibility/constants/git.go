@@ -50,6 +50,9 @@ const (
 	// This constant is used to tag traces with the tag name associated with the current commit.
 	GitTag = "git.tag"
 
+	// GitMergeCommitSHA identifies the CI merge commit.
+	GitMergeCommitSHA = "ci.git.merge_commit_sha"
+
 	// GitHeadCommit indicates the GIT head commit hash.
 	GitHeadCommit = "git.commit.head.sha"
 

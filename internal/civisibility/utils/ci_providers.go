@@ -305,6 +305,8 @@ func getProviderTags() map[string]string {
 		tags = provider()
 	}
 
+	addProviderMergeCommit(tags)
+
 	// replace with user specific tags
 	replaceWithUserSpecificTags(tags)
 
@@ -334,8 +336,49 @@ func getProviderTags() map[string]string {
 	return tags
 }
 
+var fullGitSHA = regexp.MustCompile(`(?i)^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
+var pullRequestMergeRef = regexp.MustCompile(`^refs/pull/[0-9]+/merge$`)
+
+func addProviderMergeCommit(tags map[string]string) {
+	var sha string
+	switch tags[constants.CIProviderName] {
+	case "github":
+		if pullRequestMergeRef.MatchString(env.Get("GITHUB_REF")) {
+			sha = env.Get("GITHUB_SHA")
+		}
+	case "gitlab":
+		event := env.Get("CI_MERGE_REQUEST_EVENT_TYPE")
+		if env.Get("CI_MERGE_REQUEST_IID") != "" && (event == "merged_result" || event == "merge_train") {
+			sha = env.Get("CI_COMMIT_SHA")
+		}
+	case "azurepipelines":
+		if env.Get("BUILD_REASON") == "PullRequest" && pullRequestMergeRef.MatchString(env.Get("BUILD_SOURCEBRANCH")) {
+			sha = env.Get("BUILD_SOURCEVERSION")
+		}
+	case "travisci":
+		if env.Get("TRAVIS_EVENT_TYPE") == "pull_request" && isNumericJobID(env.Get("TRAVIS_PULL_REQUEST")) {
+			sha = env.Get("TRAVIS_COMMIT")
+		}
+	case "appveyor":
+		head := env.Get("APPVEYOR_PULL_REQUEST_HEAD_COMMIT")
+		build := env.Get("APPVEYOR_REPO_COMMIT")
+		if env.Get("APPVEYOR_REPO_PROVIDER") == "github" && isNumericJobID(env.Get("APPVEYOR_PULL_REQUEST_NUMBER")) &&
+			fullGitSHA.MatchString(head) && !strings.EqualFold(head, build) {
+			sha = build
+		}
+	}
+	if fullGitSHA.MatchString(sha) {
+		tags[constants.GitMergeCommitSHA] = strings.ToLower(sha)
+	}
+}
+
 // normalizeTags normalizes specific tags to remove prefixes and sensitive information.
 func normalizeTags(tags map[string]string) {
+	for _, key := range []string{constants.GitCommitSHA, constants.GitHeadCommit, constants.GitPrBaseCommit, constants.GitPrBaseHeadCommit} {
+		if value := tags[key]; fullGitSHA.MatchString(value) {
+			tags[key] = strings.ToLower(value)
+		}
+	}
 	if tag, ok := tags[constants.GitBranch]; ok && tag != "" {
 		if strings.Contains(tag, "refs/tags") || strings.Contains(tag, "origin/tags") || strings.Contains(tag, "refs/heads/tags") {
 			tags[constants.GitTag] = normalizeRef(tag)
@@ -372,6 +415,7 @@ func replaceWithUserSpecificTags(tags map[string]string) {
 	replace(constants.GitTag, "DD_GIT_TAG")
 	replace(constants.GitRepositoryURL, "DD_GIT_REPOSITORY_URL")
 	replace(constants.GitCommitSHA, "DD_GIT_COMMIT_SHA")
+	replace(constants.GitHeadCommit, "DD_GIT_COMMIT_HEAD_SHA")
 	replace(constants.GitCommitMessage, "DD_GIT_COMMIT_MESSAGE")
 	replace(constants.GitCommitAuthorName, "DD_GIT_COMMIT_AUTHOR_NAME")
 	replace(constants.GitCommitAuthorEmail, "DD_GIT_COMMIT_AUTHOR_EMAIL")
@@ -479,6 +523,7 @@ func extractAzurePipelines() map[string]string {
 
 	tags[constants.GitRepositoryURL] = firstEnv("SYSTEM_PULLREQUEST_SOURCEREPOSITORYURI", "BUILD_REPOSITORY_URI")
 	tags[constants.GitCommitSHA] = firstEnv("SYSTEM_PULLREQUEST_SOURCECOMMITID", "BUILD_SOURCEVERSION")
+	tags[constants.GitHeadCommit] = env.Get("SYSTEM_PULLREQUEST_SOURCECOMMITID")
 	tags[constants.GitBranch] = branch
 	tags[constants.GitTag] = tag
 	tags[constants.GitCommitMessage] = env.Get("BUILD_SOURCEVERSIONMESSAGE")

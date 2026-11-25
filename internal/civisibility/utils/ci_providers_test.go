@@ -123,6 +123,10 @@ func TestTags(t *testing.T) {
 				t.Run(name, func(t *testing.T) {
 					setEnvs(t, env)
 					providerTags := getProviderTags()
+					expectedMerge, _ := tags[constants.GitMergeCommitSHA].(string)
+					if actual := providerTags[constants.GitMergeCommitSHA]; actual != expectedMerge {
+						t.Fatalf("merge commit: got %q, want %q", actual, expectedMerge)
+					}
 
 					for expectedKey, expectedValue := range tags {
 						if actualValue, ok := providerTags[expectedKey]; ok {
@@ -324,4 +328,49 @@ func TestGithubActionsJobIDFromDiagnostics(t *testing.T) {
 			t.Fatalf("expected empty result, got %q (ok=%v)", jobID, ok)
 		}
 	})
+}
+
+func TestNormalizeGitObjectIDs(t *testing.T) {
+	cases := []struct{ input, want string }{
+		{strings.Repeat("A", 40), strings.Repeat("a", 40)},
+		{strings.Repeat("B", 64), strings.Repeat("b", 64)},
+		{"ABCDEF", "ABCDEF"},
+		{strings.Repeat("Z", 40), strings.Repeat("Z", 40)},
+	}
+	for _, key := range []string{constants.GitCommitSHA, constants.GitHeadCommit, constants.GitPrBaseCommit, constants.GitPrBaseHeadCommit} {
+		for _, tc := range cases {
+			tags := map[string]string{key: tc.input}
+			normalizeTags(tags)
+			if got := tags[key]; got != tc.want {
+				t.Errorf("%s: got %q, want %q", key, got, tc.want)
+			}
+		}
+	}
+}
+
+func TestAppveyorMergeEvidence(t *testing.T) {
+	build, head := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	for _, override := range []map[string]any{
+		{"APPVEYOR_PULL_REQUEST_NUMBER": "not-a-number"},
+		{"APPVEYOR_PULL_REQUEST_NUMBER": ""},
+		{"APPVEYOR_PULL_REQUEST_HEAD_COMMIT": strings.ToUpper(build)},
+		{"APPVEYOR_PULL_REQUEST_HEAD_COMMIT": "invalid"},
+		{"APPVEYOR_REPO_COMMIT": "invalid"},
+		{"APPVEYOR_REPO_PROVIDER": "bitbucket"},
+	} {
+		t.Run(fmt.Sprint(override), func(t *testing.T) {
+			setEnvs(t, map[string]any{
+				"APPVEYOR_REPO_PROVIDER":            "github",
+				"APPVEYOR_REPO_COMMIT":              build,
+				"APPVEYOR_PULL_REQUEST_NUMBER":      "42",
+				"APPVEYOR_PULL_REQUEST_HEAD_COMMIT": head,
+			})
+			setEnvs(t, override)
+			tags := extractAppveyor()
+			addProviderMergeCommit(tags)
+			if got := tags[constants.GitMergeCommitSHA]; got != "" {
+				t.Errorf("unexpected merge commit %q", got)
+			}
+		})
+	}
 }

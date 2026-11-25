@@ -668,6 +668,13 @@
         "default": null
       }
     ],
+    "DD_GIT_COMMIT_HEAD_SHA": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": null
+      }
+    ],
     "DD_GIT_COMMIT_MESSAGE": [
       {
         "implementation": "A",

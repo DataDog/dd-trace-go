@@ -499,7 +499,8 @@
       "git.commit.author.name": "azure-pipelines-commit-author",
       "git.commit.message": "azure-pipelines-commit-message",
       "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
-      "git.repository_url": "https://azure-pipelines-server-uri.com/build.git"
+      "git.repository_url": "https://azure-pipelines-server-uri.com/build.git",
+      "git.commit.head.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123"
     }
   ],
   [
@@ -538,7 +539,8 @@
       "git.commit.author.name": "azure-pipelines-commit-author",
       "git.commit.message": "azure-pipelines-commit-message",
       "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
-      "git.repository_url": "https://azure-pipelines-server-uri.com/build.git"
+      "git.repository_url": "https://azure-pipelines-server-uri.com/build.git",
+      "git.commit.head.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123"
     }
   ],
   [
@@ -577,7 +579,8 @@
       "git.commit.author.name": "azure-pipelines-commit-author",
       "git.commit.message": "azure-pipelines-commit-message",
       "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
-      "git.repository_url": "https://azure-pipelines-server-uri.com/build.git"
+      "git.repository_url": "https://azure-pipelines-server-uri.com/build.git",
+      "git.commit.head.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123"
     }
   ],
   [
@@ -989,6 +992,151 @@
       "git.commit.message": "azure-pipelines-commit-message",
       "git.pull_request.base_branch": "target-branch",
       "pr.number": "42"
+    }
+  ],
+  [
+    {
+      "BUILD_BUILDID": "azure-pipelines-build-id",
+      "BUILD_DEFINITIONNAME": "azure-pipelines-name",
+      "BUILD_REASON": "PullRequest",
+      "BUILD_REQUESTEDFOREMAIL": "azure-pipelines-commit-author-email@datadoghq.com",
+      "BUILD_REQUESTEDFORID": "azure-pipelines-commit-author",
+      "BUILD_SOURCEBRANCH": "refs/pull/42/merge",
+      "BUILD_SOURCEVERSION": "B9F0FB3FDBb94c9d24b2c75b49663122a529e123",
+      "BUILD_SOURCEVERSIONMESSAGE": "azure-pipelines-commit-message",
+      "DD_TEST_CASE_NAME": "merge-ref-with-distinct-mixed-case-shas",
+      "SYSTEM_JOBID": "azure-pipelines-job-id",
+      "SYSTEM_PULLREQUEST_SOURCEBRANCH": "refs/heads/feature",
+      "SYSTEM_PULLREQUEST_SOURCECOMMITID": "724FACA55Efebf66fc15bfccc34577c64c5480bd",
+      "SYSTEM_TASKINSTANCEID": "azure-pipelines-task-id",
+      "SYSTEM_TEAMFOUNDATIONSERVERURI": "https://azure-pipelines-server-uri.com/",
+      "SYSTEM_TEAMPROJECTID": "azure-pipelines-project-id",
+      "TF_BUILD": "True"
+    },
+    {
+      "_dd.ci.env_vars": "{\"SYSTEM_TEAMPROJECTID\":\"azure-pipelines-project-id\",\"BUILD_BUILDID\":\"azure-pipelines-build-id\",\"SYSTEM_JOBID\":\"azure-pipelines-job-id\"}",
+      "ci.git.merge_commit_sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "ci.job.id": "azure-pipelines-job-id",
+      "ci.job.url": "https://azure-pipelines-server-uri.com/azure-pipelines-project-id/_build/results?buildId=azure-pipelines-build-id&view=logs&j=azure-pipelines-job-id&t=azure-pipelines-task-id",
+      "ci.pipeline.id": "azure-pipelines-build-id",
+      "ci.pipeline.name": "azure-pipelines-name",
+      "ci.pipeline.number": "azure-pipelines-build-id",
+      "ci.pipeline.url": "https://azure-pipelines-server-uri.com/azure-pipelines-project-id/_build/results?buildId=azure-pipelines-build-id",
+      "ci.provider.name": "azurepipelines",
+      "git.branch": "feature",
+      "git.commit.author.email": "azure-pipelines-commit-author-email@datadoghq.com",
+      "git.commit.author.name": "azure-pipelines-commit-author",
+      "git.commit.head.sha": "724faca55efebf66fc15bfccc34577c64c5480bd",
+      "git.commit.message": "azure-pipelines-commit-message",
+      "git.commit.sha": "724faca55efebf66fc15bfccc34577c64c5480bd"
+    }
+  ],
+  [
+    {
+      "BUILD_BUILDID": "azure-pipelines-build-id",
+      "BUILD_DEFINITIONNAME": "azure-pipelines-name",
+      "BUILD_REASON": "IndividualCI",
+      "BUILD_REQUESTEDFOREMAIL": "azure-pipelines-commit-author-email@datadoghq.com",
+      "BUILD_REQUESTEDFORID": "azure-pipelines-commit-author",
+      "BUILD_SOURCEBRANCH": "refs/pull/42/merge",
+      "BUILD_SOURCEVERSION": "B9F0FB3FDBb94c9d24b2c75b49663122a529e123",
+      "BUILD_SOURCEVERSIONMESSAGE": "azure-pipelines-commit-message",
+      "DD_TEST_CASE_NAME": "merge-ref-without-pull-request-reason",
+      "SYSTEM_JOBID": "azure-pipelines-job-id",
+      "SYSTEM_PULLREQUEST_SOURCEBRANCH": "refs/heads/feature",
+      "SYSTEM_PULLREQUEST_SOURCECOMMITID": "724FACA55Efebf66fc15bfccc34577c64c5480bd",
+      "SYSTEM_TASKINSTANCEID": "azure-pipelines-task-id",
+      "SYSTEM_TEAMFOUNDATIONSERVERURI": "https://azure-pipelines-server-uri.com/",
+      "SYSTEM_TEAMPROJECTID": "azure-pipelines-project-id",
+      "TF_BUILD": "True"
+    },
+    {
+      "_dd.ci.env_vars": "{\"SYSTEM_TEAMPROJECTID\":\"azure-pipelines-project-id\",\"BUILD_BUILDID\":\"azure-pipelines-build-id\",\"SYSTEM_JOBID\":\"azure-pipelines-job-id\"}",
+      "ci.job.id": "azure-pipelines-job-id",
+      "ci.job.url": "https://azure-pipelines-server-uri.com/azure-pipelines-project-id/_build/results?buildId=azure-pipelines-build-id&view=logs&j=azure-pipelines-job-id&t=azure-pipelines-task-id",
+      "ci.pipeline.id": "azure-pipelines-build-id",
+      "ci.pipeline.name": "azure-pipelines-name",
+      "ci.pipeline.number": "azure-pipelines-build-id",
+      "ci.pipeline.url": "https://azure-pipelines-server-uri.com/azure-pipelines-project-id/_build/results?buildId=azure-pipelines-build-id",
+      "ci.provider.name": "azurepipelines",
+      "git.branch": "feature",
+      "git.commit.author.email": "azure-pipelines-commit-author-email@datadoghq.com",
+      "git.commit.author.name": "azure-pipelines-commit-author",
+      "git.commit.head.sha": "724faca55efebf66fc15bfccc34577c64c5480bd",
+      "git.commit.message": "azure-pipelines-commit-message",
+      "git.commit.sha": "724faca55efebf66fc15bfccc34577c64c5480bd"
+    }
+  ],
+  [
+    {
+      "BUILD_BUILDID": "azure-pipelines-build-id",
+      "BUILD_DEFINITIONNAME": "azure-pipelines-name",
+      "BUILD_REASON": "PullRequest",
+      "BUILD_REQUESTEDFOREMAIL": "azure-pipelines-commit-author-email@datadoghq.com",
+      "BUILD_REQUESTEDFORID": "azure-pipelines-commit-author",
+      "BUILD_SOURCEBRANCH": "refs/heads/feature",
+      "BUILD_SOURCEVERSION": "B9F0FB3FDBb94c9d24b2c75b49663122a529e123",
+      "BUILD_SOURCEVERSIONMESSAGE": "azure-pipelines-commit-message",
+      "DD_TEST_CASE_NAME": "pull-request-without-merge-ref",
+      "SYSTEM_JOBID": "azure-pipelines-job-id",
+      "SYSTEM_PULLREQUEST_SOURCEBRANCH": "refs/heads/feature",
+      "SYSTEM_PULLREQUEST_SOURCECOMMITID": "724FACA55Efebf66fc15bfccc34577c64c5480bd",
+      "SYSTEM_TASKINSTANCEID": "azure-pipelines-task-id",
+      "SYSTEM_TEAMFOUNDATIONSERVERURI": "https://azure-pipelines-server-uri.com/",
+      "SYSTEM_TEAMPROJECTID": "azure-pipelines-project-id",
+      "TF_BUILD": "True"
+    },
+    {
+      "_dd.ci.env_vars": "{\"SYSTEM_TEAMPROJECTID\":\"azure-pipelines-project-id\",\"BUILD_BUILDID\":\"azure-pipelines-build-id\",\"SYSTEM_JOBID\":\"azure-pipelines-job-id\"}",
+      "ci.job.id": "azure-pipelines-job-id",
+      "ci.job.url": "https://azure-pipelines-server-uri.com/azure-pipelines-project-id/_build/results?buildId=azure-pipelines-build-id&view=logs&j=azure-pipelines-job-id&t=azure-pipelines-task-id",
+      "ci.pipeline.id": "azure-pipelines-build-id",
+      "ci.pipeline.name": "azure-pipelines-name",
+      "ci.pipeline.number": "azure-pipelines-build-id",
+      "ci.pipeline.url": "https://azure-pipelines-server-uri.com/azure-pipelines-project-id/_build/results?buildId=azure-pipelines-build-id",
+      "ci.provider.name": "azurepipelines",
+      "git.branch": "feature",
+      "git.commit.author.email": "azure-pipelines-commit-author-email@datadoghq.com",
+      "git.commit.author.name": "azure-pipelines-commit-author",
+      "git.commit.head.sha": "724faca55efebf66fc15bfccc34577c64c5480bd",
+      "git.commit.message": "azure-pipelines-commit-message",
+      "git.commit.sha": "724faca55efebf66fc15bfccc34577c64c5480bd"
+    }
+  ],
+  [
+    {
+      "BUILD_BUILDID": "azure-pipelines-build-id",
+      "BUILD_DEFINITIONNAME": "azure-pipelines-name",
+      "BUILD_REASON": "PullRequest",
+      "BUILD_REQUESTEDFOREMAIL": "azure-pipelines-commit-author-email@datadoghq.com",
+      "BUILD_REQUESTEDFORID": "azure-pipelines-commit-author",
+      "BUILD_SOURCEBRANCH": "refs/pull/42/merge",
+      "BUILD_SOURCEVERSION": "invalid",
+      "BUILD_SOURCEVERSIONMESSAGE": "azure-pipelines-commit-message",
+      "DD_TEST_CASE_NAME": "merge-ref-with-invalid-merge-sha",
+      "SYSTEM_JOBID": "azure-pipelines-job-id",
+      "SYSTEM_PULLREQUEST_SOURCEBRANCH": "refs/heads/feature",
+      "SYSTEM_PULLREQUEST_SOURCECOMMITID": "724FACA55Efebf66fc15bfccc34577c64c5480bd",
+      "SYSTEM_TASKINSTANCEID": "azure-pipelines-task-id",
+      "SYSTEM_TEAMFOUNDATIONSERVERURI": "https://azure-pipelines-server-uri.com/",
+      "SYSTEM_TEAMPROJECTID": "azure-pipelines-project-id",
+      "TF_BUILD": "True"
+    },
+    {
+      "_dd.ci.env_vars": "{\"SYSTEM_TEAMPROJECTID\":\"azure-pipelines-project-id\",\"BUILD_BUILDID\":\"azure-pipelines-build-id\",\"SYSTEM_JOBID\":\"azure-pipelines-job-id\"}",
+      "ci.job.id": "azure-pipelines-job-id",
+      "ci.job.url": "https://azure-pipelines-server-uri.com/azure-pipelines-project-id/_build/results?buildId=azure-pipelines-build-id&view=logs&j=azure-pipelines-job-id&t=azure-pipelines-task-id",
+      "ci.pipeline.id": "azure-pipelines-build-id",
+      "ci.pipeline.name": "azure-pipelines-name",
+      "ci.pipeline.number": "azure-pipelines-build-id",
+      "ci.pipeline.url": "https://azure-pipelines-server-uri.com/azure-pipelines-project-id/_build/results?buildId=azure-pipelines-build-id",
+      "ci.provider.name": "azurepipelines",
+      "git.branch": "feature",
+      "git.commit.author.email": "azure-pipelines-commit-author-email@datadoghq.com",
+      "git.commit.author.name": "azure-pipelines-commit-author",
+      "git.commit.head.sha": "724faca55efebf66fc15bfccc34577c64c5480bd",
+      "git.commit.message": "azure-pipelines-commit-message",
+      "git.commit.sha": "724faca55efebf66fc15bfccc34577c64c5480bd"
     }
   ]
 ]

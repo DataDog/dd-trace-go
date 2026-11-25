@@ -569,6 +569,102 @@
       "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
       "git.pull_request.base_branch": "master",
       "git.repository_url": "https://github.com/user/repo.git",
+      "pr.number": "42",
+      "ci.git.merge_commit_sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123"
+    }
+  ],
+  [
+    {
+      "DD_TEST_CASE_NAME": "pull-request-with-mixed-case-shas",
+      "TRAVIS": "travisCI",
+      "TRAVIS_BRANCH": "refs/heads/main",
+      "TRAVIS_BUILD_ID": "travis-pipeline-id",
+      "TRAVIS_BUILD_NUMBER": "travis-pipeline-number",
+      "TRAVIS_BUILD_WEB_URL": "https://travisci.com/pipeline",
+      "TRAVIS_COMMIT": "B9F0FB3FDBb94c9d24b2c75b49663122a529e123",
+      "TRAVIS_COMMIT_MESSAGE": "travis-commit-message",
+      "TRAVIS_EVENT_TYPE": "pull_request",
+      "TRAVIS_JOB_WEB_URL": "https://travisci.com/job",
+      "TRAVIS_PULL_REQUEST": "42",
+      "TRAVIS_PULL_REQUEST_BRANCH": "refs/heads/feature",
+      "TRAVIS_PULL_REQUEST_SHA": "724FACA55Efebf66fc15bfccc34577c64c5480bd",
+      "TRAVIS_REPO_SLUG": "user/repo"
+    },
+    {
+      "ci.git.merge_commit_sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "ci.job.url": "https://travisci.com/job",
+      "ci.pipeline.id": "travis-pipeline-id",
+      "ci.pipeline.name": "user/repo",
+      "ci.pipeline.number": "travis-pipeline-number",
+      "ci.pipeline.url": "https://travisci.com/pipeline",
+      "ci.provider.name": "travisci",
+      "git.branch": "feature",
+      "git.commit.head.sha": "724faca55efebf66fc15bfccc34577c64c5480bd",
+      "git.commit.message": "travis-commit-message",
+      "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "git.pull_request.base_branch": "main",
+      "git.repository_url": "https://github.com/user/repo.git",
+      "pr.number": "42"
+    }
+  ],
+  [
+    {
+      "DD_TEST_CASE_NAME": "push-with-request-number-is-not-merge",
+      "TRAVIS": "travisCI",
+      "TRAVIS_BRANCH": "refs/heads/feature",
+      "TRAVIS_BUILD_ID": "travis-pipeline-id",
+      "TRAVIS_BUILD_NUMBER": "travis-pipeline-number",
+      "TRAVIS_BUILD_WEB_URL": "https://travisci.com/pipeline",
+      "TRAVIS_COMMIT": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "TRAVIS_COMMIT_MESSAGE": "travis-commit-message",
+      "TRAVIS_EVENT_TYPE": "push",
+      "TRAVIS_JOB_WEB_URL": "https://travisci.com/job",
+      "TRAVIS_PULL_REQUEST": "42",
+      "TRAVIS_REPO_SLUG": "user/repo"
+    },
+    {
+      "ci.job.url": "https://travisci.com/job",
+      "ci.pipeline.id": "travis-pipeline-id",
+      "ci.pipeline.name": "user/repo",
+      "ci.pipeline.number": "travis-pipeline-number",
+      "ci.pipeline.url": "https://travisci.com/pipeline",
+      "ci.provider.name": "travisci",
+      "git.branch": "feature",
+      "git.commit.message": "travis-commit-message",
+      "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "git.repository_url": "https://github.com/user/repo.git"
+    }
+  ],
+  [
+    {
+      "DD_TEST_CASE_NAME": "pull-request-with-invalid-merge-sha",
+      "TRAVIS": "travisCI",
+      "TRAVIS_BRANCH": "refs/heads/main",
+      "TRAVIS_BUILD_ID": "travis-pipeline-id",
+      "TRAVIS_BUILD_NUMBER": "travis-pipeline-number",
+      "TRAVIS_BUILD_WEB_URL": "https://travisci.com/pipeline",
+      "TRAVIS_COMMIT": "invalid",
+      "TRAVIS_COMMIT_MESSAGE": "travis-commit-message",
+      "TRAVIS_EVENT_TYPE": "pull_request",
+      "TRAVIS_JOB_WEB_URL": "https://travisci.com/job",
+      "TRAVIS_PULL_REQUEST": "42",
+      "TRAVIS_PULL_REQUEST_BRANCH": "refs/heads/feature",
+      "TRAVIS_PULL_REQUEST_SHA": "724FACA55Efebf66fc15bfccc34577c64c5480bd",
+      "TRAVIS_REPO_SLUG": "user/repo"
+    },
+    {
+      "ci.job.url": "https://travisci.com/job",
+      "ci.pipeline.id": "travis-pipeline-id",
+      "ci.pipeline.name": "user/repo",
+      "ci.pipeline.number": "travis-pipeline-number",
+      "ci.pipeline.url": "https://travisci.com/pipeline",
+      "ci.provider.name": "travisci",
+      "git.branch": "feature",
+      "git.commit.head.sha": "724faca55efebf66fc15bfccc34577c64c5480bd",
+      "git.commit.message": "travis-commit-message",
+      "git.commit.sha": "invalid",
+      "git.pull_request.base_branch": "main",
+      "git.repository_url": "https://github.com/user/repo.git",
       "pr.number": "42"
     }
   ]

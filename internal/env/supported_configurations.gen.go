@@ -103,6 +103,7 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_GIT_COMMIT_COMMITTER_DATE":                                            {},
 	"DD_GIT_COMMIT_COMMITTER_EMAIL":                                           {},
 	"DD_GIT_COMMIT_COMMITTER_NAME":                                            {},
+	"DD_GIT_COMMIT_HEAD_SHA":                                                  {},
 	"DD_GIT_COMMIT_MESSAGE":                                                   {},
 	"DD_GIT_COMMIT_SHA":                                                       {},
 	"DD_GIT_PULL_REQUEST_BASE_BRANCH":                                         {},

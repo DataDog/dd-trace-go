@@ -424,5 +424,34 @@
       "git.pull_request.base_branch_sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
       "git.repository_url": "git@github.com:DataDog/userrepo.git"
     }
+  ],
+  [
+    {
+      "DD_GIT_COMMIT_AUTHOR_DATE": "usersupplied-authordate",
+      "DD_GIT_COMMIT_AUTHOR_EMAIL": "usersupplied-authoremail",
+      "DD_GIT_COMMIT_AUTHOR_NAME": "usersupplied-authorname",
+      "DD_GIT_COMMIT_COMMITTER_DATE": "usersupplied-comitterdate",
+      "DD_GIT_COMMIT_COMMITTER_EMAIL": "usersupplied-comitteremail",
+      "DD_GIT_COMMIT_COMMITTER_NAME": "usersupplied-comittername",
+      "DD_GIT_COMMIT_HEAD_SHA": "724FACA55Efebf66fc15bfccc34577c64c5480bd",
+      "DD_GIT_COMMIT_MESSAGE": "usersupplied-message",
+      "DD_GIT_COMMIT_SHA": "B9F0FB3FDBb94c9d24b2c75b49663122a529e123",
+      "DD_GIT_PULL_REQUEST_BASE_BRANCH_SHA": "1234567890ABCDEF1234567890abcdef12345678",
+      "DD_GIT_REPOSITORY_URL": "git@github.com:DataDog/userrepo.git",
+      "DD_TEST_CASE_NAME": "mixed-case-sha-overrides"
+    },
+    {
+      "git.commit.author.date": "usersupplied-authordate",
+      "git.commit.author.email": "usersupplied-authoremail",
+      "git.commit.author.name": "usersupplied-authorname",
+      "git.commit.committer.date": "usersupplied-comitterdate",
+      "git.commit.committer.email": "usersupplied-comitteremail",
+      "git.commit.committer.name": "usersupplied-comittername",
+      "git.commit.head.sha": "724faca55efebf66fc15bfccc34577c64c5480bd",
+      "git.commit.message": "usersupplied-message",
+      "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
+      "git.pull_request.base_branch_sha": "1234567890abcdef1234567890abcdef12345678",
+      "git.repository_url": "git@github.com:DataDog/userrepo.git"
+    }
   ]
 ]

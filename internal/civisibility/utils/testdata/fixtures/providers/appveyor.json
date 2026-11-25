@@ -374,7 +374,8 @@
       "git.commit.sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123",
       "git.pull_request.base_branch": "master",
       "git.repository_url": "https://github.com/appveyor-repo-name.git",
-      "pr.number": "42"
+      "pr.number": "42",
+      "ci.git.merge_commit_sha": "b9f0fb3fdbb94c9d24b2c75b49663122a529e123"
     }
   ],
   [
