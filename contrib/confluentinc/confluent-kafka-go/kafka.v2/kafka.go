@@ -72,8 +72,8 @@ func WrapConsumer(c *kafka.Consumer, opts ...Option) *Consumer {
 	}
 	instr.Logger().Debug("%s: Wrapping Consumer: %#v", pkgPath, wrapped.tracer)
 	// The cluster ID is fetched asynchronously for the span tags and data
-	// streams monitoring, and the fetch is cancelled on Close to avoid
-	// blocking shutdown.
+	// streams monitoring. Close cancels the fetch and waits for it, up to the
+	// 2s lookup timeout, because the librdkafka call ignores cancellation.
 	wrapped.clusterID = kafkatrace.NewClusterIDFetch(wrapped.tracer, func() (kafkatrace.ClusterIDClient, error) {
 		// The admin client is created from the consumer handle, so it reuses
 		// the consumer's connections and configuration.
@@ -207,8 +207,8 @@ func WrapProducer(p *kafka.Producer, opts ...Option) *Producer {
 	}
 	instr.Logger().Debug("%s: Wrapping Producer: %#v", pkgPath, wrapped.tracer)
 	// The cluster ID is fetched asynchronously for the span tags and data
-	// streams monitoring, and the fetch is cancelled on Close to avoid
-	// blocking shutdown.
+	// streams monitoring. Close cancels the fetch and waits for it, up to the
+	// 2s lookup timeout, because the librdkafka call ignores cancellation.
 	wrapped.clusterID = kafkatrace.NewClusterIDFetch(wrapped.tracer, func() (kafkatrace.ClusterIDClient, error) {
 		// The admin client is created from the producer handle, so it reuses
 		// the producer's connections and configuration.

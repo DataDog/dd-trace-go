@@ -82,16 +82,16 @@ func newProducerSpanConfig(tr *Tracer) *tracer.StartSpanConfig {
 
 func (tr *Tracer) StartProduceSpan(msg Message) *tracer.Span {
 	// Partition, topic, and the Kafka cluster ID (fetched asynchronously in
-	// the background after the Tracer is created, see startClusterIDFetch in
-	// the calling kafka package) are genuinely per-message/mutable, so they
-	// stay dynamic instead of moving into the static producerSpanCfg base.
+	// the background after the Tracer is created, see ClusterIDFetch) are
+	// genuinely per-message/mutable, so they stay dynamic instead of moving
+	// into the static producerSpanCfg base.
 	tags := map[string]any{
 		ext.ResourceName:             "Produce Topic " + msg.GetTopicPartition().GetTopic(),
 		ext.MessagingKafkaPartition:  msg.GetTopicPartition().GetPartition(),
 		ext.MessagingDestinationName: msg.GetTopicPartition().GetTopic(),
 	}
-	if tr.ClusterID() != "" {
-		tags[ext.MessagingKafkaClusterID] = tr.ClusterID()
+	if clusterID := tr.ClusterID(); clusterID != "" {
+		tags[ext.MessagingKafkaClusterID] = clusterID
 	}
 	opts := []tracer.StartSpanOption{
 		tracer.WithTags(tags),

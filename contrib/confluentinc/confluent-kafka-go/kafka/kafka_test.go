@@ -320,9 +320,7 @@ func TestClusterIDFetchStartsOnFirstUse(t *testing.T) {
 		// The events channel is only wrapped for data streams monitoring.
 		assert.Equal(t, p.Producer.Events(), p.Events())
 
-		start := time.Now()
 		p.Close()
-		assert.Less(t, time.Since(start), time.Second, "Close must not wait for a cluster ID fetch")
 		assert.False(t, p.clusterID.Started())
 	})
 	t.Run("consumer closed without use", func(t *testing.T) {
@@ -330,9 +328,7 @@ func TestClusterIDFetchStartsOnFirstUse(t *testing.T) {
 		require.False(t, c.tracer.DSMEnabled())
 		assert.False(t, c.clusterID.Started())
 
-		start := time.Now()
 		require.NoError(t, c.Close())
-		assert.Less(t, time.Since(start), time.Second, "Close must not wait for a cluster ID fetch")
 		assert.False(t, c.clusterID.Started())
 	})
 	t.Run("producer starts on first produce", func(t *testing.T) {

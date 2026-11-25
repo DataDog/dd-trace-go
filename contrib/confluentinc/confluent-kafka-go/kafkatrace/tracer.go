@@ -124,7 +124,18 @@ func (fn OptionFn) apply(cfg *Tracer) {
 	fn(cfg)
 }
 
+// tracersCreated counts the Tracers NewKafkaTracer has created.
+var tracersCreated atomic.Int64
+
+// TracersCreated returns how many Tracers NewKafkaTracer has created in this
+// process. It is meant for tests, which can check that a client sets up its
+// tracer once.
+func TracersCreated() int64 {
+	return tracersCreated.Load()
+}
+
 func NewKafkaTracer(instr *instrumentation.Instrumentation, ckgoVersion CKGoVersion, librdKafkaVersion int, opts ...Option) *Tracer {
+	tracersCreated.Add(1)
 	tr := &Tracer{
 		instr:             instr,
 		ctx:               context.Background(),
@@ -211,8 +222,13 @@ func WithCustomTag(tag string, tagFn func(msg Message) any) OptionFn {
 	}
 }
 
-// configKeys are the ConfigMap entries WithConfig reads.
-var configKeys = [...]string{"group.id", "bootstrap.servers"}
+// The ConfigMap entries WithConfig reads, and SnapshotConfig copies.
+const (
+	configGroupID          = "group.id"
+	configBootstrapServers = "bootstrap.servers"
+)
+
+var configKeys = [...]string{configGroupID, configBootstrapServers}
 
 // configSnapshot is a ConfigMap holding a copy of the entries WithConfig reads.
 type configSnapshot map[string]any
@@ -240,10 +256,10 @@ func SnapshotConfig(cg ConfigMap) ConfigMap {
 // WithConfig extracts the config information for the client to be tagged
 func WithConfig(cg ConfigMap) OptionFn {
 	return func(tr *Tracer) {
-		if groupID, err := cg.Get("group.id", ""); err == nil {
+		if groupID, err := cg.Get(configGroupID, ""); err == nil {
 			tr.groupID = groupID.(string)
 		}
-		if bs, err := cg.Get("bootstrap.servers", ""); err == nil && bs != "" {
+		if bs, err := cg.Get(configBootstrapServers, ""); err == nil && bs != "" {
 			for addr := range strings.SplitSeq(bs.(string), ",") {
 				host, _, err := net.SplitHostPort(addr)
 				if err == nil {

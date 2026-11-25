@@ -125,6 +125,7 @@ func (f *ClusterIDFetch) run(c ClusterIDClient) func() {
 			clusterID, err := fetchClusterID(ctx, c)
 			if err == nil {
 				f.tr.SetClusterID(clusterID)
+				clusterIDsFound.Add(1)
 				return
 			}
 			if ctx.Err() != nil {
@@ -150,6 +151,16 @@ func (f *ClusterIDFetch) run(c ClusterIDClient) func() {
 	}
 }
 
+// clusterIDsFound counts the lookups that found a cluster ID.
+var clusterIDsFound atomic.Int64
+
+// ClusterIDsFound returns how many cluster ID lookups of this process have
+// found a cluster ID. It is meant for tests, which can wait for it to grow
+// after the first message of a client instead of sleeping.
+func ClusterIDsFound() int64 {
+	return clusterIDsFound.Load()
+}
+
 // fetchClusterID makes one attempt, bounded by clusterIDTimeout.
 func fetchClusterID(ctx context.Context, c ClusterIDClient) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, clusterIDTimeout)
@@ -157,13 +168,8 @@ func fetchClusterID(ctx context.Context, c ClusterIDClient) (string, error) {
 	return c.ClusterID(ctx)
 }
 
-// logFailure logs a failed lookup. Data Streams Monitoring needs the cluster
-// ID, so the failure is a warning with it, and a debug message otherwise,
-// where only the span tag is missing.
+// logFailure logs a failed lookup as a warning, so a user can tell why the
+// cluster ID tag is missing. A lookup logs at most one failure.
 func (f *ClusterIDFetch) logFailure(msg string, err error) {
-	if f.tr.DSMEnabled() {
-		f.tr.instr.Logger().Warn(msg, err)
-	} else {
-		f.tr.instr.Logger().Debug(msg, err)
-	}
+	f.tr.instr.Logger().Warn(msg, err)
 }
