@@ -68,9 +68,6 @@ func dataStreamsPayloadSize(msg *Message) int64 {
 }
 
 func (tr *Tracer) produceCheckpoint(ctx context.Context, topic Topic, msg *Message) {
-	if msg == nil {
-		return
-	}
 	checkpointCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
 		ctx,
 		options.CheckpointParams{PayloadSize: dataStreamsPayloadSize(msg)},
@@ -82,9 +79,8 @@ func (tr *Tracer) produceCheckpoint(ctx context.Context, topic Topic, msg *Messa
 }
 
 func (tr *Tracer) consumeCheckpoint(ctx context.Context, s Subscription, msg *Message) context.Context {
-	if msg == nil {
-		return ctx
-	}
+	// ctx may already carry another consumer's pathway, and MergeContexts would
+	// pick one at random, so chain on the message's pathway and replace ctx's.
 	parent := datastreams.ExtractFromBase64Carrier(context.Background(), dataStreamsCarrier(msg.Attributes))
 	checkpointCtx, ok := tracer.SetDataStreamsCheckpointWithParams(
 		parent,

@@ -151,6 +151,7 @@ func TestPathway(t *testing.T) {
 			{"type:d:o:g", true},
 			{"type::", true},
 			{":", false},
+			{"subscription:orders", true},
 			{"topic:arn:aws:sns:us-east-1:727006795293:dsm-dev-sns-topic", true},
 		} {
 			assert.Equal(t, isWellFormedEdgeTag(tc.s), tc.b)
