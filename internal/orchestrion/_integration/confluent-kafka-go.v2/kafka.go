@@ -136,7 +136,7 @@ func (tc *TestCase) closeProducerWithBlockedDeliveryForwarder(t *testing.T) {
 	for i := range 3 {
 		err = producer.Produce(&kafka.Message{
 			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: partition},
-			Key:            []byte(fmt.Sprintf("close-key%d", i)),
+			Key:            fmt.Appendf(nil, "close-key%d", i),
 			Value:          []byte("close-value"),
 		}, nil)
 		require.NoError(t, err, "failed to send message")
