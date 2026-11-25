@@ -8,6 +8,7 @@ package sarama
 import (
 	"context"
 	"log"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -172,16 +173,53 @@ func (h *cleanupRecorder) Cleanup(sarama.ConsumerGroupSession) error {
 	return nil
 }
 
-// TestConsumerGroupHandlerCleanupStopsClusterIDFetch checks that Cleanup
-// stops the cluster ID fetch the handler started, and calls the wrapped
-// handler's Cleanup.
-func TestConsumerGroupHandlerCleanupStopsClusterIDFetch(t *testing.T) {
-	inner := &cleanupRecorder{}
-	h := WrapConsumerGroupHandler(inner).(*consumerGroupHandler)
-	stops := 0
-	h.closeAsync = append(h.closeAsync, func() { stops++ })
+// TestConsumerGroupHandlerCleanupCancelsClusterIDFetch checks that Cleanup
+// cancels the cluster ID fetch the handler started, without waiting for it,
+// and calls the wrapped handler's Cleanup.
+func TestConsumerGroupHandlerCleanupCancelsClusterIDFetch(t *testing.T) {
+	t.Run("cancels the fetch", func(t *testing.T) {
+		inner := &cleanupRecorder{}
+		h := WrapConsumerGroupHandler(inner).(*consumerGroupHandler)
+		cancels := 0
+		h.cancelFetch = func() { cancels++ }
 
-	require.NoError(t, h.Cleanup(nil))
-	assert.Equal(t, 1, stops)
-	assert.Equal(t, 1, inner.cleanups)
+		require.NoError(t, h.Cleanup(nil))
+		assert.Equal(t, 1, cancels)
+		assert.Equal(t, 1, inner.cleanups)
+	})
+	t.Run("does not wait for a stalled broker", func(t *testing.T) {
+		// The listener accepts connections and never answers, like a stalled
+		// broker.
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		require.NoError(t, err)
+		defer ln.Close()
+		accepted := make(chan struct{}, 1)
+		go func() {
+			for {
+				c, err := ln.Accept()
+				if err != nil {
+					return
+				}
+				defer c.Close()
+				select {
+				case accepted <- struct{}{}:
+				default:
+				}
+			}
+		}()
+
+		inner := &cleanupRecorder{}
+		h := WrapConsumerGroupHandler(inner, WithDataStreams(), WithBrokers([]string{ln.Addr().String()}))
+		select {
+		case <-accepted:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the cluster ID fetch did not connect to the broker")
+		}
+		// Let the fetch send its metadata request and wait for the answer.
+		time.Sleep(100 * time.Millisecond)
+		start := time.Now()
+		require.NoError(t, h.Cleanup(nil))
+		assert.Less(t, time.Since(start), 5*time.Second, "Cleanup must not wait for the broker's network timeout")
+		assert.Equal(t, 1, inner.cleanups)
+	})
 }
