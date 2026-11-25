@@ -132,7 +132,7 @@ func middleware(cfg *config) fiber.Handler {
 			// unwinds, so the response still has its default status here.
 			// Report the status Fiber's default error handler will send.
 			status = http.StatusInternalServerError
-			if fe, ok := errors.AsType[*fiber.Error](err); ok {
+			if fe, ok := errors.AsType[*fiber.Error](err); ok && fe != nil {
 				status = fe.Code
 			}
 		}
