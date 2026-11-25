@@ -9,9 +9,31 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/internal/transport"
 )
+
+func TestConfigurationOmitsEmptyNames(t *testing.T) {
+	c := &configuration{}
+	c.Add(Configuration{Value: "unnamed"})
+	assert.Nil(t, c.Payload())
+	assert.Empty(t, c.All())
+
+	c.Add(Configuration{Name: "DD_SERVICE", Value: "test-service", Origin: OriginCode, SeqID: 1})
+	c.Add(Configuration{Value: "unnamed", Origin: OriginCode})
+
+	payload := c.Payload()
+	change, ok := payload.(transport.AppClientConfigurationChange)
+	require.True(t, ok, "expected an AppClientConfigurationChange payload")
+	want := []transport.ConfKeyValue{{Name: "DD_SERVICE", Value: "test-service", Origin: OriginCode, SeqID: 1}}
+	assert.Equal(t, want, change.Configuration)
+	assert.Equal(t, want, c.All())
+
+	c.Add(Configuration{Value: "unnamed", Origin: OriginEnvVar})
+	assert.Nil(t, c.Payload())
+	assert.Equal(t, want, c.All())
+}
 
 // TestConfigurationOmitsSensitive verifies that configurations marked sensitive are not
 // stored or reported by the configuration data source, regardless of which reporting

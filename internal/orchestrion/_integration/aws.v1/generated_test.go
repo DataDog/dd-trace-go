@@ -19,8 +19,20 @@ func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
 
+func TestAliasedImport(t *testing.T) {
+	harness.Run(t, new(TestCaseAliasedImport))
+}
+
 func TestDependency(t *testing.T) {
 	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestDependencyNew(t *testing.T) {
+	harness.Run(t, new(TestCaseDependencyNew))
+}
+
+func TestDependencyWithOptions(t *testing.T) {
+	harness.Run(t, new(TestCaseDependencyWithOptions))
 }
 
 func TestNewSession(t *testing.T) {
@@ -29,6 +41,10 @@ func TestNewSession(t *testing.T) {
 
 func TestNewSessionWithOptions(t *testing.T) {
 	harness.Run(t, new(TestCaseNewSessionWithOptions))
+}
+
+func TestPackageVar(t *testing.T) {
+	harness.Run(t, new(TestCasePackageVar))
 }
 
 func TestSessionNew(t *testing.T) {

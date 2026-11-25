@@ -34,17 +34,25 @@ concurrency:
 env:
   # The single place to bump the tested otelc release. Upstream only; do not point
   # this at a fork.
-  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.2.1-0.20261109141436-15ecaa2b8324' }}
+  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.2.1-0.20261117102139-486faefff22f' }}
   # Modules otelc reads, tidied by both jobs next to the application each one
   # builds.
   OTELC_MODULES: >-
     otelc/all
     contrib/99designs/gqlgen
     contrib/99designs/gqlgen/otelc
+    contrib/aws/aws-sdk-go-v2
+    contrib/aws/aws-sdk-go-v2/otelc
     contrib/aws/aws-sdk-go
     contrib/aws/aws-sdk-go/otelc
+    contrib/cloud.google.com/go/pubsub.v1
+    contrib/cloud.google.com/go/pubsub.v1/otelc
+    contrib/cloud.google.com/go/pubsub.v2
+    contrib/cloud.google.com/go/pubsub.v2/otelc
     contrib/net/http
     contrib/net/http/otelc
+    contrib/rs/zerolog
+    contrib/rs/zerolog/otelc
     contrib/database/sql
     contrib/database/sql/otelc
     contrib/gin-gonic/gin
@@ -57,10 +65,24 @@ env:
     contrib/gofiber/fiber.v2/otelc
     contrib/julienschmidt/httprouter
     contrib/julienschmidt/httprouter/otelc
+    contrib/k8s.io/client-go
+    contrib/k8s.io/client-go/otelc
     contrib/gomodule/redigo
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
     contrib/google.golang.org/grpc/otelc
+    contrib/go-redis/redis
+    contrib/go-redis/redis/otelc
+    contrib/go-redis/redis.v7
+    contrib/go-redis/redis.v7/otelc
+    contrib/go-redis/redis.v8
+    contrib/go-redis/redis.v8/otelc
+    contrib/redis/go-redis.v9
+    contrib/redis/go-redis.v9/otelc
+    contrib/gorm.io/gorm.v1
+    contrib/gorm.io/gorm.v1/otelc
+    contrib/jackc/pgx.v5
+    contrib/jackc/pgx.v5/otelc
     contrib/go.mongodb.org/mongo-driver
     contrib/go.mongodb.org/mongo-driver/otelc
     contrib/go.mongodb.org/mongo-driver.v2
@@ -71,6 +93,8 @@ env:
     contrib/labstack/echo.v4/otelc
     contrib/labstack/echo.v5
     contrib/labstack/echo.v5/otelc
+    contrib/segmentio/kafka-go
+    contrib/segmentio/kafka-go/otelc
     contrib/valyala/fasthttp
     contrib/valyala/fasthttp/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
@@ -87,16 +111,28 @@ env:
     chi.v5
     fiber.v2
     julienschmidt_httprouter
+    k8s_client_go
     redigo
     grpc
     gorilla_mux
     99designs.gqlgen
+    go-redis.v0
+    go-redis.v7
+    go-redis.v8
+    go-redis.v9
+    gorm
+    aws.v2
+    pgx
     mongo
     mongo.v2
+    gcp_pubsub.v1
+    gcp_pubsub.v2
     echo.v4
     echo.v5
     aws.v1
     valyala_fasthttp
+    segmentio_kafka.v0
+    zerolog
 
 jobs:
   # Classifies the PR diff against .github/ci-components.yml. Fails open: every
@@ -136,7 +172,10 @@ jobs:
       - name: Setup Go
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.26.4"
+          # oldstable (the supported floor), not the 1.26.4 corruption-era
+          # pin from #5056/#5066: the rest of CI runs the latest 1.26.x
+          # without the #77168 corruption, so the pin is no longer needed.
+          go-version: oldstable
           workload: otelc-matrix
           cache-provider: github-cache
           cache: "false"
@@ -186,11 +225,43 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
           workload: otelc-integration
+          # Default-branch seed set, stable-alias strata only: the nightly
+          # schedule and a workflow_dispatch on the default branch save
+          # these keys; every pull request run restores only. The oldstable
+          # strata stay unseeded — they cold-build exactly as they do
+          # today — because the shared pool measured at its 100 GiB
+          # eviction boundary (2026-11-17) cannot hold every stratum of
+          # three more families; widen the gate to `matrix.go-version ==
+          # 'stable' || matrix.go-version == 'oldstable'` once citiming
+          # shows the stable strata pay for their size. A dispatch that
+          # overrides otelc-version must stay restore-only: it would save
+          # a variant no ordinary pull request can ever restore. Windows
+          # skips the isolated caches: a 1.4 GiB restore there costs
+          # 2.6-3.3m in tar.exe extraction and saves about 2m of build
+          # time, measured on multios's windows-latest runners
+          # (APMLP-2248); the 8-core shared runners this lane uses are
+          # unmeasured, so the skip is the conservative default.
+          cache: ${{ matrix.runs-on != 'windows' }}
+          seed: ${{ matrix.runs-on != 'windows' && matrix.go-version == 'stable' && inputs.otelc-version == '' }}
           variant: |-
             {"runner":"${{ matrix.runs-on }}",
              "instrumentation":"otelc",
              "version":${{ toJSON(env.OTELC_VERSION) }},
              "workspace":"off"}
+
+      # otelc's wrapper keeps instrumented builds in .otelc-build/gocache
+      # under the working directory unless GOCACHE is in the environment
+      # (tool/internal/setup/setup.go's setupGoCache respects an explicit
+      # GOCACHE, at the revision pinned in OTELC_VERSION above). Export the
+      # standard cache path so the instrumented artifacts land in the
+      # directory the provider restores and saves — otherwise the seed
+      # misses this lane's dominant cost, the instrumented compilation.
+      # The Go cache is content-addressed per tool ID, and otelc hashes its
+      # instrumentation rules into the tool ID, so instrumented and plain
+      # entries coexist safely in one cache.
+      - name: Point otelc at the shared build cache
+        shell: bash
+        run: echo "GOCACHE=$(go env GOCACHE)" >> "$GITHUB_ENV"
 
       # Deliberately not tools-cache: `make tools-install` also installs
       # checkmake, which the tools cache does not cover.
@@ -221,6 +292,14 @@ jobs:
           for dir in internal/orchestrion/_integration ${OTELC_MODULES}; do
             retry_on_corruption go -C "${dir}" mod tidy
           done
+
+      # Pull every image of the shared Testcontainers catalog ahead of time, so the pulls don't have
+      # to fit within the test timeout. The catalog pins the images the integration suites use.
+      - name: Pull container images
+        # Docker is only supported on Linux runners at the moment
+        if: runner.os == 'Linux'
+        run: |-
+          docker compose -f "${{ github.workspace }}/instrumentation/testutils/containers/images/docker-compose.yaml" pull
 
       - name: Run Tests
         shell: bash
@@ -315,7 +394,10 @@ jobs:
       - name: Setup Go
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.26.4"
+          # oldstable (the supported floor), not the 1.26.4 corruption-era
+          # pin from #5056/#5066: the rest of CI runs the latest 1.26.x
+          # without the #77168 corruption, so the pin is no longer needed.
+          go-version: oldstable
           workload: otelc-external-app
           variant: |-
             {"instrumentation":"otelc",

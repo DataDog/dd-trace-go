@@ -33,6 +33,10 @@ func TestServeConnGoDefer(t *testing.T) {
 	harness.Run(t, new(TestCaseServeConnGoDefer))
 }
 
+func TestServeFunc(t *testing.T) {
+	harness.Run(t, new(TestCaseServeFunc))
+}
+
 func TestServeTwice(t *testing.T) {
 	harness.Run(t, new(TestCaseServeTwice))
 }
