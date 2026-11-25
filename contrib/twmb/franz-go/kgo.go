@@ -106,8 +106,8 @@ func (h *tracingHook) finishAndClearActiveSpans() {
 // The hook holds per-client state. Attach the Opt returned by WithTracing
 // to one client only. A hook attached to two clients logs a warning and
 // reports the group and the bootstrap servers of the client created last,
-// and the cluster ID of the first client that produced or consumed, for
-// both clients.
+// and also looks the cluster ID up through the client created last when the
+// first record is produced or consumed, for both clients.
 func (h *tracingHook) OnNewClient(c *kgo.Client) {
 	if !h.clientBound.CompareAndSwap(false, true) {
 		instr.Logger().Warn("contrib/twmb/franz-go: the result of a single WithTracing call was passed to more than one kgo.NewClient call; call WithTracing separately for each client, otherwise spans and Data Streams Monitoring report the consumer group, bootstrap servers and cluster ID of another client")
@@ -125,10 +125,19 @@ func (h *tracingHook) OnNewClient(c *kgo.Client) {
 	h.bootstrapServers.Store(bs)
 }
 
+// defaultSeedBroker is the seed broker franz-go uses when the client is
+// created without kgo.SeedBrokers.
+const defaultSeedBroker = "127.0.0.1"
+
 // bootstrapServers returns the client's seed brokers as configured, joined
 // with ",". It does not include brokers discovered from the cluster metadata.
+// It returns "" for the franz-go default, which names no cluster, also when
+// the client sets it explicitly with kgo.SeedBrokers("127.0.0.1").
 func bootstrapServers(c optValuer) string {
 	seeds, _ := c.OptValue(kgo.SeedBrokers).([]string)
+	if len(seeds) == 1 && seeds[0] == defaultSeedBroker {
+		return ""
+	}
 	return strings.Join(seeds, ",")
 }
 

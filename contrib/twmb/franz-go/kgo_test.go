@@ -527,6 +527,10 @@ func TestBootstrapServers(t *testing.T) {
 			opts: []kgo.Opt{kgo.SeedBrokers("broker-1:9092", "broker-2")},
 			want: "broker-1:9092,broker-2",
 		},
+		{
+			name: "franz-go default seed broker",
+			opts: []kgo.Opt{kgo.SeedBrokers(defaultSeedBroker)},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			mt := mocktracer.Start()
@@ -544,7 +548,11 @@ func TestBootstrapServers(t *testing.T) {
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 2)
 			for _, s := range spans {
-				assert.Equal(t, tc.want, s.Tag(ext.KafkaBootstrapServers))
+				if tc.want == "" {
+					assert.Nil(t, s.Tag(ext.KafkaBootstrapServers))
+				} else {
+					assert.Equal(t, tc.want, s.Tag(ext.KafkaBootstrapServers))
+				}
 			}
 		})
 	}
