@@ -9,12 +9,14 @@ package kafka
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	kafkatest "github.com/testcontainers/testcontainers-go/modules/kafka"
 
@@ -46,6 +48,7 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	tc.consumeMessage(ctx, t)
 	tc.produceMessageWithNilDeliveryChannel(t)
 	tc.consumeMessageFromNilDeliveryChannel(ctx, t)
+	tc.closeProducerWithBlockedDeliveryForwarder(t)
 }
 
 func (tc *TestCase) kafkaBootstrapServers() string {
@@ -90,12 +93,14 @@ func (tc *TestCase) produceMessageWithNilDeliveryChannel(t *testing.T) {
 	producer, err := kafka.NewProducer(cfg)
 	require.NoError(t, err, "failed to create producer")
 	defer func() {
-		// A nil delivery channel is redirected to the producer's Events() channel
-		// by the instrumentation. Drain the delivery report before Close() so
-		// the tracer's WrapDeliveryChannel goroutine finishes forwarding before
-		// that channel is closed (otherwise: "send on closed channel" panic).
-		<-producer.Events()
-		producer.Close()
+		// Close always runs, even if the wait fails: assert does not stop
+		// the goroutine like require does.
+		defer producer.Close()
+		// Wait until the delivery report is in Events(), but do not read it,
+		// so Close runs with the report unread. Flush cannot be used for
+		// this: it counts unread events and would wait for its full timeout.
+		assert.Eventually(t, func() bool { return len(producer.Events()) > 0 },
+			15*time.Second, 10*time.Millisecond, "no delivery report in Events()")
 	}()
 
 	err = producer.Produce(&kafka.Message{
@@ -107,6 +112,42 @@ func (tc *TestCase) produceMessageWithNilDeliveryChannel(t *testing.T) {
 		Value: []byte("value3"),
 	}, nil)
 	require.NoError(t, err, "failed to send message")
+}
+
+// closeProducerWithBlockedDeliveryForwarder closes a producer while a delivery
+// report forwarder is blocked sending to a full Events() channel. Without
+// coordination between Close and the forwarder, the send panics with "send on
+// closed channel" and crashes the test binary (#5806).
+func (tc *TestCase) closeProducerWithBlockedDeliveryForwarder(t *testing.T) {
+	t.Helper()
+
+	cfg := &kafka.ConfigMap{
+		"bootstrap.servers":      tc.kafkaBootstrapServers(),
+		"go.delivery.reports":    true,
+		"go.events.channel.size": 1,
+	}
+	producer, err := kafka.NewProducer(cfg)
+	require.NoError(t, err, "failed to create producer")
+	defer producer.Close()
+
+	// With a nil delivery channel, the instrumentation forwards each delivery
+	// report to Events(). Nothing reads Events(), so the first report fills
+	// its one slot and the next forwarder blocks on its send.
+	for i := range 3 {
+		err = producer.Produce(&kafka.Message{
+			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: partition},
+			Key:            fmt.Appendf(nil, "close-key%d", i),
+			Value:          []byte("close-value"),
+		}, nil)
+		require.NoError(t, err, "failed to send message")
+	}
+	// Producer.Len counts unsent messages, undelivered reports and unread
+	// Events(). It drops to 1 once the broker has acked all messages and only
+	// the report in Events() is unread: the other reports are then held by
+	// forwarders that cannot send them, because Events() is full.
+	require.Eventually(t, func() bool {
+		return len(producer.Events()) == 1 && producer.Len() == 1
+	}, 15*time.Second, 10*time.Millisecond, "delivery forwarders not blocked on a full Events() channel")
 }
 
 func (tc *TestCase) consumeMessage(_ context.Context, t *testing.T) {

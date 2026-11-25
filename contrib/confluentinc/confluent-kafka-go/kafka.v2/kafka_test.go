@@ -505,10 +505,38 @@ to run the integration test locally:
 // delivery reports for messages produced with a nil delivery channel are in
 // flight does not panic with "send on closed channel".
 func TestProduceNilDeliveryChannelClose(t *testing.T) {
-	t.Skip("reproduces #5806; remove when fixed")
+	testProduceEventsDeliveryClose(t, nil, false)
+}
+
+// TestProduceEventsDeliveryChannelClose is like
+// TestProduceNilDeliveryChannelClose, but passes an events channel explicitly
+// as the delivery channel. With data streams enabled, Events() returns a
+// wrapped channel, while the embedded Producer.Events() still hands out the
+// raw channel that Close closes, so both variants are covered, with and
+// without data streams.
+func TestProduceEventsDeliveryChannelClose(t *testing.T) {
+	events := func(p *Producer) chan kafka.Event { return p.Events() }
+	rawEvents := func(p *Producer) chan kafka.Event { return p.Producer.Events() }
+	t.Run("explicit", func(t *testing.T) { testProduceEventsDeliveryClose(t, events, false) })
+	t.Run("explicit-raw", func(t *testing.T) { testProduceEventsDeliveryClose(t, rawEvents, false) })
+	t.Run("explicit-dsm", func(t *testing.T) { testProduceEventsDeliveryClose(t, events, true) })
+	t.Run("explicit-raw-dsm", func(t *testing.T) { testProduceEventsDeliveryClose(t, rawEvents, true) })
+	t.Run("nil-dsm", func(t *testing.T) { testProduceEventsDeliveryClose(t, nil, true) })
+}
+
+// testProduceEventsDeliveryClose produces five messages whose delivery
+// reports go to the channel that delivery returns (nil for the default,
+// p.Events() for the wrapped channel, or the raw p.Producer.Events()), then
+// closes the producer while the remaining delivery forwarders are blocked on
+// their send to the full events channel.
+func testProduceEventsDeliveryClose(t *testing.T, delivery func(*Producer) chan kafka.Event, dsm bool) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
+	var opts []Option
+	if dsm {
+		opts = append(opts, WithDataStreams())
+	}
 	// A one-slot Events() channel that is no longer read makes a delivery
 	// forwarder block on its send, so Producer.Close closes the channel
 	// under it.
@@ -516,14 +544,18 @@ func TestProduceNilDeliveryChannelClose(t *testing.T) {
 		"bootstrap.servers":      "127.0.0.1:1",
 		"message.timeout.ms":     1,
 		"go.events.channel.size": 1,
-	})
+	}, opts...)
 	require.NoError(t, err)
+	var deliveryChan chan kafka.Event
+	if delivery != nil {
+		deliveryChan = delivery(p)
+	}
 	topic := "gotest"
 	for range 5 {
 		require.NoError(t, p.Produce(&kafka.Message{
 			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
 			Value:          []byte("x"),
-		}, nil))
+		}, deliveryChan))
 	}
 	// Read Events() until the first delivery report, then stop reading.
 	gotReport := make(chan struct{})
@@ -542,5 +574,23 @@ func TestProduceNilDeliveryChannelClose(t *testing.T) {
 	}
 	time.Sleep(100 * time.Millisecond)
 	p.Close()
-	time.Sleep(100 * time.Millisecond)
+	// Drain the events left in Events() so the goroutine that forwards them
+	// (with data streams) can see the channel close and exit, instead of
+	// leaking into the goroutine leak checks of later tests.
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		for range p.Events() {
+		}
+	}()
+	select {
+	case <-drained:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Events() was not closed after Close")
+	}
+	// No event-forwarding goroutine started by kafkatrace may outlive Close.
+	assert.Eventually(t, func() bool {
+		err := goleak.Find()
+		return err == nil || !strings.Contains(err.Error(), "confluent-kafka-go/kafkatrace.Wrap")
+	}, 10*time.Second, 10*time.Millisecond, "found leaked kafkatrace goroutine(s)")
 }
