@@ -742,11 +742,12 @@ func TestGatedWorkflowsHaveAChangesJob(t *testing.T) {
 	// The joins that mint a bare check name branch protection may
 	// require: deleting or renaming one must fail a test, not just
 	// stop a required check from reporting.
+	// Only the PR callers' joins run through this loop (joinJobs gates
+	// it); the thin main callers' lane job is pinned by
+	// TestIntegrationLanesMacWindowsMainOnly instead.
 	joinNames := map[string]map[string]string{
 		"orchestrion-pr.yml": {"integration-test-done": "Orchestrion Integration Tests"},
 		"otelc-pr.yml":       {"integration-test-done": "OTelc Integration Tests"},
-		"orchestrion.yml":    {"lane": ""},
-		"otelc.yml":          {"lane": ""},
 	}
 
 	for _, f := range files {
