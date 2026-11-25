@@ -88,11 +88,11 @@ The harness suites never build a `package main`, and only exercise call sites in
   to be a separate module, not a package of `_integration`, to count as a dependency.
 - **The rules module bringing its contrib into an application**, when a rule adds an import of the
   contrib (`imports:`) or the hook package uses it. The suites can't check this, because
-  `_integration/go.mod` requires every contrib. Call the library from
-  `internal/apps/otelc-external-app/libraries.go`, a separate module that never imports the
-  contribs, and make the library a direct require there (`GOWORK=off go mod tidy` in that
-  directory). The External Application Build job then fails if the rules module stops pulling in
-  its contrib. Use one call a rule matches that needs no network: a constructor for a call rule
+  `_integration/go.mod` requires every contrib. Add a new `lib_<name>.go` file in
+  `internal/apps/otelc-external-app`. In `init`, use `registerLibrary` to register the check.
+  Make the library a direct requirement in that module (`GOWORK=off go mod tidy` in that
+  directory). The External Application Build job fails if the rules module does not supply its
+  contrib. Use one call that a rule matches and that needs no network: a constructor for a call rule
   (`gin.New()`, `options.Client()`), or one in-process use of the hooked type for a hook rule (an
   `httptest` request, `fasthttp.ServeConn` on a closed `net.Pipe`). Never import the contrib in the
   app, or the build passes either way. Skip it when:
