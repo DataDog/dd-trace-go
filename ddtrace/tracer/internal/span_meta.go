@@ -146,6 +146,9 @@ func (sm *SpanMeta) Version() (string, bool) { return sm.promotedAttrs.Get(AttrV
 // Language returns the value of the "language" promoted attribute.
 func (sm *SpanMeta) Language() (string, bool) { return sm.promotedAttrs.Get(AttrLanguage) }
 
+// RuntimeID returns the value of the "runtime-id" promoted attribute.
+func (sm *SpanMeta) RuntimeID() (string, bool) { return sm.promotedAttrs.Get(AttrRuntimeID) }
+
 // ---------------------------------------------------------------------------
 // Write methods
 // ---------------------------------------------------------------------------
@@ -214,7 +217,7 @@ func (sm *SpanMeta) ensureAttrsLocal() {
 // callers from inlining Delete. The direct switch keeps Delete at cost 73.
 func (sm *SpanMeta) Delete(key string) {
 	switch len(key) {
-	case 3, 7, 8:
+	case 3, 7, 8, 10:
 		sm.deleteSlow(key)
 	default:
 		delete(sm.m, key)

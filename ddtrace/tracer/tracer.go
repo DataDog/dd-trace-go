@@ -672,6 +672,10 @@ func buildSharedAttrs(c *config, base, mainSvc *traceinternal.SpanAttributes) {
 	// COW clone on the setMetaInit("language", "go") call in spanStart.
 	base.Set(traceinternal.AttrLanguage, "go")
 	mainSvc.Set(traceinternal.AttrLanguage, "go")
+	if rid, ok := c.internalConfig.GlobalTags()[ext.RuntimeID].(string); ok {
+		base.Set(traceinternal.AttrRuntimeID, rid)
+		mainSvc.Set(traceinternal.AttrRuntimeID, rid)
+	}
 	if env := c.internalConfig.Env(); env != "" {
 		base.Set(traceinternal.AttrEnv, env)
 		mainSvc.Set(traceinternal.AttrEnv, env)
@@ -1165,7 +1169,9 @@ func spanStartWithContext(operationName string, sharedAttrs *traceinternal.SpanA
 	if pprofContext != nil {
 		setLLMObsPropagatingTags(pprofContext, span.context)
 	}
-	span.setMetaInit("language", "go")
+	if sharedAttrs == nil {
+		span.setMetaInit("language", "go")
+	}
 	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, span)
 	span.pprofCtxRestore = pprofContext
 	// setTags takes s.mu internally. Tags may override the service name
@@ -1251,8 +1257,17 @@ func (t *tracer) startSpanWithContext(operationName, ciVisibilityTracerType stri
 	}
 	span.supportsEvents = t.config.agent.load().spanEventsAvailable || t.otlpExportMode
 
-	// add global tags
-	span.setTags(cSnap.GlobalTags)
+	// add global tags (fast-path when GlobalTags only carries the process
+	// runtime-id already pre-populated in t.sharedAttrs).
+	if len(cSnap.GlobalTags) == 1 {
+		if rid, ok := cSnap.GlobalTags[ext.RuntimeID].(string); ok && t.sharedAttrs.Has(traceinternal.AttrRuntimeID) && rid == t.sharedAttrs.Val(traceinternal.AttrRuntimeID) {
+			// already present in sharedAttrs
+		} else {
+			span.setTags(cSnap.GlobalTags)
+		}
+	} else {
+		span.setTags(cSnap.GlobalTags)
+	}
 
 	if newSvc, ok := t.config.internalConfig.ServiceMapping(span.service); ok {
 		span.service = newSvc

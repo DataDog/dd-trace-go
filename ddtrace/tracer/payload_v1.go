@@ -664,6 +664,12 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 			p.buf = append(p.buf, byte(StringValueType))
 			p.buf = st.serialize(lang, p.buf)
 		}
+		if rid, ok := span.meta.RuntimeID(); ok {
+			count++
+			p.buf = st.serialize(ext.RuntimeID, p.buf)
+			p.buf = append(p.buf, byte(StringValueType))
+			p.buf = st.serialize(rid, p.buf)
+		}
 
 		// Map(false) returns the underlying flat map directly (no copy, no promoted attrs).
 		for k, v := range span.meta.Map(false) {
