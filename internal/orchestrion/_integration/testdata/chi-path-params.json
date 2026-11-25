@@ -1,0 +1,11 @@
+{
+  "version": "2.2",
+  "metadata": {"rules_version": "1.0.0"},
+  "rules": [
+    {"id":"id-block","name":"id-block","tags":{"type":"path-id","category":"attack_attempt"},"conditions":[{"operator":"match_regex","parameters":{"inputs":[{"address":"server.request.path_params","key_path":["id"]}],"regex":"^attack$"}}],"on_match":["block"]},
+    {"id":"tenant-block","name":"tenant-block","tags":{"type":"path-tenant","category":"attack_attempt"},"conditions":[{"operator":"match_regex","parameters":{"inputs":[{"address":"server.request.path_params","key_path":["tenant"]}],"regex":"^attack$"}}],"on_match":["block"]},
+    {"id":"wildcard-block","name":"wildcard-block","tags":{"type":"path-wildcard","category":"attack_attempt"},"conditions":[{"operator":"match_regex","parameters":{"inputs":[{"address":"server.request.path_params","key_path":["*"]}],"regex":"^attack$"}}],"on_match":["block"]},
+    {"id":"header-block","name":"header-block","tags":{"type":"header","category":"attack_attempt"},"conditions":[{"operator":"match_regex","parameters":{"inputs":[{"address":"server.request.headers.no_cookies","key_path":["x-block"]}],"regex":"^yes$"}}],"on_match":["block"]}
+  ],
+  "actions": [{"id":"block","type":"block_request","parameters":{"status_code":403,"type":"auto"}}]
+}
