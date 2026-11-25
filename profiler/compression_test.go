@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -207,6 +208,37 @@ func TestDebugCompressionEnv(t *testing.T) {
 		checkZstdLevel(t, p.attachments["cpu.pprof"], zstd.SpeedDefault)
 		checkZstdLevel(t, p.attachments["delta-heap.pprof"], zstd.SpeedDefault)
 	})
+}
+
+func TestSharedZstdEncoderRetainedHeap(t *testing.T) {
+	input, err := os.ReadFile("internal/fastdelta/testdata/big-heap.pprof")
+	require.NoError(t, err)
+
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	gBefore := runtime.NumGoroutine()
+
+	enc, err := newSharedZstdEncoder(zstd.SpeedDefault)
+	require.NoError(t, err)
+
+	var out bytes.Buffer
+	for range 3 {
+		out.Reset()
+		enc.Reset(&out)
+		_, err = enc.Write(input)
+		require.NoError(t, err)
+		require.NoError(t, enc.Close())
+	}
+
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	gAfter := runtime.NumGoroutine()
+	runtime.KeepAlive(enc)
+
+	retainedKiB := float64(int64(after.HeapAlloc)-int64(before.HeapAlloc)) / 1024
+	t.Logf("input=%d B compressed=%d B retained_heap=%.1f KiB goroutine_delta=%d", len(input), out.Len(), retainedKiB, gAfter-gBefore)
+	require.Less(t, retainedKiB, 6000.0, "shared zstd encoder should retain bounded heap")
 }
 
 func compressData(t testing.TB, data []byte, c compression) []byte {

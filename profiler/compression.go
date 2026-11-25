@@ -282,7 +282,12 @@ func (r *gzipDecodingRecompressor) Close() error {
 // It expects the Reset and Close method to be used in an acquire and release
 // fashion.
 func newSharedZstdEncoder(level zstd.EncoderLevel) (*sharedZstdEncoder, error) {
-	encoder, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(level))
+	encoder, err := zstd.NewWriter(nil,
+		zstd.WithEncoderLevel(level),
+		zstd.WithEncoderConcurrency(1),
+		zstd.WithLowerEncoderMem(true),
+		zstd.WithWindowSize(1<<20),
+	)
 	if err != nil {
 		return nil, err
 	}
