@@ -475,9 +475,9 @@ aspects:
             span := p.__dd_tracer.StartProduceSpan(tMsg)
 
             var errChan chan error
-            // The events channels are closed by Close, so forwarding to them is guarded (#5806).
+            // The events channel is closed by Close, so forwarding to it is guarded (#5806).
             var guard *kafkatrace.DeliveryGuard
-            if {{ $deliveryChan }} != nil && ({{ $deliveryChan }} == {{ $p }}.__dd_events || {{ $deliveryChan }} == {{ $p }}.events) {
+            if {{ $deliveryChan }} == {{ $p }}.__dd_events {
               guard = {{ $p }}.__dd_deliveryGuard
             }
             {{ $deliveryChan }}, errChan = kafkatrace.WrapDeliveryChannelGuarded({{ $p }}.__dd_tracer, {{ $deliveryChan }}, guard, span, __dd_wrapEvent)
