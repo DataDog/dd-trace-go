@@ -279,9 +279,9 @@ reopen_unless_recovered() {
   # recover 101, fail 102 — the newest state is the failure). A
   # failure recording after this re-read is covered by its own
   # triage's reopen, so every interleaving converges.
-  local latest_fail latest_green
-  read -r latest_fail latest_green \
-    <<<"$(issue_newest_records "$issue")"
+  local latest_fail latest_green records
+  records=$(issue_newest_records "$issue") || exit 1
+  read -r latest_fail latest_green <<<"$records"
   latest_fail=${latest_fail:-0}
   latest_green=${latest_green:-0}
   if [ "$latest_green" -gt "$latest_fail" ] \
@@ -291,32 +291,37 @@ reopen_unless_recovered() {
     note='Reclosed: a newer recovery is the newest record.'
     gh issue close "$issue" --repo "$REPO" --comment "$note" \
       >/dev/null
+    # Reconcile after the close: a failure can record between the
+    # snapshot above and this mutation, and the stale close would
+    # leave it hidden. A failure recording after this re-read is
+    # covered by its own triage's reopen.
+    records=$(issue_newest_records "$issue") || exit 1
+    read -r latest_fail latest_green <<<"$records"
+    latest_fail=${latest_fail:-0}
+    latest_green=${latest_green:-0}
+    if [ "$latest_fail" -gt "$latest_green" ] \
+      && [ "$latest_fail" -gt "$RUN_ID" ]; then
+      log "newer failure recorded during close: reopening #$issue"
+      gh issue reopen "$issue" --repo "$REPO" >/dev/null
+    fi
   fi
 }
 
 # True when the issue's body or comments mention a run id newer than
 # this run's: a newer failure spoke on record, and no close may bury it.
 issue_has_newer_failure() {
-  local issue=$1 record newer
-  # A read that exhausts its retries must abort recovery: an empty
-  # record would read as "no newer failure" and close an issue whose
-  # history could not be verified.
-  record=$(read_gh issue view "$issue" --repo "$REPO" \
-    --json body,comments \
-    --jq '.body, (.comments[] | .body // "")') || exit 1
-  # Only failure records count: recovery comments ("Green again")
-  # from newer runs must not read as failures, or an older triage
-  # would reopen a healthy issue a newer recovery already closed.
-  local failures
-  failures=$(printf '%s' "$record" \
-    | grep -E 'Failing run:|Failed again' || true)
-  for newer in $(printf '%s' "$failures" \
-    | grep -oE '/actions/runs/[0-9]+' | grep -oE '[0-9]+'); do
-    if [ "$newer" -gt "$RUN_ID" ]; then
-      return 0
-    fi
-  done
-  return 1
+  # A newer failure counts only when it is also newer than the newest
+  # recovery: a recovery comment from a still-newer run means the
+  # newest state is healthy, and reading the failure alone would
+  # reopen an issue a newer recovery already closed. A failed record
+  # lookup aborts: an empty record would read as verified.
+  local issue=$1 latest_fail latest_green records
+  records=$(issue_newest_records "$issue") || exit 1
+  read -r latest_fail latest_green <<<"$records"
+  latest_fail=${latest_fail:-0}
+  latest_green=${latest_green:-0}
+  [ "$latest_fail" -gt "$RUN_ID" ] \
+    && [ "$latest_fail" -gt "$latest_green" ]
 }
 
 # The legs of the newest completed run that are green, one name per
