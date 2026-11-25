@@ -42,11 +42,16 @@ jobs:
     # filter on head_branch; its events are pull_request events from
     # another repository, and they must never open issues that ping the
     # team. Only this repository's own push and schedule runs of the
-    # lanes are triaged.
+    # lanes are triaged. A workflow_dispatch with a pinned
+    # orchestrion/otelc version is a deliberate experiment by whoever
+    # dispatched it, watching their own run: its failures are real but
+    # not a breakage of main, so it opens no team issue (the same
+    # reasoning that keeps those dispatches from seeding caches).
     if: >-
       github.event_name != 'workflow_run' ||
       (github.event.workflow_run.head_repository.full_name == github.repository
-      && github.event.workflow_run.event != 'pull_request')
+      && github.event.workflow_run.event != 'pull_request'
+      && github.event.workflow_run.event != 'workflow_dispatch')
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}

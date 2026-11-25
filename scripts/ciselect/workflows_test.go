@@ -1973,7 +1973,7 @@ func laneOSList(t *testing.T, doc map[string]any) string {
 // script's LANES array and the two `name:` lines.
 func TestLaneTriageFilterMatchesTheLaneNames(t *testing.T) {
 	_, _, root := testTable(t)
-	_, on := parseWorkflow(t,
+	doc, on := parseWorkflow(t,
 		filepath.Join(root, workflowDir, "ci-lane-triage.yml"))
 	run, ok := on["workflow_run"].(map[string]any)
 	if !ok {
@@ -2003,6 +2003,21 @@ func TestLaneTriageFilterMatchesTheLaneNames(t *testing.T) {
 	if len(names) != 2 {
 		t.Errorf("ci-lane-triage.yml: the filter lists %d workflows, "+
 			"want exactly the two lanes %v", len(names), names)
+	}
+
+	// A dispatch with a pinned orchestrion or otelc version is a
+	// deliberate experiment, not a breakage of main: it must not open
+	// team issues. The fork guard on the same job blocks pull_request
+	// events; this pins the dispatch half.
+	jobs := doc["jobs"].(map[string]any)
+	triage, ok := jobs["triage"].(map[string]any)
+	if !ok {
+		t.Fatal("ci-lane-triage.yml: no triage job")
+	}
+	cond, _ := triage["if"].(string)
+	if !strings.Contains(cond, "github.event.workflow_run.event != 'workflow_dispatch'") {
+		t.Errorf("ci-lane-triage.yml: the triage guard does not exclude "+
+			"workflow_dispatch runs:\n%s", cond)
 	}
 }
 

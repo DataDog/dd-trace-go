@@ -142,6 +142,7 @@ issue_body() {
     --json databaseId,conclusion,headSha,event \
     | jq -c --argjson id "$RUN_ID" '
       [.[] | select(.event != "pull_request")
+           | select(.event != "workflow_dispatch")
            | select(.conclusion != null and .conclusion != ""
                and .conclusion != "cancelled")]
       | (map(.databaseId) | index($id)) as $i
@@ -177,9 +178,13 @@ EOF
 # tells nothing about the current state of main.
 newest_completed_lane_run() {
   local lane=$1
+  # Dispatch runs with a pinned version are deliberate experiments, not
+  # main's state, so they count for no chronology here (the same
+  # reasoning that keeps them out of the triage trigger).
   read_gh run list --workflow "$lane" --branch main --limit 20 \
     --json databaseId,conclusion,event \
     | jq -c '[.[] | select(.event != "pull_request")
+                 | select(.event != "workflow_dispatch")
                  | select(.conclusion != null and .conclusion != "")]
       | .[0] // empty'
 }
@@ -400,7 +405,8 @@ missing_run_alert() {
   for lane in "${LANES[@]}"; do
     found=$(read_gh run list --workflow "$lane" --branch main \
       --created ">=$since" --json databaseId,event \
-      | jq '[.[] | select(.event != "pull_request")] | length')
+      | jq '[.[] | select(.event != "pull_request")
+        and select(.event != "workflow_dispatch")] | length')
     if [ "${found:-0}" -eq 0 ]; then
       log "missing-run alert for $lane"
       issue=$(find_issue "$TRACKING_TITLE" "$DASHBOARD_LABEL")
