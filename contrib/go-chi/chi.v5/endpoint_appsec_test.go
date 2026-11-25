@@ -80,9 +80,13 @@ func TestEndpointHookOptOuts(t *testing.T) {
 				if tc.blockedHeader {
 					req.Header.Set("X-Block", "yes")
 				}
+				mt.Reset()
 				w := httptest.NewRecorder()
 				r.ServeHTTP(w, req)
 				require.Equal(t, tc.status, w.Code)
+				for _, span := range mt.FinishedSpans() {
+					require.NotContains(t, eventRules(span.Tag("_dd.appsec.json")), "path-block")
+				}
 			}
 			require.Zero(t, calls)
 		})
@@ -186,11 +190,15 @@ func TestEndpointHookCatchAll(t *testing.T) {
 		{"/routed/acme/files/attack", http.StatusForbidden, map[string]string{"tenant": "acme", "*": "attack"}},
 	} {
 		received = nil
+		mt.Reset()
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tc.path, nil))
 		require.Equal(t, tc.status, w.Code, tc.path)
 		if tc.params == nil {
 			require.Empty(t, received)
+			for _, span := range mt.FinishedSpans() {
+				require.Nil(t, span.Tag("_dd.appsec.json"))
+			}
 		} else {
 			require.Equal(t, []map[string]string{tc.params}, received)
 		}

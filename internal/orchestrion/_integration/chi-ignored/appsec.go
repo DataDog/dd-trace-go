@@ -30,9 +30,10 @@ func (*TestCase) PreBootstrap(_ context.Context, t *testing.T) {
 }
 
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
+	// An indirect call avoids the otelc rule without its ignore directive.
 	//orchestrion:ignore
-	//otelc:ignore
-	r := chi.NewRouter()
+	newRouter := chi.NewRouter
+	r := newRouter()
 	r.Get("/users/{id}", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	ln := net.FreeListener(t)
 	tc.server = &http.Server{Addr: ln.Addr().String(), Handler: r}
@@ -54,5 +55,5 @@ func (tc *TestCase) Run(_ context.Context, t *testing.T) {
 func (*TestCase) ExpectedSpanCount() int { return 2 }
 
 func (*TestCase) ExpectedTraces() trace.Traces {
-	return trace.Traces{{Tags: map[string]any{"name": "http.request", "resource": "GET /users/attack"}, Meta: map[string]string{"component": "net/http", "span.kind": "client"}, Children: trace.Traces{{Meta: map[string]string{"component": "net/http", "span.kind": "server", "http.status_code": "200"}}}}}
+	return trace.Traces{{Tags: map[string]any{"name": "http.request", "resource": "GET /users/attack"}, Meta: map[string]string{"component": "net/http", "span.kind": "client"}, Children: trace.Traces{{Meta: map[string]string{"component": "net/http", "span.kind": "server", "http.status_code": "200"}, MetaAbsent: []string{"_dd.appsec.json"}}}}}
 }

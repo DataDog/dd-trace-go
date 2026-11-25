@@ -97,5 +97,46 @@ func (tc *TestCaseAppSec) Run(_ context.Context, t *testing.T) {
 func (*TestCaseAppSec) ExpectedSpanCount() int { return 41 }
 
 func (*TestCaseAppSec) ExpectedTraces() trace.Traces {
-	return trace.Traces{{Tags: map[string]any{"name": "http.request", "resource": "GET /users/attack"}, Meta: map[string]string{"component": "net/http", "span.kind": "client"}, Children: trace.Traces{{Meta: map[string]string{"component": "net/http", "span.kind": "server"}, Children: trace.Traces{{Meta: map[string]string{"component": "go-chi/chi.v5", "http.status_code": "403"}}}}}}}
+	cases := []struct {
+		client, route, status string
+		chiSpans              int
+	}{
+		{"GET /users/attack", "GET /users/{id}", "403", 1},
+		{"GET /users/42", "GET /users/{id}", "200", 1},
+		{"GET /routed/acme/items/attack", "GET /routed/{tenant}/items/{id}", "403", 1},
+		{"GET /routed/attack", "GET /routed/{tenant}", "404", 1},
+		{"GET /mounted/acme/items/attack", "GET /mounted/{tenant}/items/{id}", "403", 2},
+		{"GET /files/attack", "GET /files/*", "200", 1},
+		{"GET /w/attack/items/42", "GET /w/{tenant}/*", "403", 1},
+		{"GET /w/acme/items/attack", "GET /w/{tenant}/items/{id}", "403", 2},
+		{"GET /ignore/attack", "GET /ignore/{id}", "200", 1},
+		{"GET /ignore/42", "", "403", 0},
+		{"GET /opt/attack", "GET /opt/{id}", "200", 2},
+		{"GET /opt/42", "", "403", 0},
+		{"GET /manual/attack", "GET /manual/{id}", "403", 2},
+	}
+	traces := make(trace.Traces, 0, len(cases))
+	for _, c := range cases {
+		root := &trace.Trace{Tags: map[string]any{"name": "http.request", "resource": c.client}, Meta: map[string]string{"component": "net/http", "span.kind": "client", "http.status_code": c.status}}
+		server := &trace.Trace{Meta: map[string]string{"component": "net/http", "span.kind": "server", "http.status_code": c.status}}
+		switch c.client {
+		case "GET /users/attack", "GET /routed/acme/items/attack", "GET /mounted/acme/items/attack", "GET /w/acme/items/attack", "GET /manual/attack":
+			server.MetaContains = map[string]string{"_dd.appsec.json": `"id":"id-block"`}
+		case "GET /w/attack/items/42":
+			server.MetaContains = map[string]string{"_dd.appsec.json": `"id":"tenant-block"`}
+		case "GET /ignore/42", "GET /opt/42":
+			server.MetaContains = map[string]string{"_dd.appsec.json": `"id":"header-block"`}
+		default:
+			server.MetaAbsent = []string{"_dd.appsec.json"}
+		}
+		root.Children = trace.Traces{server}
+		parent := server
+		for i := 0; i < c.chiSpans; i++ {
+			chiSpan := &trace.Trace{Tags: map[string]any{"resource": c.route}, Meta: map[string]string{"component": "go-chi/chi.v5", "http.status_code": c.status}}
+			parent.Children = trace.Traces{chiSpan}
+			parent = chiSpan
+		}
+		traces = append(traces, root)
+	}
+	return traces
 }

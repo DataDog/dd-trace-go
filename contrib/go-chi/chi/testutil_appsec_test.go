@@ -91,13 +91,29 @@ func rulesJSON(rules ...string) string {
 // recorder (that must start first, so that it gets the AppSec metrics).
 func startAppSecRules(t *testing.T, rules ...string) *metricsRecorder {
 	t.Helper()
+	return startAppSecRulesTimeout(t, "1s", rules...)
+}
+
+func startAppSecRulesTimeout(t *testing.T, timeout string, rules ...string) *metricsRecorder {
+	t.Helper()
 	path := filepath.Join(t.TempDir(), "rules.json")
 	require.NoError(t, os.WriteFile(path, []byte(rulesJSON(rules...)), 0o600))
 	t.Setenv("DD_APPSEC_RULES", path)
 	t.Setenv("DD_APPSEC_ENABLED", "true")
 	t.Setenv("DD_API_SECURITY_ENABLED", "true")
-	t.Setenv("DD_APPSEC_WAF_TIMEOUT", "1s")
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", timeout)
+	var checkLogs func()
+	t.Cleanup(func() {
+		if checkLogs != nil {
+			checkLogs()
+		}
+	})
 	rec := testutils.StartTelemetryRecorder(t)
+	checkLogs = func() {
+		for _, line := range rec.Logs {
+			require.NotContains(t, line.Text, "RouteMatched called without an active HandlerOperation")
+		}
+	}
 	testutils.StartAppSec(t)
 	return &metricsRecorder{snap: func() map[string]float64 {
 		out := map[string]float64{}

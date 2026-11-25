@@ -75,6 +75,22 @@ func TestWrapGateAndParams(t *testing.T) {
 	}
 }
 
+func TestWrapNoRouteContext(t *testing.T) {
+	t.Cleanup(SetWovenForTest(false))
+	calls, handled := 0, 0
+	t.Cleanup(SetRouteMatchedForTest(func(context.Context, string, map[string]string) error { calls++; return nil }))
+	original := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { handled++ })
+	wrapped := Wrap(original, false)
+	if got := wrapped.(interface{ Unwrap() http.Handler }).Unwrap(); reflect.ValueOf(got).Pointer() != reflect.ValueOf(original).Pointer() {
+		t.Fatal("Unwrap did not return the original handler")
+	}
+	ctx := With(context.Background(), Marker{Route: reporter{}})
+	wrapped.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil).WithContext(ctx))
+	if calls != 0 || handled != 1 {
+		t.Fatalf("calls=%d handled=%d", calls, handled)
+	}
+}
+
 func TestWrapNilAndWoven(t *testing.T) {
 	restore := SetWovenForTest(false)
 	defer restore()
@@ -83,6 +99,14 @@ func TestWrapNilAndWoven(t *testing.T) {
 	}
 	if Wrap(nil, false) != nil || !Woven() {
 		t.Fatal("nil or woven state")
+	}
+	reset := SetWovenForTest(false)
+	if Woven() {
+		t.Fatal("test setter did not change woven state")
+	}
+	reset()
+	if !Woven() {
+		t.Fatal("test setter did not restore woven state")
 	}
 }
 
