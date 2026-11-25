@@ -22,9 +22,19 @@ import (
 )
 
 const (
+	// lineCoverageRowCount is the number of rows of counters of an
+	// instrumented package.
+	lineCoverageRowCount = 1024
+
+	// lineCoverageLaneCount is the number of rows of a coverage slot. Each
+	// goroutine stores into the row of its lane, which the runtime picks from
+	// its goroutine ID, so that goroutines of one test that run the same code
+	// rarely store into the same cache line.
+	lineCoverageLaneCount = 8
+
 	// lineCoverageSlotCount is the number of coverage slots in the runtime.
 	// Slot 0 collects the work of no test; windows lease the others.
-	lineCoverageSlotCount = 1024
+	lineCoverageSlotCount = lineCoverageRowCount / lineCoverageLaneCount
 
 	// maxDetachAttempts bounds the retargets of a slot that goroutines keep
 	// taking while its window closes.
@@ -554,47 +564,67 @@ func (c *lineCoverageCollector) release(slot uint32, dirty, detached bool) {
 	}
 }
 
-// collect appends to dst the blocks stored in the rows of slot. When reset is
-// true, it also clears the rows, so that each store is collected once.
+// collect appends to dst the blocks stored in the rows of slot's lanes, once
+// each. When reset is true, it also clears the rows, so that each store is
+// collected once.
 func (c *lineCoverageCollector) collect(slot uint32, reset bool, dst []blockRef) []blockRef {
 	for pi := range c.packages {
 		p := &c.packages[pi]
-		row := unsafe.Add(p.counters, int(slot)*p.rowSize)
+		rows := unsafe.Add(p.counters, int(slot)*lineCoverageLaneCount*p.rowSize)
 		n := len(p.blocks)
 		if p.wide {
 			for i := range n {
-				counter := (*uint32)(unsafe.Add(row, 4*i))
-				if atomic.LoadUint32(counter) == 0 {
-					continue
+				set := false
+				for lane := range lineCoverageLaneCount {
+					counter := (*uint32)(unsafe.Add(rows, lane*p.rowSize+4*i))
+					if atomic.LoadUint32(counter) == 0 {
+						continue
+					}
+					set = true
+					if reset {
+						atomic.StoreUint32(counter, 0)
+					}
 				}
-				if reset {
-					atomic.StoreUint32(counter, 0)
+				if set {
+					dst = append(dst, newBlockRef(pi, i))
 				}
-				dst = append(dst, newBlockRef(pi, i))
 			}
 			continue
 		}
 		if !p.aligned {
 			for i := range n {
-				b := (*byte)(unsafe.Add(row, i))
-				if *b == 0 {
-					continue
+				set := false
+				for lane := range lineCoverageLaneCount {
+					b := (*byte)(unsafe.Add(rows, lane*p.rowSize+i))
+					if *b == 0 {
+						continue
+					}
+					set = true
+					if reset {
+						*b = 0
+					}
 				}
-				if reset {
-					*b = 0
+				if set {
+					dst = append(dst, newBlockRef(pi, i))
 				}
-				dst = append(dst, newBlockRef(pi, i))
 			}
 			continue
 		}
 		for off := 0; off < n; off += wordSize {
-			word := (*uintptr)(unsafe.Add(row, off))
-			v := atomic.LoadUintptr(word)
+			var v uintptr
+			for lane := range lineCoverageLaneCount {
+				word := (*uintptr)(unsafe.Add(rows, lane*p.rowSize+off))
+				w := atomic.LoadUintptr(word)
+				if w == 0 {
+					continue
+				}
+				if reset {
+					w = atomic.SwapUintptr(word, 0)
+				}
+				v |= w
+			}
 			if v == 0 {
 				continue
-			}
-			if reset {
-				v = atomic.SwapUintptr(word, 0)
 			}
 			for i, b := range (*[wordSize]byte)(unsafe.Pointer(&v)) {
 				if b != 0 && off+i < n {

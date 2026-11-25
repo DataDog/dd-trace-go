@@ -160,6 +160,7 @@ type fakePackage struct {
 type fakeRuntime struct {
 	packages []fakePackage
 	slot     uint32
+	lane     uint32 // of the single goroutine
 	refs     [lineCoverageSlotCount]int32
 	others   map[uint32]int32
 	running  bool // retarget reports a running goroutine
@@ -188,10 +189,10 @@ func newFakePackageLines(path string, files []string, blocks []testBlock, extras
 // bytes.
 func newFakePackageSized(path string, files []string, blocks []testBlock, extras map[int]testLines, misalign bool, counterSize int) fakePackage {
 	rowSize := (len(blocks)*counterSize + 63) / 64 * 64
-	buf := make([]byte, lineCoverageSlotCount*rowSize+wordSize)
-	counters := buf[:lineCoverageSlotCount*rowSize]
+	buf := make([]byte, lineCoverageRowCount*rowSize+wordSize)
+	counters := buf[:lineCoverageRowCount*rowSize]
 	if misalign {
-		counters = buf[1 : 1+lineCoverageSlotCount*rowSize]
+		counters = buf[1 : 1+lineCoverageRowCount*rowSize]
 	}
 	return fakePackage{
 		counters:    counters,
@@ -262,18 +263,28 @@ func installFakeRuntime(t *testing.T, rt *fakeRuntime) {
 	})
 }
 
-// probe marks block of package pkg in the row of the current slot.
+// probe marks block of package pkg in the row of the current goroutine.
 func (rt *fakeRuntime) probe(pkg, block int) {
-	rt.packages[pkg].store(rt.slot, block)
+	rt.packages[pkg].store(rt.slot, rt.lane, block)
 }
 
-// store marks block in the row of slot.
-func (p fakePackage) store(slot uint32, block int) {
+// store marks block in the row of lane of slot.
+func (p fakePackage) store(slot, lane uint32, block int) {
 	if p.counterSize == 4 {
-		binary.NativeEndian.PutUint32(p.counters[int(slot)*p.rowSize+4*block:], 1)
+		binary.NativeEndian.PutUint32(p.counters[p.rowOffset(slot, lane)+4*block:], 1)
 		return
 	}
-	p.counters[int(slot)*p.rowSize+block] = 1
+	p.counters[p.rowOffset(slot, lane)+block] = 1
+}
+
+// rowOffset returns the offset of the row of lane of slot in the counters.
+func (p fakePackage) rowOffset(slot, lane uint32) int {
+	return (int(slot)*lineCoverageLaneCount + int(lane)) * p.rowSize
+}
+
+// slotRows returns the rows of all lanes of slot.
+func (p fakePackage) slotRows(slot uint32) []byte {
+	return p.counters[p.rowOffset(slot, 0):p.rowOffset(slot+1, 0)]
 }
 
 // startGoroutine simulates a goroutine started by the current one.
@@ -580,7 +591,7 @@ func TestLineCoverageDetach(t *testing.T) {
 	w.Close(1, 2)
 
 	// A late store of the goroutine of the first window goes to no test.
-	rt.packages[0].counters[1*rt.packages[0].rowSize+1] = 1
+	rt.packages[0].store(1, 5, 1)
 
 	// Goroutines that keep taking a slot poison it.
 	rt.running = false
@@ -622,12 +633,54 @@ func TestLineCoverageWideCounters(t *testing.T) {
 	rt.probe(0, 2)
 	w.Close(1, 1)
 	p := rt.packages[0]
-	assert.Equal(t, make([]byte, p.rowSize), p.counters[int(slot)*p.rowSize:int(slot+1)*p.rowSize], "rows are cleared")
+	assert.Equal(t, make([]byte, lineCoverageLaneCount*p.rowSize), p.slotRows(slot), "rows are cleared")
 
 	c.stop()
 	records := (*sent)[0]
 	require.NotEmpty(t, records)
 	assert.Equal(t, map[string][]int32{"a.go": {1, 3}}, recordLines(t, records[0]))
+}
+
+// TestLineCoverageLanes checks that a window gets the blocks of all lanes of
+// its slot once, and only those.
+func TestLineCoverageLanes(t *testing.T) {
+	workspace := setTestWorkspace(t)
+	file := filepath.Join(workspace, "a.go")
+	blocks := []testBlock{{0, 1, 1, false}, {0, 2, 2, false}, {0, 3, 3, false}, {0, 4, 4, false}}
+	for _, tc := range []struct {
+		name        string
+		misalign    bool
+		counterSize int
+	}{
+		{"aligned", false, 1},
+		{"unaligned", true, 1},
+		{"wide", false, 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rt := &fakeRuntime{packages: []fakePackage{
+				newFakePackageSized("example/a", []string{file}, blocks, nil, tc.misalign, tc.counterSize),
+			}}
+			c, sent := startTestCollector(t, rt)
+			p := rt.packages[0]
+
+			w := OpenLineCoverageWindow()
+			slot := rt.slot
+			rt.lane = 2
+			rt.probe(0, 0)
+			// Goroutines of the window in other lanes, one of them on the same block.
+			p.store(slot, 0, 0)
+			p.store(slot, lineCoverageLaneCount-1, 2)
+			// A goroutine of another slot.
+			p.store(slot+1, 0, 3)
+			w.Close(1, 1)
+			assert.Equal(t, make([]byte, lineCoverageLaneCount*p.rowSize), p.slotRows(slot), "rows are cleared")
+
+			c.stop()
+			records := (*sent)[0]
+			require.NotEmpty(t, records)
+			assert.Equal(t, map[string][]int32{"a.go": {1, 3}}, recordLines(t, records[0]))
+		})
+	}
 }
 
 func TestLineCoverageDirtySlotReuse(t *testing.T) {
@@ -643,7 +696,7 @@ func TestLineCoverageDirtySlotReuse(t *testing.T) {
 	rt.startGoroutine()
 	rt.running = true
 	w.Close(1, 1)
-	rt.packages[0].counters[1*rt.packages[0].rowSize+1] = 1 // late store
+	rt.packages[0].store(1, 3, 1) // late store
 
 	// With no clean slot left, the dirty one is reused, after its late stores
 	// went to no test.

@@ -11,36 +11,39 @@ import (
 )
 
 // Accessors that orchestrion adds to the runtime when it builds a test binary
-// with line coverage. They are nil in any other binary. Every goroutine carries
-// a coverage slot, inherited from the goroutine that starts it, and the probes
-// of repository code mark blocks in the row of the running goroutine's slot.
+// with line coverage. They are nil in any other binary, and in binaries built
+// by orchestrion versions whose slots have a single row. Every goroutine carries
+// a coverage slot, inherited from the goroutine that starts it, and a lane of its
+// own; the probes of repository code mark blocks in the row of the running
+// goroutine's lane of its slot.
 
 // runtimeLineCoverageSlot returns the slot of the calling goroutine.
 //
-//go:linkname runtimeLineCoverageSlot __dd_linecov_slot.V1
+//go:linkname runtimeLineCoverageSlot __dd_linecov_slot.V2
 var runtimeLineCoverageSlot func() uint32
 
 // runtimeLineCoverageSetSlot sets the slot of the calling goroutine, and
 // returns its previous slot.
 //
-//go:linkname runtimeLineCoverageSetSlot __dd_linecov_set_slot.V1
+//go:linkname runtimeLineCoverageSetSlot __dd_linecov_set_slot.V2
 var runtimeLineCoverageSetSlot func(slot uint32) uint32
 
 // runtimeLineCoverageSlotRefs returns the number of live goroutines that carry
 // slot.
 //
-//go:linkname runtimeLineCoverageSlotRefs __dd_linecov_refs.V1
+//go:linkname runtimeLineCoverageSlotRefs __dd_linecov_refs.V2
 var runtimeLineCoverageSlotRefs func(slot uint32) int32
 
 // runtimeLineCoverageRetarget moves the goroutines other than the caller that
 // carry slot from to slot 0. It returns how many moved, and whether one of them
 // was running, and so may still store into the rows of slot from.
 //
-//go:linkname runtimeLineCoverageRetarget __dd_linecov_retarget.V1
+//go:linkname runtimeLineCoverageRetarget __dd_linecov_retarget.V2
 var runtimeLineCoverageRetarget func(from uint32) (moved int, running bool)
 
 // runtimeLineCoveragePackage returns the counters of the i-th instrumented
-// package: one row of rowSize bytes per slot, with one counter per block, and
+// package: lineCoverageLaneCount rows of rowSize bytes per slot, with one
+// counter per block, and
 // the encoded table of its blocks, which gives the counter size. ok is false
 // past the last package.
 //
