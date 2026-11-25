@@ -2121,8 +2121,12 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 			log.Warn("invalid baggage item: %q, dropping entire header", kv) //errtrack:ignore invalid propagated input on a request path
 			return nil, nil
 		}
-		key, _ := url.QueryUnescape(trimmedK)
-		val, _ := url.QueryUnescape(trimmedV)
+		key, keyErr := url.QueryUnescape(trimmedK)
+		val, valErr := url.QueryUnescape(trimmedV)
+		if keyErr != nil || valErr != nil || key == "" || val == "" {
+			log.Warn("invalid baggage item: %q, dropping entire header", kv) //errtrack:ignore invalid propagated input on a request path
+			return nil, nil
+		}
 		if baggage == nil {
 			baggage = make(map[string]string, 1)
 		}
