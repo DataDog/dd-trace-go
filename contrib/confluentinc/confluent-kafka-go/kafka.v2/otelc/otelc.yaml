@@ -21,16 +21,16 @@ kafkav2_new_consumer:
   do:
     - wrap_call:
         replace: |-
-          (func(__dd_conf *kafkav2.ConfigMap) (*kafkav2.Consumer, error) {
-            __dd_c, __dd_err := kafkav2.NewConsumer(__dd_conf)
+          (func(__dd_conf *__dd_kafkav2.ConfigMap) (*__dd_kafkav2.Consumer, error) {
+            __dd_c, __dd_err := __dd_kafkav2.NewConsumer(__dd_conf)
             if __dd_c != nil {
-              kafkav2otelc.TraceConsumer(__dd_c, __dd_conf)
+              __dd_kafkav2otelc.TraceConsumer(__dd_c, __dd_conf)
             }
             return __dd_c, __dd_err
           })({{ .CallArgument 0 }})
   imports:
-    kafkav2: github.com/confluentinc/confluent-kafka-go/v2/kafka
-    kafkav2otelc: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2
+    __dd_kafkav2: github.com/confluentinc/confluent-kafka-go/v2/kafka
+    __dd_kafkav2otelc: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2
 
 kafkav2_new_producer:
   target:
@@ -42,16 +42,16 @@ kafkav2_new_producer:
   do:
     - wrap_call:
         replace: |-
-          (func(__dd_conf *kafkav2.ConfigMap) (*kafkav2.Producer, error) {
-            __dd_p, __dd_err := kafkav2.NewProducer(__dd_conf)
+          (func(__dd_conf *__dd_kafkav2.ConfigMap) (*__dd_kafkav2.Producer, error) {
+            __dd_p, __dd_err := __dd_kafkav2.NewProducer(__dd_conf)
             if __dd_p != nil {
-              kafkav2otelc.TraceProducer(__dd_p, __dd_conf)
+              __dd_kafkav2otelc.TraceProducer(__dd_p, __dd_conf)
             }
             return __dd_p, __dd_err
           })({{ .CallArgument 0 }})
   imports:
-    kafkav2: github.com/confluentinc/confluent-kafka-go/v2/kafka
-    kafkav2otelc: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2
+    __dd_kafkav2: github.com/confluentinc/confluent-kafka-go/v2/kafka
+    __dd_kafkav2otelc: github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2
 
 # The client methods are hooked where they are defined, so calls through an
 # interface or a method value are traced too. kafka.Consumer.ReadMessage and
