@@ -240,6 +240,26 @@ issue_has_newer_recovery() {
   return 1
 }
 
+# The newest failure and recovery run ids in the issue's record, in
+# that order on one line (empty when a kind has no records). A read
+# that exhausts its retries aborts the caller.
+issue_newest_records() {
+  local issue=$1 record fail_ids green_ids
+  record=$(read_gh issue view "$issue" --repo "$REPO" \
+    --json body,comments \
+    --jq '.body, (.comments[] | .body // "")') || exit 1
+  fail_ids=$(printf '%s' "$record" \
+    | grep -E 'Failing run:|Failed again' || true)
+  green_ids=$(printf '%s' "$record" | grep -E 'Green again' || true)
+  printf '%s %s\n' \
+    "$(printf '%s' "$fail_ids" \
+      | grep -oE '/actions/runs/[0-9]+' | grep -oE '[0-9]+' \
+      | sort -n | tail -1)" \
+    "$(printf '%s' "$green_ids" \
+      | grep -oE '/actions/runs/[0-9]+' | grep -oE '[0-9]+' \
+      | sort -n | tail -1)"
+}
+
 # Reopen a failure issue only when no newer run has recovered the leg
 # and the live state is closed. gh fails a reopen of an open issue, so
 # the state read keeps the common no-op case off the error path, and a
@@ -253,15 +273,22 @@ reopen_unless_recovered() {
   [ "$state" = 'CLOSED' ] || return 0
   log "issue closed: reopening #$issue"
   gh issue reopen "$issue" --repo "$REPO" >/dev/null
-  # Reconcile after the mutation: a newer recovery can close the issue
-  # between the check above and the reopen. A failure recording after
-  # this re-read is covered by its own triage's reopen, so every
-  # interleaving converges to the newest state.
-  if issue_has_newer_recovery "$issue"; then
-    log "newer recovery recorded during reopen: closing #$issue"
+  # Reconcile after the mutation, comparing the newest records of both
+  # kinds: a recovery newer than this run alone does not justify
+  # closing when a still-newer failure is on record (fail 100,
+  # recover 101, fail 102 — the newest state is the failure). A
+  # failure recording after this re-read is covered by its own
+  # triage's reopen, so every interleaving converges.
+  local latest_fail latest_green
+  read -r latest_fail latest_green \
+    <<<"$(issue_newest_records "$issue")"
+  latest_fail=${latest_fail:-0}
+  latest_green=${latest_green:-0}
+  if [ "$latest_green" -gt "$latest_fail" ] \
+    && [ "$latest_green" -gt "$RUN_ID" ]; then
+    log "newer recovery is the newest record: closing #$issue"
     local note
-    note='Reclosed: a newer recovery recorded while this reopen'
-    note+=" was in flight."
+    note='Reclosed: a newer recovery is the newest record.'
     gh issue close "$issue" --repo "$REPO" --comment "$note" \
       >/dev/null
   fi
