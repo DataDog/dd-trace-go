@@ -240,6 +240,21 @@ issue_has_newer_recovery() {
   return 1
 }
 
+# Reopen a failure issue only when no newer run has recovered the leg
+# and the live state is closed. gh fails a reopen of an open issue, so
+# the state read keeps the common no-op case off the error path, and a
+# real reopen failure stops the job instead of reporting success with
+# the failure left hidden.
+reopen_unless_recovered() {
+  local issue=$1 state
+  issue_has_newer_recovery "$issue" && return 0
+  state=$(read_gh issue view "$issue" --repo "$REPO" \
+    --json state --jq '.state')
+  [ "$state" = 'CLOSED' ] || return 0
+  log "issue closed: reopening #$issue"
+  gh issue reopen "$issue" --repo "$REPO" >/dev/null
+}
+
 # True when the issue's body or comments mention a run id newer than
 # this run's: a newer failure spoke on record, and no close may bury it.
 issue_has_newer_failure() {
@@ -305,14 +320,14 @@ triage_run() {
       is_lane_leg "$name" || continue
       issue=$(find_issue "lane: $lane — $name" "$FAILURE_LABEL")
       if [ -z "$issue" ]; then
-        # A stale recovery from an older run may have closed this
-        # issue after this failure opened it: reopen it rather than
-        # minting a duplicate, so the two loops reconcile.
+        # A recovery may have closed this issue after the failure
+        # opened it. Reopen rather than mint a duplicate, but only
+        # when no newer run recovered the leg: a close by a newer
+        # recovery is real, and this reopen must not undo it.
         issue=$(issues_with_title all \
           "lane: $lane — $name" "$FAILURE_LABEL" | head -n 1)
         if [ -n "$issue" ]; then
-          log "reopening closed issue #$issue: $lane / $name"
-          gh issue reopen "$issue" --repo "$REPO" >/dev/null
+          reopen_unless_recovered "$issue"
         fi
       fi
       if [ -n "$issue" ]; then
@@ -324,20 +339,8 @@ triage_run() {
         body+=" $(lane_run_url "$RUN_ID")"
         gh issue comment "$issue" --repo "$REPO" --body "$body" >/dev/null
         # A recovery can close the issue between this triage's lookup
-        # and its comment. Restore visibility only when no newer run
-        # has recovered the leg (that close is real, not stale) and the
-        # live state is closed: gh fails a reopen of an open issue, so
-        # the state read keeps the common no-op case off the error
-        # path, and a real reopen failure stops the job instead of
-        # reporting success with the failure left hidden.
-        if ! issue_has_newer_recovery "$issue"; then
-          state=$(read_gh issue view "$issue" --repo "$REPO" \
-            --json state --jq '.state')
-          if [ "$state" = 'CLOSED' ]; then
-            log "issue closed meanwhile: reopening #$issue"
-            gh issue reopen "$issue" --repo "$REPO" >/dev/null
-          fi
-        fi
+        # and its comment; the guarded reopen restores visibility.
+        reopen_unless_recovered "$issue"
       else
         log "opening issue: lane: $lane — $name"
         body=$(
