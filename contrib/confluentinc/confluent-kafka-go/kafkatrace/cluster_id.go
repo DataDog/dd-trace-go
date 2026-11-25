@@ -12,8 +12,15 @@ import (
 	"time"
 )
 
-// clusterIDTimeout bounds the cluster ID lookup.
+// clusterIDTimeout bounds each attempt to look up the cluster ID.
 const clusterIDTimeout = 2 * time.Second
+
+// After a failed attempt, the lookup waits clusterIDRetryMin, doubling up to
+// clusterIDRetryMax, before it tries again. Variables for tests.
+var (
+	clusterIDRetryMin = time.Second
+	clusterIDRetryMax = time.Minute
+)
 
 // ClusterIDClient fetches the Kafka cluster ID. It is implemented by the
 // confluent-kafka-go AdminClient.
@@ -24,7 +31,8 @@ type ClusterIDClient interface {
 
 // ClusterIDFetch looks up the cluster ID of a client in the background and
 // sets it on the Tracer. The lookup starts at most once, on the first call to
-// Start, and is cancelled and waited for on Close.
+// Start, retries with backoff until it succeeds, and is cancelled and waited
+// for on Close.
 //
 // The client returned by newClient must reuse the connections and the
 // configuration of the traced client, for example an AdminClient created with
@@ -87,30 +95,50 @@ func (f *ClusterIDFetch) Close() {
 	}
 }
 
-// run fetches the cluster ID with c in a goroutine. It returns a function that
-// cancels the fetch and waits for the goroutine to exit.
+// run fetches the cluster ID with c in a goroutine, trying again with backoff
+// after a failure, such as brokers that can't be reached yet. It returns a
+// function that cancels the fetch and waits for the goroutine to exit.
 func (f *ClusterIDFetch) run(c ClusterIDClient) func() {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		defer c.Close()
-		ctx, cancel := context.WithTimeout(ctx, clusterIDTimeout)
-		defer cancel()
-		clusterID, err := c.ClusterID(ctx)
-		if err != nil {
-			if ctx.Err() == context.Canceled {
+		logged := false
+		for wait := clusterIDRetryMin; ; wait = min(2*wait, clusterIDRetryMax) {
+			clusterID, err := fetchClusterID(ctx, c)
+			if err == nil {
+				f.tr.SetClusterID(clusterID)
 				return
 			}
-			f.logFailure("failed to fetch Kafka cluster ID: %s", err)
-			return
+			if ctx.Err() != nil {
+				return
+			}
+			if !logged {
+				// Only the first failure, so that brokers that stay down don't flood the log
+				f.logFailure("failed to fetch Kafka cluster ID, retrying: %s", err)
+				logged = true
+			}
+			t := time.NewTimer(wait)
+			select {
+			case <-ctx.Done():
+				t.Stop()
+				return
+			case <-t.C:
+			}
 		}
-		f.tr.SetClusterID(clusterID)
 	}()
 	return func() {
 		cancel()
 		<-done
 	}
+}
+
+// fetchClusterID makes one attempt, bounded by clusterIDTimeout.
+func fetchClusterID(ctx context.Context, c ClusterIDClient) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, clusterIDTimeout)
+	defer cancel()
+	return c.ClusterID(ctx)
 }
 
 // logFailure logs a failed lookup. Data Streams Monitoring needs the cluster

@@ -14,11 +14,19 @@ import (
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
-// clusterIDTimeout bounds the cluster ID lookup.
+// clusterIDTimeout bounds each attempt to look up the cluster ID.
 const clusterIDTimeout = 2 * time.Second
 
+// After a failed attempt, the lookup waits clusterIDRetryMin, doubling up to
+// clusterIDRetryMax, before it tries again. Variables for tests.
+var (
+	clusterIDRetryMin = time.Second
+	clusterIDRetryMax = time.Minute
+)
+
 // clusterIDLookup looks up the Kafka cluster ID in the background. The lookup
-// starts at most once, and is cancelled and waited for on close.
+// starts at most once, retries with backoff until it succeeds, and is
+// cancelled and waited for on close.
 type clusterIDLookup struct {
 	id      atomic.Pointer[string]
 	started atomic.Bool // fast path for start, set under mu
@@ -47,20 +55,34 @@ func (l *clusterIDLookup) start(r kmsg.Requestor) {
 		return
 	}
 	l.started.Store(true)
-	ctx, cancel := context.WithTimeout(context.Background(), clusterIDTimeout)
+	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		defer cancel()
-		id, err := fetchClusterID(ctx, r)
-		if err != nil {
-			if ctx.Err() != context.Canceled {
-				instr.Logger().Debug("contrib/twmb/franz-go: failed to fetch Kafka cluster ID: %s", err.Error())
+		logged := false
+		for wait := clusterIDRetryMin; ; wait = min(2*wait, clusterIDRetryMax) {
+			id, err := fetchClusterIDWithTimeout(ctx, r)
+			if err == nil {
+				if id != "" {
+					l.id.Store(&id)
+				}
+				return
 			}
-			return
-		}
-		if id != "" {
-			l.id.Store(&id)
+			if ctx.Err() != nil {
+				return
+			}
+			if !logged {
+				// Only the first failure, so that brokers that stay down don't flood the log
+				instr.Logger().Debug("contrib/twmb/franz-go: failed to fetch Kafka cluster ID, retrying: %s", err.Error())
+				logged = true
+			}
+			t := time.NewTimer(wait)
+			select {
+			case <-ctx.Done():
+				t.Stop()
+				return
+			case <-t.C:
+			}
 		}
 	}()
 	l.stop = func() {
@@ -80,6 +102,13 @@ func (l *clusterIDLookup) close() {
 	if stop != nil {
 		stop()
 	}
+}
+
+// fetchClusterIDWithTimeout makes one attempt, bounded by clusterIDTimeout.
+func fetchClusterIDWithTimeout(ctx context.Context, r kmsg.Requestor) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, clusterIDTimeout)
+	defer cancel()
+	return fetchClusterID(ctx, r)
 }
 
 // fetchClusterID sends a metadata request for no topics with r and returns
