@@ -100,11 +100,17 @@ func (e *Enricher) handleSendMessage(ctx context.Context, span *tracer.Span, in 
 	}
 
 	budget := newTraceBudget(messageSize, func() int64 { return messageTextExpansion(params.MessageBody, params.MessageAttributes) })
-	if attrs := budget.inject(traceContext, params.MessageAttributes); attrs != nil {
-		message := *params
-		message.MessageAttributes = attrs
-		in.Parameters = &message
+	attrs := budget.inject(traceContext, params.MessageAttributes)
+	if attrs == nil {
+		if _, exists := params.MessageAttributes[datadogKey]; !exists {
+			return
+		}
+		attrs = maps.Clone(params.MessageAttributes)
+		delete(attrs, datadogKey)
 	}
+	message := *params
+	message.MessageAttributes = attrs
+	in.Parameters = &message
 }
 
 func (e *Enricher) handleSendMessageBatch(ctx context.Context, span *tracer.Span, in *middleware.InitializeInput) {

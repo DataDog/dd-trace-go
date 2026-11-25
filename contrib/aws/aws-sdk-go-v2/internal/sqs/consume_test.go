@@ -452,6 +452,52 @@ func TestForwardDropsDatadogAtBatchByteLimit(t *testing.T) {
 	}
 }
 
+func TestForwardDropsDatadogAtByteLimit(t *testing.T) {
+	const (
+		forwardQueue = "forward-queue"
+		forwardURL   = "https://sqs.us-east-1.amazonaws.com/1234567890/" + forwardQueue
+	)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	const limit = 1 << 20
+	received := receive(t, true, types.Message{Body: aws.String("a")})[0]
+	consumeAttr, ok := received.MessageAttributes[datadogKey]
+	require.True(t, ok)
+	consumeSize := int(attributeSize(datadogKey, consumeAttr))
+	require.Positive(t, consumeSize)
+
+	consumeCtx := datastreams.ExtractFromBase64Carrier(context.Background(), carrierFromAttribute(t, consumeAttr))
+	span, ctx := tracer.StartSpanFromContext(consumeCtx, "forward")
+	forward := NewEnricher(true, true)
+	probe := forward.EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: &sqs.SendMessageInput{
+		QueueUrl:    aws.String(forwardURL),
+		MessageBody: aws.String("a"),
+	}}, "SendMessage")
+	probeAttr, ok := probe.Parameters.(*sqs.SendMessageInput).MessageAttributes[datadogKey]
+	require.True(t, ok)
+	forwardSize := int(attributeSize(datadogKey, probeAttr))
+	require.Positive(t, forwardSize)
+	require.Greater(t, forwardSize, consumeSize)
+
+	received = receive(t, true, types.Message{Body: aws.String(strings.Repeat("b", limit-consumeSize))})[0]
+	original := maps.Clone(received.MessageAttributes)
+	require.Contains(t, received.MessageAttributes, datadogKey)
+
+	sent := forward.EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: &sqs.SendMessageInput{
+		QueueUrl:          aws.String(forwardURL),
+		MessageBody:       received.Body,
+		MessageAttributes: received.MessageAttributes,
+	}}, "SendMessage")
+
+	got := sent.Parameters.(*sqs.SendMessageInput)
+	require.NotContains(t, got.MessageAttributes, datadogKey)
+	assert.Equal(t, limit-consumeSize, len(aws.ToString(got.MessageBody)))
+	assert.LessOrEqual(t, int64(len(aws.ToString(got.MessageBody)))+messageAttributesSize(got.MessageAttributes), int64(maxMessageBytes))
+	assert.Equal(t, original, received.MessageAttributes)
+	assert.Contains(t, received.MessageAttributes, datadogKey)
+}
+
 func TestForwardCreditsStrippedAttributeToBatchBudget(t *testing.T) {
 	const (
 		forwardQueue = "forward-queue"
