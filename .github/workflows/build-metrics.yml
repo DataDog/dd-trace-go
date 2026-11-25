@@ -63,7 +63,7 @@ env:
   # and the cache key below both derive from it, so they cannot drift apart
   # (a stale key would silently serve an old binary).
   GSA_VERSION: "1.13.0"
-  OTELC_REF: "v1.2.1-0.20261124161552-e812ed7ef5b2"
+  OTELC_REF: "v1.2.1-0.20261125163415-3a1f245d819e"
 
 permissions:
   id-token: write
