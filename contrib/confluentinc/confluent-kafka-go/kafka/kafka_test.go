@@ -474,15 +474,26 @@ to run the integration test locally:
 
 // TestProduceEventsDeliveryChannelClose checks that closing a producer
 // while delivery reports are in flight does not panic with "send on closed
-// channel" (#5806). It passes p.Events() explicitly as the
-// delivery channel, with and without data streams (which wraps Events()).
+// channel" (#5806). It passes an events channel explicitly as the delivery
+// channel. With data streams enabled, Events() returns a wrapped channel,
+// while the embedded Producer.Events() still hands out the raw channel that
+// Close closes, so both variants are covered, with and without data streams.
 func TestProduceEventsDeliveryChannelClose(t *testing.T) {
-	t.Run("explicit", func(t *testing.T) { testProduceEventsDeliveryClose(t, true, false) })
-	t.Run("explicit-dsm", func(t *testing.T) { testProduceEventsDeliveryClose(t, true, true) })
-	t.Run("nil-dsm", func(t *testing.T) { testProduceEventsDeliveryClose(t, false, true) })
+	events := func(p *Producer) chan kafka.Event { return p.Events() }
+	rawEvents := func(p *Producer) chan kafka.Event { return p.Producer.Events() }
+	t.Run("explicit", func(t *testing.T) { testProduceEventsDeliveryClose(t, events, false) })
+	t.Run("explicit-raw", func(t *testing.T) { testProduceEventsDeliveryClose(t, rawEvents, false) })
+	t.Run("explicit-dsm", func(t *testing.T) { testProduceEventsDeliveryClose(t, events, true) })
+	t.Run("explicit-raw-dsm", func(t *testing.T) { testProduceEventsDeliveryClose(t, rawEvents, true) })
+	t.Run("nil-dsm", func(t *testing.T) { testProduceEventsDeliveryClose(t, nil, true) })
 }
 
-func testProduceEventsDeliveryClose(t *testing.T, explicit, dsm bool) {
+// testProduceEventsDeliveryClose produces five messages whose delivery
+// reports go to the channel that delivery returns (nil for the default,
+// p.Events() for the wrapped channel, or the raw p.Producer.Events()), then
+// closes the producer while the remaining delivery forwarders are blocked on
+// their send to the full events channel.
+func testProduceEventsDeliveryClose(t *testing.T, delivery func(*Producer) chan kafka.Event, dsm bool) {
 	mt := mocktracer.Start()
 	defer mt.Stop()
 
@@ -500,8 +511,8 @@ func testProduceEventsDeliveryClose(t *testing.T, explicit, dsm bool) {
 	}, opts...)
 	require.NoError(t, err)
 	var deliveryChan chan kafka.Event
-	if explicit {
-		deliveryChan = p.Events()
+	if delivery != nil {
+		deliveryChan = delivery(p)
 	}
 	topic := "gotest"
 	for range 5 {

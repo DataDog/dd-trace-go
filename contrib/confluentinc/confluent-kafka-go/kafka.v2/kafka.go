@@ -262,6 +262,9 @@ func (p *Producer) Produce(msg *kafka.Message, deliveryChan chan kafka.Event) er
 		deliveryChan = p.events
 	}
 	// The events channels are closed by Close, so forwarding to them is guarded.
+	// p.events covers the nil redirect and Events(). With data streams enabled,
+	// p.events is a wrapped channel, so the raw channel handed out by the
+	// embedded Producer.Events() needs a separate check.
 	var guard *kafkatrace.DeliveryGuard
 	if deliveryChan == p.events || deliveryChan == p.Producer.Events() {
 		guard = p.deliveryGuard
