@@ -41,3 +41,26 @@ new_router:
   imports:
     chi: github.com/go-chi/chi
     chitrace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
+
+endpoint_hook_declaration:
+  target: github.com/go-chi/chi
+  do:
+    - add_file:
+        file: endpointhook.go
+        path: github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2
+
+endpoint_hook:
+  target: github.com/go-chi/chi
+  where:
+    func: handle
+    recv: "*Mux"
+  do:
+    - inject_code:
+        raw: |-
+          {{- $method := .FuncArgument 0 -}}
+          {{- $pattern := .FuncArgument 1 -}}
+          {{- $handler := .FuncArgument 2 -}}
+          // mSTUB and mALL are chi's routing method masks.
+          if {{ $method }}&mSTUB == 0 {
+            {{ $handler }} = __dd_chitrace_wrapEndpoint({{ $handler }}, {{ $method }} != mALL && len({{ $pattern }}) > 0 && {{ $pattern }}[len({{ $pattern }})-1] == '*')
+          }

@@ -31,3 +31,29 @@ aspects:
               mux.Use(chitrace.Middleware())
               return mux
             }()
+
+  - id: Mux.handle
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/go-chi/chi.Mux'
+          - name: handle
+    advice:
+      - inject-declarations:
+          links:
+            - github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2/internal/endpointhook
+          imports:
+            http: net/http
+            unsafe: unsafe
+          template: |-
+            //go:linkname __dd_chitrace_wrapEndpoint github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2/internal/endpointhook.Wrap
+            func __dd_chitrace_wrapEndpoint(http.Handler, bool) http.Handler
+      - prepend-statements:
+          template: |-
+            {{- $method := .Function.Argument 0 -}}
+            {{- $pattern := .Function.Argument 1 -}}
+            {{- $handler := .Function.Argument 2 -}}
+            // mSTUB and mALL are chi's routing method masks.
+            if {{ $method }}&mSTUB == 0 {
+              {{ $handler }} = __dd_chitrace_wrapEndpoint({{ $handler }}, {{ $method }} != mALL && len({{ $pattern }}) > 0 && {{ $pattern }}[len({{ $pattern }})-1] == '*')
+            }
