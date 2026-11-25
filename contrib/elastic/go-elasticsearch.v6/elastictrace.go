@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -157,10 +158,30 @@ func peek(rc io.ReadCloser, encoding string, max, n int) (string, io.ReadCloser,
 		gzr, err2 := gzip.NewReader(bytes.NewReader(snip))
 		if err2 != nil {
 			// snip wasn't gzip; return it as is
-			return string(snip), rc2, nil
+			return string(trimPartialRune(snip, n)), rc2, nil
 		}
 		defer gzr.Close()
 		snip, err = io.ReadAll(io.LimitReader(gzr, int64(cutoff)))
+		return string(trimPartialRune(snip, cutoff)), rc2, err
 	}
-	return string(snip), rc2, err
+	return string(trimPartialRune(snip, n)), rc2, err
+}
+
+// trimPartialRune drops the trailing bytes of a UTF-8 encoded rune that was cut
+// short when b was truncated to limit bytes, so that truncating valid UTF-8 keeps
+// it valid. A b shorter than limit was not truncated and is returned as is. Only
+// the last utf8.UTFMax bytes are inspected, and malformed UTF-8 is left unchanged.
+func trimPartialRune(b []byte, limit int) []byte {
+	if len(b) < limit {
+		return b
+	}
+	for i := len(b) - 1; i >= 0 && i >= len(b)-utf8.UTFMax; i-- {
+		if utf8.RuneStart(b[i]) {
+			if !utf8.FullRune(b[i:]) {
+				return b[:i]
+			}
+			break
+		}
+	}
+	return b
 }
