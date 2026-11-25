@@ -302,8 +302,27 @@ func (c *concentrator) runIngester() {
 	}
 }
 
+var (
+	// emptyStatsMeta and emptyStatsMetrics are shared read-only empty maps passed
+	// to stats.SpanConcentrator.NewStatSpanWithConfig so it does not allocate fresh
+	// maps when a span has no flat meta tags or no metrics.
+	emptyStatsMeta    = map[string]string{}
+	emptyStatsMetrics = map[string]float64{}
+)
+
 // +checklocksignore — Post-finish: reads finished span fields during stats computation.
 func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
+	spanMeta := s.meta.Map(false) // stats reads span.kind, _dd.svc_src, status codes, peer tags — no promoted keys needed
+	if len(spanMeta) == 0 && s.metrics[keyTopLevel] != 1 && s.metrics[keyMeasured] != 1 {
+		return nil, false
+	}
+	if spanMeta == nil {
+		spanMeta = emptyStatsMeta
+	}
+	spanMetrics := s.metrics
+	if spanMetrics == nil {
+		spanMetrics = emptyStatsMetrics
+	}
 	agentInfo := c.cfg.agent.load()
 	resource := s.resource
 	if c.sender.shouldObfuscate() {
@@ -330,7 +349,6 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 	}
 
 	peerTags := c.sender.peerTags(agentInfo.peerTags)
-	spanMeta := s.meta.Map(false) // stats reads span.kind, _dd.svc_src, status codes, peer tags — no promoted keys needed
 	statSpan, ok := c.spanConcentrator.NewStatSpanWithConfig(stats.StatSpanConfig{
 		Service:                 s.service,
 		Resource:                resource,
@@ -341,7 +359,7 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 		Duration:                s.duration,
 		Error:                   s.error,
 		Meta:                    spanMeta,
-		Metrics:                 s.metrics,
+		Metrics:                 spanMetrics,
 		PeerTags:                peerTags,
 		AdditionalMetricTagKeys: c.cfg.internalConfig.StatsAdditionalTags(),
 		HTTPMethod:              httpMethod,
