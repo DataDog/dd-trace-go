@@ -230,7 +230,13 @@ issue_has_newer_failure() {
   record=$(read_gh issue view "$issue" --repo "$REPO" \
     --json body,comments \
     --jq '.body, (.comments[] | .body // "")') || exit 1
-  for newer in $(printf '%s' "$record" \
+  # Only failure records count: recovery comments ("Green again")
+  # from newer runs must not read as failures, or an older triage
+  # would reopen a healthy issue a newer recovery already closed.
+  local failures
+  failures=$(printf '%s' "$record" \
+    | grep -E 'Failing run:|Failed again' || true)
+  for newer in $(printf '%s' "$failures" \
     | grep -oE '/actions/runs/[0-9]+' | grep -oE '[0-9]+'); do
     if [ "$newer" -gt "$RUN_ID" ]; then
       return 0
@@ -297,6 +303,10 @@ triage_run() {
         ):"
         body+=" $(lane_run_url "$RUN_ID")"
         gh issue comment "$issue" --repo "$REPO" --body "$body" >/dev/null
+        # A recovery can close the issue between this triage's lookup
+        # and its comment; the reopen is a no-op when the issue is
+        # still open, and guarantees a failure ends with it open.
+        gh issue reopen "$issue" --repo "$REPO" >/dev/null 2>&1 || true
       else
         log "opening issue: lane: $lane — $name"
         body=$(
