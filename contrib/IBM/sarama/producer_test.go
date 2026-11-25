@@ -569,3 +569,20 @@ func TestSyncProducerBootstrapServers(t *testing.T) {
 		})
 	}
 }
+
+// TestAsyncProducerAsyncCloseDoesNotWaitForClusterIDFetch checks that
+// AsyncClose returns at once while the cluster ID fetch waits for a stalled
+// broker.
+func TestAsyncProducerAsyncCloseDoesNotWaitForClusterIDFetch(t *testing.T) {
+	addr, waitForFetch := newStalledBroker(t)
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0
+	p := WrapAsyncProducer(cfg, mocks.NewAsyncProducer(t, cfg), WithDataStreams(), WithBrokers([]string{addr}))
+	waitForFetch()
+
+	start := time.Now()
+	p.AsyncClose()
+	assert.Less(t, time.Since(start), 5*time.Second, "AsyncClose must not wait for the broker's network timeout")
+	for range p.Errors() {
+	}
+}

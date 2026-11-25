@@ -108,6 +108,9 @@ type asyncProducer struct {
 	successes  chan *sarama.ProducerMessage
 	errors     chan *sarama.ProducerError
 	closeAsync []func() // async jobs to cancel and wait for on Close
+	// cancelAsync cancels the async jobs without waiting for them, for
+	// AsyncClose.
+	cancelAsync []func()
 }
 
 // Input returns the input channel.
@@ -133,10 +136,13 @@ func (p *asyncProducer) Close() error {
 	return p.AsyncProducer.Close()
 }
 
-// AsyncClose triggers a shutdown of the producer and cancels any in-flight async jobs.
+// AsyncClose triggers a shutdown of the producer and cancels any in-flight
+// async jobs. It does not wait for them, so it returns at once, as sarama's
+// AsyncClose does: the cluster ID fetch uses a connection of its own, so it
+// can finish later.
 func (p *asyncProducer) AsyncClose() {
-	for _, stop := range p.closeAsync {
-		stop()
+	for _, cancel := range p.cancelAsync {
+		cancel()
 	}
 	p.AsyncProducer.AsyncClose()
 }
@@ -244,7 +250,12 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 		}
 	}()
 	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
-		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
+		cancel, done := launchClusterIDFetch(cfg)
+		wrapped.cancelAsync = append(wrapped.cancelAsync, cancel)
+		wrapped.closeAsync = append(wrapped.closeAsync, func() {
+			cancel()
+			<-done
+		})
 	}
 	return wrapped
 }
