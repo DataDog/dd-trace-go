@@ -253,6 +253,18 @@ reopen_unless_recovered() {
   [ "$state" = 'CLOSED' ] || return 0
   log "issue closed: reopening #$issue"
   gh issue reopen "$issue" --repo "$REPO" >/dev/null
+  # Reconcile after the mutation: a newer recovery can close the issue
+  # between the check above and the reopen. A failure recording after
+  # this re-read is covered by its own triage's reopen, so every
+  # interleaving converges to the newest state.
+  if issue_has_newer_recovery "$issue"; then
+    log "newer recovery recorded during reopen: closing #$issue"
+    local note
+    note='Reclosed: a newer recovery recorded while this reopen'
+    note+=" was in flight."
+    gh issue close "$issue" --repo "$REPO" --comment "$note" \
+      >/dev/null
+  fi
 }
 
 # True when the issue's body or comments mention a run id newer than
