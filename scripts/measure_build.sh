@@ -159,9 +159,13 @@ message "  Go version: $GO_VERSION"
 do_build() {
   local bin_path="$OUT_DIR/$SAMPLE-$MODE.test"
 
-  # Cold build cache
+  # Cold build cache. otelc keeps its own build cache and logs in its work
+  # directory, which go clean -cache does not touch, so each build gets a new
+  # one. Reusing it would also fill the runner's disk over the repeats.
   message "Cleaning build cache..."
   go clean -cache
+  local otelc_work="$OUT_DIR/otelc-work"
+  rm -rf "$otelc_work"
 
   # Timed build
   message "Building $SAMPLE with $MODE toolchain..."
@@ -174,7 +178,7 @@ do_build() {
   elif [[ "$MODE" == "orchestrion" ]]; then
     go test -c -toolexec='orchestrion toolexec' -o "$bin_path" "./$SAMPLE" || build_status=$?
   else
-    GOWORK=off otelc go test -c -o "$bin_path" "./$SAMPLE" || build_status=$?
+    GOWORK=off otelc --work-dir "$otelc_work" go test -c -o "$bin_path" "./$SAMPLE" || build_status=$?
   fi >&2
 
   if [[ "$build_status" -ne 0 ]]; then

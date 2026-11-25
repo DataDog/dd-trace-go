@@ -51,7 +51,7 @@ jobs:
     name: Dynamic Analysis with Debug Detection
     uses: ./.github/workflows/unit-integration-tests.yml
     with:
-      go-version: "1.27"
+      go-version: stable
       build_tags: "debug"
       rerun-fails: "2"
       test-timeout: "30m"
@@ -61,7 +61,7 @@ jobs:
     name: Dynamic Analysis with Deadlock Detection
     uses: ./.github/workflows/unit-integration-tests.yml
     with:
-      go-version: "1.27"
+      go-version: stable
       build_tags: "deadlock"
       rerun-fails: "2"
       test-timeout: "30m"
@@ -73,7 +73,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ["oldstable", "1.27"]
+        go-version: ["oldstable", "stable"]
         build_tags: ["debug", "debug,deadlock"]
       fail-fast: false
     env:
@@ -100,6 +100,12 @@ jobs:
           go-version: ${{ matrix.go-version }}
           check-latest: "true"
           workload: dynamic-locking
+          # Nightly default-branch seed-set key: the nightly schedule seeds
+          # these four matrix entries so every pull-request run restores
+          # them through the default-branch fallback instead of compiling
+          # cold. Without it the family never saves and its hit rate is 0%
+          # by construction (the gap found on the CI caching dashboard).
+          seed: "true"
           variant: |-
             {"runner":"ubuntu-latest",
              "modules":["internal/locking"],
@@ -109,7 +115,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Test internal/locking package
@@ -137,7 +143,7 @@ jobs:
         with:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULT_PATH }}
-          tags: go:${{ matrix.go-version }},package:internal/locking,analysis:${{ matrix.build_tags }},arch:${{ runner.arch }},os:${{ runner.os }}
+          tags: go:${{ steps.setup-go.outputs.go-version-key }},package:internal/locking,analysis:${{ matrix.build_tags }},arch:${{ runner.arch }},os:${{ runner.os }}
 
       - name: Upload Coverage to Datadog
         if: always()

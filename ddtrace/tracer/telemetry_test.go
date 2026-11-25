@@ -29,6 +29,7 @@ func TestTelemetryEnabled(t *testing.T) {
 	t.Run("tracer start", func(t *testing.T) {
 		telemetryClient := new(telemetrytest.RecordClient)
 		defer telemetry.MockClient(telemetryClient)()
+		t.Setenv("DD_TRACE_FEATURES", "")
 
 		// Create mock agent server with /info endpoint
 		// stats_computation_enabled depends on the trace-agent exposing this endpoint
@@ -55,6 +56,7 @@ func TestTelemetryEnabled(t *testing.T) {
 			WithPeerServiceMapping("key", "val"),
 			WithPeerServiceDefaults(true),
 			WithDebugStack(false),
+			WithFeatureFlags(" test-feature ", "", " \t\n"),
 			WithHeaderTags([]string{"key:val", "key2:val2"}),
 			WithAgentAddr(agentURL.Host),
 			WithSamplingRules(
@@ -88,6 +90,11 @@ func TestTelemetryEnabled(t *testing.T) {
 		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "trace_sample_rules",
 			`[{"service":"test-serv","name":"op-name","resource":"resource-*","sample_rate":0.1,"tags":{"tag-a":"tv-a??"}}]`)
 		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "span_sample_rules", "[]")
+		telemetrytest.CheckConfig(t, telemetryClient.Configuration, "DD_TRACE_FEATURES", "test-feature")
+		for _, cfg := range telemetryClient.Configuration {
+			assert.NotEmpty(t, cfg.Name)
+			assert.NotEqual(t, "test-feature", cfg.Name, "feature flags should only be reported through DD_TRACE_FEATURES")
+		}
 
 		assert.NotZero(t, telemetryClient.Distribution(telemetry.NamespaceGeneral, "init_time", nil).Get())
 	})

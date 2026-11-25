@@ -63,6 +63,10 @@ func idOrEmpty(id string) string {
 }
 
 func (c *configuration) Add(kv Configuration) {
+	if kv.Name == "" {
+		return
+	}
+
 	// Configurations marked sensitive are not reported in configuration telemetry.
 	// They are dropped here so every reporting path (RegisterAppConfig,
 	// RegisterAppConfigs, and configtelemetry.Report*) is covered by a single check.

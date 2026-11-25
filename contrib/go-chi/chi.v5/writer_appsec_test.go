@@ -228,6 +228,15 @@ func track(t testing.TB, raw http.ResponseWriter, proto int) (http.ResponseWrite
 	return tw, tw.(trackerCarrier).tracker(), ww
 }
 
+// chiFlushSendsHeader reports whether chi's writer sends WriteHeader(200) as a
+// side effect of Flush. chi v5.4 introduced it (basicWriter.flush calls
+// maybeWriteHeader); chi v5.3 only set an internal flag and sent nothing.
+var chiFlushSendsHeader = func() bool {
+	ww := middleware.NewWrapResponseWriter(httptest.NewRecorder(), 1)
+	ww.(http.Flusher).Flush()
+	return ww.Status() != 0
+}()
+
 type ifaces struct{ flusher, hijacker, readerFrom, pusher, flushError bool }
 
 func ifacesOf(w any) ifaces {
@@ -381,9 +390,28 @@ func TestCommitTrackerState(t *testing.T) {
 		tw.(http.Flusher).Flush()
 		assert.True(t, ct.Committed())
 		assert.Equal(t, 200, ct.Status(), "chi reports 0 after a flush")
-		assert.Equal(t, 0, ww.Status())
+		if chiFlushSendsHeader {
+			// chi v5.4 sends WriteHeader(200) to the target in Flush.
+			assert.Equal(t, 200, ww.Status())
+		} else {
+			assert.Equal(t, 0, ww.Status(), "chi reports 0 after a flush")
+		}
 		assert.Equal(t, 200, tw.(middleware.WrapResponseWriter).Status(), "what a downstream middleware sees")
 		assert.True(t, rec.Flushed)
+	})
+
+	t.Run("flush, ignored by the writer below", func(t *testing.T) {
+		// The tracker cannot tell an ignored flush from a forwarded one when
+		// the writer below is not a known server writer. chi >= v5.4 sets its
+		// status in Flush, and that status counts as a commit: the safe state
+		// is the state of chi without the tracker.
+		rec := httptest.NewRecorder()
+		tw, ct, _ := track(t, &ignoringWriter{ResponseWriter: rec}, 1)
+		tw.(http.Flusher).Flush()
+		assert.Equal(t, chiFlushSendsHeader, ct.Committed())
+		assert.False(t, rec.Flushed, "the writer below ignored the flush")
+		_, _ = tw.Write([]byte("x"))
+		assert.True(t, ct.Committed())
 	})
 
 	t.Run("ResponseController flush", func(t *testing.T) {
