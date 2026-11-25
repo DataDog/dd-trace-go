@@ -303,6 +303,21 @@ reopen_unless_recovered() {
       && [ "$latest_fail" -gt "$RUN_ID" ]; then
       log "newer failure recorded during close: reopening #$issue"
       gh issue reopen "$issue" --repo "$REPO" >/dev/null
+      # And reconcile the reopen itself: a recovery recording between
+      # the snapshot above and this reopen makes the close real again.
+      # One corrective inverse per mutation; the residual window is
+      # covered by the next triage of the recording run.
+      records=$(issue_newest_records "$issue") || exit 1
+      read -r latest_fail latest_green <<<"$records"
+      latest_fail=${latest_fail:-0}
+      latest_green=${latest_green:-0}
+      if [ "$latest_green" -gt "$latest_fail" ] \
+        && [ "$latest_green" -gt "$RUN_ID" ]; then
+        log "newer recovery recorded during reopen: closing #$issue"
+        gh issue close "$issue" --repo "$REPO" \
+          --comment 'Reclosed: a newer recovery is the newest record.' \
+          >/dev/null
+      fi
     fi
   fi
 }
