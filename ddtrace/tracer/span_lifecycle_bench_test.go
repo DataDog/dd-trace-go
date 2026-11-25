@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -90,6 +91,82 @@ func BenchmarkSpanLifecycle(b *testing.B) {
 				ResourceName("GET /"),
 				Tag("http.method", "GET"),
 			)
+			span.Finish()
+		}
+	})
+}
+
+func BenchmarkPlainSpanFromContext(b *testing.B) {
+	b.Run("Root", func(b *testing.B) {
+		_, _, _, stop, err := startTestTracer(b,
+			withTransport(discardTransport{}),
+			WithLogger(log.DiscardLogger{}),
+		)
+		assert.NoError(b, err)
+		defer stop()
+
+		ctx := context.Background()
+		b.ReportAllocs()
+		b.ResetTimer()
+		for range b.N { //nolint:modernize
+			span, _ := StartSpanFromContext(ctx, "op")
+			span.Finish()
+		}
+	})
+
+	b.Run("Child", func(b *testing.B) {
+		_, _, _, stop, err := startTestTracer(b,
+			withTransport(discardTransport{}),
+			WithLogger(log.DiscardLogger{}),
+		)
+		assert.NoError(b, err)
+		defer stop()
+
+		root, parentCtx := StartSpanFromContext(context.Background(), "root")
+		defer root.Finish()
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for range b.N { //nolint:modernize
+			span, _ := StartSpanFromContext(parentCtx, "op")
+			span.Finish()
+		}
+	})
+
+	b.Run("RootDroppedP0", func(b *testing.B) {
+		_, _, _, stop, err := startTestTracer(b,
+			withTransport(discardTransport{}),
+			WithLogger(log.DiscardLogger{}),
+			WithSamplerRate(0),
+		)
+		assert.NoError(b, err)
+		defer stop()
+
+		ctx := context.Background()
+		b.ReportAllocs()
+		b.ResetTimer()
+		for range b.N { //nolint:modernize
+			span, _ := StartSpanFromContext(ctx, "op")
+			span.Finish()
+		}
+	})
+
+	b.Run("ChildDroppedP0", func(b *testing.B) {
+		_, _, _, stop, err := startTestTracer(b,
+			withTransport(discardTransport{}),
+			WithLogger(log.DiscardLogger{}),
+			WithSamplerRate(0),
+		)
+		assert.NoError(b, err)
+		defer stop()
+
+		root, parentCtx := StartSpanFromContext(context.Background(), "root")
+		defer root.Finish()
+
+		b.ReportAllocs()
+		b.ResetTimer()
+		for range b.N { //nolint:modernize
+			span, _ := StartSpanFromContext(parentCtx, "op")
 			span.Finish()
 		}
 	})
