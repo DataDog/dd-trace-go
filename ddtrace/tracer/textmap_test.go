@@ -3489,6 +3489,49 @@ func TestExtractBaggagePropagatorDecoding(t *testing.T) {
 	assert.Equal(t, "DF 28", got["serverNode"])
 }
 
+func TestExtractBaggagePropagatorMemberProperties(t *testing.T) {
+	t.Run("strips properties from values", func(t *testing.T) {
+		tracer, err := newTracer()
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		headers := TextMapCarrier{
+			DefaultTraceIDHeader:  "4",
+			DefaultParentIDHeader: "1",
+			DefaultBaggageHeader:  "k=a;ttl=10,label=a%3Bb;flag;source=app,region=us",
+		}
+		s, err := tracer.Extract(headers)
+		assert.NoError(t, err)
+		got := make(map[string]string)
+		s.ForeachBaggageItem(func(k, v string) bool {
+			got[k] = v
+			return true
+		})
+		assert.Equal(t, map[string]string{
+			"k":      "a",
+			"label":  "a;b",
+			"region": "us",
+		}, got)
+	})
+	t.Run("empty value before property is invalid", func(t *testing.T) {
+		tracer, err := newTracer()
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		headers := TextMapCarrier{
+			DefaultTraceIDHeader:  "4",
+			DefaultParentIDHeader: "1",
+			DefaultBaggageHeader:  "k=;ttl=10,region=us",
+		}
+		s, err := tracer.Extract(headers)
+		assert.NoError(t, err)
+		got := make(map[string]string)
+		s.ForeachBaggageItem(func(k, v string) bool {
+			got[k] = v
+			return true
+		})
+		assert.Len(t, got, 0)
+	})
+}
+
 func TestInjectBaggageMaxItems(t *testing.T) {
 	assert := assert.New(t)
 

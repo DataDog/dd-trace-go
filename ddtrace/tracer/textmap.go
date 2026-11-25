@@ -2115,6 +2115,8 @@ func (*propagatorBaggage) extractTextMap(reader TextMapReader) (*SpanContext, er
 			break
 		}
 		k, v, ok := strings.Cut(kv, "=")
+		// Strip optional W3C Baggage member properties after ';'.
+		v, _, _ = strings.Cut(v, ";")
 		trimmedK := strings.TrimSpace(k)
 		trimmedV := strings.TrimSpace(v)
 		if !ok || trimmedK == "" || trimmedV == "" {
