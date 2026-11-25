@@ -322,8 +322,9 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 			return attrs
 		}
 	}
+	metaStruct := s.metaStruct
 	var failedMetaStruct map[string]struct{}
-	for key, value := range s.metaStruct {
+	for key, value := range metaStruct {
 		// Carry the same per-entry MessagePack bytes as the native span encoder.
 		data, err := marshalMetaStructValue(value)
 		if err != nil {
@@ -339,8 +340,8 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 		}
 	}
 	for key, value := range s.meta.All() {
-		if len(s.metaStruct) > 0 {
-			if _, ok := s.metaStruct[key]; ok {
+		if len(metaStruct) > 0 {
+			if _, ok := metaStruct[key]; ok {
 				if _, failed := failedMetaStruct[key]; !failed {
 					continue
 				}
@@ -367,8 +368,8 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 		}
 	}
 	for key, value := range s.metrics {
-		if len(s.metaStruct) > 0 {
-			if _, ok := s.metaStruct[key]; ok {
+		if len(metaStruct) > 0 {
+			if _, ok := metaStruct[key]; ok {
 				if _, failed := failedMetaStruct[key]; !failed {
 					continue
 				}
