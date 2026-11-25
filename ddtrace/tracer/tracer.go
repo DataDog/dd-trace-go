@@ -1031,10 +1031,12 @@ func (t *tracer) pushChunk(trace *chunk) {
 	}
 }
 
-// +checklocksignore — Initialization time, span not yet shared.
-// It returns the started span, whether the span is the root of its trace, and
-// the service name of the parent span ("" when there is no parent).
-func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, poolEnabled bool, options ...StartSpanOption) (*Span, bool, string) {
+// parseStartSpanOptions runs StartSpanOption closures against a StartSpanConfig.
+// Kept out of line from spanStartWithContext so the zero-options path does not
+// heap-allocate a StartSpanConfig.
+//
+//go:noinline
+func parseStartSpanOptions(options []StartSpanOption) StartSpanConfig {
 	var opts StartSpanConfig
 	// A caller passing N options is our best cheap signal for how many
 	// Tag-family options it might include; Tag uses this to size Tags on
@@ -1047,24 +1049,54 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 		}
 		fn(&opts)
 	}
-	var startTime int64
-	if opts.StartTime.IsZero() {
+	return opts
+}
+
+// +checklocksignore — Initialization time, span not yet shared.
+// It returns the started span, whether the span is the root of its trace, and
+// the service name of the parent span ("" when there is no parent).
+func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, poolEnabled bool, options ...StartSpanOption) (*Span, bool, string) {
+	return spanStartWithContext(operationName, sharedAttrs, poolEnabled, nil, nil, false, options...)
+}
+
+// +checklocksignore — Initialization time, span not yet shared.
+func spanStartWithContext(operationName string, sharedAttrs *traceinternal.SpanAttributes, poolEnabled bool, ctx gocontext.Context, ctxParent *SpanContext, overrideParent bool, options ...StartSpanOption) (*Span, bool, string) {
+	var (
+		startTime    int64
+		context      *SpanContext
+		pprofContext = ctx
+		id           uint64
+		tags         map[string]any
+		spanLinks    []SpanLink
+	)
+	if len(options) > 0 {
+		opts := parseStartSpanOptions(options)
+		if !opts.StartTime.IsZero() {
+			startTime = opts.StartTime.UnixNano()
+		}
+		context = opts.Parent
+		if opts.Context != nil && pprofContext == nil {
+			pprofContext = opts.Context
+		}
+		id = opts.SpanID
+		tags = opts.Tags
+		spanLinks = opts.SpanLinks
+	}
+	if overrideParent {
+		context = ctxParent
+	} else if ctxParent != nil && context == nil {
+		context = ctxParent
+	}
+	if startTime == 0 {
 		startTime = now()
-	} else {
-		startTime = opts.StartTime.UnixNano()
 	}
 
 	var (
-		context             *SpanContext
 		parentService       string
 		parentServiceSource string
-		// The default pprof context is taken from the start options and is
-		// not nil when using StartSpanFromContext()
-		pprofContext = opts.Context
 	)
 
-	if opts.Parent != nil {
-		context = opts.Parent
+	if context != nil {
 		// Batch read service and pprofContext from parent span under single lock
 		// to minimize lock contention on the parent span during child creation.
 		spanSnapshot := context.getSpanSnapshot()
@@ -1088,7 +1120,6 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 		// to properly document this for users.
 		pprofContext = gocontext.Background()
 	}
-	id := opts.SpanID
 	if id == 0 {
 		id = generateSpanID(startTime)
 	}
@@ -1102,9 +1133,11 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	span.start = startTime
 	span.integration = "manual"
 	span.meta.SwapSharedAttrs(sharedAttrs) // COW: shared until a per-span field is set
-	span.meta.ReserveIfLargeEnough(len(opts.Tags))
+	span.meta.ReserveIfLargeEnough(len(tags))
 
-	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
+	if len(spanLinks) > 0 {
+		span.spanLinks = append(span.spanLinks, spanLinks...)
+	}
 
 	if context != nil && !context.baggageOnly { // +checklocksignore - Read-only after init.
 		// this is a child span
@@ -1138,7 +1171,7 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	// setTags takes s.mu internally. Tags may override the service name
 	// (ServiceName option), so the span service must not be compared with the
 	// parent service until every mutation has been applied.
-	span.setTags(opts.Tags)
+	span.setTags(tags)
 	// The span snapshot is populated by tracer.StartSpan once all
 	// env/version/service-mapping mutations have been applied, so we
 	// don't take the SpanContext lock here. setSpanSnapshotMeta calls
@@ -1185,13 +1218,18 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 
 // +checklocksignore — Initialization time, span not yet returned to caller.
 func (t *tracer) startSpan(operationName, ciVisibilityTracerType string, options ...StartSpanOption) *Span {
+	return t.startSpanWithContext(operationName, ciVisibilityTracerType, nil, nil, false, options...)
+}
+
+// +checklocksignore — Initialization time, span not yet returned to caller.
+func (t *tracer) startSpanWithContext(operationName, ciVisibilityTracerType string, ctx gocontext.Context, ctxParent *SpanContext, overrideParent bool, options ...StartSpanOption) *Span {
 	if !t.config.internalConfig.TracingEnabled() {
 		return nil
 	}
 	// Snapshot all internal config fields needed below under a single RLock to avoid
 	// reader-counter contention on Config.mu when many goroutines call StartSpan.
 	cSnap := t.config.internalConfig.SpanStartSnapshot()
-	span, isRootSpan, parentService := spanStart(operationName, &t.sharedAttrs, cSnap.SpanPoolEnabled, options...)
+	span, isRootSpan, parentService := spanStartWithContext(operationName, &t.sharedAttrs, cSnap.SpanPoolEnabled, ctx, ctxParent, overrideParent, options...)
 	if ciVisibilityTracerType != "" {
 		setCIVisibilityTracerType(span, ciVisibilityTracerType)
 	}
