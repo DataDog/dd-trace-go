@@ -21,12 +21,12 @@ client_dial:
   do:
     - wrap_call:
         append_args:
-          - "grpc.WithChainStreamInterceptor(grpctrace.StreamClientInterceptor())"
-          - "grpc.WithChainUnaryInterceptor(grpctrace.UnaryClientInterceptor())"
-        variadic_type: "grpc.DialOption"
+          - "__dd_grpc.WithChainStreamInterceptor(__dd_grpctrace.StreamClientInterceptor())"
+          - "__dd_grpc.WithChainUnaryInterceptor(__dd_grpctrace.UnaryClientInterceptor())"
+        variadic_type: "__dd_grpc.DialOption"
   imports:
-    grpc: google.golang.org/grpc
-    grpctrace: github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2
+    __dd_grpc: google.golang.org/grpc
+    __dd_grpctrace: github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2
 
 client_dial_context:
   target:
@@ -38,12 +38,12 @@ client_dial_context:
   do:
     - wrap_call:
         append_args:
-          - "grpc.WithChainStreamInterceptor(grpctrace.StreamClientInterceptor())"
-          - "grpc.WithChainUnaryInterceptor(grpctrace.UnaryClientInterceptor())"
-        variadic_type: "grpc.DialOption"
+          - "__dd_grpc.WithChainStreamInterceptor(__dd_grpctrace.StreamClientInterceptor())"
+          - "__dd_grpc.WithChainUnaryInterceptor(__dd_grpctrace.UnaryClientInterceptor())"
+        variadic_type: "__dd_grpc.DialOption"
   imports:
-    grpc: google.golang.org/grpc
-    grpctrace: github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2
+    __dd_grpc: google.golang.org/grpc
+    __dd_grpctrace: github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2
 
 client_new_client:
   target:
@@ -55,12 +55,12 @@ client_new_client:
   do:
     - wrap_call:
         append_args:
-          - "grpc.WithChainStreamInterceptor(grpctrace.StreamClientInterceptor())"
-          - "grpc.WithChainUnaryInterceptor(grpctrace.UnaryClientInterceptor())"
-        variadic_type: "grpc.DialOption"
+          - "__dd_grpc.WithChainStreamInterceptor(__dd_grpctrace.StreamClientInterceptor())"
+          - "__dd_grpc.WithChainUnaryInterceptor(__dd_grpctrace.UnaryClientInterceptor())"
+        variadic_type: "__dd_grpc.DialOption"
   imports:
-    grpc: google.golang.org/grpc
-    grpctrace: github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2
+    __dd_grpc: google.golang.org/grpc
+    __dd_grpctrace: github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2
 
 server_new_server:
   target:
@@ -72,9 +72,9 @@ server_new_server:
   do:
     - wrap_call:
         append_args:
-          - "grpc.ChainStreamInterceptor(grpctrace.StreamServerInterceptor())"
-          - "grpc.ChainUnaryInterceptor(grpctrace.UnaryServerInterceptor())"
-        variadic_type: "grpc.ServerOption"
+          - "__dd_grpc.ChainStreamInterceptor(__dd_grpctrace.StreamServerInterceptor())"
+          - "__dd_grpc.ChainUnaryInterceptor(__dd_grpctrace.UnaryServerInterceptor())"
+        variadic_type: "__dd_grpc.ServerOption"
   imports:
-    grpc: google.golang.org/grpc
-    grpctrace: github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2
+    __dd_grpc: google.golang.org/grpc
+    __dd_grpctrace: github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2

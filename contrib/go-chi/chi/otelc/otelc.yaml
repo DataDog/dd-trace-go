@@ -16,13 +16,13 @@ new_mux:
   do:
     - wrap_call:
         replace: |-
-          (func(mux *chi.Mux) *chi.Mux {
-            mux.Use(chitrace.Middleware())
+          (func(mux *__dd_chi.Mux) *__dd_chi.Mux {
+            mux.Use(__dd_chitrace.Middleware())
             return mux
           })({{ . }})
   imports:
-    chi: github.com/go-chi/chi
-    chitrace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
+    __dd_chi: github.com/go-chi/chi
+    __dd_chitrace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
 
 new_router:
   target:
@@ -34,13 +34,13 @@ new_router:
   do:
     - wrap_call:
         replace: |-
-          (func(mux *chi.Mux) *chi.Mux {
-            mux.Use(chitrace.Middleware())
+          (func(mux *__dd_chi.Mux) *__dd_chi.Mux {
+            mux.Use(__dd_chitrace.Middleware())
             return mux
           })({{ . }})
   imports:
-    chi: github.com/go-chi/chi
-    chitrace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
+    __dd_chi: github.com/go-chi/chi
+    __dd_chitrace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2
 
 endpoint_hook_declaration:
   target: github.com/go-chi/chi

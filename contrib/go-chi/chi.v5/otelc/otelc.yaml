@@ -16,13 +16,13 @@ new_mux:
   do:
     - wrap_call:
         replace: |-
-          (func(mux *chiv5.Mux) *chiv5.Mux {
-            mux.Use(chiv5trace.Middleware())
+          (func(mux *__dd_chiv5.Mux) *__dd_chiv5.Mux {
+            mux.Use(__dd_chiv5trace.Middleware())
             return mux
           })({{ . }})
   imports:
-    chiv5: github.com/go-chi/chi/v5
-    chiv5trace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2
+    __dd_chiv5: github.com/go-chi/chi/v5
+    __dd_chiv5trace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2
 
 new_router:
   target:
@@ -34,13 +34,13 @@ new_router:
   do:
     - wrap_call:
         replace: |-
-          (func(mux *chiv5.Mux) *chiv5.Mux {
-            mux.Use(chiv5trace.Middleware())
+          (func(mux *__dd_chiv5.Mux) *__dd_chiv5.Mux {
+            mux.Use(__dd_chiv5trace.Middleware())
             return mux
           })({{ . }})
   imports:
-    chiv5: github.com/go-chi/chi/v5
-    chiv5trace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2
+    __dd_chiv5: github.com/go-chi/chi/v5
+    __dd_chiv5trace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2
 
 endpoint_hook_declaration:
   target: github.com/go-chi/chi/v5
