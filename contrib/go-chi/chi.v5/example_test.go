@@ -6,7 +6,9 @@
 package chi_test
 
 import (
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 
 	chitrace "github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2"
 
@@ -35,6 +37,43 @@ func Example() {
 
 	// And start gathering request traces
 	http.ListenAndServe(":8080", router)
+}
+
+func Example_orchestrion() {
+	// Orchestrion or otelc adds tracing middleware and an endpoint hook.
+	r := chi.NewRouter()
+	r.Get("/users/{id}", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "user %s", chi.URLParam(r, "id"))
+	})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/42", nil))
+	fmt.Println(w.Body.String())
+	// Output:
+	// user 42
+}
+
+func Example_pathParameters() {
+	r := chi.NewRouter()
+	// The root middleware covers unmatched requests and adds one span.
+	r.Use(chitrace.Middleware())
+	// The endpoint middleware gives AppSec the matched parameters.
+	r.With(chitrace.Middleware()).Get("/users/{id}", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "user %s", chi.URLParam(r, "id"))
+	})
+	r.Group(func(g chi.Router) {
+		g.Use(chitrace.Middleware())
+		g.Get("/orders/{id}", func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, "order %s", chi.URLParam(r, "id"))
+		})
+	})
+	for _, path := range []string{"/users/42", "/orders/7"} {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		fmt.Println(w.Body.String())
+	}
+	// Output:
+	// user 42
+	// order 7
 }
 
 func Example_withServiceName() {
