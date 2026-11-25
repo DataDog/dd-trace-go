@@ -19,7 +19,8 @@ import (
 func parseSQLServerURL(url string) (map[string]string, error) {
 	u, err := nurl.Parse(url)
 	if err != nil {
-		return nil, err
+		// The error from net/url quotes the whole string, password included.
+		return nil, errors.New("invalid sqlserver connection URL")
 	}
 
 	if u.Scheme != "sqlserver" {
@@ -73,8 +74,8 @@ var keySynonyms = map[string]string{
 	"database":        "dbname",
 }
 
-// setSQLServerParam stores a pair read from an ADO or ODBC connection string
-// under the name used for tags.
+// setSQLServerParam stores a pair read from an ADO connection string under the
+// name used for tags.
 func setSQLServerParam(kvs map[string]string, key, val string) {
 	if synonym, found := keySynonyms[key]; found {
 		key = synonym
@@ -88,6 +89,25 @@ func setSQLServerParam(kvs map[string]string, key, val string) {
 		}
 	}
 	kvs[key] = val
+}
+
+// odbcKeys maps the keys go-mssqldb reads from an "odbc:" string to the names
+// used for tags. The driver knows no synonym for them, and it takes the value
+// of server and port as they are.
+var odbcKeys = map[string]string{
+	"server":   "host",
+	"port":     "port",
+	"user id":  "user",
+	"database": "dbname",
+}
+
+// setSQLServerODBCParam stores a pair read from an ODBC connection string. Keys
+// that the driver does not read for the connection are dropped, so that one
+// named like a tag, such as host, cannot end up in the tags.
+func setSQLServerODBCParam(kvs map[string]string, key, val string) {
+	if name, ok := odbcKeys[key]; ok {
+		kvs[name] = val
+	}
 }
 
 // parseSQLServerADO reads the "key=value;key=value" form.
@@ -181,7 +201,7 @@ func parseSQLServerODBC(dsn string) (map[string]string, error) {
 		key := strings.ToLower(strings.TrimRightFunc(dsn[:i], unicode.IsSpace))
 		if i == len(dsn) || dsn[i] == ';' {
 			// A key with no value.
-			setSQLServerParam(kvs, key, "")
+			setSQLServerODBCParam(kvs, key, "")
 			dsn = dsn[i:]
 			continue
 		}
@@ -201,7 +221,7 @@ func parseSQLServerODBC(dsn string) (map[string]string, error) {
 			val = strings.TrimRightFunc(dsn[:end], unicode.IsSpace)
 			dsn = dsn[end:]
 		}
-		setSQLServerParam(kvs, key, val)
+		setSQLServerODBCParam(kvs, key, val)
 	}
 }
 

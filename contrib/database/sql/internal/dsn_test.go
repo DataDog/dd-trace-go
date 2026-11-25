@@ -216,10 +216,36 @@ func TestParseSqlServerDSN(t *testing.T) {
 			name: "odbc_spaces_and_empty_fields",
 			dsn:  "odbc: server = 1.2.3.4 ;; User Id = dog ; database = mydb ; encrypt",
 			expected: map[string]string{
-				"user":    "dog",
-				"host":    "1.2.3.4",
-				"dbname":  "mydb",
-				"encrypt": "",
+				"user":   "dog",
+				"host":   "1.2.3.4",
+				"dbname": "mydb",
+			},
+		},
+		{
+			// go-mssqldb reads only server and port for the address of an
+			// odbc string, so the ADO synonyms and the comma form do nothing.
+			name: "odbc_ignores_ado_synonyms",
+			dsn:  "odbc:server=localhost;address=wrong.example;addr=wrong2.example;network address=wrong3.example;data source=wrong4.example;port=1444;uid=wrong;user=wrong;initial catalog=wrongdb;database=mydb;user id=dog",
+			expected: map[string]string{
+				"user":   "dog",
+				"host":   "localhost",
+				"port":   "1444",
+				"dbname": "mydb",
+			},
+		},
+		{
+			name: "odbc_ignores_tag_named_keys",
+			dsn:  "odbc:server=localhost;host=wrong.example;dbname=wrongdb;tcp:x=y",
+			expected: map[string]string{
+				"host": "localhost",
+			},
+		},
+		{
+			name: "odbc_server_is_taken_as_is",
+			dsn:  "odbc:server=tcp:1.2.3.4,1433;port=1444",
+			expected: map[string]string{
+				"host": "tcp:1.2.3.4,1433",
+				"port": "1444",
 			},
 		},
 		{
@@ -339,6 +365,23 @@ func TestParseSqlServerDSNMalformedODBC(t *testing.T) {
 			assert.NotContains(t, err.Error(), "secret")
 		})
 	}
+}
+
+func TestParseSqlServerDSNMalformedURL(t *testing.T) {
+	// The unclosed bracket makes net/url fail, and its error would quote the
+	// whole string. sanitizeError cannot redact a host that starts with [.
+	const dsn = "sqlserver://bob:secret@[::1"
+	for _, driverName := range []string{"sqlserver", "mssql", "azuresql"} {
+		t.Run(driverName, func(t *testing.T) {
+			m, err := ParseDSN(driverName, dsn)
+			assert.Error(t, err)
+			assert.Empty(t, m)
+			assert.NotContains(t, err.Error(), "secret")
+			assert.NotContains(t, sanitizeError(err).Error(), "secret")
+		})
+	}
+	_, err := parseSQLServerURL(dsn)
+	assert.EqualError(t, err, "invalid sqlserver connection URL")
 }
 
 func TestSanitizeError(t *testing.T) {
