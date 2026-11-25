@@ -19,15 +19,21 @@ import (
 
 // fakeClusterIDClient returns id, or blocks until the context is done when
 // block is set, or until release is closed when release is set, ignoring the
-// context like a lookup that can't be cancelled.
+// context like a lookup that can't be cancelled. Its first fail attempts fail;
+// fail < 0 fails them all.
 type fakeClusterIDClient struct {
-	id      string
-	block   bool
-	release chan struct{}
-	closed  atomic.Bool
+	id       string
+	block    bool
+	release  chan struct{}
+	fail     int32
+	attempts atomic.Int32
+	closed   atomic.Bool
 }
 
 func (c *fakeClusterIDClient) ClusterID(ctx context.Context) (string, error) {
+	if n := c.attempts.Add(1); c.fail < 0 || n <= c.fail {
+		return "", errors.New("brokers not reachable")
+	}
 	if c.release != nil {
 		<-c.release
 		return "", ctx.Err()
@@ -107,6 +113,32 @@ func TestClusterIDFetch(t *testing.T) {
 		wg.Wait()
 		assert.Equal(t, int32(2), returned.Load())
 	})
+	t.Run("retries until the lookup succeeds", func(t *testing.T) {
+		setClusterIDRetry(t, time.Millisecond, 4*time.Millisecond)
+		tr := newTracer()
+		client := &fakeClusterIDClient{id: "test-cluster-id", fail: 3}
+		f := NewClusterIDFetch(tr, func() (ClusterIDClient, error) { return client, nil })
+		f.Start()
+		require.Eventually(t, func() bool { return tr.ClusterID() == "test-cluster-id" }, time.Second, time.Millisecond)
+		f.Close()
+		assert.Equal(t, int32(4), client.attempts.Load())
+		assert.True(t, client.closed.Load())
+	})
+	t.Run("close stops the retries", func(t *testing.T) {
+		setClusterIDRetry(t, time.Hour, time.Hour)
+		tr := newTracer()
+		client := &fakeClusterIDClient{fail: -1}
+		f := NewClusterIDFetch(tr, func() (ClusterIDClient, error) { return client, nil })
+		f.Start()
+		require.Eventually(t, func() bool { return client.attempts.Load() == 1 }, time.Second, time.Millisecond)
+
+		start := time.Now()
+		f.Close() // during the wait before the next attempt
+		assert.Less(t, time.Since(start), time.Second)
+		assert.Equal(t, int32(1), client.attempts.Load())
+		assert.True(t, client.closed.Load())
+		assert.Empty(t, tr.ClusterID())
+	})
 	t.Run("client creation fails", func(t *testing.T) {
 		tr := newTracer()
 		f := NewClusterIDFetch(tr, func() (ClusterIDClient, error) { return nil, errors.New("closed client") })
@@ -121,4 +153,11 @@ func TestClusterIDFetch(t *testing.T) {
 		f.Close()
 		assert.False(t, f.Started())
 	})
+}
+
+// setClusterIDRetry sets the retry backoff for the duration of the test.
+func setClusterIDRetry(t *testing.T, minWait, maxWait time.Duration) {
+	oldMin, oldMax := clusterIDRetryMin, clusterIDRetryMax
+	clusterIDRetryMin, clusterIDRetryMax = minWait, maxWait
+	t.Cleanup(func() { clusterIDRetryMin, clusterIDRetryMax = oldMin, oldMax })
 }
