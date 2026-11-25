@@ -20,7 +20,16 @@ import (
 )
 
 func ObserveRoundTrip(req *http.Request) (*http.Request, wrap.AfterRoundTrip, error) {
+	if !contribInitialized() {
+		// The request was made during package initialization, before the
+		// configuration of this contrib was loaded: it is not traced.
+		return req, untracedRoundTrip, nil
+	}
 	return wrap.ObserveRoundTrip(defaultRoundTripperConfig(), req)
+}
+
+func untracedRoundTrip(res *http.Response, err error) (*http.Response, error) {
+	return res, err
 }
 
 var (

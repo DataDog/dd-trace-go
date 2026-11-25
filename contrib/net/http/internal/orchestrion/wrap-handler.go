@@ -16,7 +16,16 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 )
 
+// contribInitialized is a variable so that tests can stand in for a package
+// that is not initialized yet.
+var contribInitialized = config.Initialized
+
 func WrapHandler(handler http.Handler) http.Handler {
+	if !contribInitialized() {
+		// The server was started during package initialization, before the
+		// configuration of this contrib was loaded: it is not traced.
+		return handler
+	}
 	switch handler := handler.(type) {
 	case *wrap.ServeMux, wrap.WrappedHandler:
 		return handler
