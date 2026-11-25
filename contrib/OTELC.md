@@ -15,7 +15,9 @@ Within dd-trace-go, otelc lives in a few places:
 - [`ddtrace/tracer/otelc.yaml`](../ddtrace/tracer/otelc.yaml): the tracer's own rules (build mode
   flag, goroutine-local storage, tracer start in `main`).
 - [`.github/workflows/otelc.yml`](../.github/workflows/otelc.yml): the CI lane. `OTELC_VERSION`
-  pins a commit on upstream `main`.
+  pins a commit on upstream `main`. `OTELC_REF` in
+  [`.github/workflows/build-metrics.yml`](../.github/workflows/build-metrics.yml) pins the same
+  version for the build metrics jobs. Bump both together.
 
 References:
 

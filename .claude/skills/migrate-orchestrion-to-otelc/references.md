@@ -42,7 +42,7 @@ than rendered docs where possible.
 `OTELC_VERSION` in `.github/workflows/otelc.yml` pins a commit on upstream `main`, never a release.
 Check otelc behaviour against latest upstream `main` and ignore tags. When a port needs something
 newer than the pin, bump `OTELC_VERSION` to the latest `main` commit (see "The otelc pin" in
-`SKILL.md`).
+`SKILL.md`), and `OTELC_REF` in `.github/workflows/build-metrics.yml` to the same version.
 
 `docs/` is not in the module zip, so the links above are the only copy. To settle what the tool
 does, read `tool/internal/` in a clone of upstream at latest `main`. The module cache copy under
