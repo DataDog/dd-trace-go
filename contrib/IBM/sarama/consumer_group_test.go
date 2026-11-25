@@ -161,3 +161,27 @@ func (t *testConsumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSess
 		}
 	}
 }
+
+type cleanupRecorder struct {
+	sarama.ConsumerGroupHandler
+	cleanups int
+}
+
+func (h *cleanupRecorder) Cleanup(sarama.ConsumerGroupSession) error {
+	h.cleanups++
+	return nil
+}
+
+// TestConsumerGroupHandlerCleanupStopsClusterIDFetch checks that Cleanup
+// stops the cluster ID fetch the handler started, and calls the wrapped
+// handler's Cleanup.
+func TestConsumerGroupHandlerCleanupStopsClusterIDFetch(t *testing.T) {
+	inner := &cleanupRecorder{}
+	h := WrapConsumerGroupHandler(inner).(*consumerGroupHandler)
+	stops := 0
+	h.closeAsync = append(h.closeAsync, func() { stops++ })
+
+	require.NoError(t, h.Cleanup(nil))
+	assert.Equal(t, 1, stops)
+	assert.Equal(t, 1, inner.cleanups)
+}

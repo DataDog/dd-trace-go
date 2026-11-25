@@ -44,6 +44,8 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 		opt.apply(cfg)
 	}
 	wrapped := wrapPartitionConsumer(pc, cfg)
+	// Each call starts a fetch of its own, so wrapping N partition consumers
+	// starts N fetches. Wrap the consumer instead to share one fetch.
 	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
 		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
 	}

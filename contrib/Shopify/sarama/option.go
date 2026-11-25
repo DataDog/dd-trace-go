@@ -116,6 +116,11 @@ func WithAnalyticsRate(rate float64) OptionFn {
 // asynchronously in the background when the producer or consumer is wrapped.
 // The addresses are also set as the messaging.kafka.bootstrap.servers tag on
 // producer and consumer spans.
+//
+// The addresses must be those of the wrapped client: they are not compared
+// with the client, which does not expose them, so options reused for a client
+// of another cluster tag the spans with the brokers and the cluster ID of the
+// first one.
 func WithBrokers(addrs []string) OptionFn {
 	return func(cfg *config) {
 		cfg.brokerAddrs = addrs

@@ -27,6 +27,16 @@ func (h *consumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession,
 	return h.ConsumerGroupHandler.ConsumeClaim(session, claim)
 }
 
+// Cleanup stops the cluster ID fetch if it is still running, and calls the
+// wrapped handler's Cleanup. sarama calls Cleanup at the end of every
+// session, so the fetch is stopped at the end of the first one at the latest.
+func (h *consumerGroupHandler) Cleanup(session sarama.ConsumerGroupSession) error {
+	for _, stop := range h.closeAsync {
+		stop()
+	}
+	return h.ConsumerGroupHandler.Cleanup(session)
+}
+
 // WrapConsumerGroupHandler wraps a sarama.ConsumerGroupHandler causing each received
 // message to be traced.
 func WrapConsumerGroupHandler(handler sarama.ConsumerGroupHandler, opts ...Option) sarama.ConsumerGroupHandler {

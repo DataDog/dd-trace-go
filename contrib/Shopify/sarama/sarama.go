@@ -81,6 +81,8 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 		opt.apply(cfg)
 	}
 	wrapped := wrapPartitionConsumer(pc, cfg)
+	// Each call starts a fetch of its own, so wrapping N partition consumers
+	// starts N fetches. Wrap the consumer instead to share one fetch.
 	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
 		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
 	}
@@ -199,10 +201,11 @@ type syncProducer struct {
 	closeAsync []func() // async jobs to cancel and wait for on Close
 	// spanCfg holds the tags that are constant for every message produced
 	// through this producer (component, span kind, messaging system, service
-	// name, and any static analytics rate). It is built once when the
-	// producer is wrapped (see newProducerSpanConfig) and merged into each
-	// message span via WithStartSpanConfig, instead of rebuilding a Tag()
-	// closure per tag on every message.
+	// name, any static analytics rate, and the bootstrap servers set with
+	// WithBrokers). It is built once when the producer is wrapped (see
+	// newProducerSpanConfig) and merged into each message span via
+	// WithStartSpanConfig, instead of rebuilding a Tag() closure per tag on
+	// every message.
 	spanCfg *tracer.StartSpanConfig
 }
 
