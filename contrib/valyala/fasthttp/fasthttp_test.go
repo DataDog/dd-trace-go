@@ -572,4 +572,41 @@ func TestWithHeaderTags(t *testing.T) {
 		require.Len(t, spans, 1)
 		assert.Equal(t, "2val", spans[0].Tag("http.request.headers.2header"))
 	})
+	t.Run("colliding-tag-names", func(t *testing.T) {
+		addr := startServer(t, WithHeaderTags([]string{"X.User", "X_User"}))
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		req, err := http.NewRequest("GET", addr+"/any", nil)
+		require.NoError(t, err)
+		req.Header.Set("X.User", "alice")
+		req.Header.Set("X_User", "bob")
+		resp, err := (&http.Client{}).Do(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		// Both headers map to the same tag. The values must not be joined.
+		assert.Contains(t, []any{"alice", "bob"}, spans[0].Tag("http.request.headers.x_user"))
+	})
+}
+
+func TestHeaderTagOptionsSingleOption(t *testing.T) {
+	var fctx fasthttp.RequestCtx
+	fctx.Request.Header.Set("X-One", "1")
+	fctx.Request.Header.Set("X-Two", "2")
+	fctx.Request.Header.Set("X-Three", "3")
+	cfg := &config{}
+	WithHeaderTags([]string{"X-One", "X-Two", "X-Three"})(cfg)
+
+	opts := headerTagOptions(&fctx, cfg.headerTags)
+	require.Len(t, opts, 1)
+
+	var ssc tracer.StartSpanConfig
+	ssc.Tags = make(map[string]any)
+	opts[0](&ssc)
+	assert.Equal(t, "1", ssc.Tags["http.request.headers.x-one"])
+	assert.Equal(t, "2", ssc.Tags["http.request.headers.x-two"])
+	assert.Equal(t, "3", ssc.Tags["http.request.headers.x-three"])
 }

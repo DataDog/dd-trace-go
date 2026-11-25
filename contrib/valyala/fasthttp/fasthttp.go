@@ -99,17 +99,23 @@ func headerTagOptions(fctx *fasthttp.RequestCtx, headerTags instrumentation.Head
 	if len(tagFor) == 0 {
 		return nil
 	}
+	// Group the values by canonical header name, so that headers whose tag
+	// names collide are never merged into one value.
 	values := make(map[string][]string)
 	fctx.Request.Header.VisitAll(func(key, value []byte) {
-		if tag, ok := tagFor[textproto.CanonicalMIMEHeaderKey(string(key))]; ok {
-			values[tag] = append(values[tag], string(value))
+		name := textproto.CanonicalMIMEHeaderKey(string(key))
+		if _, ok := tagFor[name]; ok {
+			values[name] = append(values[name], string(value))
 		}
 	})
-	opts := make([]tracer.StartSpanOption, 0, len(values))
-	for tag, vs := range values {
-		opts = append(opts, tracer.Tag(tag, strings.TrimSpace(strings.Join(vs, ","))))
+	if len(values) == 0 {
+		return nil
 	}
-	return opts
+	tags := make(map[string]any, len(values))
+	for name, vs := range values {
+		tags[tagFor[name]] = strings.TrimSpace(strings.Join(vs, ","))
+	}
+	return []tracer.StartSpanOption{tracer.WithTags(tags)}
 }
 
 // httpURLTag builds the http.url span tag. It obfuscates the query string because
