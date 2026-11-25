@@ -115,6 +115,19 @@ func TestWrapZeroValueState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	wovenDecl := f.Scope.Lookup("woven")
+	if wovenDecl == nil || wovenDecl.Kind != ast.Var {
+		t.Fatal("woven must be declared in wrap_appsec.go")
+	}
+	spec, ok := wovenDecl.Decl.(*ast.ValueSpec)
+	if !ok || len(spec.Values) != 0 {
+		t.Fatal("woven must have a zero-value declaration")
+	}
+	if typ, ok := spec.Type.(*ast.SelectorExpr); !ok || typ.Sel.Name != "Bool" {
+		t.Fatal("woven must have type atomic.Bool")
+	} else if pkg, ok := typ.X.(*ast.Ident); !ok || pkg.Name != "atomic" {
+		t.Fatal("woven must have type atomic.Bool")
+	}
 	for _, decl := range f.Decls {
 		switch d := decl.(type) {
 		case *ast.FuncDecl:
@@ -133,7 +146,7 @@ func TestWrapZeroValueState(t *testing.T) {
 						return true
 					}
 					id, ok := sel.X.(*ast.Ident)
-					if !ok || id.Name != "woven" || sel.Sel.Name != "Store" {
+					if !ok || id.Obj != wovenDecl || sel.Sel.Name != "Store" {
 						t.Errorf("unexpected selector in Wrap")
 					}
 					return true

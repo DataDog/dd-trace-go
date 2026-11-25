@@ -86,7 +86,7 @@ func TestEndpointHookMountedOptOut(t *testing.T) {
 	for _, mode := range []string{"ignore"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Cleanup(endpointhook.SetWovenForTest(true))
-			startAppSecRules(t, rulePathBlock, headerRule)
+			startEndpointAppSecRules(t, "1s", rulePathBlock, headerRule)
 			mt := mocktracer.Start()
 			t.Cleanup(mt.Stop)
 			calls := 0
@@ -122,13 +122,23 @@ func TestEndpointHookMountedOptOut(t *testing.T) {
 	}
 }
 
+func TestEndpointHookNoOperation(t *testing.T) {
+	t.Cleanup(endpointhook.SetWovenForTest(true))
+	startEndpointAppSecRules(t, "1s", rulePathBlock)
+	r := chi.NewRouter()
+	r.Method("GET", "/users/{id}", endpointhook.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }), false))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/users/attack", nil))
+	require.Equal(t, 200, w.Code)
+}
+
 type endpointTagSink struct{}
 
 func (endpointTagSink) SetTag(string, any) {}
 
 func TestEndpointHookNoChiMiddleware(t *testing.T) {
 	t.Cleanup(endpointhook.SetWovenForTest(true))
-	startAppSecRules(t, rulePathBlock)
+	startEndpointAppSecRules(t, "1s", rulePathBlock)
 	mt := mocktracer.Start()
 	t.Cleanup(mt.Stop)
 	calls := 0
@@ -145,6 +155,7 @@ func TestEndpointHookNoChiMiddleware(t *testing.T) {
 func TestEndpointHookAppSecOff(t *testing.T) {
 	t.Cleanup(endpointhook.SetWovenForTest(true))
 	require.False(t, instr.AppSecEnabled())
+	recordEndpointLogs(t)
 	mt := mocktracer.Start()
 	t.Cleanup(mt.Stop)
 	calls := 0
@@ -167,13 +178,21 @@ func TestEndpointHookLeafGroup(t *testing.T) {
 	t.Cleanup(endpointhook.SetRouteMatchedForTest(func(context.Context, string, map[string]string) error { calls++; return nil }))
 	r := chi.NewRouter()
 	r.Use(Middleware())
+	handled := 0
 	r.Group(func(g chi.Router) {
 		g.Use(Middleware())
-		g.Method("GET", "/users/{id}", endpointhook.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(200) }), false))
+		g.Method("GET", "/users/{id}", endpointhook.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { handled++; w.WriteHeader(200) }), false))
 	})
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest("GET", "/users/attack", nil))
 	require.Equal(t, 403, w.Code)
 	require.Zero(t, calls)
 	require.Len(t, mt.FinishedSpans(), 2)
+	mt.Reset()
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/users/42", nil))
+	require.Equal(t, 200, w.Code)
+	require.Equal(t, 1, handled)
+	require.Len(t, mt.FinishedSpans(), 2)
+	require.Zero(t, calls)
 }

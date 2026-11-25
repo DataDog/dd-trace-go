@@ -52,7 +52,7 @@ aspects:
             {{- $method := .Function.Argument 0 -}}
             {{- $pattern := .Function.Argument 1 -}}
             {{- $handler := .Function.Argument 2 -}}
-            // mSTUB and mALL are chi's routing method masks.
+            // These unexported chi masks are required; mSTUB excludes mount dispatch.
             if {{ $method }}&mSTUB == 0 {
               {{ $handler }} = __dd_chitrace_wrapEndpoint({{ $handler }}, {{ $method }} != mALL && len({{ $pattern }}) > 0 && {{ $pattern }}[len({{ $pattern }})-1] == '*')
             }

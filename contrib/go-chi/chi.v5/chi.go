@@ -76,7 +76,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 		// The cache is scoped to this handler because a
 		// chain is only meaningful relative to the router that recorded it.
 		var subrouterCache sync.Map
-		rep := endpointRouteReporter{cfg: cfg, cache: &subrouterCache}
+		rep := &endpointRouteReporter{cfg: cfg, cache: &subrouterCache}
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			appsecEnabled := instr.AppSecEnabled()
 			mark := appsecEnabled && endpointhook.Woven()

@@ -12,15 +12,52 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2/internal/endpointhook"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/require"
 )
+
+func recordEndpointLogs(t *testing.T) *metricsRecorder {
+	t.Helper()
+	var check func()
+	t.Cleanup(func() { check() })
+	rec := testutils.StartTelemetryRecorder(t)
+	check = func() {
+		for _, line := range rec.Logs {
+			require.NotContains(t, line.Text, "RouteMatched called without an active HandlerOperation")
+		}
+	}
+	return &metricsRecorder{snap: func() map[string]float64 {
+		out := map[string]float64{}
+		for key, handle := range rec.Metrics {
+			if value := handle.Get(); value != 0 {
+				out[key.Name+"{"+key.Tags+"}"] = value
+			}
+		}
+		return out
+	}}
+}
+
+func startEndpointAppSecRules(t *testing.T, timeout string, rules ...string) *metricsRecorder {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "rules.json")
+	require.NoError(t, os.WriteFile(path, []byte(rulesJSON(rules...)), 0o600))
+	t.Setenv("DD_APPSEC_RULES", path)
+	t.Setenv("DD_APPSEC_ENABLED", "true")
+	t.Setenv("DD_API_SECURITY_ENABLED", "true")
+	t.Setenv("DD_APPSEC_WAF_TIMEOUT", timeout)
+	metrics := recordEndpointLogs(t)
+	testutils.StartAppSec(t)
+	return metrics
+}
 
 func TestEndpointHookRootUse(t *testing.T) {
 	t.Cleanup(endpointhook.SetWovenForTest(true))
@@ -54,7 +91,7 @@ func TestEndpointHookOptOuts(t *testing.T) {
 	for _, mode := range []string{"noappsec", "ignore"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Cleanup(endpointhook.SetWovenForTest(true))
-			startAppSecRules(t, rulePathBlock, headerRule)
+			startEndpointAppSecRules(t, "1s", rulePathBlock, headerRule)
 			mt := mocktracer.Start()
 			t.Cleanup(mt.Stop)
 			calls := 0
@@ -234,13 +271,21 @@ func TestEndpointHookStacked(t *testing.T) {
 	t.Cleanup(endpointhook.SetRouteMatchedForTest(func(context.Context, string, map[string]string) error { calls++; return nil }))
 	r := chi.NewRouter()
 	r.Use(Middleware())
-	leaf := endpointhook.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }), false)
+	handled := 0
+	leaf := endpointhook.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { handled++; w.WriteHeader(http.StatusOK) }), false)
 	r.With(Middleware()).Method(http.MethodGet, "/users/{id}", leaf)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/attack", nil))
 	require.Equal(t, http.StatusForbidden, w.Code)
 	require.Zero(t, calls)
 	require.Len(t, mt.FinishedSpans(), 2)
+	mt.Reset()
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/42", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, 1, handled)
+	require.Len(t, mt.FinishedSpans(), 2)
+	require.Zero(t, calls)
 }
 
 func TestEndpointHookSubrouters(t *testing.T) {

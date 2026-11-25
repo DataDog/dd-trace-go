@@ -90,7 +90,7 @@ func TestEndpointHookFiniteBudget(t *testing.T) {
 	for i := range 5000 {
 		rules = append(rules, fmt.Sprintf(`{"id":"path-%d","name":"path-%d","tags":{"type":"path-%d","category":"attack_attempt"},"conditions":[{"operator":"match_regex","parameters":{"inputs":[{"address":"server.request.path_params","key_path":["id"]}],"regex":"never%d[0-9]+"}}],"on_match":[]}`, i, i, i, i))
 	}
-	metrics := startAppSecRulesTimeout(t, "500us", rules...)
+	metrics := startEndpointAppSecRules(t, "500us", rules...)
 	mt := mocktracer.Start()
 	t.Cleanup(mt.Stop)
 	before := metrics.snapshot()

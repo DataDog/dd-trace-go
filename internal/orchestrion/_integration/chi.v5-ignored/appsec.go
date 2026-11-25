@@ -41,8 +41,7 @@ func (*TestCase) PreBootstrap(_ context.Context, t *testing.T) {
 }
 
 func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
-	// An indirect call avoids the otelc rule without its ignore directive.
-	//orchestrion:ignore
+	// Both tools skip their constructor hooks for indirect calls.
 	newRouter := chi.NewRouter
 	r := newRouter()
 	r.Get("/users/{id}", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })

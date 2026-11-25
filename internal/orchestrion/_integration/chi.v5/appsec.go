@@ -8,6 +8,7 @@ package chiv5
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -24,6 +25,7 @@ import (
 
 type TestCaseAppSec struct {
 	server  *http.Server
+	root    *chi.Mux
 	handled atomic.Int32
 }
 
@@ -36,8 +38,14 @@ func (*TestCaseAppSec) PreBootstrap(_ context.Context, t *testing.T) {
 
 func (tc *TestCaseAppSec) Setup(_ context.Context, t *testing.T) {
 	root := chi.NewRouter()
+	tc.root = root
 	h := func(w http.ResponseWriter, _ *http.Request) { tc.handled.Add(1); w.WriteHeader(http.StatusOK) }
 	root.Get("/users/{id}", h)
+	root.Get("/catch/*", h)
+	newRouter := chi.NewRouter
+	hx := newRouter()
+	hx.Get("/hx/{tenant}/{name}", h)
+	root.Handle("/hx/{tenant}/*", hx)
 	root.Route("/routed/{tenant}", func(r chi.Router) { r.Get("/items/{id}", h) })
 	child := chi.NewRouter()
 	child.Get("/items/{id}", h)
@@ -63,24 +71,21 @@ func (tc *TestCaseAppSec) Run(_ context.Context, t *testing.T) {
 	for _, c := range []struct {
 		path    string
 		status  int
-		header  bool
 		handled bool
 	}{
-		{"/users/attack", 403, false, false}, {"/users/42", 200, false, true},
-		{"/routed/acme/items/attack", 403, false, false}, {"/routed/attack", 404, false, false},
-		{"/mounted/acme/items/attack", 403, false, false}, {"/files/attack", 200, false, true},
-		{"/w/attack/items/42", 403, false, false}, {"/w/acme/items/attack", 403, false, false},
-		{"/ignore/attack", 200, false, true}, {"/ignore/42", 403, true, false},
-		{"/opt/attack", 200, false, true}, {"/opt/42", 403, true, false},
-		{"/manual/attack", 403, false, false},
+		{"/users/attack", 403, false}, {"/users/42", 200, true},
+		{"/catch/attack", 403, false}, {"/hx/acme/attack", 200, true},
+		{"/routed/acme/items/attack", 403, false}, {"/routed/attack", 404, false},
+		{"/mounted/acme/items/attack", 403, false}, {"/files/attack", 200, true},
+		{"/w/attack/items/42", 403, false}, {"/w/acme/items/attack", 403, false},
+		{"/ignore/attack", 200, true},
+		{"/opt/attack", 200, true},
+		{"/manual/attack", 403, false},
 	} {
 		t.Run(c.path, func(t *testing.T) {
 			before := tc.handled.Load()
 			req, err := http.NewRequest(http.MethodGet, "http://"+tc.server.Addr+c.path, nil)
 			require.NoError(t, err)
-			if c.header {
-				req.Header.Set("X-Block", "yes")
-			}
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
 			require.NoError(t, resp.Body.Close())
@@ -92,9 +97,18 @@ func (tc *TestCaseAppSec) Run(_ context.Context, t *testing.T) {
 			}
 		})
 	}
+	for _, path := range []string{"/ignore/42", "/opt/42"} {
+		before := tc.handled.Load()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("X-Block", "yes")
+		w := httptest.NewRecorder()
+		tc.root.ServeHTTP(w, req)
+		require.Equal(t, http.StatusForbidden, w.Code)
+		require.Equal(t, before, tc.handled.Load())
+	}
 }
 
-func (*TestCaseAppSec) ExpectedSpanCount() int { return 41 }
+func (*TestCaseAppSec) ExpectedSpanCount() int { return 45 }
 
 func (*TestCaseAppSec) ExpectedTraces() trace.Traces {
 	cases := []struct {
@@ -103,6 +117,8 @@ func (*TestCaseAppSec) ExpectedTraces() trace.Traces {
 	}{
 		{"GET /users/attack", "GET /users/{id}", "403", 1},
 		{"GET /users/42", "GET /users/{id}", "200", 1},
+		{"GET /catch/attack", "GET /catch/*", "403", 1},
+		{"GET /hx/acme/attack", "GET /hx/{tenant}/hx/{tenant}/{name}", "200", 1},
 		{"GET /routed/acme/items/attack", "GET /routed/{tenant}/items/{id}", "403", 1},
 		{"GET /routed/attack", "GET /routed/{tenant}", "404", 1},
 		{"GET /mounted/acme/items/attack", "GET /mounted/{tenant}/items/{id}", "403", 2},
@@ -110,9 +126,7 @@ func (*TestCaseAppSec) ExpectedTraces() trace.Traces {
 		{"GET /w/attack/items/42", "GET /w/{tenant}/*", "403", 1},
 		{"GET /w/acme/items/attack", "GET /w/{tenant}/items/{id}", "403", 2},
 		{"GET /ignore/attack", "GET /ignore/{id}", "200", 1},
-		{"GET /ignore/42", "", "403", 0},
 		{"GET /opt/attack", "GET /opt/{id}", "200", 2},
-		{"GET /opt/42", "", "403", 0},
 		{"GET /manual/attack", "GET /manual/{id}", "403", 2},
 	}
 	traces := make(trace.Traces, 0, len(cases))
@@ -122,10 +136,10 @@ func (*TestCaseAppSec) ExpectedTraces() trace.Traces {
 		switch c.client {
 		case "GET /users/attack", "GET /routed/acme/items/attack", "GET /mounted/acme/items/attack", "GET /w/acme/items/attack", "GET /manual/attack":
 			server.MetaContains = map[string]string{"_dd.appsec.json": `"id":"id-block"`}
+		case "GET /catch/attack":
+			server.MetaContains = map[string]string{"_dd.appsec.json": `"id":"wildcard-block"`}
 		case "GET /w/attack/items/42":
 			server.MetaContains = map[string]string{"_dd.appsec.json": `"id":"tenant-block"`}
-		case "GET /ignore/42", "GET /opt/42":
-			server.MetaContains = map[string]string{"_dd.appsec.json": `"id":"header-block"`}
 		default:
 			server.MetaAbsent = []string{"_dd.appsec.json"}
 		}
@@ -137,6 +151,12 @@ func (*TestCaseAppSec) ExpectedTraces() trace.Traces {
 			parent = chiSpan
 		}
 		traces = append(traces, root)
+	}
+	for _, path := range []string{"/ignore/42", "/opt/42"} {
+		traces = append(traces, &trace.Trace{
+			Meta:         map[string]string{"component": "go-chi/chi.v5", "http.status_code": "403"},
+			MetaContains: map[string]string{"_dd.appsec.json": `"id":"header-block"`, "http.url": path},
+		})
 	}
 	return traces
 }

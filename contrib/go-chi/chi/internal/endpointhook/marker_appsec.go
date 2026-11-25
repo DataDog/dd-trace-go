@@ -46,13 +46,13 @@ func Woven() bool { return woven.Load() }
 
 var routeMatched = httpsec.RouteMatched
 
-// SetWovenForTest sets the woven state and returns a function that restores it.
+// SetWovenForTest must not be installed or restored while requests run.
 func SetWovenForTest(value bool) func() {
 	old := woven.Swap(value)
 	return func() { woven.Store(old) }
 }
 
-// SetRouteMatchedForTest replaces the route callback for a test.
+// SetRouteMatchedForTest must not be installed or restored while requests run.
 func SetRouteMatchedForTest(fn func(context.Context, string, map[string]string) error) func() {
 	old := routeMatched
 	routeMatched = fn
