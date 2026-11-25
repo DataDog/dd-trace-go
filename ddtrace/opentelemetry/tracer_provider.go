@@ -48,6 +48,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
@@ -78,6 +79,7 @@ func NewTracerProvider(opts ...tracer.StartOption) *TracerProvider {
 	t := &oteltracer{
 		DD:                   internal.GetGlobalTracer[tracer.Tracer](),
 		provider:             p,
+		spansCreated:         telemetry.Count(telemetry.NamespaceTracers, "spans_created", telemetryTags),
 		otelSemanticsEnabled: internalconfig.Get().OTelSemanticsEnabled(),
 	}
 	p.tracer = t
