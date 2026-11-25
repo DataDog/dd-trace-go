@@ -1928,6 +1928,27 @@ func TestSpanSnapshotFieldsConcurrentAccess(t *testing.T) {
 	}
 }
 
+func TestTraceIDUpperHexCache(t *testing.T) {
+	var id1 traceID
+	id1.SetUpper(uint64(0x67452301) << 32)
+	id1.SetLower(0x0102030405060708)
+	assert.Equal(t, "6745230100000000", id1.UpperHex())
+	// Second call hits the per-second cache.
+	assert.Equal(t, "6745230100000000", id1.UpperHex())
+
+	// Next second updates the cache.
+	var id2 traceID
+	id2.SetUpper(uint64(0x67452302) << 32)
+	id2.SetLower(0x1112131415161718)
+	assert.Equal(t, "6745230200000000", id2.UpperHex())
+
+	// Non-zero lower 32 bits of upper falls back to full hex encoding.
+	var id3 traceID
+	id3.SetUpper(0x67452301deadbeef)
+	id3.SetLower(0x0102030405060708)
+	assert.Equal(t, "67452301deadbeef", id3.UpperHex())
+}
+
 func TestPropagatingTagsCachedDMImmutability(t *testing.T) {
 	tr1 := newTrace()
 	tr1.mu.Lock()

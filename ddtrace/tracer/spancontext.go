@@ -110,7 +110,32 @@ func (t *traceID) HasUpper() bool {
 	return false
 }
 
-func (t *traceID) UpperHex() string { return t.HexEncoded()[:16] }
+type upperHexEntry struct {
+	sec uint32
+	hex string
+}
+
+var upperHexCache atomic.Pointer[upperHexEntry]
+
+func (t *traceID) UpperHex() string {
+	if t.hexEncoded != "" {
+		return t.hexEncoded[:16]
+	}
+	// Locally generated 128-bit trace IDs encode <32-bit unix seconds><32 zero bits>
+	// in the upper 64 bits, so the upper hex string changes at most once per second.
+	if t.value[4]|t.value[5]|t.value[6]|t.value[7] == 0 {
+		sec := binary.BigEndian.Uint32(t.value[:4])
+		if cached := upperHexCache.Load(); cached != nil && cached.sec == sec {
+			return cached.hex
+		}
+		var buf [16]byte
+		hex.Encode(buf[:], t.value[:8])
+		s := string(buf[:])
+		upperHexCache.Store(&upperHexEntry{sec: sec, hex: s})
+		return s
+	}
+	return t.HexEncoded()[:16]
+}
 
 // cacheHex populates the hexEncoded cache. It must be called at traceID
 // construction finalization, before the enclosing SpanContext is shared with
