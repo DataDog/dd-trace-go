@@ -66,7 +66,7 @@ type (
 		wide bool
 	}
 
-	// lineCoverageFile is a source file with instrumented blocks.
+	// lineCoverageFile is a source file of an instrumented package.
 	lineCoverageFile struct {
 		name    string // path relative to the repository root
 		maxLine int32  // last line of the file's blocks and init lines
@@ -150,34 +150,46 @@ func newLineCoverageCollector(sessionID uint64) *lineCoverageCollector {
 		metaNames[metaName] = idx
 		return idx
 	}
+	// closureInitLines are the header lines of the function literals in
+	// package-level variable initialisers, by file.
+	closureInitLines := map[int32][]int32{}
 	for i := 0; ; i++ {
 		counters, numBlocks, rowSize, pkgPath, meta, ok := runtimeLineCoveragePackage(i)
 		if !ok {
 			break
 		}
-		if counters == nil || numBlocks <= 0 || rowSize%wordSize != 0 {
+		filesOnly := counters == nil && numBlocks == 0
+		if !filesOnly && (counters == nil || numBlocks <= 0 || rowSize%wordSize != 0) {
 			log.Debug("civisibility.linecov: skipping package %s: invalid counters", pkgPath)
 			continue
 		}
-		blocks, counterSize, err := decodeLineCoverageMeta(meta, numBlocks, indexOf)
+		table, err := decodeLineCoverageMeta(meta, numBlocks, indexOf)
 		if err != nil {
 			log.Debug("civisibility.linecov: skipping package %s: %s", pkgPath, err.Error())
 			continue
 		}
-		wide := counterSize == 4
-		if rowSize < numBlocks*counterSize || (wide && uintptr(unsafe.Pointer(counters))%4 != 0) {
+		for file, lines := range table.initLines {
+			closureInitLines[file] = append(closureInitLines[file], lines...)
+		}
+		if filesOnly {
+			// A package with variable initialisers and no blocks registers its files,
+			// so that the lines of its initialisers come from the line table.
+			continue
+		}
+		wide := table.counterSize == 4
+		if rowSize < numBlocks*table.counterSize || (wide && uintptr(unsafe.Pointer(counters))%4 != 0) {
 			log.Debug("civisibility.linecov: skipping package %s: invalid counters", pkgPath)
 			continue
 		}
 		c.packages = append(c.packages, lineCoveragePackage{
 			counters: unsafe.Pointer(counters),
 			rowSize:  rowSize,
-			blocks:   blocks,
+			blocks:   table.blocks,
 			aligned:  uintptr(unsafe.Pointer(counters))%uintptr(wordSize) == 0,
 			wide:     wide,
 		})
 	}
-	if len(c.packages) == 0 {
+	if len(c.files) == 0 {
 		return nil
 	}
 	for _, p := range c.packages {
@@ -191,6 +203,17 @@ func newLineCoverageCollector(sessionID uint64) *lineCoverageCollector {
 		}
 	}
 	varInitLines := c.loadLineTable(metaNames)
+	for file, lines := range closureInitLines {
+		f := &c.files[file]
+		for _, line := range lines {
+			// Like the lines blocks credit besides their ranges, only where the line
+			// table maps code to them.
+			if hasLine(f.codeLines, line) {
+				varInitLines[file] = append(varInitLines[file], line)
+				f.maxLine = max(f.maxLine, line)
+			}
+		}
+	}
 
 	c.free = make([]uint32, 0, lineCoverageSlotCount-1)
 	for slot := uint32(lineCoverageSlotCount - 1); slot > 0; slot-- {
@@ -222,7 +245,7 @@ func newLineCoverageCollector(sessionID uint64) *lineCoverageCollector {
 // no lines for keep a nil code bitmap.
 func (c *lineCoverageCollector) loadLineTable(metaNames map[string]int32) map[int32][]int32 {
 	if runtimeLineCoverageLines == nil {
-		return nil
+		return map[int32][]int32{}
 	}
 	start := time.Now()
 	varInit := map[int32][]byte{}

@@ -9,7 +9,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"maps"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -47,6 +49,12 @@ func encodeTestMetaLines(files []string, blocks []testBlock, extras map[int]test
 
 // encodeTestMetaSized encodes a block table with counters of counterSize bytes.
 func encodeTestMetaSized(files []string, blocks []testBlock, extras map[int]testLines, counterSize int) string {
+	return encodeTestMetaInit(files, blocks, extras, counterSize, nil)
+}
+
+// encodeTestMetaInit encodes a block table with the init lines of initLines,
+// by file index of the table.
+func encodeTestMetaInit(files []string, blocks []testBlock, extras map[int]testLines, counterSize int, initLines map[int][]int) string {
 	buf := binary.AppendUvarint(nil, lineCoverageMetaVersion)
 	buf = binary.AppendUvarint(buf, uint64(counterSize))
 	buf = binary.AppendUvarint(buf, uint64(len(files)))
@@ -76,6 +84,14 @@ func encodeTestMetaSized(files []string, blocks []testBlock, extras map[int]test
 			for _, line := range extra.lines {
 				buf = binary.AppendUvarint(buf, uint64(line))
 			}
+		}
+	}
+	buf = binary.AppendUvarint(buf, uint64(len(initLines)))
+	for _, file := range slices.Sorted(maps.Keys(initLines)) {
+		buf = binary.AppendUvarint(buf, uint64(file))
+		buf = binary.AppendUvarint(buf, uint64(len(initLines[file])))
+		for _, line := range initLines[file] {
+			buf = binary.AppendUvarint(buf, uint64(line))
 		}
 	}
 	return string(buf)
@@ -185,7 +201,11 @@ func installFakeRuntime(t *testing.T, rt *fakeRuntime) {
 			return nil, 0, 0, "", "", false
 		}
 		p := rt.packages[i]
-		return &p.counters[0], p.numBlocks, p.rowSize, p.path, p.meta, true
+		var counters *byte
+		if len(p.counters) > 0 {
+			counters = &p.counters[0]
+		}
+		return counters, p.numBlocks, p.rowSize, p.path, p.meta, true
 	}
 	t.Cleanup(func() {
 		runtimeLineCoverageSlot, runtimeLineCoverageSetSlot, runtimeLineCoverageSlotRefs,
@@ -272,44 +292,59 @@ func TestDecodeLineCoverageMeta(t *testing.T) {
 	files := []string{"/repo/a.go", "/repo/b.go"}
 	blocks := []testBlock{{0, 3, 5, false}, {1, 10, 10, true}, {0, 0, 0, false}}
 	var names []string
-	decoded, counterSize, err := decodeLineCoverageMeta(encodeTestMeta(files, blocks), len(blocks), func(name string) int32 {
+	table, err := decodeLineCoverageMeta(encodeTestMeta(files, blocks), len(blocks), func(name string) int32 {
 		names = append(names, name)
 		return int32(len(names) - 1)
 	})
 	require.NoError(t, err)
-	assert.Equal(t, 1, counterSize)
+	assert.Equal(t, 1, table.counterSize)
 	assert.Equal(t, files, names)
 	assert.Equal(t, []lineCoverageBlock{
 		{file: 0, startLine: 3, endLine: 5},
 		{file: 1, startLine: 10, endLine: 10, isInit: true},
 		{file: 0, startLine: 1, endLine: 0},
-	}, decoded)
+	}, table.blocks)
+	assert.Nil(t, table.initLines)
 
-	_, counterSize, err = decodeLineCoverageMeta(encodeTestMetaSized(files, blocks, nil, 4), len(blocks), func(string) int32 { return 0 })
+	table, err = decodeLineCoverageMeta(encodeTestMetaSized(files, blocks, nil, 4), len(blocks), func(string) int32 { return 0 })
 	require.NoError(t, err)
-	assert.Equal(t, 4, counterSize)
+	assert.Equal(t, 4, table.counterSize)
 
-	// Versions 1 and 2 tables have no counter size: their counters are bytes.
-	// Version 1 tables have no credited lines either.
+	// The tables of earlier versions have no init lines. Versions 1 and 2 have
+	// no counter size either: their counters are bytes. Version 1 tables have
+	// no credited lines.
 	meta := encodeTestMeta(files, blocks)
-	for _, version := range []string{"\x01", "\x02"} {
-		decodedOld, counterSize, err := decodeLineCoverageMeta(version+meta[2:], len(blocks), func(string) int32 { return 0 })
+	withoutInit := meta[:len(meta)-1]
+	for _, old := range []string{"\x01" + withoutInit[2:], "\x02" + withoutInit[2:], "\x03" + withoutInit[1:]} {
+		table, err := decodeLineCoverageMeta(old, len(blocks), func(string) int32 { return 0 })
 		require.NoError(t, err)
-		assert.Len(t, decodedOld, len(blocks))
-		assert.Equal(t, 1, counterSize)
+		assert.Len(t, table.blocks, len(blocks))
+		assert.Equal(t, 1, table.counterSize)
 	}
 
 	withLines := encodeTestMetaLines(files, blocks, map[int]testLines{
 		0: {lines: []int{2}},
 		2: {lines: []int{7, 9}, noRange: true},
 	})
-	decoded, _, err = decodeLineCoverageMeta(withLines, len(blocks), func(string) int32 { return 0 })
+	table, err = decodeLineCoverageMeta(withLines, len(blocks), func(string) int32 { return 0 })
 	require.NoError(t, err)
 	assert.Equal(t, []lineCoverageBlock{
 		{file: 0, startLine: 3, endLine: 5, lines: []int32{2}},
 		{file: 0, startLine: 10, endLine: 10, isInit: true},
 		{file: 0, startLine: 1, endLine: 0, lines: []int32{7, 9}},
-	}, decoded)
+	}, table.blocks)
+
+	indexOf := func(name string) int32 { return int32(slices.Index(files, name)) + 10 }
+	withInit := encodeTestMetaInit(files, blocks, nil, 1, map[int][]int{1: {4, 9}})
+	table, err = decodeLineCoverageMeta(withInit, len(blocks), indexOf)
+	require.NoError(t, err)
+	assert.Equal(t, map[int32][]int32{11: {4, 9}}, table.initLines)
+
+	// A package without blocks lists its files and init lines only.
+	table, err = decodeLineCoverageMeta(encodeTestMetaInit(files[:1], nil, nil, 1, map[int][]int{0: {3}}), 0, indexOf)
+	require.NoError(t, err)
+	assert.Empty(t, table.blocks)
+	assert.Equal(t, map[int32][]int32{10: {3}}, table.initLines)
 
 	zeroLine := encodeTestMetaLines(files, blocks[:1], map[int]testLines{0: {lines: []int{0}}})
 	for name, tc := range map[string]struct {
@@ -318,19 +353,23 @@ func TestDecodeLineCoverageMeta(t *testing.T) {
 	}{
 		"truncated":       {meta[:len(meta)-1], len(blocks)},
 		"truncated lines": {withLines[:len(withLines)-1], len(blocks)},
+		"truncated init":  {withInit[:len(withInit)-1], len(blocks)},
 		"trailing bytes":  {meta + "x", len(blocks)},
 		"block count":     {meta, len(blocks) + 1},
-		"version":         {"\x04" + meta[1:], len(blocks)},
+		"version":         {"\x05" + meta[1:], len(blocks)},
 		"version zero":    {"\x00" + meta[1:], len(blocks)},
 		"counter size":    {meta[:1] + "\x02" + meta[2:], len(blocks)},
 		"file index":      {encodeTestMeta(files[:1], blocks[1:2]), 1},
 		"line zero":       {zeroLine, 1},
-		"line count":      {zeroLine[:len(zeroLine)-2] + "\x7f\x01", 1},
+		"line count":      {zeroLine[:len(zeroLine)-3] + "\x7f\x01", 1},
+		"init file index": {encodeTestMetaInit(files[:1], nil, nil, 1, map[int][]int{1: {3}}), 0},
+		"init line zero":  {encodeTestMetaInit(files[:1], nil, nil, 1, map[int][]int{0: {0}}), 0},
+		"init file count": {encodeTestMetaInit(files[:1], nil, nil, 1, map[int][]int{0: {3}, 1: {4}}), 0},
 		"empty":           {"", 0},
 		"varint overflow": {"\x01\xff\xff\xff\xff\xff\xff\xff\xff\xff\x7f", 0},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, _, err := decodeLineCoverageMeta(tc.meta, tc.numBlocks, func(string) int32 { return 0 })
+			_, err := decodeLineCoverageMeta(tc.meta, tc.numBlocks, func(string) int32 { return 0 })
 			assert.Error(t, err)
 		})
 	}
@@ -697,6 +736,52 @@ func TestLineCoverageLineTable(t *testing.T) {
 	assert.Equal(t, map[string][]int32{"b.go": {2, 3, 4}}, recordLines(t, records[1]))
 	assert.Equal(t, "init", records[2]["shared"])
 	assert.Equal(t, map[string][]int32{"a.go": {10, 11, 20, 22}}, recordLines(t, records[2]))
+}
+
+// TestLineCoverageInitLinesFromTables checks the init lines that block tables
+// list: the header lines of function literals in package-level variable
+// initialisers, where the line table maps code to them, and the files of a
+// package without blocks, whose initialiser lines come from the line table.
+func TestLineCoverageInitLinesFromTables(t *testing.T) {
+	workspace := setTestWorkspace(t)
+	a := filepath.Join(workspace, "a.go")
+	pool := filepath.Join(workspace, "pool", "pool.go")
+	blocks := []testBlock{
+		{0, 3, 3, false}, // a function
+		{0, 6, 6, false}, // the body of a closure built at package initialization
+	}
+	withClosures := newFakePackage("example/a", []string{a}, blocks, false)
+	// Line 8 is the header of a closure the line table maps no code to.
+	withClosures.meta = encodeTestMetaInit([]string{a}, blocks, nil, 1, map[int][]int{0: {5, 8}})
+	rt := &fakeRuntime{
+		packages: []fakePackage{
+			withClosures,
+			{path: "example/pool", meta: encodeTestMeta([]string{pool}, nil)},
+		},
+		lines: []fakeLine{
+			{"example/a.F", a, 3, false},
+			{"example/a.init.func1", a, 5, false},
+			{"example/a.init.func1", a, 6, false},
+			{"example/pool.init", pool, 4, false},
+			{"example/pool.init", pool, 6, false},
+		},
+	}
+	c, sent := startTestCollector(t, rt)
+	require.Len(t, c.files, 2)
+	require.Len(t, c.packages, 1)
+	assert.Equal(t, []int32{5}, c.files[0].initLines)
+	assert.Equal(t, []int32{4, 6}, c.files[1].initLines)
+
+	w := OpenLineCoverageWindow()
+	rt.probe(0, 1)
+	w.Close(1, 1)
+
+	c.stop()
+	records := (*sent)[0]
+	require.Len(t, records, 2)
+	assert.Equal(t, map[string][]int32{"a.go": {5, 6}}, recordLines(t, records[0]))
+	assert.Equal(t, "init", records[1]["shared"])
+	assert.Equal(t, map[string][]int32{"a.go": {5}, "pool/pool.go": {4, 6}}, recordLines(t, records[1]))
 }
 
 func TestIsPackageVarInitFunc(t *testing.T) {
