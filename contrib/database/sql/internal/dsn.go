@@ -129,9 +129,9 @@ func parseSQLServerDSN(dsn string) (map[string]string, error) {
 		if err != nil {
 			return nil, err
 		}
-	} else if strings.HasPrefix(dsn, "odbc:") {
+	} else if rest, ok := strings.CutPrefix(dsn, "odbc:"); ok {
 		// odbc form
-		meta, err = parseSQLServerODBC(strings.TrimPrefix(dsn, "odbc:"))
+		meta, err = parseSQLServerODBC(rest)
 		if err != nil {
 			return nil, err
 		}
