@@ -88,8 +88,10 @@ func (l *clusterIDLookup) start(r kmsg.Requestor) {
 				return
 			}
 			if !logged {
-				// Only the first failure, so that brokers that stay down don't flood the log
-				instr.Logger().Debug("contrib/twmb/franz-go: failed to fetch Kafka cluster ID, retrying: %s", err.Error())
+				// A warning, so a user can tell why the cluster ID tag is
+				// missing, and only for the first failure, so that brokers that
+				// stay down don't flood the log.
+				instr.Logger().Warn("contrib/twmb/franz-go: failed to fetch Kafka cluster ID, retrying: %s", err.Error())
 				logged = true
 			}
 			t := time.NewTimer(wait)
