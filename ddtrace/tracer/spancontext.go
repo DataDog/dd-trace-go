@@ -684,10 +684,24 @@ type trace struct {
 	// +checklocks:mu
 	propagatingTagsReadOnly bool
 
+	// inlineChunkUsed is true once inlineChunk has been handed off to
+	// submitChunkWithTracer on a full flush, so any subsequent flush allocates
+	// a fresh chunk instead of racing with the worker reading inlineChunk.
+	// +checklocks:mu
+	inlineChunkUsed bool
+
 	// otel holds the OpenTelemetry consistent probability sampling state, or nil
 	// when the trace carries none. See otelTraceState.
 	// +checklocks:mu
 	otel *otelTraceState
+
+	// inlineSpans backs the initial spans slice for small traces so newTrace
+	// avoids a separate slice backing-array allocation.
+	inlineSpans [10]*Span
+
+	// inlineChunk avoids a separate &chunk{} heap allocation on the first
+	// (and almost always only) full flush of a trace.
+	inlineChunk chunk
 }
 
 // otelTraceState is the OpenTelemetry consistent probability sampling state
@@ -836,10 +850,21 @@ func samplingPriorityPtr(p int) *float64 {
 	return &v
 }
 
+// +checklocksignore — Initialization time, trace not yet shared.
+func (t *trace) initSpans() {
+	if traceStartSize <= len(t.inlineSpans) {
+		t.spans = t.inlineSpans[:0]
+	} else {
+		t.spans = make([]*Span, 0, traceStartSize)
+	}
+}
+
 // newTrace creates a new trace using the given callback which will be called
 // upon completion of the trace.
 func newTrace() *trace {
-	return &trace{spans: make([]*Span, 0, traceStartSize)}
+	t := &trace{}
+	t.initSpans()
+	return t
 }
 
 // samplingPriority returns the sampling priority of the trace, if set.
@@ -1117,8 +1142,16 @@ func (t *trace) finishedOneLocked(s *Span) {
 		filterRejected := t.filterReject
 		t.spans = nil
 		t.finished = 0 // important, because a buffer can be used for several flushes
+		var c *chunk
+		if !t.inlineChunkUsed {
+			t.inlineChunkUsed = true
+			t.inlineChunk = chunk{spans: spans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected}
+			c = &t.inlineChunk
+		} else {
+			c = &chunk{spans: spans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected}
+		}
 		t.mu.Unlock()
-		submitChunkWithTracer(tr, &chunk{spans: spans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected})
+		submitChunkWithTracer(tr, c)
 		return
 	}
 
