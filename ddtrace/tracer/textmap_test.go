@@ -3396,6 +3396,36 @@ func TestInjectBaggagePropagator(t *testing.T) {
 	assert.Equal(headers.Get("baggage"), "foo=bar")
 }
 
+func TestInjectBaggagePropagatorSkipsEmptyEncodedItems(t *testing.T) {
+	prop := NewPropagator(&PropagatorConfig{
+		InjectStyle:  "baggage",
+		ExtractStyle: "baggage",
+	})
+	tr, err := newTracer(WithPropagator(prop))
+	assert.NoError(t, err)
+	defer tr.Stop()
+
+	root := tr.StartSpan("web.request")
+	root.SetBaggageItem("valid", "123")
+	root.SetBaggageItem("ws", " ")
+	root.SetBaggageItem(" ", "ignored")
+	root.SetBaggageItem("empty", "")
+
+	headers := TextMapCarrier{}
+	err = tr.Inject(root.Context(), headers)
+	assert.NoError(t, err)
+	assert.Equal(t, "valid=123", headers[DefaultBaggageHeader])
+
+	extracted, err := tr.Extract(headers)
+	assert.NoError(t, err)
+	got := make(map[string]string)
+	extracted.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Equal(t, map[string]string{"valid": "123"}, got)
+}
+
 func TestExtractBaggagePropagator(t *testing.T) {
 	tracer, err := newTracer()
 	assert.NoError(t, err)

@@ -1965,6 +1965,9 @@ type baggageHeaderBuilder struct {
 
 // add appends one member and reports whether more members can follow.
 func (b *baggageHeaderBuilder) add(encodedKey, encodedValue string) bool {
+	if encodedKey == "" || encodedValue == "" {
+		return true
+	}
 	return b.addMember(encodedKey + "=" + encodedValue)
 }
 
