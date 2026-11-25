@@ -114,10 +114,10 @@ func TestClusterIDFetch(t *testing.T) {
 		assert.Equal(t, int32(2), returned.Load())
 	})
 	t.Run("retries until the lookup succeeds", func(t *testing.T) {
-		setClusterIDRetry(t, time.Millisecond, 4*time.Millisecond)
 		tr := newTracer()
 		client := &fakeClusterIDClient{id: "test-cluster-id", fail: 3}
 		f := NewClusterIDFetch(tr, func() (ClusterIDClient, error) { return client, nil })
+		f.retryMin, f.retryMax = time.Millisecond, 4*time.Millisecond
 		f.Start()
 		require.Eventually(t, func() bool { return tr.ClusterID() == "test-cluster-id" }, time.Second, time.Millisecond)
 		f.Close()
@@ -125,10 +125,10 @@ func TestClusterIDFetch(t *testing.T) {
 		assert.True(t, client.closed.Load())
 	})
 	t.Run("close stops the retries", func(t *testing.T) {
-		setClusterIDRetry(t, time.Hour, time.Hour)
 		tr := newTracer()
 		client := &fakeClusterIDClient{fail: -1}
 		f := NewClusterIDFetch(tr, func() (ClusterIDClient, error) { return client, nil })
+		f.retryMin, f.retryMax = time.Hour, time.Hour
 		f.Start()
 		require.Eventually(t, func() bool { return client.attempts.Load() == 1 }, time.Second, time.Millisecond)
 
@@ -153,11 +153,4 @@ func TestClusterIDFetch(t *testing.T) {
 		f.Close()
 		assert.False(t, f.Started())
 	})
-}
-
-// setClusterIDRetry sets the retry backoff for the duration of the test.
-func setClusterIDRetry(t *testing.T, minWait, maxWait time.Duration) {
-	oldMin, oldMax := clusterIDRetryMin, clusterIDRetryMax
-	clusterIDRetryMin, clusterIDRetryMax = minWait, maxWait
-	t.Cleanup(func() { clusterIDRetryMin, clusterIDRetryMax = oldMin, oldMax })
 }

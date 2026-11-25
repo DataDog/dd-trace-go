@@ -17,12 +17,24 @@ import (
 // clusterIDTimeout bounds each attempt to look up the cluster ID.
 const clusterIDTimeout = 2 * time.Second
 
-// After a failed attempt, the lookup waits clusterIDRetryMin, doubling up to
-// clusterIDRetryMax, before it tries again. Variables for tests.
-var (
+// After a failed attempt, the lookup waits clusterIDRetryMin before it tries
+// again, doubling the wait up to clusterIDRetryMax. It then keeps trying every
+// clusterIDRetryMax until it succeeds or the client is closed.
+const (
 	clusterIDRetryMin = time.Second
 	clusterIDRetryMax = time.Minute
 )
+
+// retryBounds returns minWait and maxWait, or the defaults where they are zero.
+func retryBounds(minWait, maxWait time.Duration) (time.Duration, time.Duration) {
+	if minWait == 0 {
+		minWait = clusterIDRetryMin
+	}
+	if maxWait == 0 {
+		maxWait = clusterIDRetryMax
+	}
+	return minWait, maxWait
+}
 
 // clusterIDLookup looks up the Kafka cluster ID in the background. The lookup
 // starts at most once, retries with backoff until it succeeds, and is
@@ -33,6 +45,9 @@ type clusterIDLookup struct {
 	mu      sync.Mutex
 	closed  bool   // +checklocks:mu
 	stop    func() // +checklocks:mu
+
+	// Waits between attempts; zero means clusterIDRetryMin and clusterIDRetryMax. Set by tests.
+	retryMin, retryMax time.Duration
 }
 
 // get returns the cluster ID, or "" if it is not known yet.
@@ -55,12 +70,13 @@ func (l *clusterIDLookup) start(r kmsg.Requestor) {
 		return
 	}
 	l.started.Store(true)
+	minWait, maxWait := retryBounds(l.retryMin, l.retryMax)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		logged := false
-		for wait := clusterIDRetryMin; ; wait = min(2*wait, clusterIDRetryMax) {
+		for wait := minWait; ; wait = min(2*wait, maxWait) {
 			id, err := fetchClusterIDWithTimeout(ctx, r)
 			if err == nil {
 				if id != "" {
