@@ -8,6 +8,8 @@ package chiignored
 import (
 	"context"
 	"net/http"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -16,11 +18,20 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/net"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
 type TestCase struct{ server *http.Server }
+
+type routeLogCounter struct{ count atomic.Int32 }
+
+func (c *routeLogCounter) Log(message string) {
+	if strings.Contains(message, "RouteMatched called without an active HandlerOperation") {
+		c.count.Add(1)
+	}
+}
 
 func (*TestCase) PreBootstrap(_ context.Context, t *testing.T) {
 	if ok, err := libddwaf.Usable(); !ok {
@@ -46,6 +57,16 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 }
 
 func (tc *TestCase) Run(_ context.Context, t *testing.T) {
+	counter := &routeLogCounter{}
+	previousLevel := log.GetLevel()
+	log.SetLevel(log.LevelDebug)
+	undo := log.UseLogger(counter)
+	defer func() {
+		log.Flush()
+		undo()
+		log.SetLevel(previousLevel)
+		assert.Zero(t, counter.count.Load())
+	}()
 	resp, err := http.Get("http://" + tc.server.Addr + "/users/attack")
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
