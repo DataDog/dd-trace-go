@@ -73,9 +73,10 @@ type (
 		// initLines are the executed lines of the file's initialisers, sorted:
 		// its init functions and package variable initialisers.
 		initLines []int32
-		// codeLines is the bitmap of the lines the line table of the binary maps
-		// code to, or nil when the table has none for the file. Lines without
-		// code never count.
+		// codeLines is the bitmap of the lines code maps to, in the line table of
+		// the package compiled without probes and without inlining, or in that of
+		// the binary when the package has none; nil when the table has no lines
+		// for the file. Lines without code never count.
 		codeLines []byte
 	}
 
@@ -153,6 +154,10 @@ func newLineCoverageCollector(sessionID uint64) *lineCoverageCollector {
 	// closureInitLines are the header lines of the function literals in
 	// package-level variable initialisers, by file.
 	closureInitLines := map[int32][]int32{}
+	// The files whose packages came with a line table, and those whose lines
+	// come from the line table of the binary.
+	withTable, withoutTable := map[int32]bool{}, map[int32]bool{}
+	tableCodeLines, tableVarInitLines := map[int32][]int32{}, map[int32][]int32{}
 	for i := 0; ; i++ {
 		counters, numBlocks, rowSize, pkgPath, meta, ok := runtimeLineCoveragePackage(i)
 		if !ok {
@@ -170,6 +175,21 @@ func newLineCoverageCollector(sessionID uint64) *lineCoverageCollector {
 		}
 		for file, lines := range table.initLines {
 			closureInitLines[file] = append(closureInitLines[file], lines...)
+		}
+		if t := table.lines; t != nil {
+			for _, file := range table.files {
+				withTable[file] = true
+			}
+			for file, lines := range t.code {
+				tableCodeLines[file] = append(tableCodeLines[file], lines...)
+			}
+			for file, lines := range t.varInit {
+				tableVarInitLines[file] = append(tableVarInitLines[file], lines...)
+			}
+		} else {
+			for _, file := range table.files {
+				withoutTable[file] = true
+			}
 		}
 		if filesOnly {
 			// A package with variable initialisers and no blocks registers its files,
@@ -202,7 +222,33 @@ func newLineCoverageCollector(sessionID uint64) *lineCoverageCollector {
 			}
 		}
 	}
-	varInitLines := c.loadLineTable(metaNames)
+	for file := range withTable {
+		delete(withoutTable, file)
+	}
+	varInitLines := c.loadLineTable(metaNames, withoutTable)
+	for file, lines := range tableCodeLines {
+		f := &c.files[file]
+		if f.codeLines == nil && !withTable[file] {
+			// Only the generic functions that other packages instantiate map code to
+			// the file in their line tables: those are not all its code lines, so
+			// the file keeps counting every line.
+			continue
+		}
+		for _, line := range lines {
+			f.codeLines = setLineGrow(f.codeLines, line)
+		}
+	}
+	for file := range withTable {
+		if c.files[file].codeLines == nil {
+			// The file has no code: no line of it counts.
+			c.files[file].codeLines = []byte{}
+		}
+	}
+	for file, lines := range tableVarInitLines {
+		varInitLines[file] = append(varInitLines[file], lines...)
+		f := &c.files[file]
+		f.maxLine = max(f.maxLine, slices.Max(lines))
+	}
 	for file, lines := range closureInitLines {
 		f := &c.files[file]
 		for _, line := range lines {
@@ -240,11 +286,11 @@ func newLineCoverageCollector(sessionID uint64) *lineCoverageCollector {
 }
 
 // loadLineTable reads from the line table of the binary which lines of the
-// files have code. It returns, per file, the lines of the package variable
-// initialisers, which ran during package initialization. Files the table has
-// no lines for keep a nil code bitmap.
-func (c *lineCoverageCollector) loadLineTable(metaNames map[string]int32) map[int32][]int32 {
-	if runtimeLineCoverageLines == nil {
+// wanted files have code. It returns, per file, the lines of the package
+// variable initialisers, which ran during package initialization. Files the
+// table has no lines for keep a nil code bitmap.
+func (c *lineCoverageCollector) loadLineTable(metaNames map[string]int32, wanted map[int32]bool) map[int32][]int32 {
+	if runtimeLineCoverageLines == nil || len(wanted) == 0 {
 		return map[int32][]int32{}
 	}
 	start := time.Now()
@@ -252,13 +298,13 @@ func (c *lineCoverageCollector) loadLineTable(metaNames map[string]int32) map[in
 	lastName, lastFile := "", int32(-1)
 	runtimeLineCoverageLines(
 		func(name string) bool {
-			_, ok := metaNames[name]
-			return ok
+			idx, ok := metaNames[name]
+			return ok && wanted[idx]
 		},
 		func(funcName, name string, line int32, inlined bool) {
 			if lastFile < 0 || name != lastName {
 				idx, ok := metaNames[name]
-				if !ok {
+				if !ok || !wanted[idx] {
 					return
 				}
 				lastName, lastFile = name, idx
@@ -275,13 +321,13 @@ func (c *lineCoverageCollector) loadLineTable(metaNames map[string]int32) map[in
 		f := &c.files[file]
 		f.maxLine = max(f.maxLine, lines[file][len(lines[file])-1])
 	}
-	withTable := 0
-	for i := range c.files {
-		if c.files[i].codeLines != nil {
-			withTable++
+	found := 0
+	for file := range wanted {
+		if c.files[file].codeLines != nil {
+			found++
 		}
 	}
-	log.Debug("civisibility.linecov: read the line table of %d of %d files in %s", withTable, len(c.files), time.Since(start))
+	log.Debug("civisibility.linecov: read the line table of the binary for %d of %d files in %s", found, len(wanted), time.Since(start))
 	return lines
 }
 

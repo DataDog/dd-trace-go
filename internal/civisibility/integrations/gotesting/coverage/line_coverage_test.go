@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"io"
 	"maps"
+	"math"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -55,6 +56,25 @@ func encodeTestMetaSized(files []string, blocks []testBlock, extras map[int]test
 // encodeTestMetaInit encodes a block table with the init lines of initLines,
 // by file index of the table.
 func encodeTestMetaInit(files []string, blocks []testBlock, extras map[int]testLines, counterSize int, initLines map[int][]int) string {
+	return encodeTestMetaTable(files, blocks, extras, counterSize, initLines, nil)
+}
+
+// testFileLines are the lines of a file in the line table of a fake package.
+type testFileLines struct {
+	code, varInit []int
+}
+
+// testLineTable is the line table of a fake package: own has the lines of its
+// files, by file index of the block table, and other those of other packages'
+// files, by name.
+type testLineTable struct {
+	own   map[int]testFileLines
+	other map[string]testFileLines
+}
+
+// encodeTestMetaTable encodes a block table with a line table, or without one
+// when table is nil.
+func encodeTestMetaTable(files []string, blocks []testBlock, extras map[int]testLines, counterSize int, initLines map[int][]int, table *testLineTable) string {
 	buf := binary.AppendUvarint(nil, lineCoverageMetaVersion)
 	buf = binary.AppendUvarint(buf, uint64(counterSize))
 	buf = binary.AppendUvarint(buf, uint64(len(files)))
@@ -94,7 +114,34 @@ func encodeTestMetaInit(files []string, blocks []testBlock, extras map[int]testL
 			buf = binary.AppendUvarint(buf, uint64(line))
 		}
 	}
+	if table == nil {
+		return string(binary.AppendUvarint(buf, 0))
+	}
+	buf = binary.AppendUvarint(buf, 1)
+	buf = binary.AppendUvarint(buf, uint64(len(table.own)))
+	for _, file := range slices.Sorted(maps.Keys(table.own)) {
+		buf = binary.AppendUvarint(buf, uint64(file))
+		buf = appendTestFileLines(buf, table.own[file])
+	}
+	buf = binary.AppendUvarint(buf, uint64(len(table.other)))
+	for _, name := range slices.Sorted(maps.Keys(table.other)) {
+		buf = binary.AppendUvarint(buf, uint64(len(name)))
+		buf = append(buf, name...)
+		buf = appendTestFileLines(buf, table.other[name])
+	}
 	return string(buf)
+}
+
+func appendTestFileLines(buf []byte, lines testFileLines) []byte {
+	for _, ls := range [][]int{lines.code, lines.varInit} {
+		buf = binary.AppendUvarint(buf, uint64(len(ls)))
+		prev := 0
+		for _, line := range ls {
+			buf = binary.AppendUvarint(buf, uint64(line-prev))
+			prev = line
+		}
+	}
+	return buf
 }
 
 // fakePackage is the counter array and block table of a fake instrumented
@@ -305,22 +352,48 @@ func TestDecodeLineCoverageMeta(t *testing.T) {
 		{file: 0, startLine: 1, endLine: 0},
 	}, table.blocks)
 	assert.Nil(t, table.initLines)
+	assert.Equal(t, []int32{0, 1}, table.files)
+	assert.Nil(t, table.lines)
 
 	table, err = decodeLineCoverageMeta(encodeTestMetaSized(files, blocks, nil, 4), len(blocks), func(string) int32 { return 0 })
 	require.NoError(t, err)
 	assert.Equal(t, 4, table.counterSize)
 
-	// The tables of earlier versions have no init lines. Versions 1 and 2 have
-	// no counter size either: their counters are bytes. Version 1 tables have
-	// no credited lines.
+	// The tables of earlier versions have no line table. Versions before 4 have
+	// no init lines either, and versions 1 and 2 no counter size: their counters
+	// are bytes. Version 1 tables have no credited lines.
 	meta := encodeTestMeta(files, blocks)
-	withoutInit := meta[:len(meta)-1]
-	for _, old := range []string{"\x01" + withoutInit[2:], "\x02" + withoutInit[2:], "\x03" + withoutInit[1:]} {
+	withoutTable := meta[:len(meta)-1]
+	withoutInit := withoutTable[:len(withoutTable)-1]
+	for _, old := range []string{"\x01" + withoutInit[2:], "\x02" + withoutInit[2:], "\x03" + withoutInit[1:], "\x04" + withoutTable[1:]} {
 		table, err := decodeLineCoverageMeta(old, len(blocks), func(string) int32 { return 0 })
 		require.NoError(t, err)
 		assert.Len(t, table.blocks, len(blocks))
 		assert.Equal(t, 1, table.counterSize)
+		assert.Nil(t, table.lines)
 	}
+
+	// A line table has the code lines of the package's files, and those of other
+	// packages' files.
+	index := map[string]int32{"/repo/a.go": 10, "/repo/b.go": 11, "/other/c.go": 20}
+	withTable := encodeTestMetaTable(files, blocks, nil, 1, nil, &testLineTable{
+		own:   map[int]testFileLines{1: {code: []int{3, 4, 10}, varInit: []int{4}}},
+		other: map[string]testFileLines{"/other/c.go": {code: []int{7}}},
+	})
+	table, err = decodeLineCoverageMeta(withTable, len(blocks), func(name string) int32 { return index[name] })
+	require.NoError(t, err)
+	assert.Equal(t, []int32{10, 11}, table.files)
+	assert.Equal(t, &lineCoverageLines{
+		code:    map[int32][]int32{11: {3, 4, 10}, 20: {7}},
+		varInit: map[int32][]int32{11: {4}},
+	}, table.lines)
+
+	// A package without code has an empty line table.
+	table, err = decodeLineCoverageMeta(encodeTestMetaTable(files, blocks, nil, 1, nil, &testLineTable{}), len(blocks), func(string) int32 { return 0 })
+	require.NoError(t, err)
+	assert.Equal(t, &lineCoverageLines{code: map[int32][]int32{}, varInit: map[int32][]int32{}}, table.lines)
+	// tableMeta returns meta with the line table encoded as table.
+	tableMeta := func(table string) string { return withoutTable + table }
 
 	withLines := encodeTestMetaLines(files, blocks, map[int]testLines{
 		0: {lines: []int{2}},
@@ -351,22 +424,30 @@ func TestDecodeLineCoverageMeta(t *testing.T) {
 		meta      string
 		numBlocks int
 	}{
-		"truncated":       {meta[:len(meta)-1], len(blocks)},
-		"truncated lines": {withLines[:len(withLines)-1], len(blocks)},
-		"truncated init":  {withInit[:len(withInit)-1], len(blocks)},
-		"trailing bytes":  {meta + "x", len(blocks)},
-		"block count":     {meta, len(blocks) + 1},
-		"version":         {"\x05" + meta[1:], len(blocks)},
-		"version zero":    {"\x00" + meta[1:], len(blocks)},
-		"counter size":    {meta[:1] + "\x02" + meta[2:], len(blocks)},
-		"file index":      {encodeTestMeta(files[:1], blocks[1:2]), 1},
-		"line zero":       {zeroLine, 1},
-		"line count":      {zeroLine[:len(zeroLine)-3] + "\x7f\x01", 1},
-		"init file index": {encodeTestMetaInit(files[:1], nil, nil, 1, map[int][]int{1: {3}}), 0},
-		"init line zero":  {encodeTestMetaInit(files[:1], nil, nil, 1, map[int][]int{0: {0}}), 0},
-		"init file count": {encodeTestMetaInit(files[:1], nil, nil, 1, map[int][]int{0: {3}, 1: {4}}), 0},
-		"empty":           {"", 0},
-		"varint overflow": {"\x01\xff\xff\xff\xff\xff\xff\xff\xff\xff\x7f", 0},
+		"truncated":           {meta[:len(meta)-1], len(blocks)},
+		"truncated lines":     {withLines[:len(withLines)-1], len(blocks)},
+		"truncated init":      {withInit[:len(withInit)-2], len(blocks)},
+		"truncated table":     {withTable[:len(withTable)-1], len(blocks)},
+		"trailing bytes":      {meta + "x", len(blocks)},
+		"block count":         {meta, len(blocks) + 1},
+		"version":             {"\x06" + meta[1:], len(blocks)},
+		"version zero":        {"\x00" + meta[1:], len(blocks)},
+		"counter size":        {meta[:1] + "\x02" + meta[2:], len(blocks)},
+		"file index":          {encodeTestMeta(files[:1], blocks[1:2]), 1},
+		"line zero":           {zeroLine, 1},
+		"line count":          {zeroLine[:len(zeroLine)-4] + "\x7f\x01", 1},
+		"init file index":     {encodeTestMetaInit(files[:1], nil, nil, 1, map[int][]int{1: {3}}), 0},
+		"init line zero":      {encodeTestMetaInit(files[:1], nil, nil, 1, map[int][]int{0: {0}}), 0},
+		"init file count":     {encodeTestMetaInit(files[:1], nil, nil, 1, map[int][]int{0: {3}, 1: {4}}), 0},
+		"table flag":          {tableMeta("\x02"), len(blocks)},
+		"table file count":    {tableMeta("\x01\x03"), len(blocks)},
+		"table file index":    {tableMeta("\x01\x01\x02\x00\x00\x00"), len(blocks)},
+		"table other count":   {tableMeta("\x01\x00\x7f"), len(blocks)},
+		"table line count":    {tableMeta("\x01\x01\x00\x7f"), len(blocks)},
+		"table line repeated": {tableMeta("\x01\x01\x00\x02\x03\x00\x00\x00"), len(blocks)},
+		"table line overflow": {tableMeta("\x01\x01\x00\x01" + string(binary.AppendUvarint(nil, math.MaxInt32+1)) + "\x00\x00"), len(blocks)},
+		"empty":               {"", 0},
+		"varint overflow":     {"\x01\xff\xff\xff\xff\xff\xff\xff\xff\xff\x7f", 0},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := decodeLineCoverageMeta(tc.meta, tc.numBlocks, func(string) int32 { return 0 })
@@ -782,6 +863,89 @@ func TestLineCoverageInitLinesFromTables(t *testing.T) {
 	assert.Equal(t, map[string][]int32{"a.go": {5, 6}}, recordLines(t, records[0]))
 	assert.Equal(t, "init", records[1]["shared"])
 	assert.Equal(t, map[string][]int32{"a.go": {5}, "pool/pool.go": {4, 6}}, recordLines(t, records[1]))
+}
+
+// TestLineCoverageTableLines checks that the line tables of the block tables
+// replace the line table of the binary for the files of their packages, and
+// only for those.
+func TestLineCoverageTableLines(t *testing.T) {
+	workspace := setTestWorkspace(t)
+	a := filepath.Join(workspace, "a.go")
+	b := filepath.Join(workspace, "b.go")
+	gen := filepath.Join(workspace, "gen", "gen.go")
+	lib := filepath.Join(workspace, "lib", "lib.go")
+	types := filepath.Join(workspace, "types", "types.go")
+	blocksA := []testBlock{
+		{0, 3, 6, false},   // the body of a function whose header is on line 2
+		{0, 10, 11, true},  // an init function
+		{1, 2, 4, false},   // a file without code in the line table
+		{0, 25, 25, false}, // the body of a closure built at package initialization
+	}
+	pkgA := newFakePackage("example/a", []string{a, b}, blocksA, false)
+	pkgA.meta = encodeTestMetaTable([]string{a, b}, blocksA, map[int]testLines{0: {lines: []int{2}}}, 1,
+		map[int][]int{0: {24, 26}}, // closure headers; line 26 has no code
+		&testLineTable{
+			own: map[int]testFileLines{0: {code: []int{2, 4, 6, 10, 11, 20, 24, 25}, varInit: []int{20}}},
+			// Generic functions of packages gen and lib that package a instantiates.
+			other: map[string]testFileLines{gen: {code: []int{5}}, lib: {code: []int{3}}},
+		})
+	rt := &fakeRuntime{
+		packages: []fakePackage{
+			pkgA,
+			// Without a line table: its lines come from the line table of the binary.
+			newFakePackage("example/gen", []string{gen}, []testBlock{{0, 4, 7, false}}, false),
+			// Without a line table, and without lines in that of the binary.
+			newFakePackage("example/lib", []string{lib}, []testBlock{{0, 2, 4, false}}, false),
+			{path: "example/types", meta: encodeTestMetaTable([]string{types}, nil, nil, 1, nil, &testLineTable{})},
+		},
+		lines: []fakeLine{
+			// The binary has lines that the line tables of the packages have not.
+			{"example/a.F", a, 3, false},
+			{"example/a.G", a, 5, true},
+			{"example/a.init", a, 21, false},
+			{"example/a.init.func2", a, 26, false},
+			{"example/a.F", b, 3, false},
+			{"example/types.init", types, 3, false},
+			{"example/gen.Map[...]", gen, 6, false},
+			{"example/gen.init", gen, 9, false},
+		},
+	}
+	rt.probe(0, 1) // package initialization
+	c, sent := startTestCollector(t, rt)
+	var names []string
+	for _, f := range c.files {
+		names = append(names, f.name)
+	}
+	require.Equal(t, []string{"a.go", "b.go", "gen/gen.go", "lib/lib.go", "types/types.go"}, names)
+	assert.Equal(t, []int32{2, 4, 6, 10, 11, 20, 24, 25}, bitmapLines(c.files[0].codeLines))
+	assert.Equal(t, []int32{10, 11, 20, 24}, c.files[0].initLines)
+	assert.NotNil(t, c.files[1].codeLines)
+	assert.Empty(t, bitmapLines(c.files[1].codeLines))
+	assert.Equal(t, []int32{5, 6, 9}, bitmapLines(c.files[2].codeLines))
+	assert.Equal(t, []int32{9}, c.files[2].initLines)
+	// The lines of package a's generic instantiations are not all of lib.go's.
+	assert.Nil(t, c.files[3].codeLines)
+	assert.NotNil(t, c.files[4].codeLines)
+	assert.Empty(t, c.files[4].initLines)
+
+	w := OpenLineCoverageWindow()
+	rt.probe(0, 0)
+	rt.probe(0, 2)
+	rt.probe(0, 3)
+	rt.probe(1, 0)
+	rt.probe(2, 0)
+	w.Close(1, 1)
+
+	c.stop()
+	records := (*sent)[0]
+	require.Len(t, records, 2)
+	assert.Equal(t, map[string][]int32{
+		"a.go":       {2, 4, 6, 10, 11, 20, 24, 25},
+		"gen/gen.go": {5, 6, 9},
+		"lib/lib.go": {2, 3, 4},
+	}, recordLines(t, records[0]))
+	assert.Equal(t, "init", records[1]["shared"])
+	assert.Equal(t, map[string][]int32{"a.go": {10, 11, 20, 24}, "gen/gen.go": {9}}, recordLines(t, records[1]))
 }
 
 func TestIsPackageVarInitFunc(t *testing.T) {

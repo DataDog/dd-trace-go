@@ -14,8 +14,9 @@ import (
 const (
 	// lineCoverageMetaVersion is the version of the block table encoding.
 	// Version 1 has no credited lines, versions before 3 have one-byte
-	// counters, and versions before 4 have no init lines.
-	lineCoverageMetaVersion = 4
+	// counters, versions before 4 have no init lines, and versions before 5
+	// have no line table.
+	lineCoverageMetaVersion = 5
 	// lineCoverageBlockFlagInit marks the blocks of the body of a `func init()`.
 	lineCoverageBlockFlagInit = 1
 	// lineCoverageBlockFlagLines marks blocks that credit lines outside their
@@ -43,12 +44,29 @@ type lineCoverageBlock struct {
 
 // lineCoverageTable is the decoded block table of an instrumented package.
 type lineCoverageTable struct {
+	files       []int32 // the collector files of the package
 	blocks      []lineCoverageBlock
 	counterSize int // in bytes
 	// initLines are, by collector file, the header lines of the function
 	// literals in package-level variable initialisers: their func values are
 	// built at package initialization.
 	initLines map[int32][]int32
+	// lines is the line table of the package compiled without probes and
+	// without inlining, or nil when the table has none.
+	lines *lineCoverageLines
+}
+
+// lineCoverageLines is, by collector file, the lines that the line table of a
+// package compiled without probes and without inlining maps code to. Probes
+// and inlining change the generated code, so those are the lines that count.
+// The table has all the code lines of the package's files, and may have lines
+// of other packages' files, from the generic functions the package
+// instantiates.
+type lineCoverageLines struct {
+	code map[int32][]int32
+	// varInit are the lines of the code that initialises the package
+	// variables.
+	varInit map[int32][]int32
 }
 
 // decodeLineCoverageMeta decodes the block table that orchestrion embeds in
@@ -62,6 +80,14 @@ type lineCoverageTable struct {
 //	  with lineCoverageBlockFlagLines: uvarint line count, then each line as a uvarint
 //	from version 4, uvarint count of files with init lines, then for each:
 //	  uvarint file index, uvarint line count, then each line as a uvarint
+//	from version 5, uvarint 1 when a line table follows, 0 otherwise; the line table is:
+//	  uvarint count of files of the package with lines, then for each:
+//	    uvarint file index, the file's lines
+//	  uvarint count of files of other packages, then for each:
+//	    uvarint length, bytes of the file name, the file's lines
+//	  where the lines of a file are:
+//	    uvarint count of code lines, then each line minus the one before it, the first minus 0
+//	    uvarint count of variable initialiser lines, then each the same way
 //
 // fileIndex maps a file name of the table to an index of the collector's files.
 func decodeLineCoverageMeta(meta string, numBlocks int, fileIndex func(name string) int32) (lineCoverageTable, error) {
@@ -91,6 +117,7 @@ func decodeLineCoverageMeta(meta string, numBlocks int, fileIndex func(name stri
 		}
 		files[i] = fileIndex(name)
 	}
+	table.files = files
 	if blockCount := r.uvarint(); r.err != nil || blockCount != uint64(numBlocks) {
 		return lineCoverageTable{}, errInvalidLineCoverageMeta
 	}
@@ -137,10 +164,72 @@ func decodeLineCoverageMeta(meta string, numBlocks int, fileIndex func(name stri
 			table.initLines[files[file]] = append(table.initLines[files[file]], lines...)
 		}
 	}
+	if version >= 5 {
+		hasLines := r.uvarint()
+		if r.err != nil || hasLines > 1 {
+			return lineCoverageTable{}, errInvalidLineCoverageMeta
+		}
+		if hasLines == 1 {
+			lines, err := r.lineTable(files, fileIndex)
+			if err != nil {
+				return lineCoverageTable{}, err
+			}
+			table.lines = lines
+		}
+	}
 	if r.pos != len(r.data) {
 		return lineCoverageTable{}, errInvalidLineCoverageMeta
 	}
 	return table, nil
+}
+
+// lineTable reads the line table of a block table whose files are files.
+func (r *metaReader) lineTable(files []int32, fileIndex func(name string) int32) (*lineCoverageLines, error) {
+	t := &lineCoverageLines{code: map[int32][]int32{}, varInit: map[int32][]int32{}}
+	count := r.uvarint()
+	if r.err != nil || count > uint64(len(files)) {
+		return nil, errInvalidLineCoverageMeta
+	}
+	for range count {
+		i := r.uvarint()
+		if r.err != nil || i >= uint64(len(files)) {
+			return nil, errInvalidLineCoverageMeta
+		}
+		r.fileLines(t, files[i])
+	}
+	count = r.uvarint()
+	if r.err != nil || count > uint64(len(r.data)) {
+		return nil, errInvalidLineCoverageMeta
+	}
+	for range count {
+		name := r.string(r.uvarint())
+		if r.err != nil {
+			return nil, r.err
+		}
+		r.fileLines(t, fileIndex(name))
+	}
+	return t, r.err
+}
+
+// fileLines reads the code and variable initialiser lines of file.
+func (r *metaReader) fileLines(t *lineCoverageLines, file int32) {
+	for _, lines := range []map[int32][]int32{t.code, t.varInit} {
+		count := r.uvarint()
+		if r.err != nil || count > uint64(len(r.data)) {
+			r.err = errInvalidLineCoverageMeta
+			return
+		}
+		line := uint64(0)
+		for range count {
+			delta := r.uvarint()
+			if r.err != nil || delta == 0 || delta > math.MaxInt32-line {
+				r.err = errInvalidLineCoverageMeta
+				return
+			}
+			line += delta
+			lines[file] = append(lines[file], int32(line))
+		}
+	}
 }
 
 // lines reads a line count, then that many lines.
