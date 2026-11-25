@@ -678,6 +678,12 @@ type trace struct {
 	// +checklocks:mu
 	filterReject bool
 
+	// propagatingTagsReadOnly is true when propagatingTags holds a shared
+	// read-only cached map (e.g. from dmPropagatingTagMaps) that must not be
+	// mutated in place.
+	// +checklocks:mu
+	propagatingTagsReadOnly bool
+
 	// otel holds the OpenTelemetry consistent probability sampling state, or nil
 	// when the trace carries none. See otelTraceState.
 	// +checklocks:mu

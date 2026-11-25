@@ -25,6 +25,21 @@ func (t *trace) loadPropagatingTags() map[string]string {
 	return nil
 }
 
+// dmPropagatingTagMaps holds pre-allocated, read-only single-entry maps for
+// common DecisionMaker values ("-0" through "-13"). copyOnWriteSet returns one
+// of these when setting _dd.p.dm on a trace with no prior propagating tags,
+// avoiding a map allocation on every locally started root span.
+var dmPropagatingTagMaps = initDMPropagatingTagMaps() // +checklocksignore — Read-only after package initialization.
+
+func initDMPropagatingTagMaps() map[string]map[string]string {
+	m := make(map[string]map[string]string, 14)
+	for i := range 14 {
+		v := "-" + strconv.Itoa(i)
+		m[v] = map[string]string{keyDecisionMaker: v}
+	}
+	return m
+}
+
 // copyOnWriteSet stores key=value in the propagating-tags map using
 // copy-on-write so concurrent readers remain lock-free. Caller must hold t.mu.
 // +checklocks:t.mu
@@ -36,6 +51,13 @@ func (t *trace) copyOnWriteSet(key, value string) {
 	}
 	var m map[string]string
 	if oldMap == nil {
+		if key == keyDecisionMaker {
+			if cached, ok := dmPropagatingTagMaps[value]; ok {
+				t.propagatingTagsReadOnly = true
+				t.propagatingTags.Store(cached)
+				return
+			}
+		}
 		m = map[string]string{key: value}
 	} else {
 		n := len(oldMap)
@@ -46,6 +68,7 @@ func (t *trace) copyOnWriteSet(key, value string) {
 		maps.Copy(m, oldMap)
 		m[key] = value
 	}
+	t.propagatingTagsReadOnly = false
 	t.propagatingTags.Store(m)
 }
 
@@ -67,6 +90,7 @@ func (t *trace) copyOnWriteDelete(key string) {
 			m[k] = v
 		}
 	}
+	t.propagatingTagsReadOnly = false
 	t.propagatingTags.Store(m)
 }
 
@@ -108,6 +132,13 @@ func (t *trace) setPropagatingTagUnsafe(key, value string) {
 	m := t.loadPropagatingTags()
 	if m == nil {
 		m = make(map[string]string, 4)
+		t.propagatingTagsReadOnly = false
+		t.propagatingTags.Store(m)
+	} else if t.propagatingTagsReadOnly {
+		cp := make(map[string]string, len(m)+3)
+		maps.Copy(cp, m)
+		m = cp
+		t.propagatingTagsReadOnly = false
 		t.propagatingTags.Store(m)
 	}
 	m[key] = value

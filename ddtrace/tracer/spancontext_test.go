@@ -1927,3 +1927,24 @@ func TestSpanSnapshotFieldsConcurrentAccess(t *testing.T) {
 		assert.NoError(t, err)
 	}
 }
+
+func TestPropagatingTagsCachedDMImmutability(t *testing.T) {
+	tr1 := newTrace()
+	tr1.mu.Lock()
+	tr1.copyOnWriteSet(keyDecisionMaker, "-1")
+	tr1.mu.Unlock()
+
+	// Mutating via setPropagatingTagUnsafe must clone the cached map instead of
+	// modifying the shared entry in dmPropagatingTagMaps.
+	tr1.setPropagatingTagUnsafe("_dd.p.custom", "val")
+	assert.Equal(t, "-1", tr1.propagatingTag(keyDecisionMaker))
+	assert.Equal(t, "val", tr1.propagatingTag("_dd.p.custom"))
+
+	// A separate trace using the same cached "-1" entry must not see "_dd.p.custom".
+	tr2 := newTrace()
+	tr2.mu.Lock()
+	tr2.copyOnWriteSet(keyDecisionMaker, "-1")
+	tr2.mu.Unlock()
+	assert.Equal(t, "-1", tr2.propagatingTag(keyDecisionMaker))
+	assert.Equal(t, "", tr2.propagatingTag("_dd.p.custom"))
+}
