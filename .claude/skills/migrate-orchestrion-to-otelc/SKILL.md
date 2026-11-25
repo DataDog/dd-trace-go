@@ -83,9 +83,9 @@ The harness suites never build a `package main`, and only exercise call sites in
   call sites inside third-party dependencies, as orchestrion does. Every call site in the suites
   belongs to `_integration`, the module being built, so a rule that never reaches a dependency
   passes them anyway. Add a small module under `_integration/internal/<lib>dep/` (module path
-  `example.com/<lib>dep`) that calls the library, `require` and `replace` it in
-  `_integration/go.mod`, and add a `TestCaseDependency` that calls it (`chi/dependency.go`). It has
-  to be a separate module, not a package of `_integration`, to count as a dependency.
+  `example.com/<lib>dep`) that calls the library. Add a `TestCaseDependency` that imports and
+  calls the module (`chi/dependency.go`). Then run `make fix-modules` to update `_integration/go.mod`.
+  Use a separate module, not a package of `_integration`, so the test exercises a dependency.
 - **The rules module bringing its contrib into an application**, when a rule adds an import of the
   contrib (`imports:`) or the hook package uses it. The suites can't check this, because
   `_integration/go.mod` requires every contrib. Add a new `lib_<name>.go` file in
@@ -164,12 +164,12 @@ wrap its call sites with `wrap_call` instead (see "Rules" under "Design rules").
    - Blank-import it from `otelc/all`, the way `orchestrion/all` lists integrations. otelc stops at
      nested modules, so `otelc/all` must name this module directly. Applications import
      `otelc/all`, so nothing else needs editing.
-   - By hand, add the new module's `require` and `replace` to `otelc/all/go.mod`, and its
-     `replace` to `internal/apps/otelc-external-app/go.mod`. `make fix-modules` cannot add them:
-     it tidies modules in module path order and stops at the first failure, and the external app
-     (`example.com/otelcexternalapp`) sorts before `otelc/all`. Every pass then fails with
-     `module github.com/DataDog/dd-trace-go@latest found (...), but does not contain package`.
    - Add it to `go.work` (`make fix-modules` does not touch the workspace).
+   - Run `make fix-modules`. It syncs local `replace` directives first (rewriting changed replace
+     sets into one sorted `replace (...)` block), runs `go mod tidy` in dependency order so
+     `otelc/all` tidies before `internal/apps/otelc-external-app` and
+     `internal/orchestrion/_integration`, and re-syncs replace blocks afterward. Brand-new local
+     requires receive `v2.0.0-00010101000000-000000000000` until release tagging.
    - In `.github/ci-components.yml`, map the contrib and its `otelc` module to the suite (the
      module to suites table), and add `contrib/<name>/**` to the `otelc-integrations` component
      so a change to the contrib runs the OTelc lane. For a suite covering code outside `contrib/`
@@ -179,8 +179,7 @@ wrap its call sites with `wrap_call` instead (see "Rules" under "Design rules").
 6. Run the validation steps, plus the main app and dependency tests your rules need, and diff the
    otelc spans against the orchestrion ones.
 7. From the repository root, in a shell **without** `GOWORK=off`:
-   - `make fix-modules`, repeatedly until it stops changing files. A brand new module needs two or
-     three passes; the first often fails with `unknown revision 000000000000`.
+   - `make fix-modules`, verifying a second run leaves `git diff` empty.
    - `make lint`, which covers only the root module and `internal/orchestrion/_integration`. Also
      run `golangci-lint run ./...` inside `contrib/<name>` and `contrib/<name>/otelc`.
    - `otelc cleanup`, then `make generate`, and commit what it changes (a new contrib dependency
