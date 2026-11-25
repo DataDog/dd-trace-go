@@ -427,8 +427,10 @@ func (t *tracer) startAppSec() {
 	appsec.Start(appsecopts...)
 }
 
-// App and API Protection uses _dd.appsec.json in OTLP mode: agent discovery does not
-// tell us whether the OTLP receiver can restore structured report bytes.
+// metaStructAvailable reports whether callers with a JSON fallback
+// (App and API Protection, Span.SetMetaStruct) can emit meta_struct tags.
+// In OTLP mode this returns false: agent discovery does not tell us whether
+// the OTLP receiver can restore structured report bytes.
 func (t *tracer) metaStructAvailable() bool {
 	return t.config.agent.load().metaStructAvailable && !t.otlpExportMode
 }

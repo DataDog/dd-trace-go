@@ -207,9 +207,13 @@ func TestOTLPWriterMetaStruct(t *testing.T) {
 	)
 	report, err := msgp.AppendIntf(nil, map[string]any{"vulnerabilities": []any{map[string]string{"type": "example"}}})
 	require.NoError(t, err)
-	require.True(t, s.SetMetaStruct("iast", msgp.Raw(report)))
-	const wafReport = `{"triggers":[]}`
+	assert.False(t, s.SetMetaStruct("iast", msgp.Raw(report)))
+	const (
+		wafReport  = `{"triggers":[]}`
+		iastReport = `{"vulnerabilities":[]}`
+	)
 	s.SetTag("_dd.appsec.json", wafReport)
+	s.SetTag("_dd.iast.json", iastReport)
 	s.Finish()
 	stop()
 
@@ -223,7 +227,8 @@ func TestOTLPWriterMetaStruct(t *testing.T) {
 	require.Len(t, spans, 1)
 	attrs := keyValuesToMap(spans[0].Attributes)
 	assert.Equal(t, wafReport, attrs["_dd.appsec.json"])
-	assert.Equal(t, report, attrs["iast"])
+	assert.Equal(t, iastReport, attrs["_dd.iast.json"])
+	assert.NotContains(t, attrs, "iast")
 	require.IsType(t, []byte(nil), attrs["_dd.stack"])
 	stacks, rest, err := msgp.ReadIntfBytes(attrs["_dd.stack"].([]byte))
 	require.NoError(t, err)

@@ -8,6 +8,7 @@ package tracer
 import (
 	"encoding/binary"
 	"maps"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
@@ -320,7 +322,30 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 			return attrs
 		}
 	}
+	var failedMetaStruct map[string]struct{}
+	for key, value := range s.metaStruct {
+		// Carry the same per-entry MessagePack bytes as the native span encoder.
+		data, err := marshalMetaStructValue(value)
+		if err != nil {
+			log.Warn("failed to serialize meta_struct value for key %s: %s", key, err.Error()) //errtrack:ignore per-span payload encoding; report only an aggregate at a non-hot boundary
+			if failedMetaStruct == nil {
+				failedMetaStruct = make(map[string]struct{})
+			}
+			failedMetaStruct[key] = struct{}{}
+			continue
+		}
+		if !addAttribute(&attrs, key, otlpBytesValue(data)) {
+			return attrs
+		}
+	}
 	for key, value := range s.meta.All() {
+		if len(s.metaStruct) > 0 {
+			if _, ok := s.metaStruct[key]; ok {
+				if _, failed := failedMetaStruct[key]; !failed {
+					continue
+				}
+			}
+		}
 		if v, ok := resourceAttrs[key]; ok && v == value {
 			continue // already carried by the resource
 		}
@@ -342,6 +367,13 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 		}
 	}
 	for key, value := range s.metrics {
+		if len(s.metaStruct) > 0 {
+			if _, ok := s.metaStruct[key]; ok {
+				if _, failed := failedMetaStruct[key]; !failed {
+					continue
+				}
+			}
+		}
 		if otelSemantics {
 			if _, skip := ddOnlyAttributeKeys[key]; skip {
 				continue
@@ -360,17 +392,19 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 			return attrs
 		}
 	}
-	for key, value := range s.metaStruct {
-		// Carry the same per-entry MessagePack bytes as the native span encoder.
-		data, err := msgp.AppendIntf(nil, value)
-		if err != nil {
-			continue
-		}
-		if !addAttribute(&attrs, key, &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_BytesValue{BytesValue: data}}) {
-			return attrs
+	return attrs
+}
+
+// marshalMetaStructValue encodes a single meta_struct value using MessagePack,
+// normalizing typed-nil pointers to MessagePack nil before msgp.AppendIntf
+// dispatches to Marshaler/Extension methods that may have value receivers.
+func marshalMetaStructValue(value any) ([]byte, error) {
+	if value != nil {
+		if rv := reflect.ValueOf(value); rv.Kind() == reflect.Pointer && rv.IsNil() {
+			return msgp.AppendNil(nil), nil
 		}
 	}
-	return attrs
+	return msgp.AppendIntf(nil, value)
 }
 
 func convertMapToOTLPAttributesString(ddAttributes map[string]string) []*otlpcommon.KeyValue {
@@ -437,6 +471,10 @@ func otlpBoolValue(b bool) *otlpcommon.AnyValue {
 
 func otlpIntValue(i int64) *otlpcommon.AnyValue {
 	return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_IntValue{IntValue: i}}
+}
+
+func otlpBytesValue(b []byte) *otlpcommon.AnyValue {
+	return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_BytesValue{BytesValue: b}}
 }
 
 func otlpArrayValue(arr *spanEventArrayAttribute) *otlpcommon.AnyValue {

@@ -534,19 +534,61 @@ func TestConvertSpanAttributesOtelSemanticsFiltersDatadogOnlyMetrics(t *testing.
 }
 
 func TestConvertSpanAttributesWithMetaStruct(t *testing.T) {
-	s := newBasicSpan("op")
-	s.metaStruct = metaStructMap{
-		"custom":  map[string]any{"nested": []any{"value", true}},
-		"invalid": failingMarshaler{},
+	raw, err := msgp.AppendIntf(nil, map[string]any{"k": "v"})
+	require.NoError(t, err)
+
+	for _, otelSemantics := range []bool{false, true} {
+		t.Run(fmt.Sprintf("otelSemantics=%t", otelSemantics), func(t *testing.T) {
+			s := newBasicSpan("op")
+			s.meta.Set("custom", "shadowed-meta")
+			s.meta.Set("invalid", "fallback-meta")
+			s.metrics = map[string]float64{"raw": 42}
+			s.metaStruct = metaStructMap{
+				"custom":    map[string]any{"nested": []any{"value", true}},
+				"raw":       msgp.Raw(raw),
+				"typed-nil": (*msgp.Raw)(nil),
+				"invalid":   failingMarshaler{},
+			}
+
+			rawAttrs := convertSpanAttributes(s, "", otelSemantics, nil)
+			seen := make(map[string]int, len(rawAttrs))
+			for _, kv := range rawAttrs {
+				seen[kv.Key]++
+			}
+			for key, count := range seen {
+				assert.Equal(t, 1, count, "duplicate OTLP attribute key %q", key)
+			}
+
+			attrs := keyValuesToMap(rawAttrs)
+			assert.Equal(t, "fallback-meta", attrs["invalid"])
+			assert.Equal(t, raw, attrs["raw"])
+
+			require.IsType(t, []byte(nil), attrs["custom"])
+			value, rest, err := msgp.ReadIntfBytes(attrs["custom"].([]byte))
+			require.NoError(t, err)
+			assert.Empty(t, rest)
+			assert.Equal(t, s.metaStruct["custom"], value)
+
+			require.IsType(t, []byte(nil), attrs["typed-nil"])
+			nilVal, rest, err := msgp.ReadIntfBytes(attrs["typed-nil"].([]byte))
+			require.NoError(t, err)
+			assert.Empty(t, rest)
+			assert.Nil(t, nilVal)
+		})
 	}
 
-	attrs := keyValuesToMap(convertSpanAttributes(s, "", false, nil))
-	assert.NotContains(t, attrs, "invalid")
-	require.IsType(t, []byte(nil), attrs["custom"])
-	value, rest, err := msgp.ReadIntfBytes(attrs["custom"].([]byte))
-	require.NoError(t, err)
-	assert.Empty(t, rest)
-	assert.Equal(t, s.metaStruct["custom"], value)
+	t.Run("survives max attribute cap", func(t *testing.T) {
+		s := newBasicSpan("op")
+		for i := range maxAttributesCount {
+			s.meta.Set(fmt.Sprintf("key-%d", i), "val")
+		}
+		s.metaStruct = metaStructMap{"_dd.stack": map[string]any{"exploit": []any{}}}
+
+		attrs := convertSpanAttributes(s, "", false, nil)
+		assert.Len(t, attrs, maxAttributesCount)
+		m := keyValuesToMap(attrs)
+		assert.Contains(t, m, "_dd.stack")
+	})
 }
 
 func TestConvertSpanAttributesMaxLimit(t *testing.T) {
