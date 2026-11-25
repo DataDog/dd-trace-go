@@ -17,8 +17,12 @@ github\.com/DataDog/dd-trace-go/v2/internal/civisibility/utils|\
 github\.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo|\
 github\.com/DataDog/dd-trace-go/v2/instrumentation/httptrace)$"
 
-mapfile -t SHUFFLE_PACKAGES < <($GO_CMD list ./... | grep -v /contrib/ | grep -Ev "$NO_SHUFFLE_PATTERN")
-mapfile -t NO_SHUFFLE_PACKAGES < <($GO_CMD list ./... | grep -v /contrib/ | grep -E "$NO_SHUFFLE_PATTERN")
+# go list ./... lists the packages of the root module only. The contrib
+# packages with a go.mod of their own are tested by ci_test_contrib.sh, and the
+# ones without, such as contrib/confluentinc/confluent-kafka-go/kafkatrace,
+# belong to the root module and are tested here.
+mapfile -t SHUFFLE_PACKAGES < <($GO_CMD list ./... | grep -Ev "$NO_SHUFFLE_PATTERN")
+mapfile -t NO_SHUFFLE_PACKAGES < <($GO_CMD list ./... | grep -E "$NO_SHUFFLE_PATTERN")
 
 # Set +e so that we run all test commands even if one fails
 set +e

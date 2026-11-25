@@ -352,6 +352,8 @@ jobs:
             bash "${{ github.workspace }}/dd-trace-go/.github/workflows/apps/select-orchestrion-suites.sh")"
           PACKAGE_NAMES="$(sed -n '1p' <<< "${selection}")"
           CIVISIBILITY="$(sed -n '2p' <<< "${selection}")"
+          # The race test step below runs on the same selection.
+          echo "ORCHESTRION_PACKAGE_NAMES=${PACKAGE_NAMES}" >> "${GITHUB_ENV}"
 
           case "${MODE}" in
           "DRIVER")
@@ -416,9 +418,8 @@ jobs:
         shell: bash
         run: |-
           export PATH="${{ github.workspace }}/dd-trace-go/bin:${PATH}"
-          selection="$(go list ./... | grep -v /civisibility |
-            bash "${{ github.workspace }}/dd-trace-go/.github/workflows/apps/select-orchestrion-suites.sh")"
-          PACKAGE_NAMES="$(sed -n '1p' <<< "${selection}" | tr ' ' '\n' | grep -E '/confluent-kafka-go\.v[12]$' || true)"
+          # ORCHESTRION_PACKAGE_NAMES is the selection of the Run Tests step.
+          PACKAGE_NAMES="$(tr ' ' '\n' <<< "${ORCHESTRION_PACKAGE_NAMES}" | grep -E '/confluent-kafka-go\.v[12]$' || true)"
           if [[ -z "${PACKAGE_NAMES}" ]]; then
             echo "No confluent-kafka-go suite selected, skipping"
             exit 0

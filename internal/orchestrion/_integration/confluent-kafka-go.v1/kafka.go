@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 	kafkatest "github.com/testcontainers/testcontainers-go/modules/kafka"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/kafkaclusterid"
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
 )
 
@@ -46,14 +47,14 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	tc.consumeMessage(ctx, t)
 	// The previous steps leave a produce span active in the goroutine-local
 	// context Orchestrion keeps, which would become the parent of the spans
-	// of this step. Run it in a new goroutine, so its spans start their own
-	// trace.
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
+	// of this step. Run it as a subtest, in a new goroutine, so its spans
+	// start their own trace.
+	t.Run("cluster-id", func(t *testing.T) {
 		tc.produceAndConsumeWithClusterID(ctx, t)
-	}()
-	<-done
+	})
+	if t.Failed() {
+		t.FailNow()
+	}
 }
 
 func (tc *TestCase) kafkaBootstrapServers() string {
@@ -138,11 +139,11 @@ func (tc *TestCase) produceAndConsumeWithClusterID(ctx context.Context, t *testi
 	})
 	require.NoError(t, err, "failed to create producer")
 	var first kafka.TopicPartition
+	found := kafkaclusterid.Found()
 	for i, key := range []string{"cluster-id-1", "cluster-id-2"} {
 		if i > 0 {
-			// Let the lookup started by the first message complete: it
-			// gives up after 2s.
-			time.Sleep(2500 * time.Millisecond)
+			// Wait for the lookup started by the first message.
+			kafkaclusterid.Wait(t, found)
 		}
 		delivery := make(chan kafka.Event, 1)
 		err = producer.Produce(&kafka.Message{
@@ -170,11 +171,11 @@ func (tc *TestCase) produceAndConsumeWithClusterID(ctx context.Context, t *testi
 	require.NoError(t, err, "failed to create consumer")
 	defer c.Close()
 	require.NoError(t, c.Assign([]kafka.TopicPartition{first}))
+	found = kafkaclusterid.Found()
 	for i, key := range []string{"cluster-id-1", "cluster-id-2"} {
 		if i > 0 {
-			// Let the lookup started by the first message complete: it
-			// gives up after 2s.
-			time.Sleep(2500 * time.Millisecond)
+			// Wait for the lookup started by the first message.
+			kafkaclusterid.Wait(t, found)
 		}
 		m, err := backoff.RetryWithData(
 			func() (*kafka.Message, error) { return c.ReadMessage(3 * time.Second) },

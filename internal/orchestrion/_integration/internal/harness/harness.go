@@ -129,16 +129,50 @@ func requireTraceMatch(t testing.TB, a agenttest.Agent, expected trace.Traces) {
 	}
 }
 
+// requireSpanMatch requires a span that matches exp, with children that match
+// exp's children. Every span that matches exp is tried, so one that matches
+// but whose children don't doesn't hide another that matches with its
+// children, such as two produce spans with the same tags.
 func requireSpanMatch(t testing.TB, a agenttest.Agent, exp *trace.Trace, parentSpanID uint64) {
 	t.Helper()
+	if lister, ok := a.(agenttest.SpanLister); ok && matchesSpan(lister.Spans(), exp, parentSpanID) {
+		return
+	}
+	// No match: report the first span that matches exp, and its children.
+	found := a.RequireSpan(t, spanMatcher(exp, parentSpanID))
+	for _, child := range exp.Children {
+		requireSpanMatch(t, a, child, uint64(found.SpanID))
+	}
+}
+
+// matchesSpan reports whether a span in spans matches exp and has children
+// that match exp's children.
+func matchesSpan(spans []*agenttest.Span, exp *trace.Trace, parentSpanID uint64) bool {
+	m := spanMatcher(exp, parentSpanID)
+	for _, s := range spans {
+		if !m.Matches(s) {
+			continue
+		}
+		children := true
+		for _, child := range exp.Children {
+			if !matchesSpan(spans, child, uint64(s.SpanID)) {
+				children = false
+				break
+			}
+		}
+		if children {
+			return true
+		}
+	}
+	return false
+}
+
+func spanMatcher(exp *trace.Trace, parentSpanID uint64) *agenttest.SpanMatch {
 	m := traceToMatcher(exp)
 	if parentSpanID != 0 {
 		m = m.ParentOf(parentSpanID)
 	}
-	found := a.RequireSpan(t, m)
-	for _, child := range exp.Children {
-		requireSpanMatch(t, a, child, uint64(found.SpanID))
-	}
+	return m
 }
 
 func traceToMatcher(tr *trace.Trace) *agenttest.SpanMatch {

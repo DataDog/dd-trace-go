@@ -14,6 +14,8 @@ import (
 	"github.com/DataDog/orchestrion/runtime/built"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace"
 )
 
 // TestConcurrentFirstUse produces from several goroutines on a producer that
@@ -27,6 +29,7 @@ func TestConcurrentFirstUse(t *testing.T) {
 	require.NoError(t, err)
 
 	topic := "first_use_test"
+	tracers := kafkatrace.TracersCreated()
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for range 16 {
@@ -41,6 +44,8 @@ func TestConcurrentFirstUse(t *testing.T) {
 	}
 	close(start)
 	wg.Wait()
+	// -race only reports a double setup that races, so also count them.
+	require.EqualValues(t, 1, kafkatrace.TracersCreated()-tracers, "the producer must set up one tracer")
 	p.Close()
 }
 
