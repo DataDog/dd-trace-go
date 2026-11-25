@@ -155,10 +155,16 @@ issue_body() {
     prev_conclusion=$(printf '%s' "$prev" | jq -r '.conclusion')
     prev_sha=$(printf '%s' "$prev" | jq -r '.headSha')
     if [ "$prev_conclusion" = 'success' ]; then
-      attribution="Last green main run was $(set -e; commit_line "$prev_sha"),"
+      attribution="Last green main run was $(
+        set -e
+        commit_line "$prev_sha"
+      ),"
       attribution+=' so this commit is the first red.'
     else
-      attribution="Previous main run $(set -e; commit_line "$prev_sha") was"
+      attribution="Previous main run $(
+        set -e
+        commit_line "$prev_sha"
+      ) was"
       attribution+=' also not green, so the breakage may be older.'
     fi
   fi
@@ -168,7 +174,10 @@ run on main-based events only, so this failure did not gate a pull
 request.
 
 Failing run: $(lane_run_url "$RUN_ID")
-Commit: $(set -e; commit_line "$HEAD_SHA")
+Commit: $(
+    set -e
+    commit_line "$HEAD_SHA"
+  )
 Datadog CI: $(dd_ci_link "$HEAD_SHA")
 ${attribution}
 
@@ -282,7 +291,10 @@ triage_run() {
       fi
       if [ -n "$issue" ]; then
         log "still failing: $lane / $name; commenting on issue #$issue"
-        body="Failed again at $(set -e; commit_line "$HEAD_SHA"):"
+        body="Failed again at $(
+          set -e
+          commit_line "$HEAD_SHA"
+        ):"
         body+=" $(lane_run_url "$RUN_ID")"
         gh issue comment "$issue" --repo "$REPO" --body "$body" >/dev/null
       else
@@ -328,7 +340,10 @@ triage_run() {
           continue
         fi
         log "green: $lane / $name; closing issue #$issue"
-        body="Green again at $(set -e; commit_line "$HEAD_SHA"):"
+        body="Green again at $(
+          set -e
+          commit_line "$HEAD_SHA"
+        ):"
         body+=" $(lane_run_url "$RUN_ID"). Closing."
         gh issue comment "$issue" --repo "$REPO" --body "$body" >/dev/null
         gh issue close "$issue" --repo "$REPO" >/dev/null
