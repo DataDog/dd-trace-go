@@ -1621,14 +1621,28 @@ func (t *tracer) submitChunk(c *chunk) {
 	if c.filterRejected {
 		t.emitFilterDrop(len(c.spans))
 	} else {
-		stats := make([]*tracerStatSpan, 0, len(c.spans))
+		var first *tracerStatSpan
+		var stats []*tracerStatSpan
 		for _, span := range c.spans {
-			if span != nil && span.statSpan != nil {
-				stats = append(stats, span.statSpan)
+			if span == nil || span.statSpan == nil {
+				continue
+			}
+			ss := span.statSpan
+			if first == nil {
+				first = ss
+			} else {
+				if stats == nil {
+					stats = make([]*tracerStatSpan, 0, len(c.spans))
+					stats = append(stats, first)
+				}
+				stats = append(stats, ss)
 			}
 		}
-		if len(stats) > 0 {
+		if stats != nil {
 			t.stats.trySendSpans(stats)
+		} else if first != nil {
+			first.single[0] = first
+			t.stats.trySendSpans(first.single[:])
 		}
 	}
 	t.pushChunk(c)

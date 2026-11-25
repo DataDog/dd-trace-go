@@ -188,6 +188,7 @@ type tracerStatSpan struct {
 	statSpan *stats.StatSpan
 	origin   string
 	version  string // per-span version tag; "" means use global aggKey version
+	single   [1]*tracerStatSpan
 }
 
 // newConcentrator creates a new concentrator using the given tracer
