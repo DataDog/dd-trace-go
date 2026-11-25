@@ -28,3 +28,7 @@ func TestDependency(t *testing.T) {
 func TestNewMux(t *testing.T) {
 	harness.Run(t, new(TestCaseNewMux))
 }
+
+func TestShadowedAlias(t *testing.T) {
+	harness.Run(t, new(TestCaseShadowedAlias))
+}

@@ -17,15 +17,15 @@ new_session:
   do:
     - wrap_call:
         replace: |-
-          (func(sess *session.Session, err error) (*session.Session, error) {
+          (func(sess *__dd_session.Session, err error) (*__dd_session.Session, error) {
             if sess != nil {
-              sess = awstrace.WrapSession(sess)
+              sess = __dd_awstrace.WrapSession(sess)
             }
             return sess, err
           })({{ . }})
   imports:
-    session: github.com/aws/aws-sdk-go/aws/session
-    awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws
+    __dd_session: github.com/aws/aws-sdk-go/aws/session
+    __dd_awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws
 
 new_session_with_options:
   target:
@@ -37,15 +37,15 @@ new_session_with_options:
   do:
     - wrap_call:
         replace: |-
-          (func(sess *session.Session, err error) (*session.Session, error) {
+          (func(sess *__dd_session.Session, err error) (*__dd_session.Session, error) {
             if sess != nil {
-              sess = awstrace.WrapSession(sess)
+              sess = __dd_awstrace.WrapSession(sess)
             }
             return sess, err
           })({{ . }})
   imports:
-    session: github.com/aws/aws-sdk-go/aws/session
-    awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws
+    __dd_session: github.com/aws/aws-sdk-go/aws/session
+    __dd_awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws
 
 session_new:
   target:
@@ -57,12 +57,12 @@ session_new:
   do:
     - wrap_call:
         replace: |-
-          (func(sess *session.Session) *session.Session {
+          (func(sess *__dd_session.Session) *__dd_session.Session {
             if sess != nil {
-              sess = awstrace.WrapSession(sess)
+              sess = __dd_awstrace.WrapSession(sess)
             }
             return sess
           })({{ . }})
   imports:
-    session: github.com/aws/aws-sdk-go/aws/session
-    awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws
+    __dd_session: github.com/aws/aws-sdk-go/aws/session
+    __dd_awstrace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2/aws
