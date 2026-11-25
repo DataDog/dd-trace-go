@@ -98,18 +98,16 @@ func TestClusterIDLookup(t *testing.T) {
 		assert.Empty(t, l.get())
 	})
 	t.Run("retries until the lookup succeeds", func(t *testing.T) {
-		setClusterIDRetry(t, time.Millisecond, 4*time.Millisecond)
 		r := &fakeRequestor{clusterID: &id, fail: 3}
-		var l clusterIDLookup
+		l := clusterIDLookup{retryMin: time.Millisecond, retryMax: 4 * time.Millisecond}
 		l.start(r)
 		require.Eventually(t, func() bool { return l.get() == id }, time.Second, time.Millisecond)
 		l.close()
 		assert.Equal(t, int32(4), r.requests.Load())
 	})
 	t.Run("close stops the retries", func(t *testing.T) {
-		setClusterIDRetry(t, time.Hour, time.Hour)
 		r := &fakeRequestor{err: errors.New("broker down")}
-		var l clusterIDLookup
+		l := clusterIDLookup{retryMin: time.Hour, retryMax: time.Hour}
 		l.start(r)
 		require.Eventually(t, func() bool { return r.requests.Load() == 1 }, time.Second, time.Millisecond)
 		start := time.Now()
@@ -128,13 +126,6 @@ func TestClusterIDLookup(t *testing.T) {
 		assert.Less(t, time.Since(start), clusterIDTimeout)
 		assert.Empty(t, l.get())
 	})
-}
-
-// setClusterIDRetry sets the retry backoff for the duration of the test.
-func setClusterIDRetry(t *testing.T, minWait, maxWait time.Duration) {
-	oldMin, oldMax := clusterIDRetryMin, clusterIDRetryMax
-	clusterIDRetryMin, clusterIDRetryMax = minWait, maxWait
-	t.Cleanup(func() { clusterIDRetryMin, clusterIDRetryMax = oldMin, oldMax })
 }
 
 func TestClusterIDNotStartedWithoutRecords(t *testing.T) {

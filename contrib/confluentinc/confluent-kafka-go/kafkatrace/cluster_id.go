@@ -15,12 +15,24 @@ import (
 // clusterIDTimeout bounds each attempt to look up the cluster ID.
 const clusterIDTimeout = 2 * time.Second
 
-// After a failed attempt, the lookup waits clusterIDRetryMin, doubling up to
-// clusterIDRetryMax, before it tries again. Variables for tests.
-var (
+// After a failed attempt, the lookup waits clusterIDRetryMin before it tries
+// again, doubling the wait up to clusterIDRetryMax. It then keeps trying every
+// clusterIDRetryMax until it succeeds or the client is closed.
+const (
 	clusterIDRetryMin = time.Second
 	clusterIDRetryMax = time.Minute
 )
+
+// retryBounds returns minWait and maxWait, or the defaults where they are zero.
+func retryBounds(minWait, maxWait time.Duration) (time.Duration, time.Duration) {
+	if minWait == 0 {
+		minWait = clusterIDRetryMin
+	}
+	if maxWait == 0 {
+		maxWait = clusterIDRetryMax
+	}
+	return minWait, maxWait
+}
 
 // ClusterIDClient fetches the Kafka cluster ID. It is implemented by the
 // confluent-kafka-go AdminClient.
@@ -41,6 +53,9 @@ type ClusterIDClient interface {
 type ClusterIDFetch struct {
 	tr        *Tracer
 	newClient func() (ClusterIDClient, error)
+
+	// Waits between attempts; zero means clusterIDRetryMin and clusterIDRetryMax. Set by tests.
+	retryMin, retryMax time.Duration
 
 	started atomic.Bool // fast path for Start, set under mu
 	mu      sync.Mutex
@@ -99,13 +114,14 @@ func (f *ClusterIDFetch) Close() {
 // after a failure, such as brokers that can't be reached yet. It returns a
 // function that cancels the fetch and waits for the goroutine to exit.
 func (f *ClusterIDFetch) run(c ClusterIDClient) func() {
+	minWait, maxWait := retryBounds(f.retryMin, f.retryMax)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		defer c.Close()
 		logged := false
-		for wait := clusterIDRetryMin; ; wait = min(2*wait, clusterIDRetryMax) {
+		for wait := minWait; ; wait = min(2*wait, maxWait) {
 			clusterID, err := fetchClusterID(ctx, c)
 			if err == nil {
 				f.tr.SetClusterID(clusterID)
