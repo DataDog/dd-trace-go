@@ -155,10 +155,10 @@ issue_body() {
     prev_conclusion=$(printf '%s' "$prev" | jq -r '.conclusion')
     prev_sha=$(printf '%s' "$prev" | jq -r '.headSha')
     if [ "$prev_conclusion" = 'success' ]; then
-      attribution="Last green main run was $(commit_line "$prev_sha"),"
+      attribution="Last green main run was $(set -e; commit_line "$prev_sha"),"
       attribution+=' so this commit is the first red.'
     else
-      attribution="Previous main run $(commit_line "$prev_sha") was"
+      attribution="Previous main run $(set -e; commit_line "$prev_sha") was"
       attribution+=' also not green, so the breakage may be older.'
     fi
   fi
@@ -168,7 +168,7 @@ run on main-based events only, so this failure did not gate a pull
 request.
 
 Failing run: $(lane_run_url "$RUN_ID")
-Commit: $(commit_line "$HEAD_SHA")
+Commit: $(set -e; commit_line "$HEAD_SHA")
 Datadog CI: $(dd_ci_link "$HEAD_SHA")
 ${attribution}
 
@@ -238,7 +238,10 @@ triage_run() {
     # A newer completed run may have already fixed the leg: opening an
     # issue would ping the team for something recovered.
     local recovered
-    recovered=$(newest_green_legs "$lane")
+    recovered=$(
+      set -e
+      newest_green_legs "$lane"
+    )
     while IFS= read -r name; do
       [ -n "$name" ] || continue
       if grep -qxF "$name" <<<"$recovered"; then
@@ -260,14 +263,17 @@ triage_run() {
       fi
       if [ -n "$issue" ]; then
         log "still failing: $lane / $name; commenting on issue #$issue"
-        body="Failed again at $(commit_line "$HEAD_SHA"):"
+        body="Failed again at $(set -e; commit_line "$HEAD_SHA"):"
         body+=" $(lane_run_url "$RUN_ID")"
         gh issue comment "$issue" --repo "$REPO" --body "$body" >/dev/null
       else
         log "opening issue: lane: $lane — $name"
         gh issue create --repo "$REPO" --title "lane: $lane — $name" \
           --label "$FAILURE_LABEL" \
-          --body "$(issue_body "$lane" "$name")" >/dev/null
+          --body "$(
+            set -e
+            issue_body "$lane" "$name"
+          )" >/dev/null
       fi
       # A concurrent triage run may have created the same issue in the
       # meantime: keep the lowest number.
@@ -291,8 +297,15 @@ triage_run() {
       is_lane_leg "$name" || continue
       issue=$(find_issue "lane: $lane — $name" "$FAILURE_LABEL")
       if [ -n "$issue" ]; then
+        # Re-verify per close: this triage may have paused past the
+        # guard while a newer failure completed and triaged, and that
+        # failure's path reopens what a stale close would now shut.
+        if ! is_newest_completed_lane_run "$lane"; then
+          log "newer run completed meanwhile: not closing $lane / $name"
+          continue
+        fi
         log "green: $lane / $name; closing issue #$issue"
-        body="Green again at $(commit_line "$HEAD_SHA"):"
+        body="Green again at $(set -e; commit_line "$HEAD_SHA"):"
         body+=" $(lane_run_url "$RUN_ID"). Closing."
         gh issue comment "$issue" --repo "$REPO" --body "$body" >/dev/null
         gh issue close "$issue" --repo "$REPO" >/dev/null
@@ -398,7 +411,10 @@ refresh_tracking_issue() {
   local issue footer tb body
   footer='Kept up to date by the CI Lane Triage workflow; do not close.'
   issue=$(find_issue "$TRACKING_TITLE" "$DASHBOARD_LABEL")
-  tb=$(tracking_body)
+  tb=$(
+    set -e
+    tracking_body
+  )
   body="$(printf '%s\n\n%s\n' "$tb" "$footer")"
   if [ -n "$issue" ]; then
     log "refreshing tracking issue #$issue"

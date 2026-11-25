@@ -735,7 +735,9 @@ func TestGatedWorkflowsHaveAChangesJob(t *testing.T) {
 		"pull-request.yml":     "pull-request-tests-done",
 		"system-tests.yml":     "system-tests-done",
 		"orchestrion-lane.yml": "integration-test-done",
+		"orchestrion-pr.yml":   "integration-test-done",
 		"otelc-lane.yml":       "integration-test-done",
+		"otelc-pr.yml":         "integration-test-done",
 		"dynamic-checks.yml":   "dynamic-checks-summary",
 		"smoke-tests.yml":      "smoke-tests-done",
 	}
