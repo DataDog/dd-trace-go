@@ -62,6 +62,7 @@ type crashDump struct {
 	data      []byte
 	truncated bool
 	err       error
+	stderr    stderrCrashLines
 }
 
 func registerCrashOutput(value string) error {
@@ -121,6 +122,8 @@ func supervise(cfg *config) error {
 		return fmt.Errorf("crashtracker: configure application process: %w", err)
 	}
 	cmd.Env = append(os.Environ(), supervisedFDEnv+"="+strconv.Itoa(os.Getpid())+":"+pipeFD)
+	// Starts after configureChild, so that its descriptor scan never sees the tee pipe.
+	tee := startStderrTee(cmd, terminalMode)
 	startForwarding, stopForwarding := supervisorSignals(terminalMode)
 	releaseThread := retainSupervisorThread(cmd)
 	err = startChild(cmd)
@@ -132,11 +135,13 @@ func supervise(cfg *config) error {
 	if err != nil {
 		releaseThread()
 		stopForwarding()
+		tee.abort()
 		return fmt.Errorf("crashtracker: start application process: %w", err)
 	}
 	closeInheritedDescriptors(cmd, w)
 	startForwarding(cmd.Process)
 	_ = w.Close()
+	tee.childStarted()
 	applySupervisorRuntimeLimits()
 
 	dumps := make(chan crashDump, 1)
@@ -144,7 +149,7 @@ func supervise(cfg *config) error {
 		data, truncated, err := readCrashDump(r)
 		// Keep reading past the cap so a large runtime dump cannot block exit.
 		_, _ = io.Copy(io.Discard, r)
-		dumps <- crashDump{data, truncated, err}
+		dumps <- crashDump{data: data, truncated: truncated, err: err}
 	}()
 	waitErr := cmd.Wait()
 	_, exited := errors.AsType[*exec.ExitError](waitErr)
@@ -155,21 +160,23 @@ func supervise(cfg *config) error {
 		}
 		log.Warn("crashtracker: wait for application process failed: %s", reason)
 		// The child status is unknown, but a crash dump can already be in the pipe.
-		finishCrashReport(cfg, r, dumps)
+		finishCrashReport(cfg, r, dumps, tee)
 		stopForwarding()
 		os.Exit(1)
 	}
-	finishCrashReport(cfg, r, dumps)
+	finishCrashReport(cfg, r, dumps, tee)
 	stopForwarding()
 	exitWithChildStatus(cmd.ProcessState)
 	// exitWithChildStatus never returns; this return satisfies the compiler.
 	return nil
 }
 
-// finishCrashReport waits for the crash pipe to reach EOF, then uploads the dump it read.
-// It takes up to pipeEOFTimeout plus uploadDeadline.
+// finishCrashReport waits for the crash pipe and the stderr tee to reach EOF, then uploads the dump it read.
+// The two waits run at the same time. It takes up to pipeEOFTimeout plus uploadDeadline.
 // The upload ignores stop signals: the child is gone and the report is what the supervisor is for.
-func finishCrashReport(cfg *config, r *os.File, dumps <-chan crashDump) {
+func finishCrashReport(cfg *config, r *os.File, dumps <-chan crashDump, tee *stderrTee) {
+	stderr := make(chan stderrCrashLines, 1)
+	go func() { stderr <- tee.finish(pipeEOFTimeout) }()
 	var dump crashDump
 	select {
 	case dump = <-dumps:
@@ -189,6 +196,9 @@ func finishCrashReport(cfg *config, r *os.File, dumps <-chan crashDump) {
 		}
 	}
 	_ = r.Close()
+	// Wait for the tee even when there is nothing to upload: it flushes the
+	// application's last stderr bytes before the supervisor exits.
+	dump.stderr = <-stderr
 	if dump.err != nil {
 		log.Warn("crashtracker: crash pipe read failed: %v", dump.err.Error()) //errtrack:ignore pipe read failure
 		return
@@ -207,7 +217,7 @@ func finishCrashReport(cfg *config, r *os.File, dumps <-chan crashDump) {
 
 // buildCrashReport parses the dump and marks the report incomplete when the dump was capped.
 func buildCrashReport(cfg *config, dump crashDump) *Report {
-	report := parseCrashDump(dump.data)
+	report := parseCrashDumpWithStderr(dump.data, dump.stderr)
 	if dump.truncated && report.Error.Stack != nil {
 		report.Error.Stack.Incomplete = true
 	}

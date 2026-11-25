@@ -81,6 +81,28 @@
 // continues without supervision. After the child starts, the supervisor closes
 // its copies of those duplicated descriptors.
 //
+// On Unix, detached mode also relays the stderr of the application. The runtime
+// writes the text of a fatal error, such as "concurrent map writes", to stderr
+// only. The supervisor needs that text for the error message of the report. So
+// descriptor 2 of the application is a pipe. The supervisor copies every byte,
+// unchanged and in order, to the original stderr. It keeps the last fatal
+// error line and the last stack limit line, up to 4 KiB per line. If the
+// original stderr breaks, the supervisor drops the bytes and the application
+// keeps running. Terminal mode and a terminal on stderr do not use the relay.
+// Then a fatal error report has a generic message.
+//
+// The relay has these effects on the application:
+//   - Descriptor 2 is a pipe and not the original file or socket. A consumer
+//     that compares it with JOURNAL_STREAM, such as a logger that writes to the
+//     journal directly, falls back to plain stderr.
+//   - On Unix systems other than Linux, no parent-death signal applies. If the
+//     supervisor dies, the application receives SIGPIPE on its next stderr write.
+//   - If stdout and stderr share one file, the order of their output is no
+//     longer exact.
+//   - After the application exits, the supervisor waits up to two seconds for
+//     the pipe to close. A descendant that outlives the application and
+//     inherits stderr gets a broken pipe when the supervisor exits.
+//
 // For systemd socket activation, the child updates LISTEN_PID to its own PID if
 // the value names the supervisor. It does the same for WATCHDOG_PID. It
 // preserves LISTEN_FDS and LISTEN_FDNAMES.

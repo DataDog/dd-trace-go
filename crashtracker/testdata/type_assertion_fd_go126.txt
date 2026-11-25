@@ -1,0 +1,7 @@
+panic: interface conversion: interface {} is string, not int
+
+goroutine 1 [running]:
+main.crash({0xffffc4ff6ec3, 0xe}, {0xffffc4ff6ed2?, 0x1a29c?})
+	/app/generate.go:175 +0x814
+main.main()
+	/app/generate.go:35 +0x94

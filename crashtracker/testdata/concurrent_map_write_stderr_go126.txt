@@ -1,0 +1,17 @@
+fatal error: concurrent map writes
+
+goroutine 5 [running]:
+internal/runtime/maps.fatal({0x1143e0?, 0x0?})
+	/usr/local/go/src/runtime/panic.go:1181 +0x20
+main.writeMap(...)
+	/app/generate.go:190
+created by main.crash in goroutine 1
+	/app/generate.go:117 +0x3f4
+
+goroutine 1 [runnable]:
+main.writeMap(...)
+	/app/generate.go:190
+main.crash({0xffffc34f7eb7, 0x14}, {0xffffc34f7ecc?, 0x1a29c?})
+	/app/generate.go:118 +0x508
+main.main()
+	/app/generate.go:35 +0x94

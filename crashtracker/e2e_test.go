@@ -11,12 +11,17 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"runtime"
+	"runtime/debug"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -93,8 +98,141 @@ func TestMain(m *testing.M) {
 		}
 		time.Sleep(200 * time.Millisecond) // let the goroutines actually park before crashing
 		panic("e2e many-goroutines crash")
+
+	case "stderr-pattern":
+		if err := crashtracker.Start(); err != nil {
+			os.Stderr.WriteString("crashtracker.Start: " + err.Error() + "\n")
+			os.Exit(1)
+		}
+		// A test can hold the writes back until it has set up the stderr of the supervisor.
+		if goFile := os.Getenv(e2eGoFileEnv); goFile != "" {
+			for {
+				if _, err := os.Stat(goFile); err == nil {
+					break
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+		}
+		size, err := strconv.Atoi(os.Getenv(e2eStderrBytesEnv))
+		if err != nil {
+			os.Exit(1)
+		}
+		writeStderrPattern(size)
+		os.Exit(stderrPatternExitCode)
+
+	case "stderr-mode":
+		if err := crashtracker.Start(); err != nil {
+			os.Stderr.WriteString("crashtracker.Start: " + err.Error() + "\n")
+			os.Exit(1)
+		}
+		info, err := os.Stderr.Stat()
+		if err != nil {
+			os.Exit(1)
+		}
+		if err := os.WriteFile(os.Getenv(e2eGoFileEnv), []byte(info.Mode().String()), 0o600); err != nil {
+			os.Exit(1)
+		}
+		os.Exit(0)
+
+	case "crash-map-writes", "crash-map-writes-large-stderr", "crash-mutex-unlock", "crash-rwmutex-runlock",
+		"crash-stack-overflow", "crash-nil-deref", "crash-repanic":
+		if err := crashtracker.Start(); err != nil {
+			os.Stderr.WriteString("crashtracker.Start: " + err.Error() + "\n")
+			os.Exit(1)
+		}
+		crashWithKind(os.Getenv(e2eRoleEnv))
 	}
 	os.Exit(m.Run())
+}
+
+const (
+	// e2eGoFileEnv names a file. The stderr-pattern role waits for it to exist.
+	// The stderr-mode role writes its result to it.
+	e2eGoFileEnv = "_CRASHTRACKER_E2E_GO_FILE"
+	// e2eStderrBytesEnv sets how many bytes the stderr-pattern role writes.
+	e2eStderrBytesEnv     = "_CRASHTRACKER_E2E_STDERR_BYTES"
+	stderrPatternExitCode = 7
+)
+
+// stderrPattern returns the size bytes that the stderr-pattern role writes.
+func stderrPattern(size int) []byte {
+	var b bytes.Buffer
+	for i := 0; b.Len() < size; i++ {
+		fmt.Fprintf(&b, "line %06d %s\n", i, strings.Repeat("x", i%97))
+	}
+	return b.Bytes()[:size]
+}
+
+// writeStderrPattern writes stderrPattern in uneven pieces.
+func writeStderrPattern(size int) {
+	pattern := stderrPattern(size)
+	for piece := 1; len(pattern) > 0; piece = piece%4999 + 1237 {
+		n := min(piece, len(pattern))
+		_, _ = os.Stderr.Write(pattern[:n])
+		pattern = pattern[n:]
+	}
+}
+
+// crashWithKind crashes the process with the Go crash kind that the role names.
+func crashWithKind(role string) {
+	switch role {
+	case "crash-map-writes-large-stderr":
+		writeLargeFatalStderr()
+		fallthrough
+	case "crash-map-writes":
+		runtime.GOMAXPROCS(max(runtime.GOMAXPROCS(0), 2))
+		m := make(map[int]int)
+		for range 2 {
+			go func() {
+				for {
+					for i := range 1024 {
+						m[i] = i
+					}
+				}
+			}()
+		}
+		select {}
+	case "crash-mutex-unlock":
+		var mu sync.Mutex
+		mu.Unlock()
+	case "crash-rwmutex-runlock":
+		var mu sync.RWMutex
+		mu.RUnlock()
+	case "crash-stack-overflow":
+		debug.SetMaxStack(32 * 1024)
+		recurseForever()
+	case "crash-nil-deref":
+		*nilInt() = 1
+	case "crash-repanic":
+		defer func() { panic("repanic after: " + fmt.Sprint(recover())) }()
+		panic("first")
+	}
+}
+
+func writeLargeFatalStderr() {
+	if _, err := os.Stderr.WriteString("fatal error: concurrent map writes\n\n"); err != nil {
+		os.Exit(1)
+	}
+	const goroutine = "goroutine 2 [chan receive]:\nmain.worker()\n\t/app/main.go:12\n\n"
+	chunk := []byte(strings.Repeat(goroutine, 1024))
+	for written := 0; written < 10<<20; written += len(chunk) {
+		if _, err := os.Stderr.Write(chunk); err != nil {
+			os.Exit(1)
+		}
+	}
+	// The runtime still writes the crash stack to the crash file. Close stderr
+	// so the runtime cannot write a second fatal header after the large output.
+	if err := os.Stderr.Close(); err != nil {
+		os.Exit(1)
+	}
+}
+
+//go:noinline
+func nilInt() *int { return nil }
+
+//go:noinline
+func recurseForever() {
+	recurseForever()
 }
 
 // TestE2ECrashReport_Panic verifies the supervisor-to-intake path.

@@ -1,0 +1,13 @@
+panic: goroutine boom
+
+goroutine 7 [running]:
+main.crash.func2()
+	/app/generate.go:180 +0x2c
+created by main.crash in goroutine 1
+	/app/generate.go:180 +0x5b4
+
+goroutine 1 [select (no cases)]:
+main.crash({0xfffff26fdec1, 0xf}, {0xfffff26fded1?, 0x1a29c?})
+	/app/generate.go:181 +0x5b8
+main.main()
+	/app/generate.go:35 +0x94

@@ -1,0 +1,15 @@
+fatal error: sync: unlock of unlocked mutex
+
+goroutine 1 [running]:
+internal/sync.fatal({0x116a60?, 0xfb820?})
+	/usr/local/go/src/runtime/panic.go:1191 +0x20
+internal/sync.(*Mutex).unlockSlow(0x59f99ee7e048, 0xffffffff)
+	/usr/local/go/src/internal/sync/mutex.go:204 +0x38
+internal/sync.(*Mutex).Unlock(...)
+	/usr/local/go/src/internal/sync/mutex.go:198
+sync.(*Mutex).Unlock(...)
+	/usr/local/go/src/sync/mutex.go:65
+main.crash({0xfffffac48ec7, 0xc}, {0xfffffac48ed4?, 0x1a29c?})
+	/app/generate.go:129 +0x180
+main.main()
+	/app/generate.go:35 +0x94

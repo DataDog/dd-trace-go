@@ -1,0 +1,7 @@
+panic: panic called with nil argument
+
+goroutine 1 [running]:
+main.crash({0xffffd6a15ecd, 0x9}, {0xffffd6a15ed7?, 0x1a29c?})
+	/app/generate.go:164 +0x67c
+main.main()
+	/app/generate.go:35 +0x94

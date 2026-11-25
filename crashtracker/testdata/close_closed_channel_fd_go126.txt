@@ -1,0 +1,7 @@
+panic: close of closed channel
+
+goroutine 1 [running]:
+main.crash({0xffffcb902eb7, 0x14}, {0xffffcb902ecc?, 0x1a29c?})
+	/app/generate.go:139 +0x420
+main.main()
+	/app/generate.go:35 +0x94

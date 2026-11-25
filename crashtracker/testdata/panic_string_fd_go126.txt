@@ -1,0 +1,7 @@
+panic: boom
+
+goroutine 1 [running]:
+main.crash({0xffffdb58fec7, 0xc}, {0xffffdb58fed4?, 0x1a29c?})
+	/app/generate.go:154 +0x628
+main.main()
+	/app/generate.go:35 +0x94

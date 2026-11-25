@@ -1,0 +1,7 @@
+panic: custom error 7
+
+goroutine 1 [running]:
+main.crash({0xffffe03b1ebb, 0x12}, {0xffffe03b1ece?, 0x1a29c?})
+	/app/generate.go:160 +0x85c
+main.main()
+	/app/generate.go:35 +0x94

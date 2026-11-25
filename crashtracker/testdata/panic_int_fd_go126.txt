@@ -1,0 +1,7 @@
+panic: 42
+
+goroutine 1 [running]:
+main.crash({0xffffe4a14ecd, 0x9}, {0xffffe4a14ed7?, 0x1a29c?})
+	/app/generate.go:162 +0x690
+main.main()
+	/app/generate.go:35 +0x94
