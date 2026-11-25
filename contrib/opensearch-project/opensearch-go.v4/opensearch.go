@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/opensearch-project/opensearch-go/v4"
 	"github.com/opensearch-project/opensearch-go/v4/opensearchtransport"
@@ -119,9 +120,8 @@ func (t *transport) trace(req *http.Request, perform func(*http.Request) (*http.
 	}
 	span, ctx := tracer.StartSpanFromContext(req.Context(), "opensearch.query", opts...)
 	req = req.WithContext(ctx)
-	contentEncoding := req.Header.Get("Content-Encoding")
 	if !streaming {
-		snip, rc, err := peek(req.Body, contentEncoding, int(req.ContentLength), bodyCutoff)
+		snip, rc, err := peek(req.Body, req.Header.Get("Content-Encoding"), int(req.ContentLength), bodyCutoff)
 		if err == nil {
 			span.SetTag(ext.OpenSearchBody, snip)
 		}
@@ -142,7 +142,7 @@ func (t *transport) trace(req *http.Request, perform func(*http.Request) (*http.
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		snip := http.StatusText(resp.StatusCode)
 		if !streaming {
-			body, rc, err := peek(resp.Body, contentEncoding, int(resp.ContentLength), bodyCutoff)
+			body, rc, err := peek(resp.Body, resp.Header.Get("Content-Encoding"), int(resp.ContentLength), bodyCutoff)
 			if err == nil {
 				snip = body
 			}
@@ -199,11 +199,15 @@ func quantize(url, method string) string {
 // It returns a new io.ReadCloser which points to the same underlying stream and can be read
 // from to access the entire data including the snippet. max is used to specify the length
 // of the stream contained in the reader. If unknown, it should be -1. If 0 < max < n it
-// will override n.
+// will override n. A gzip-encoded snippet is decompressed, and the decompressed
+// snippet is cut to n bytes. Snippets are cut without splitting a UTF-8 encoded rune.
 func peek(rc io.ReadCloser, encoding string, maxLen, n int) (string, io.ReadCloser, error) {
 	if rc == nil {
 		return "", rc, errors.New("empty stream")
 	}
+	// A gzip stream can inflate ~1000x, so the decompressed snippet is bounded by
+	// the caller's limit rather than by however few compressed bytes n is lowered to.
+	cutoff := n
 	if maxLen > 0 && maxLen < n {
 		n = maxLen
 	}
@@ -222,15 +226,16 @@ func peek(rc io.ReadCloser, encoding string, maxLen, n int) (string, io.ReadClos
 	if err != nil {
 		return string(snip), rc2, err
 	}
-	if encoding == "gzip" {
+	if strings.EqualFold(encoding, "gzip") {
 		// unpack the snippet
 		gzr, err2 := gzip.NewReader(bytes.NewReader(snip))
 		if err2 != nil {
 			// snip wasn't gzip; return it as is
-			return string(snip), rc2, nil
+			return instrumentation.TruncateUTF8(string(snip), n), rc2, nil
 		}
 		defer gzr.Close()
-		snip, err = io.ReadAll(gzr)
+		snip, err = io.ReadAll(io.LimitReader(gzr, int64(cutoff)))
+		return instrumentation.TruncateUTF8(string(snip), cutoff), rc2, err
 	}
-	return string(snip), rc2, err
+	return instrumentation.TruncateUTF8(string(snip), n), rc2, err
 }

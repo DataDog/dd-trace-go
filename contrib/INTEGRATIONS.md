@@ -269,6 +269,12 @@ call `instr.OperationName` and do not add `buildOpName` builders to the integrat
 span, ctx := tracer.StartSpanFromContext(ctx, "mylib.request", startOpts...)
 ```
 
+### Truncating tag values
+
+Tag values must be valid UTF-8. To cap a tag such as a query or a request body at a byte limit, use
+`instrumentation.TruncateUTF8(s, limit)` rather than `s[:limit]`, which can split a multi-byte
+character.
+
 ### Tag performance
 
 #### Favor a cached `StartSpanConfig` and `WithTags` over per-operation `Tag` closures
