@@ -8,6 +8,7 @@ package actiontest
 import (
 	"maps"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -40,7 +41,7 @@ func deriveRestoreSource(t *testing.T, env map[string]string) map[string]string 
 		"DEP_HASH":         depHashFixture,
 		"DEFAULT_BRANCH":   "main",
 		"CURRENT_BRANCH":   "feature",
-		"GO_VERSION":       "1.27.2",
+		"GO_VERSION":       "1.27",
 		"CACHE_KEY_PREFIX": cacheKeyPrefixFixture,
 	}
 	maps.Copy(base, env)
@@ -71,19 +72,19 @@ func TestSetupGoDeriveRestoreSource(t *testing.T) {
 		},
 		{
 			name:         "exact hit",
-			env:          map[string]string{"CACHE_HIT": "true", "MATCHED_KEY": matchedKeyFixture("1.27.2", "main")},
+			env:          map[string]string{"CACHE_HIT": "true", "MATCHED_KEY": matchedKeyFixture("1.27", "main")},
 			wantSource:   "exact",
 			wantDepMatch: "true",
 		},
 		{
 			name:         "default-branch fallback restore",
-			env:          map[string]string{"MATCHED_KEY": matchedKeyFixture("1.27.2", "main")},
+			env:          map[string]string{"MATCHED_KEY": matchedKeyFixture("1.27", "main")},
 			wantSource:   "default",
 			wantDepMatch: "true",
 		},
 		{
 			name:         "same-branch restore",
-			env:          map[string]string{"MATCHED_KEY": matchedKeyFixture("1.27.2", "eliottness/appsec-disable-features")},
+			env:          map[string]string{"MATCHED_KEY": matchedKeyFixture("1.27", "eliottness/appsec-disable-features")},
 			wantSource:   "branch",
 			wantDepMatch: "true",
 		},
@@ -91,14 +92,14 @@ func TestSetupGoDeriveRestoreSource(t *testing.T) {
 			name: "dependency hash differs",
 			env: map[string]string{
 				"DEP_HASH":    "0000000000000000000000000000000000000000000000000000000000000000",
-				"MATCHED_KEY": matchedKeyFixture("1.27.2", "main"),
+				"MATCHED_KEY": matchedKeyFixture("1.27", "main"),
 			},
 			wantSource:   "default",
 			wantDepMatch: "false",
 		},
 		{
 			name:         "non-default repository branch",
-			env:          map[string]string{"DEFAULT_BRANCH": "develop", "MATCHED_KEY": matchedKeyFixture("1.27.2", "develop")},
+			env:          map[string]string{"DEFAULT_BRANCH": "develop", "MATCHED_KEY": matchedKeyFixture("1.27", "develop")},
 			wantSource:   "default",
 			wantDepMatch: "true",
 		},
@@ -112,7 +113,7 @@ func TestSetupGoDeriveRestoreSource(t *testing.T) {
 			// A nightly run on main restoring its own earlier entry is a
 			// same-branch restore, not a fallback.
 			name:         "same-branch restore on the default branch",
-			env:          map[string]string{"MATCHED_KEY": matchedKeyFixture("1.27.2", "main"), "CURRENT_BRANCH": "main"},
+			env:          map[string]string{"MATCHED_KEY": matchedKeyFixture("1.27", "main"), "CURRENT_BRANCH": "main"},
 			wantSource:   "branch",
 			wantDepMatch: "true",
 		},
@@ -133,19 +134,21 @@ func TestSetupGoDeriveRestoreSource(t *testing.T) {
 			// parse: feature-main is a same-branch restore on feature-main.
 			name: "hyphenated branch ending in the default branch name",
 			env: map[string]string{
-				"MATCHED_KEY":    matchedKeyFixture("1.27.2", "feature-main"),
+				"MATCHED_KEY":    matchedKeyFixture("1.27", "feature-main"),
 				"CURRENT_BRANCH": "feature-main",
 			},
 			wantSource:   "branch",
 			wantDepMatch: "true",
 		},
 		{
-			// The reviewers' repro: 1.27.2-fix-main must parse as version
-			// 1.27.2 on branch fix-main, not as version 1.27.2-fix with a
-			// bogus default-branch fallback.
-			name: "stable version with a fix-main branch",
+			// The reviewers' repro, in the cx2 shape: a prerelease version
+			// segment (the only version form with a hyphen now) must parse
+			// as version 1.28.0-rc.1 on branch fix-main, not as version
+			// 1.28.0-rc.1-fix with a bogus default-branch fallback.
+			name: "prerelease version with a fix-main branch",
 			env: map[string]string{
-				"MATCHED_KEY":    matchedKeyFixture("1.27.2", "fix-main"),
+				"GO_VERSION":     "1.28.0-rc.1",
+				"MATCHED_KEY":    matchedKeyFixture("1.28.0-rc.1", "fix-main"),
 				"CURRENT_BRANCH": "fix-main",
 			},
 			wantSource:   "branch",
@@ -156,7 +159,7 @@ func TestSetupGoDeriveRestoreSource(t *testing.T) {
 			// matched entry is the default branch's.
 			name: "hyphenated current branch restoring a default-branch entry",
 			env: map[string]string{
-				"MATCHED_KEY":    matchedKeyFixture("1.27.2", "main"),
+				"MATCHED_KEY":    matchedKeyFixture("1.27", "main"),
 				"CURRENT_BRANCH": "eliottness/feature-x",
 			},
 			wantSource:   "default",
@@ -200,7 +203,7 @@ func TestSetupGoObservationRestoreSourceFields(t *testing.T) {
 		"SETUP_OUTCOME":     "success",
 		"SETUP_CACHE_HIT":   "false",
 		"RESTORED":          "true",
-		"MATCHED_KEY":       matchedKeyFixture("1.27.2", "main"),
+		"MATCHED_KEY":       matchedKeyFixture("1.27", "main"),
 		"RESTORE_SOURCE":    "default",
 		"DEP_MATCH":         "true",
 		"SEED_KEY":          "true",
@@ -208,7 +211,7 @@ func TestSetupGoObservationRestoreSourceFields(t *testing.T) {
 	})
 	entry := setupGoRestore(t, record)
 	for key, want := range map[string]string{
-		"cache_matched_key": matchedKeyFixture("1.27.2", "main"),
+		"cache_matched_key": matchedKeyFixture("1.27", "main"),
 		"restore_source":    "default",
 		"dep_match":         "true",
 		"restored":          "true",
@@ -300,17 +303,55 @@ func resolveSavePolicy(t *testing.T, env map[string]string) string {
 	return value
 }
 
-// TestRestoreSourcePinsGoVersionAlias pins the GO_VERSION env of the
-// Derive-restore-source step: it must carry the go-version alias (the
-// same string the cloudx provider embeds in its cache keys), not the
-// resolved output from select-go. Reverting to the resolved output
-// reintroduces the restore-source misclassification this wiring fixes,
-// and the step's run block cannot detect the mistake on its own.
-func TestRestoreSourcePinsGoVersionAlias(t *testing.T) {
+// TestRestoreSourcePinsProviderVersion pins the GO_VERSION env of the
+// Derive-restore-source step: it must carry the go-version-provider
+// output (the same string the cloudx provider embeds in its cache keys —
+// the resolved class for alias and minor spellings, the exact patch for
+// fully-specified requests), not the caller's input or the bare key
+// output. Any other value breaks the branch parsing of matched keys, and
+// the step's run block cannot detect the mistake on its own.
+func TestRestoreSourcePinsProviderVersion(t *testing.T) {
 	step := setupGoStep(t, "Derive restore source")
-	if got := step.Env["GO_VERSION"]; got != "${{ inputs.go-version }}" {
-		t.Fatalf("GO_VERSION = %q, want the alias ${{ inputs.go-version }} (the same string the cloudx provider keys on)", got)
+	const want = "${{ steps.resolve-version.outputs.go-version-provider }}"
+	if got := step.Env["GO_VERSION"]; got != want {
+		t.Fatalf("GO_VERSION = %q, want %q (the same string the cloudx provider keys on)", got, want)
 	}
+}
+
+// TestCloudxKeysOnResolvedClass pins the wiring the whole scheme rests
+// on: the cloudx provider receives the go-version-provider output, never
+// the caller's input string. If this reverts to inputs.go-version,
+// `stable` and `oldstable` keys stop rotating across Go minor releases
+// and every spelling of the same minor double-writes the pool; if it
+// reverts to the bare go-version-key output, fully-specified requests
+// break the Verify step (the provider's nested installer resolves the
+// minor as a range and picks a different patch than select-go installed).
+func TestCloudxKeysOnResolvedClass(t *testing.T) {
+	raw, err := os.ReadFile(setupGoAction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var action struct {
+		Runs struct {
+			Steps []struct {
+				Name string            `yaml:"name"`
+				With map[string]string `yaml:"with"`
+			} `yaml:"steps"`
+		} `yaml:"runs"`
+	}
+	if err := yaml.Unmarshal(raw, &action); err != nil {
+		t.Fatal(err)
+	}
+	const want = "${{ steps.resolve-version.outputs.go-version-provider }}"
+	for _, step := range action.Runs.Steps {
+		if step.Name == "Isolate and refresh Go build caches" {
+			if got := step.With["go-version"]; got != want {
+				t.Fatalf("cloudx go-version = %q, want %q", got, want)
+			}
+			return
+		}
+	}
+	t.Fatal("setup-go has no step named \"Isolate and refresh Go build caches\"")
 }
 
 // TestSetupGoSavePolicyTruthTable covers every event x ref x seed
@@ -376,6 +417,66 @@ func TestSetupGoSavePolicyTruthTable(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSetupGoSavePolicyFloorGuard covers the go.mod floor guard: a seeding
+// run whose resolved minor is below the go directive must not save, and the
+// guard must never disable a supported run. setup-go exports
+// GOTOOLCHAIN=local, so nothing in the action rejects a below-floor
+// request — later builds fail on go.mod — and this guard is the only
+// in-action check.
+func TestSetupGoSavePolicyFloorGuard(t *testing.T) {
+	withGoMod := func(t *testing.T, directive string) string {
+		t.Helper()
+		return withGoModBody(t, "module example.com/x\n\ngo "+directive+"\n")
+	}
+	if got := withGoMod(t, "1.27"); got != "true" {
+		t.Errorf("save at the floor = %q, want true (the floor itself seeds)", got)
+	}
+	if got := withGoMod(t, "1.26"); got != "true" {
+		t.Errorf("save above the floor = %q, want true", got)
+	}
+	if got := withGoMod(t, "1.28"); got != "false" {
+		t.Errorf("save below the floor = %q, want false", got)
+	}
+	// A directive with a patch (go 1.27.4) must compare as its minor.
+	if got := withGoMod(t, "1.27.4"); got != "true" {
+		t.Errorf("save against a patched directive = %q, want true", got)
+	}
+	// A go.mod without a go line skips the guard: it is not the seed
+	// policy's signal.
+	if got := withGoModBody(t, "module example.com/x\n\nrequire example.com/y v1.0.0\n"); got != "true" {
+		t.Errorf("save with no go directive = %q, want true (guard skipped)", got)
+	}
+	// A malformed directive skips the guard the same way.
+	if got := withGoModBody(t, "module example.com/x\n\ngo abc\n"); got != "true" {
+		t.Errorf("save with a malformed go directive = %q, want true (guard skipped)", got)
+	}
+}
+
+// withGoModBody is withGoMod with raw go.mod content.
+func withGoModBody(t *testing.T, body string) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	step := setupGoStep(t, "Resolve save policy")
+	written, out, err := runSetupGoStepInDir(t, step, map[string]string{
+		"SEED":           "true",
+		"EVENT":          "schedule",
+		"REF":            "refs/heads/main",
+		"DEFAULT_BRANCH": "main",
+		"KEY_VERSION":    "1.27",
+	}, dir)
+	if err != nil {
+		t.Fatalf("save-policy step failed: %v\n%s", err, out)
+	}
+	value, ok := strings.CutPrefix(strings.TrimSpace(written), "save=")
+	if !ok {
+		t.Fatalf("GITHUB_OUTPUT has no save= line: %q", written)
+	}
+	return value
 }
 
 // TestSetupGoObservationSeedFields: the observation carries the seed-key

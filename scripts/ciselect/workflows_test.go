@@ -94,7 +94,7 @@ func TestEveryWorkflowIsRegistered(t *testing.T) {
 // deleted `cache: "false"` literal resumes a light job's pool writes or
 // restores potentially incompatible instrumented archives, and
 // a deleted workflow_dispatch trigger removes manual re-seeding after a
-// Go patch release.
+// cache-key scheme change.
 func TestCacheSeedAndDisableLiterals(t *testing.T) {
 	root, _ := workflowPaths(t)
 	seedLiterals := map[string]int{
@@ -104,6 +104,7 @@ func TestCacheSeedAndDisableLiterals(t *testing.T) {
 		"unit-integration-tests.yml": 3,
 		"orchestrion.yml":            1, // The integration-test job; gated on a non-Windows runner.
 		"otelc.yml":                  1, // The integration-test job; gated on a non-Windows runner.
+		"dynamic-checks.yml":         1, // test-locking-package matrix; the nightly seeds it
 	}
 	for name, want := range seedLiterals {
 		body := readText(t, filepath.Join(root, workflowDir), name)
@@ -112,9 +113,10 @@ func TestCacheSeedAndDisableLiterals(t *testing.T) {
 		}
 	}
 	cacheFalse := map[string]int{
-		"static-checks.yml": 5,
-		"orchestrion.yml":   1,
-		"otelc.yml":         1, // Matrix computation; both instrumented workloads keep caches on.
+		"static-checks.yml":     5,
+		"orchestrion.yml":       1,
+		"otelc.yml":             1, // Matrix computation; both instrumented workloads keep caches on.
+		"main-branch-tests.yml": 1, // ci-components-depgraph bootstrap; no caches for a go list walk.
 	}
 	for name, want := range cacheFalse {
 		body := readText(t, filepath.Join(root, workflowDir), name)
@@ -123,8 +125,10 @@ func TestCacheSeedAndDisableLiterals(t *testing.T) {
 		}
 	}
 	// Manual re-seeding path: main-branch-tests.yml must keep its
-	// workflow_dispatch trigger so seeds can be re-made by hand after a
-	// Go patch release changes every key.
+	// workflow_dispatch trigger so seeds can be re-made by hand, for
+	// example after a cache-key scheme change (cx1 → cx2) or a scheme
+	// migration where waiting for the nightly would leave pull requests
+	// cold for hours.
 	_, on := parseWorkflow(t, filepath.Join(root, workflowDir, "main-branch-tests.yml"))
 	if _, ok := on["workflow_dispatch"]; !ok {
 		t.Error("main-branch-tests.yml lacks the workflow_dispatch trigger")
@@ -432,18 +436,21 @@ func TestAppSecWindowsDevDriveWiring(t *testing.T) {
 }
 
 // TestSeedGatesAndTraceCheckPairing pins the literals that decide whether
-// the nightly run seeds: the three seed gates must stay identical and name
-// both supported versions, and the push-gated version matrix must keep the
-// single highest version on pushes. It also pins the trace-check artifact
+// the nightly run seeds: the three seed gates must stay identical and
+// unconditional (any go-version spelling seeds; the setup-go action keys on
+// the resolved Go minor and floors unsupported toolchains itself), and the
+// push-gated version matrix must keep the single highest version on pushes.
+// It also pins the trace-check artifact
 // name/pattern pairing: a one-sided edit passes every check and silently
 // drops a lane's results.
 func TestSeedGatesAndTraceCheckPairing(t *testing.T) {
 	root, _ := workflowPaths(t)
 
-	// The three seed gates are identical and name both aliases.
+	// The three seed gates are identical and unconditional: the
+	// resolved-minor keying moved version policy into the action.
 	ui := readText(t, filepath.Join(root, workflowDir), "unit-integration-tests.yml")
 	gates := regexp.MustCompile(`(?m)^\s+seed: .+$`).FindAllString(ui, -1)
-	const wantGate = `seed: ${{ inputs.go-version == '1.26' || inputs.go-version == '1.27' }}`
+	const wantGate = `seed: "true"`
 	if len(gates) != 3 {
 		t.Fatalf("unit-integration-tests.yml has %d seed literals, want 3", len(gates))
 	}
@@ -456,7 +463,7 @@ func TestSeedGatesAndTraceCheckPairing(t *testing.T) {
 	// The push matrix keeps the single highest version; every other
 	// event runs both supported versions.
 	mb := readText(t, filepath.Join(root, workflowDir), "main-branch-tests.yml")
-	const wantMatrix = `go-version: ${{ fromJSON(github.event_name == 'push' && '["1.27"]' || '["1.26", "1.27"]') }}`
+	const wantMatrix = `go-version: ${{ fromJSON(github.event_name == 'push' && '["stable"]' || '["oldstable", "stable"]') }}`
 	if !strings.Contains(mb, wantMatrix) {
 		t.Errorf("main-branch-tests.yml lacks the push-gated version matrix %q", wantMatrix)
 	}
@@ -1834,6 +1841,98 @@ func TestBranchListRunsQueueBranch(t *testing.T) {
 		}
 		if got != tt.want {
 			t.Errorf("branchListRunsQueueBranch(%q) = %q, want %q", tt.patterns, got, tt.want)
+		}
+	}
+}
+
+// TestToolsCacheVersionKeyComesFromRepoAction pins the wiring a past
+// regression showed: the tools cache keys on setup-go's go-version-key
+// output, which only the repository's setup-go action provides. A
+// tools-cache caller that reads it from the upstream actions/setup-go
+// keys every restore on an empty version.
+func TestToolsCacheVersionKeyComesFromRepoAction(t *testing.T) {
+	root, _ := workflowPaths(t)
+	files, err := filepath.Glob(filepath.Join(root, workflowDir, "*.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	refRe := regexp.MustCompile(`steps\.([A-Za-z0-9_-]+)\.outputs\.go-version-key`)
+	for _, file := range files {
+		doc, _ := parseWorkflow(t, file)
+		jobs, _ := doc["jobs"].(map[string]any)
+		for jobName, jobAny := range jobs {
+			job, _ := jobAny.(map[string]any)
+			steps, _ := job["steps"].([]any)
+			usesByID := map[string]string{}
+			for _, s := range steps {
+				step, _ := s.(map[string]any)
+				id, _ := step["id"].(string)
+				uses, _ := step["uses"].(string)
+				if id != "" {
+					usesByID[id] = uses
+				}
+			}
+			for _, s := range steps {
+				step, _ := s.(map[string]any)
+				uses, _ := step["uses"].(string)
+				if !strings.Contains(uses, "actions/tools-cache") {
+					continue
+				}
+				with, _ := step["with"].(map[string]any)
+				version, _ := with["go-version-key"].(string)
+				m := refRe.FindStringSubmatch(version)
+				if m == nil {
+					t.Errorf("%s job %s: tools-cache go-version-key = %q, want steps.<id>.outputs.go-version-key",
+						filepath.Base(file), jobName, version)
+					continue
+				}
+				source, ok := usesByID[m[1]]
+				if !ok {
+					t.Errorf("%s job %s: tools-cache reads go-version-key from missing step %q",
+						filepath.Base(file), jobName, m[1])
+					continue
+				}
+				if !strings.HasPrefix(source, "./.github/actions/setup-go") {
+					t.Errorf("%s job %s: tools-cache reads go-version-key from %q, want the repository's setup-go action",
+						filepath.Base(file), jobName, source)
+				}
+			}
+		}
+	}
+}
+
+// TestGoFloorPinsMatchGoModDirective checks the deliberate numeric
+// floor pins (appsec Docker matrices and the smoke floor probe) against
+// the root go.mod go directive. When a Go release moves oldstable, these
+// pins and the directive move together on release day; a silent drift
+// leaves the floor untested.
+func TestGoFloorPinsMatchGoModDirective(t *testing.T) {
+	root, _ := workflowPaths(t)
+	directiveBytes, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	directive := regexp.MustCompile(`(?m)^go (1\.[0-9]+)`).FindSubmatch(directiveBytes)
+	if directive == nil {
+		t.Fatal("root go.mod has no go directive")
+	}
+	floor := string(directive[1])
+	pins := map[string]string{
+		"appsec.yml":      `(?m)^\s*go-version: \[ "1\.27", "(1\.[0-9]+)" \]$`,
+		"smoke-tests.yml": `(?m)^\s*go-version: "(1\.[0-9]+)" # lowest supported version`,
+	}
+	for name, pinRe := range pins {
+		body := readText(t, filepath.Join(root, workflowDir), name)
+		re := regexp.MustCompile(pinRe)
+		m := re.FindAllStringSubmatch(body, -1)
+		if len(m) == 0 {
+			t.Errorf("%s has no numeric floor pin matching %s", name, pinRe)
+			continue
+		}
+		for _, match := range m {
+			if match[1] != floor {
+				t.Errorf("%s floor pin %q does not match the go.mod directive %q", name, match[1], floor)
+			}
 		}
 	}
 }

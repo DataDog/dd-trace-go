@@ -120,6 +120,9 @@ jobs:
     strategy:
       matrix:
         runs-on: [ macos-15, macos-latest ] # oldest and newest macos runners available
+        # Numeric minors keep the go.mod floor tested on the oldest
+        # supported version (no golang: image on this job; the Docker
+        # comment below belongs to the linux-matrix job).
         go-version: [ "1.27", "1.26" ]
       fail-fast: true # saving some CI time - macos runners are too long to get
     steps:
@@ -355,6 +358,8 @@ jobs:
       - go-mod-caching
     strategy:
       matrix:
+        # Numeric minors, not aliases: the golang: image tag below
+        # interpolates matrix.go-version, and Docker Hub resolves no aliases.
         go-version: [ "1.27", "1.26" ]
         distribution: [ trixie, bookworm, alpine ]
         platform: [ linux/amd64, linux/arm64 ]
