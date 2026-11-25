@@ -352,7 +352,7 @@ func newTraceBudget(originalSize int64, textExpansion func() int64) traceBudget 
 
 func (budget *traceBudget) inject(traceContext types.MessageAttributeValue, messageAttributes map[string]types.MessageAttributeValue) map[string]types.MessageAttributeValue {
 	old, replacing := messageAttributes[datadogKey]
-	if !replacing && len(messageAttributes) >= maxMessageAttributes {
+	if len(messageAttributes) > maxMessageAttributes || (!replacing && len(messageAttributes) == maxMessageAttributes) {
 		instr.Logger().Info("Cannot inject trace context: message already has maximum allowed attributes")
 		return nil
 	}
