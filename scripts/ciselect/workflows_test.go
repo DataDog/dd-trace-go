@@ -188,7 +188,7 @@ func TestGoCachePolicyPerOS(t *testing.T) {
 		{
 			name: "orchestrion-lane.yml", jobID: "integration-test",
 			cacheWant: "${{ matrix.runs-on != 'windows' }}",
-			seedWant:  "${{ matrix.runs-on != 'windows' && matrix.go-version == 'stable' && matrix.mode == 'DRIVER' }}",
+			seedWant:  "${{ matrix.runs-on != 'windows' && matrix.go-version == 'stable' && matrix.mode == 'DRIVER' && inputs.orchestrion-version == '' }}",
 		},
 		{
 			name: "otelc-lane.yml", jobID: "integration-test",
@@ -739,6 +739,15 @@ func TestGatedWorkflowsHaveAChangesJob(t *testing.T) {
 		"dynamic-checks.yml":   "dynamic-checks-summary",
 		"smoke-tests.yml":      "smoke-tests-done",
 	}
+	// The joins that mint a bare check name branch protection may
+	// require: deleting or renaming one must fail a test, not just
+	// stop a required check from reporting.
+	joinNames := map[string]map[string]string{
+		"orchestrion-pr.yml": {"integration-test-done": "Orchestrion Integration Tests"},
+		"otelc-pr.yml":       {"integration-test-done": "OTelc Integration Tests"},
+		"orchestrion.yml":    {"lane": ""},
+		"otelc.yml":          {"lane": ""},
+	}
 
 	for _, f := range files {
 		path := filepath.Join(root, workflowDir, f)
@@ -760,6 +769,20 @@ func TestGatedWorkflowsHaveAChangesJob(t *testing.T) {
 		if !ok {
 			t.Errorf("%s: join job %q is missing; it mints a stable check name and must not be renamed", f, join)
 			continue
+		}
+		for jobID, wantName := range joinNames[f] {
+			raw, ok := jobs[jobID]
+			if !ok {
+				t.Errorf("%s: job %q is missing", f, jobID)
+				continue
+			}
+			j, _ := raw.(map[string]any)
+			got, _ := j["name"].(string)
+			if wantName != "" && got != wantName {
+				t.Errorf("%s: job %q mints the check name %q, want %q: "+
+					"a branch protection rule on the old name stops "+
+					"resolving", f, jobID, got, wantName)
+			}
 		}
 		if !usesChanges {
 			continue
@@ -1864,10 +1887,20 @@ func TestIntegrationLanesMacWindowsMainOnly(t *testing.T) {
 		if _, has := on["pull_request"]; !has {
 			t.Errorf("%s: lost the pull_request trigger", prFile)
 		}
-		osList := normalizeExpr(laneOSList(t, doc))
-		if !strings.Contains(osList, `'["ubuntu"]'`) ||
-			!strings.Contains(osList, `'["ubuntu", "macos", "windows"]'`) ||
-			!strings.Contains(osList, "startsWith(github.base_ref, 'release-v')") {
+		// The exact expression, not substrings: an inverted ternary
+		// keeps every substring but runs the wrong list on every
+		// event. The orchestrion PR file also serves the merge queue,
+		// whose release targets widen the same way.
+		want := normalizeExpr(
+			`${{ startsWith(github.base_ref, 'release-v') &&` +
+				` '["ubuntu", "macos", "windows"]' || '["ubuntu"]' }}`)
+		if prFile == "orchestrion-pr.yml" {
+			want = normalizeExpr(
+				`${{ (startsWith(github.base_ref, 'release-v') ||` +
+					` startsWith(github.ref_name, 'mq-working-branch-release-v')) &&` +
+					` '["ubuntu", "macos", "windows"]' || '["ubuntu"]' }}`)
+		}
+		if osList := normalizeExpr(laneOSList(t, doc)); !strings.HasSuffix(osList, want) {
 			t.Errorf("%s: os-list = %s, want the ubuntu-only default "+
 				"widening to the full list for release targets: pull "+
 				"requests do not gate on the macOS/Windows legs", prFile, osList)

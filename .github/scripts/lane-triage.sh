@@ -99,7 +99,9 @@ collapse_duplicates() {
       'Closed as a duplicate created by a race between two triage
 runs; the lowest-numbered issue stays open.' \
       >/dev/null
-  done <<<"$(issues_with_title open "$title" "$label")"
+  local list
+  list=$(issues_with_title open "$title" "$label")
+  done <<<"$list"
 }
 
 lane_run_url() {
@@ -185,7 +187,8 @@ newest_completed_lane_run() {
     --json databaseId,conclusion,event \
     | jq -c '[.[] | select(.event != "pull_request")
                  | select(.event != "workflow_dispatch")
-                 | select(.conclusion != null and .conclusion != "")]
+                 | select(.conclusion != null and .conclusion != ""
+                     and .conclusion != "cancelled")]
       | .[0] // empty'
 }
 
@@ -304,12 +307,12 @@ triage_run() {
 # Close every open failure issue of this lane whose leg name no longer
 # appears among the current run's job names.
 close_absent_legs() {
-  local lane=$1 issue title leg
+  local lane=$1 issue title leg jobnames
+  jobnames=$(run_job_conclusions "$RUN_ID" | jq -r 'keys[]')
   while IFS=$'\t' read -r issue title; do
     [ -n "$issue" ] || continue
     leg=${title#* — }
-    if grep -qxF "$leg" <<<"$(run_job_conclusions "$RUN_ID" \
-      | jq -r 'keys[]')"; then
+    if grep -qxF "$leg" <<<"$jobnames"; then
       continue
     fi
     log "leg left the matrix: closing issue #$issue"
@@ -317,12 +320,14 @@ close_absent_legs() {
       "The ${lane} lane no longer runs a leg with this name; closing. \
 Reopen or open a new issue if the leg returns." \
       >/dev/null
-  done <<<"$(read_gh issue list --state open \
+  local open
+  open=$(read_gh issue list --state open \
     --label "$FAILURE_LABEL" --repo "$REPO" \
     --json number,title --limit 200 \
     | jq -r --arg l "$lane" \
       '.[] | select(.title | startswith("lane: " + $l + " — "))
-        | "\(.number)\t\(.title)"')"
+        | "\(.number)\t\(.title)"')
+  done <<<"$open"
 }
 
 # One status line per lane for the tracking issue body.
@@ -405,8 +410,8 @@ missing_run_alert() {
   for lane in "${LANES[@]}"; do
     found=$(read_gh run list --workflow "$lane" --branch main \
       --created ">=$since" --json databaseId,event \
-      | jq '[.[] | select(.event != "pull_request")
-        and select(.event != "workflow_dispatch")] | length')
+      | jq '[.[] | select(.event != "pull_request"
+        and .event != "workflow_dispatch")] | length')
     if [ "${found:-0}" -eq 0 ]; then
       log "missing-run alert for $lane"
       issue=$(find_issue "$TRACKING_TITLE" "$DASHBOARD_LABEL")

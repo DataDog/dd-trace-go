@@ -2,7 +2,7 @@
 
 Stop-and-flag cases: no otelc equivalent and no workaround. Anything with a workaround belongs in
 `pattern-mapping.md`. Checked against latest upstream `main`, which `OTELC_VERSION` in
-`.github/workflows/otelc.yml` tracks. Capabilities land often, so re-check the sources in
+`.github/workflows/otelc-lane.yml` tracks. Capabilities land often, so re-check the sources in
 `references.md` before calling something a gap.
 
 Every gap here is already known and tracked. Report it as a known gap, not a new finding.

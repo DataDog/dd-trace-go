@@ -252,7 +252,7 @@ jobs:
           # (APMLP-2248); the 8-core shared runners this lane uses are
           # unmeasured, so the skip is the conservative default.
           cache: ${{ matrix.runs-on != 'windows' }}
-          seed: ${{ matrix.runs-on != 'windows' && matrix.go-version == 'stable' && matrix.mode == 'DRIVER' }}
+          seed: ${{ matrix.runs-on != 'windows' && matrix.go-version == 'stable' && matrix.mode == 'DRIVER' && inputs.orchestrion-version == '' }}
           variant: |-
             {"runner":"${{ matrix.runs-on }}",
              "mode":"${{ matrix.mode }}",

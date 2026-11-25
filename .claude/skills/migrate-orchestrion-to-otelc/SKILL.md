@@ -168,7 +168,7 @@ wrap its call sites with `wrap_call` instead (see "Rules" under "Cautions").
      (`example.com/otelcexternalapp`) sorts before `otelc/all`. Every pass then fails with
      `module github.com/DataDog/dd-trace-go@latest found (...), but does not contain package`.
    - Add it to `go.work` (`make fix-modules` does not touch the workspace).
-   - Add the contrib and its `otelc` module to `OTELC_MODULES` in `.github/workflows/otelc.yml`,
+   - Add the contrib and its `otelc` module to `OTELC_MODULES` in `.github/workflows/otelc-lane.yml`,
      which CI tidies before running otelc. Every module otelc reads needs a current `go.mod`.
 6. Run the validation steps, plus the main app and dependency tests your rules need, and diff the
    otelc spans against the orchestrion ones.
@@ -185,7 +185,7 @@ wrap its call sites with `wrap_call` instead (see "Rules" under "Cautions").
    note only for an unmigrated aspect, a feature gap, an aspect reproduced by other means with the
    same observable behaviour, or tests added to pin down behaviour the migration relies on.
 9. Check CI after opening the PR.
-   - Read `Integration Test (ubuntu | stable)` in the `OTelc` workflow first. Matrix jobs nearly
+   - Read `Integration Test (ubuntu | stable)` in the `OTelc PR` workflow first. Matrix jobs nearly
      always fail for the same reason.
    - `failed to load instrumentation packages: ... go: updates to go.mod needed` means a module
      otelc reads has a stale `go.mod`, usually because CI builds a merge commit with a newer `main`.

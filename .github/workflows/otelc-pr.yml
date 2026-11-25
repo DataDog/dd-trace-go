@@ -26,13 +26,13 @@ jobs:
   lane:
     uses: ./.github/workflows/otelc-lane.yml
     with:
-      # Pull requests and the merge queue run the ubuntu legs only,
-      # except when the target is a release branch: a macOS/Windows
-      # regression on a release gates nothing on main and opens no
-      # issue, so those targets keep the full matrix here.
+      # Pull requests run the ubuntu legs only, except when the target
+      # is a release branch: a macOS/Windows regression on a release
+      # gates nothing on main and opens no issue, so those targets
+      # keep the full matrix here. This file carries no push trigger,
+      # so no merge-queue branch ever reaches it.
       os-list: >-
-        ${{ (startsWith(github.base_ref, 'release-v') ||
-             startsWith(github.ref_name, 'mq-working-branch-release-v')) &&
+        ${{ startsWith(github.base_ref, 'release-v') &&
             '["ubuntu", "macos", "windows"]' || '["ubuntu"]' }}
 
   # A top-level join with the check name the lane used to report
@@ -50,11 +50,6 @@ jobs:
           contains(fromJSON('["failure", "cancelled"]'),
           needs.lane.result)
         run: echo "Failure!" && exit 1
-      - name: Skipped
-        if: needs.lane.result == 'skipped'
-        run: >-
-          echo "No changed path requires the integration matrix
-          (see .github/ci-components.yml)."
       - name: Success
         if: needs.lane.result == 'success'
         run: echo "Success!"

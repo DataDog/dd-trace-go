@@ -61,11 +61,6 @@ jobs:
           contains(fromJSON('["failure", "cancelled"]'),
           needs.lane.result)
         run: echo "Failure!" && exit 1
-      - name: Skipped
-        if: needs.lane.result == 'skipped'
-        run: >-
-          echo "No changed path requires the integration matrix
-          (see .github/ci-components.yml)."
       - name: Success
         if: needs.lane.result == 'success'
         run: echo "Success!"

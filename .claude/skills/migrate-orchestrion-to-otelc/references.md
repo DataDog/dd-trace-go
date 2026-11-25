@@ -36,7 +36,7 @@ than rendered docs where possible.
 - Worked examples:
   [instrumentation/](https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/tree/main/instrumentation)
 
-`OTELC_VERSION` in `.github/workflows/otelc.yml` pins a commit on upstream `main`, never a release.
+`OTELC_VERSION` in `.github/workflows/otelc-lane.yml` pins a commit on upstream `main`, never a release.
 Check otelc behaviour against latest upstream `main` and ignore tags. When a port needs something
 newer than the pin, bump `OTELC_VERSION` to the latest `main` commit and re-pin
 `go.opentelemetry.io/otelc/pkg` to match (see "The otelc pin" in `SKILL.md`).
@@ -65,4 +65,4 @@ and the hooks call dd-trace-go.
   rules reach packages the application does not import itself.
 - `internal/apps/otelc-external-app` and `scripts/build_otelc_external_app.sh`: the guard that the
   packages your rules are read from are importable by a real user.
-- `.github/workflows/otelc.yml`: how the suites run in CI, `OTELC_MODULES`, and `OTELC_VERSION`.
+- `.github/workflows/otelc-lane.yml`: how the suites run in CI, `OTELC_MODULES`, and `OTELC_VERSION`.
