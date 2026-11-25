@@ -2,10 +2,10 @@
 name: apm-integrations
 description: |
   dd-trace-go integration (contrib) development guide. Use when creating, reviewing, or
-  debugging a contrib integration or its Orchestrion auto-instrumentation.
+  debugging a contrib integration or its Orchestrion and otelc auto-instrumentation.
   Triggers: "add a new integration", "instrument a library", "contrib", "contrib module",
-  "orchestrion", "orchestrion.yml", "auto-instrumentation", "join point",
-  "wrap-expression", "_integration test".
+  "orchestrion", "orchestrion.yml", "otelc", "otelc.yaml", "auto-instrumentation", "join point",
+  "wrap-expression", "wrap_call", "inject_hooks", "_integration test".
 ---
 
 # dd-trace-go APM integrations
@@ -14,14 +14,15 @@ An integration ("contrib") instruments a library so users get spans without writ
 hand. Each is a nested Go module under `/contrib`.
 
 - [`/contrib/INTEGRATIONS.md`](/contrib/INTEGRATIONS.md), the authoring guide.
-- [`/contrib/ORCHESTRION.md`](/contrib/ORCHESTRION.md), the auto-instrumentation guide.
+- [`/contrib/ORCHESTRION.md`](/contrib/ORCHESTRION.md), the Orchestrion auto-instrumentation guide.
+- [`/contrib/OTELC.md`](/contrib/OTELC.md), the otelc auto-instrumentation guide.
 
 Every rule lives in those guides, not here. Open the linked section, not the whole file. Read
 INTEGRATIONS.md end to end only when building a new integration from scratch. For reviewing or
 debugging an existing integration, skip the workflow and open the section that matches the change:
 [§5](/contrib/INTEGRATIONS.md#5-spans-tags-and-naming) for spans, tags, and naming,
 [§10](/contrib/INTEGRATIONS.md#10-testing) for tests, and
-[ORCHESTRION.md](/contrib/ORCHESTRION.md) for weaving problems.
+[ORCHESTRION.md](/contrib/ORCHESTRION.md) or [OTELC.md](/contrib/OTELC.md) for weaving problems.
 
 ## Workflow
 
@@ -42,9 +43,12 @@ debugging an existing integration, skip the workflow and open the section that m
    [§7](/contrib/INTEGRATIONS.md#7-register-the-integration)
 7. Propagate context across process boundaries.
    [§8](/contrib/INTEGRATIONS.md#8-context-propagation)
-8. Add `orchestrion.yml` and `internal/orchestrion/_integration` tests. Both mandatory.
+8. Add `orchestrion.yml`, the `otelc/` module and `internal/orchestrion/_integration` tests that
+   pass under both tools. All mandatory.
    [orchestrion.yml](/contrib/ORCHESTRION.md#orchestrionyml),
-   [Integration tests](/contrib/ORCHESTRION.md#integration-tests)
+   [otelc module](/contrib/OTELC.md#the-otelc-module),
+   [Integration tests](/contrib/ORCHESTRION.md#integration-tests),
+   [otelc tests](/contrib/OTELC.md#integration-tests)
 9. Write tests and a package-level `Example`.
    [§10](/contrib/INTEGRATIONS.md#10-testing)
 10. Run the pre-PR command sequence and commit everything it produces.
