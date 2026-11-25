@@ -211,6 +211,22 @@ is_newest_completed_lane_run() {
   [ -n "$latest" ] && [ "$latest" = "$RUN_ID" ]
 }
 
+# True when the issue's body or comments mention a run id newer than
+# this run's: a newer failure spoke on record, and no close may bury it.
+issue_has_newer_failure() {
+  local issue=$1 record newer
+  record=$(read_gh issue view "$issue" --repo "$REPO" \
+    --json body,comments \
+    --jq '.body, (.comments[] | .body // "")' 2>/dev/null || true)
+  for newer in $(printf '%s' "$record" \
+    | grep -oE '/actions/runs/[0-9]+' | grep -oE '[0-9]+'); do
+    if [ "$newer" -gt "$RUN_ID" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 # The legs of the newest completed run that are green, one name per
 # line: a failure whose leg a newer run already fixed needs no ping.
 newest_green_legs() {
@@ -268,12 +284,13 @@ triage_run() {
         gh issue comment "$issue" --repo "$REPO" --body "$body" >/dev/null
       else
         log "opening issue: lane: $lane — $name"
+        body=$(
+          set -e
+          issue_body "$lane" "$name"
+        )
         gh issue create --repo "$REPO" --title "lane: $lane — $name" \
           --label "$FAILURE_LABEL" \
-          --body "$(
-            set -e
-            issue_body "$lane" "$name"
-          )" >/dev/null
+          --body "$body" >/dev/null
       fi
       # A concurrent triage run may have created the same issue in the
       # meantime: keep the lowest number.
@@ -297,11 +314,14 @@ triage_run() {
       is_lane_leg "$name" || continue
       issue=$(find_issue "lane: $lane — $name" "$FAILURE_LABEL")
       if [ -n "$issue" ]; then
-        # Re-verify per close: this triage may have paused past the
-        # guard while a newer failure completed and triaged, and that
-        # failure's path reopens what a stale close would now shut.
-        if ! is_newest_completed_lane_run "$lane"; then
-          log "newer run completed meanwhile: not closing $lane / $name"
+        # Reconcile against the issue's own record, not another
+        # freshness check: this triage may have paused anywhere around
+        # the close, and a newer failure that triaged in the meantime
+        # left its run id in the issue. Any run id above this run's
+        # means a newer failure is on record, and closing would bury
+        # it; that failure's path reopens what a stale close shuts.
+        if issue_has_newer_failure "$issue"; then
+          log "newer failure on record: not closing issue #$issue"
           continue
         fi
         log "green: $lane / $name; closing issue #$issue"
