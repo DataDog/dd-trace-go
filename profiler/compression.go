@@ -286,7 +286,6 @@ func newSharedZstdEncoder(level zstd.EncoderLevel) (*sharedZstdEncoder, error) {
 		zstd.WithEncoderLevel(level),
 		zstd.WithEncoderConcurrency(1),
 		zstd.WithLowerEncoderMem(true),
-		zstd.WithWindowSize(1<<20),
 	)
 	if err != nil {
 		return nil, err
