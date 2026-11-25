@@ -587,6 +587,17 @@ func TestSetDataStreamsIntakeBufferSize(t *testing.T) {
 	assert.Contains(t, strings.Join(tp.Logs(), "\n"), "datastreams: ignoring non-positive intake buffer size")
 }
 
+func TestSetFeatureFlagsIgnoresBlankFlags(t *testing.T) {
+	rec := new(telemetrytest.RecordClient)
+	defer telemetry.MockClient(rec)()
+
+	cfg := &Config{}
+	cfg.SetFeatureFlags([]string{"", " ", "\t\n", "\u2003"}, telemetry.OriginCode)
+	assert.Empty(t, cfg.FeatureFlags())
+	assert.False(t, cfg.HasFeature(""))
+	telemetrytest.CheckConfig(t, rec.Configuration, "DD_TRACE_FEATURES", "")
+}
+
 func TestSetFeatureFlagsReportsFullList(t *testing.T) {
 	resetGlobalState()
 	defer resetGlobalState()
@@ -597,8 +608,9 @@ func TestSetFeatureFlagsReportsFullList(t *testing.T) {
 	cfg := Get()
 	require.NotNil(t, cfg)
 
-	cfg.SetFeatureFlags([]string{"b", "a"}, telemetry.OriginCode)
-	cfg.SetFeatureFlags([]string{"c"}, telemetry.OriginCode)
+	cfg.SetFeatureFlags([]string{" b ", "a", "", " \t\n"}, telemetry.OriginCode)
+	cfg.SetFeatureFlags([]string{"c", "a", ""}, telemetry.OriginCode)
+	assert.Equal(t, map[string]struct{}{"a": {}, "b": {}, "c": {}}, cfg.FeatureFlags())
 
 	var (
 		found bool

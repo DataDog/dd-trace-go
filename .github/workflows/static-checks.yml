@@ -98,7 +98,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
   copyright:
@@ -129,7 +129,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Copyright
@@ -164,7 +164,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Lint GitHub Actions workflows
@@ -209,7 +209,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Run fixmodules
@@ -243,7 +243,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Update documentation
@@ -277,7 +277,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Format
@@ -344,7 +344,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       # The golangci-lint steps above stop at Go workspace module boundaries.
@@ -453,7 +453,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Run checklocks

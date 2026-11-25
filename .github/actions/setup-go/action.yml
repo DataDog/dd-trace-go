@@ -30,13 +30,16 @@
 # many times per day and evict every durable seed, so ONLY seeding runs
 # save. A seeding run is a seed-set key on the nightly schedule or a
 # workflow_dispatch on the default branch; the nightly run is the regular
-# seed, the manual dispatch re-seeds after a Go patch release changes
-# every key. Every other event — pull requests, the merge queue,
-# releases, pushes — restores only, which also removes the trim and the
-# cache-save post steps from those jobs. The seed set is sized against
+# seed (it also rewrites each entry with the current Go patch, so the
+# content stays fresh under a stable minor key), and the manual dispatch
+# re-seeds immediately after a change that renames keys, such as a
+# cache-key scheme bump. Every other event — pull requests, the merge
+# queue, releases, pushes — restores only, which also removes the trim and
+# the cache-save post steps from those jobs. The seed set is sized against
 # the raised cache quota and covers the nightly default-branch workloads
 # (multi-OS, unit-integration, smoke; the stable-alias orchestrion and
-# otelc integration strata and the AppSec macOS strata). The pool
+# otelc integration strata and the AppSec macOS strata, and the small
+# dynamic-locking matrix). The pool
 # measured at its 100 GiB eviction boundary (2026-11-17), so seed only
 # the strata that pay for their size, and widen a lane's seed gate only
 # with a citiming window as evidence; the pool gauges (ci.cache.pool.*),
@@ -59,14 +62,22 @@
 #   2. Align GOROOT with the selected toolchain BEFORE any step asks `go env`
 #      for cache paths, so stale GOROOT values exported by earlier tools
 #      cannot redirect GOCACHE/GOMODCACHE.
-#   3. With caching enabled, hand the go-version ALIAS (e.g., "1.27")
-#      to the isolated-cache provider (cloudx-io/setup-go, pinned). The
-#      alias keeps the cache key stable across Go patch releases: the
-#      provider keys on the literal input string, so "1.27" survives
-#      1.27.3 → 1.27.4. The provider's nested installer resolves the alias
-#      and finds the exact binary the select-go step already installed
-#      on disk; if it ever downloads one, that is a bug to investigate,
-#      not normal behaviour.
+#   3. With caching enabled, hand the resolved version class (e.g.,
+#      "1.27", from resolve-version.sh) to the isolated-cache provider
+#      (cloudx-io/setup-go, pinned), never the caller's input string. The
+#      resolved minor keeps the key stable across Go patch releases AND
+#      rotates it the day a minor release lands, so `stable`, `oldstable`
+#      and `1.27` all share one key per minor and the pool holds one
+#      entry per (family, variant, minor) instead of one per spelling.
+#      Fully-specified requests ("1.27.4") are the deliberate exception:
+#      check-latest never upgrades a full version, so the exact patch
+#      goes to the provider instead — its nested installer resolves a
+#      minor as a range and would otherwise select a different patch than
+#      the select-go step installed, and the exact request keys on its
+#      patch as it always did. The provider's nested installer resolves
+#      the version and finds the exact binary the select-go step already
+#      installed on disk; if it ever downloads one, that is a bug to
+#      investigate, not normal behaviour.
 #   4. With caching disabled, or with cache-provider github-cache, the cloudx
 #      provider is never invoked: no restore, no trimming, no save.
 #   5. Before toolchain selection on Windows, try to provision a Dev
@@ -75,15 +86,17 @@
 #      when no Dev Drive is available, restore and build on the default
 #      volume.
 #
-# Cache key shape: ddtg-cx1-<family>-<variant digest>. The digest is the first
+# Cache key shape: ddtg-cx2-<family>-<variant digest>. The digest is the first
 # 16 hex characters of SHA-256 over the caller's variant description,
 # canonicalized by this action (object keys and the `modules` list sorted).
 # Callers must describe the workload itself — runner class, module selection,
 # build tags, workspace/instrumentation/coverage mode — and never the workflow
 # title, SHA, run ID, or branch: the provider already keys on branch/run
-# identity, OS/architecture and Go version. Identical nightly and PR workloads
-# must therefore pass identical family+variant so default-branch seeding
-# stays possible.
+# identity, OS/architecture and the resolved version class (the cx1
+# marker is kept: the seeding callers' numeric minors equal the class,
+# so existing cx1 pool entries keep matching). Identical nightly and PR
+# workloads must therefore pass identical family+variant so
+# default-branch seeding stays possible.
 #
 # Observability: emits the same structured `cache-observation:` record as the
 # pre-migration action, so scripts/citiming keeps working unchanged. The
@@ -156,6 +169,12 @@ outputs:
   go-version:
     description: The resolved, exact Go version installed.
     value: ${{ steps.select-go.outputs.go-version }}
+  go-version-key:
+    description: >-
+      The resolved Go minor the cache keys carry (e.g. "1.27"); derived
+      from the toolchain that ran, not from the caller's input. Pass this,
+      not the exact version, wherever a cache key needs the Go version.
+    value: ${{ steps.resolve-version.outputs.go-version-key }}
   cache-key-prefix:
     description: The computed provider cache-key prefix (evidence only).
     value: ${{ steps.cache-key.outputs.prefix }}
@@ -247,6 +266,19 @@ runs:
         echo "GOROOT=${goroot}" >> "$GITHUB_ENV"
         echo "goroot=${goroot}" >> "$GITHUB_OUTPUT"
 
+    # The cache-key version is the resolved version class of the
+    # toolchain that actually ran, not the caller's input: `stable`,
+    # `oldstable` and `1.27` all key on `1.27`. setup-go pins
+    # GOTOOLCHAIN=local, so GOVERSION reports the toolchain the request
+    # resolved to on this runner. Writes go-version-key (the class) and
+    # go-version-provider (what cloudx receives).
+    - name: Resolve cache-key version
+      id: resolve-version
+      shell: bash
+      env:
+        REQUESTED_VERSION: ${{ inputs.go-version }}
+      run: bash "${GITHUB_ACTION_PATH}/resolve-version.sh"
+
     - name: Compute cache key prefix
       id: cache-key
       shell: bash
@@ -261,9 +293,9 @@ runs:
     # per-run entry for every job, so only seeding runs save. A seeding run
     # is a seed-set key (the `seed` input) on an event that produces
     # default-branch scope: the nightly schedule, or a manual
-    # workflow_dispatch on the default branch (used to re-seed after a Go
-    # patch release). Everything else — every pull request, merge queue,
-    # release and push run — restores only.
+    # workflow_dispatch on the default branch (used to re-seed right
+    # away instead of waiting for the nightly). Everything else — every
+    # pull request, merge queue, release and push run — restores only.
     - name: Resolve save policy
       id: save-policy
       if: ${{ inputs.cache == 'true' && inputs.cache-provider == 'cloudx' }}
@@ -273,6 +305,7 @@ runs:
         EVENT: ${{ github.event_name }}
         REF: ${{ github.ref }}
         DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+        KEY_VERSION: ${{ steps.resolve-version.outputs.go-version-key }}
       run: |
         set -euo pipefail
 
@@ -289,6 +322,31 @@ runs:
               ;;
           esac
         fi
+
+        # Floor guard: a resolved minor below the go.mod `go` directive
+        # cannot seed. setup-go exports GOTOOLCHAIN=local, so nothing in
+        # this action rejects such a request — later builds fail on
+        # go.mod. The guard keeps a stale pinned caller from writing a
+        # seed that no supported job can use. A missing or malformed
+        # go.mod (bootstrap jobs before checkout) skips the guard: it is
+        # not the seed policy's signal.
+        ver_num() {
+          # "1.27" or "1.26.4" -> a comparable number (major*1000+minor).
+          local v="$1" major minor
+          major="${v%%.*}"
+          v="${v#*.}"
+          minor="${v%%.*}"
+          printf '%d%03d' "$major" "$minor"
+        }
+        if [[ "$save" == "true" && -f go.mod ]]; then
+          directive="$(awk '$1 == "go" { print $2; exit }' go.mod)"
+          if [[ -n "$directive" && "$directive" == 1.* ]] \
+             && (( $(ver_num "$KEY_VERSION") < $(ver_num "$directive") )); then
+            echo "::warning::resolved toolchain ${KEY_VERSION} is below the" \
+                 "go.mod directive ${directive}; seeding disabled for this run"
+            save="false"
+          fi
+        fi
         printf 'save=%s\n' "$save" >> "$GITHUB_OUTPUT"
 
     # The provider caches GOCACHE and GOMODCACHE together, trims GOCACHE to
@@ -304,12 +362,16 @@ runs:
       # Dependabot ignores cloudx-io/setup-go versions <= 1.0.0.
       uses: cloudx-io/setup-go@0bbd76c0381c065220668df9b6694845b937aaa0 # main (includes cloudx-io/setup-go#8)
       with:
-        # The alias (e.g., "1.27"), not the resolved patch: the provider
-        # keys on the literal input string, so the alias keeps the cache
-        # key stable across Go patch releases. The provider's nested
-        # installer resolves the alias and finds the exact binary the
-        # select-go step above just installed on disk.
-        go-version: ${{ inputs.go-version }}
+        # The resolved version class (e.g., "1.27"), never the caller's
+        # input string: the provider keys on the literal input, so the
+        # resolved minor keeps the key stable across patch releases,
+        # rotates it the day a minor release lands, and collapses
+        # `stable`, `oldstable` and `1.27` spellings into one entry per
+        # minor. A fully-specified request ("1.27.1") passes its exact
+        # patch instead (go-version-provider): the nested installer
+        # resolves a minor as a range and would otherwise select the
+        # latest patch instead of the one select-go installed.
+        go-version: ${{ steps.resolve-version.outputs.go-version-provider }}
         cache-key-prefix: ${{ steps.cache-key.outputs.prefix }}
         max-staleness-hours: "2"
         # Verified to expand to go.mod, go.sum and go.work files only in this
@@ -340,13 +402,15 @@ runs:
         # The branch this run is on (the PR source branch for pull
         # requests), to tell a same-branch restore from a fallback.
         CURRENT_BRANCH: ${{ github.head_ref || github.ref_name }}
-        # The go-version alias (as passed to the cloudx provider) and
-        # this job's cache-key prefix: both are embedded verbatim in
-        # every key the provider can match, so the branch is what
-        # follows them and no regex guessing is needed. Reverting this
-        # to the resolved output reintroduces the misclassification
-        # this PR fixes.
-        GO_VERSION: ${{ inputs.go-version }}
+        # The go version the cloudx provider keys on (the resolved
+        # version class, or the exact patch for fully-specified requests
+        # — resolve-version.sh's go-version-provider output) and this
+        # job's cache-key prefix: both are embedded verbatim in every key
+        # the provider can match, so the branch is what follows them and
+        # no regex guessing is needed. It must stay the same expression
+        # the provider receives, or the branch parsing reintroduces the
+        # misclassification this wiring exists to prevent.
+        GO_VERSION: ${{ steps.resolve-version.outputs.go-version-provider }}
         CACHE_KEY_PREFIX: ${{ steps.cache-key.outputs.prefix }}
       run: |
         set -euo pipefail
@@ -355,11 +419,12 @@ runs:
         dep_match="false"
         # Save-key layout, verified against the pinned provider revision:
         # go-cache-<os>-<arch>-<CACHE_KEY_PREFIX>-<GO_VERSION>-<branch>-
-        # <dep-hash>-<run_id>. The prefix and the go-version alias are
+        # <dep-hash>-<run_id>. The prefix and the resolved version are
         # known here and appear verbatim (every restore-key tier pins
         # both), so the branch is parsed by stripping them literally. A
-        # generic regex cannot split the version from a hyphenated branch:
-        # 1.27.2-feature-main parses either way.
+        # generic regex cannot split the version from a hyphenated branch
+        # or a prerelease version: 1.28.0-rc.1-feature-main parses either
+        # way.
         if [[ "$CACHE_HIT" == "true" ]]; then
           source="exact"
         elif [[ -n "$MATCHED_KEY" ]]; then
@@ -441,6 +506,7 @@ runs:
         WORKLOAD: ${{ inputs.workload || github.job }}
         REQUESTED_VERSION: ${{ inputs.go-version }}
         RESOLVED_VERSION: ${{ steps.select-go.outputs.go-version }}
+        KEY_VERSION: ${{ steps.resolve-version.outputs.go-version-key }}
         CACHE_ENABLED: ${{ inputs.cache }}
         SETUP_OUTCOME: ${{ inputs.cache-provider == 'github-cache' && steps.select-go.outcome || steps.cloudx.outcome }}
         SETUP_CACHE_HIT: ${{ inputs.cache-provider == 'github-cache' && steps.select-go.outputs.cache-hit || steps.cloudx.outputs.cache-hit }}
@@ -462,6 +528,7 @@ runs:
           --arg workload "$WORKLOAD" \
           --arg requested "$REQUESTED_VERSION" \
           --arg version "$RESOLVED_VERSION" \
+          --arg keyver "$KEY_VERSION" \
           --arg enabled "$CACHE_ENABLED" \
           --arg outcome "$SETUP_OUTCOME" \
           --arg hit "$SETUP_CACHE_HIT" \
@@ -474,7 +541,8 @@ runs:
           {
             provider: $provider,
             workload: $workload,
-            runtime: {name: "go", requested: $requested, version: $version},
+            runtime: {name: "go", requested: $requested, version: $version,
+                      key: (if $keyver == "" then null else $keyver end)},
             restores: [
               {name: "setup_go", enabled: $enabled, outcome: $outcome, cache_hit: $hit}
               + (if $restored != "" then

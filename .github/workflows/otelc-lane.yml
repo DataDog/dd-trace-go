@@ -171,7 +171,10 @@ jobs:
       - name: Setup Go
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.26.4"
+          # oldstable (the supported floor), not the 1.26.4 corruption-era
+          # pin from #5056/#5066: the rest of CI runs the latest 1.26.x
+          # without the #77168 corruption, so the pin is no longer needed.
+          go-version: oldstable
           workload: otelc-matrix
           cache-provider: github-cache
           cache: "false"
@@ -395,7 +398,10 @@ jobs:
       - name: Setup Go
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.26.4"
+          # oldstable (the supported floor), not the 1.26.4 corruption-era
+          # pin from #5056/#5066: the rest of CI runs the latest 1.26.x
+          # without the #77168 corruption, so the pin is no longer needed.
+          go-version: oldstable
           workload: otelc-external-app
           variant: |-
             {"instrumentation":"otelc",
