@@ -7,10 +7,8 @@ package httpsec
 
 import (
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 )
 
 // normalizedRouteTag is the span tag that holds the route of the request as an
@@ -57,13 +55,21 @@ func normalizeRoute(framework, route string, params map[string]string, requestUR
 	case "github.com/gorilla/mux":
 		parts, ok = parseBraceRoute(route, params, false)
 		if ok {
-			parts = appendGorillaRemainder(parts, route, requestURI)
+			parts, escapes = appendGorillaRemainder(parts, params, requestURI)
 		}
 	case "github.com/go-chi/chi", "github.com/go-chi/chi/v5":
 		parts, ok = parseBraceRoute(route, params, true)
+		// chi matches URL.RawPath when net/http sets it, otherwise URL.Path.
+		escapes = hasRawPath(requestURI)
 	case "github.com/gin-gonic/gin":
 		parts, ok = parseColonRoute(route, params, true)
-	case "github.com/labstack/echo/v4", "github.com/labstack/echo/v5":
+	case "github.com/labstack/echo/v4":
+		parts, ok = parseColonRoute(route, params, false)
+		// As chi, echo v4 matches URL.RawPath when net/http sets it.
+		escapes = hasRawPath(requestURI)
+	case "github.com/labstack/echo/v5":
+		// echo v5 matches URL.Path, unless the application sets
+		// RouterConfig.UseEscapedPathForMatching.
 		parts, ok = parseColonRoute(route, params, false)
 	case "github.com/gofiber/fiber/v2":
 		var matched string
@@ -179,6 +185,14 @@ func hasServeMuxRemainder(pattern string, requestURI string) bool {
 	return path != ""
 }
 
+// hasRawPath reports that net/http sets URL.RawPath for requestURI: its escaped
+// path is not the default escaping of its unescaped path, as in /a%2Fb.
+func hasRawPath(requestURI string) bool {
+	escaped := requestPath(requestURI)
+	unescaped, err := url.PathUnescape(escaped)
+	return err == nil && (&url.URL{Path: unescaped}).EscapedPath() != escaped
+}
+
 // requestPath returns the escaped path of a request URI.
 func requestPath(requestURI string) string {
 	if i := strings.IndexByte(requestURI, '?'); i >= 0 {
@@ -254,90 +268,47 @@ func appendCatchAll(parts []routePart, rest string) []routePart {
 	return append(parts, routePart{param: true})
 }
 
-// gorillaRegexps holds the regexps of a gorilla/mux route template.
-type gorillaRegexps struct {
-	// full matches a whole path, as the regexp of a Path route.
-	full *regexp.Regexp
-	// prefix matches the longest start of a path, as the regexp of a
-	// PathPrefix route.
-	prefix *regexp.Regexp
-}
-
-// gorillaTemplates caches the regexps of gorilla/mux route templates. The routes
-// of an application are static, so the cache is bounded by their number.
-var gorillaTemplates sync.Map // string -> *gorillaRegexps, nil when they do not compile
-
 // appendGorillaRemainder adds the implicit unnamed catch-all of a gorilla/mux
-// PathPrefix route: the rest of the request path after the part that the route
-// template matches. The template does not tell a PathPrefix route from a Path
-// route. A Path route matches the whole path that the router matched, so a
-// template that matches a whole path has no rest. gorilla matches the unescaped
-// path, or the escaped path with UseEncodedPath: both are tried. The template is
-// matched as gorilla matches it: its literal text, and each variable with its
-// pattern ([^/]+ by default).
-func appendGorillaRemainder(parts []routePart, route, requestURI string) []routePart {
-	if requestURI == "" {
-		return parts
-	}
-	res := gorillaTemplateRegexps(route)
-	if res == nil {
-		return parts
+// PathPrefix route: the rest of the request path after the text that the route
+// matched, its literal text and the values that gorilla bound to its variables.
+// The template does not tell a PathPrefix route from a Path route, but a Path
+// route matches the whole path, so it has no rest. gorilla matches the unescaped
+// path, or the escaped path with UseEncodedPath. The one that starts with the
+// matched text is the one that gorilla matched: the returned bool reports that
+// it is the escaped path, where the %XX of the route are escaped bytes. Without
+// the value of a variable, the route gets no catch-all.
+func appendGorillaRemainder(parts []routePart, params map[string]string, requestURI string) ([]routePart, bool) {
+	matched, ok := matchedText(parts, params)
+	if !ok || requestURI == "" {
+		return parts, false
 	}
 	escaped := requestPath(requestURI)
-	unescaped, err := url.PathUnescape(escaped)
-	if err != nil {
-		unescaped = escaped
+	if unescaped, err := url.PathUnescape(escaped); err == nil && strings.HasPrefix(unescaped, matched) {
+		return appendCatchAll(parts, unescaped[len(matched):]), false
 	}
-	if res.full.MatchString(unescaped) || res.full.MatchString(escaped) {
-		return parts
+	if strings.HasPrefix(escaped, matched) {
+		return appendCatchAll(parts, escaped[len(matched):]), true
 	}
-	for _, path := range [...]string{unescaped, escaped} {
-		if loc := res.prefix.FindStringIndex(path); loc != nil {
-			return appendCatchAll(parts, path[loc[1]:])
-		}
-	}
-	return parts
+	return parts, false
 }
 
-// gorillaTemplateRegexps returns the regexps of the gorilla/mux route template
-// route, or nil.
-func gorillaTemplateRegexps(route string) *gorillaRegexps {
-	if res, found := gorillaTemplates.Load(route); found {
-		return res.(*gorillaRegexps)
-	}
-	var pattern strings.Builder
-	pattern.WriteByte('^')
-	start := 0
-	for i := 0; i < len(route); i++ {
-		if route[i] != '{' {
+// matchedText returns the path text that parts matched: their static text and
+// the values of their parameters. It returns false when params has no value for
+// one of them.
+func matchedText(parts []routePart, params map[string]string) (string, bool) {
+	var text strings.Builder
+	for _, part := range parts {
+		if !part.param {
+			text.WriteString(part.static)
 			continue
 		}
-		end := closingBrace(route, i)
-		if end < 0 {
-			break
+		value, found := params[part.name]
+		if !found {
+			return "", false
 		}
-		pattern.WriteString(regexp.QuoteMeta(route[start:i]))
-		varPattern := "[^/]+"
-		if _, p, found := strings.Cut(route[i+1:end], ":"); found {
-			varPattern = p
-		}
-		pattern.WriteString("(?:" + varPattern + ")")
-		i = end
-		start = end + 1
+		text.WriteString(value)
 	}
-	pattern.WriteString(regexp.QuoteMeta(route[start:]))
-	var res *gorillaRegexps
-	if prefix, err := regexp.Compile(pattern.String()); err == nil {
-		// RE2 prefers the first alternative: {ext:json|jsonl} would stop at
-		// "json" in "jsonl". gorilla matches as much as it can.
-		prefix.Longest()
-		res = &gorillaRegexps{
-			full:   regexp.MustCompile(pattern.String() + "$"),
-			prefix: prefix,
-		}
-	}
-	gorillaTemplates.Store(route, res)
-	return res
+	return text.String(), true
 }
 
 // closingBrace returns the index of the brace that closes the one at start,
@@ -362,35 +333,38 @@ func closingBrace(s string, start int) int {
 // to the next "/" (so gin's "/files/:name.json" has a parameter "name.json"),
 // and a catch-all at the end. A gin catch-all is named (*name). An echo
 // catch-all is unnamed (*), and echo ignores the rest of the route after it.
+// In echo, "\:" is a static colon, and it ends a parameter name before an inline
+// verb (/:name\:cancel), as echo reads the route.
 func parseColonRoute(route string, params map[string]string, gin bool) ([]routePart, bool) {
 	if !strings.HasPrefix(route, "/") {
 		return nil, false
 	}
-	var parts []routePart
-	start := 0
-	for i := 0; i < len(route); i++ {
-		switch route[i] {
-		case ':':
-			end := strings.IndexByte(route[i:], '/')
-			if end < 0 {
-				end = len(route)
-			} else {
-				end += i
+	var (
+		parts       []routePart
+		static      strings.Builder
+		flushStatic = func() {
+			if static.Len() > 0 {
+				parts = append(parts, routePart{static: static.String()})
+				static.Reset()
 			}
+		}
+	)
+	for i := 0; i < len(route); i++ {
+		switch {
+		case !gin && isEscapedColon(route, i):
+			static.WriteByte(':')
+			i++
+		case route[i] == ':':
+			end := colonParamEnd(route, i+1, gin)
 			name := route[i+1 : end]
 			if name == "" {
 				return nil, false
 			}
-			if start < i {
-				parts = append(parts, routePart{static: route[start:i]})
-			}
+			flushStatic()
 			parts = append(parts, routePart{param: true, name: name})
 			i = end - 1
-			start = end
-		case '*':
-			if start < i {
-				parts = append(parts, routePart{static: route[start:i]})
-			}
+		case route[i] == '*':
+			flushStatic()
 			if gin {
 				name := route[i+1:]
 				if name == "" || strings.IndexByte(name, '/') >= 0 {
@@ -401,12 +375,50 @@ func parseColonRoute(route string, params map[string]string, gin bool) ([]routeP
 				parts = append(parts, routePart{param: true, absent: !hasValue(params, "*", false)})
 			}
 			return parts, true
+		default:
+			static.WriteByte(route[i])
 		}
 	}
-	if start < len(route) {
-		parts = append(parts, routePart{static: route[start:]})
-	}
+	flushStatic()
 	return parts, true
+}
+
+// colonParamEnd returns the end of a gin or echo parameter name that starts at
+// start: the next "/". In echo, an escaped colon after a name without ":" or "*"
+// ends it when the rest of the segment is static: an inline verb.
+func colonParamEnd(route string, start int, gin bool) int {
+	plainName := true
+	i := start
+	for ; i < len(route) && route[i] != '/'; i++ {
+		if !gin && plainName && isEscapedColon(route, i) && isEchoInlineVerb(route[i+2:]) {
+			return i
+		}
+		if route[i] == ':' || route[i] == '*' {
+			plainName = false
+		}
+	}
+	return i
+}
+
+// isEscapedColon reports that route has "\:" at i.
+func isEscapedColon(route string, i int) bool {
+	return route[i] == '\\' && i+1 < len(route) && route[i+1] == ':'
+}
+
+// isEchoInlineVerb reports that the route text after an escaped colon is static
+// up to the end of its segment, as echo requires for an inline verb.
+func isEchoInlineVerb(rest string) bool {
+	for i := 0; i < len(rest) && rest[i] != '/'; i++ {
+		switch rest[i] {
+		case '*':
+			return false
+		case ':':
+			if i == 0 || rest[i-1] != '\\' {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // parseFiberRoute parses a fiber v2 route: :name parameters, whose name ends
@@ -415,10 +427,15 @@ func parseColonRoute(route string, params map[string]string, gin bool) ([]routeP
 // their values *1, +1, ...). "\" escapes the next character. The "/" before an
 // optional parameter is optional with it.
 //
+// A ":" or "+" followed by another of ":+*" is static: the parameter starts at
+// the next one (/color::color). A constraint runs to the last ">" of the
+// parameter, which ends at the first of "/-.:?\" that is not between its "<" and
+// its first ">", as fiber reads it.
+//
 // It also returns the path text that the route matched: its static text and the
 // values of its parameters. It is empty when the route has no implicit catch-all
-// to find: a "*" or "+" takes the rest of the path. It is also empty when params
-// has no value for one of the parameters.
+// to find: a "*" or "+" at the end takes the rest of the path. It is also empty
+// when params has no value for one of the parameters.
 func parseFiberRoute(route string, params map[string]string) ([]routePart, string, bool) {
 	if !strings.HasPrefix(route, "/") {
 		return nil, "", false
@@ -437,25 +454,33 @@ func parseFiberRoute(route string, params map[string]string) ([]routePart, strin
 		optionalSlashAllowed = func() bool {
 			return static.Len() > 0 && strings.HasSuffix(static.String(), "/")
 		}
-		noMatchedText bool
-		matchParam    = func(key string, absent, slash bool) {
+		unknownValue, endsWithWildcard bool
+		matchParam                     = func(key string, absent, slash bool) {
 			v, found := params[key]
-			noMatchedText = noMatchedText || !found
+			unknownValue = unknownValue || !found
 			if absent && slash {
 				// The "/" before the parameter is not in the path.
 				matched = matched[:len(matched)-1]
 			}
 			matched = append(matched, v...)
 		}
+		matchStatic = func(c byte) {
+			static.WriteByte(c)
+			matched = append(matched, c)
+			endsWithWildcard = false
+		}
 	)
 	for i := 0; i < len(route); i++ {
 		c := route[i]
+		if (c == ':' || c == '+') && i+1 < len(route) && strings.IndexByte(":+*", route[i+1]) >= 0 {
+			matchStatic(c)
+			continue
+		}
 		switch c {
 		case '\\':
 			if i+1 < len(route) {
 				i++
-				static.WriteByte(route[i])
-				matched = append(matched, route[i])
+				matchStatic(route[i])
 			}
 		case '*', '+':
 			var key string
@@ -470,7 +495,8 @@ func parseFiberRoute(route string, params map[string]string) ([]routePart, strin
 			absent := !hasValue(params, key, false)
 			flushStatic()
 			parts = append(parts, routePart{param: true, absent: absent, optionalSlash: slash})
-			noMatchedText = true
+			matchParam(key, absent, slash)
+			endsWithWildcard = true
 		case ':':
 			end := i + 1
 			for end < len(route) && strings.IndexByte("/-.:?\\<", route[end]) < 0 {
@@ -481,11 +507,11 @@ func parseFiberRoute(route string, params map[string]string) ([]routePart, strin
 				return nil, "", false
 			}
 			if end < len(route) && route[end] == '<' {
-				close := strings.IndexByte(route[end:], '>')
+				close := fiberConstraintEnd(route[i+1:])
 				if close < 0 {
 					return nil, "", false
 				}
-				end += close + 1
+				end = i + 1 + close + 1
 			}
 			optional := end < len(route) && route[end] == '?'
 			if optional {
@@ -496,17 +522,33 @@ func parseFiberRoute(route string, params map[string]string) ([]routePart, strin
 			flushStatic()
 			parts = append(parts, routePart{param: true, name: name, absent: absent, optionalSlash: slash})
 			matchParam(name, absent, slash)
+			endsWithWildcard = false
 			i = end - 1
 		default:
-			static.WriteByte(c)
-			matched = append(matched, c)
+			matchStatic(c)
 		}
 	}
 	flushStatic()
-	if noMatchedText {
+	if unknownValue || endsWithWildcard {
 		return parts, "", true
 	}
 	return parts, string(matched), true
+}
+
+// fiberConstraintEnd returns the index of the ">" that ends the constraint of
+// the fiber parameter param (its text after ":"), or -1. The parameter ends at
+// the first of "/-.:?\" that is not between its "<" and its first ">". Its
+// constraint ends at the last ">" before that, so a regexp constraint can hold
+// ">" (regex((?<n>a))).
+func fiberConstraintEnd(param string) int {
+	start, firstEnd := strings.IndexByte(param, '<'), strings.IndexByte(param, '>')
+	end := len(param)
+	for _, c := range []byte("/-.:?\\") {
+		if pos := strings.IndexByte(param, c); pos >= 0 && pos < end && (pos > firstEnd || pos < start) {
+			end = pos
+		}
+	}
+	return strings.LastIndexByte(param[:end], '>')
 }
 
 // appendFiberRemainder adds the implicit unnamed catch-all of a fiber prefix

@@ -573,14 +573,31 @@ func TestNormalizeRoute(t *testing.T) {
 		{name: "gorilla prefix, empty remainder", framework: mux, route: "/api", requestURI: "/api", want: "/api"},
 		{name: "gorilla prefix, slash remainder", framework: mux, route: "/api", requestURI: "/api/", want: "/api"},
 		{name: "gorilla prefix with slash", framework: mux, route: "/static/", requestURI: "/static/css/app.css", want: "/static/{param1}"},
-		{name: "gorilla prefix with variable", framework: mux, route: "/u/{id}", requestURI: "/u/1/rest", want: "/u/{id}/{param1}"},
-		{name: "gorilla prefix with constraint", framework: mux, route: "/u/{id:[0-9]+}", requestURI: "/u/12x", want: "/u/{id}{param1}"},
+		{name: "gorilla prefix with variable", framework: mux, route: "/u/{id}", params: map[string]string{"id": "1"}, requestURI: "/u/1/rest", want: "/u/{id}/{param1}"},
+		{name: "gorilla prefix with constraint", framework: mux, route: "/u/{id:[0-9]+}", params: map[string]string{"id": "12"}, requestURI: "/u/12x", want: "/u/{id}{param1}"},
+		{name: "gorilla prefix, unknown value", framework: mux, route: "/u/{id}", requestURI: "/u/1/rest", want: "/u/{id}"},
 		{name: "gorilla prefix, escaped path", framework: mux, route: "/café", requestURI: "/caf%C3%A9/x", want: "/caf%C3%A9/{param1}"},
 		{name: "gorilla path route", framework: mux, route: "/users/{id}", requestURI: "/users/1", want: "/users/{id}"},
-		{name: "gorilla catch-all variable", framework: mux, route: "/r/{path:.*}", requestURI: "/r/a/b", want: "/r/{path}"},
-		{name: "gorilla path route, longer alternative", framework: mux, route: "/f.{ext:json|jsonl}", requestURI: "/f.jsonl", want: "/f.{ext}"},
-		{name: "gorilla path route, encoded path", framework: mux, route: "/u/{id}", requestURI: "/u/a%2Fb", want: "/u/{id}"},
-		{name: "gorilla prefix, longest alternative", framework: mux, route: "/p/{v:a|ab}", requestURI: "/p/ab/x", want: "/p/{v}/{param1}"},
+		{name: "gorilla catch-all variable", framework: mux, route: "/r/{path:.*}", params: map[string]string{"path": "a/b"}, requestURI: "/r/a/b", want: "/r/{path}"},
+		{name: "gorilla path route, longer alternative", framework: mux, route: "/f.{ext:json|jsonl}", params: map[string]string{"ext": "jsonl"}, requestURI: "/f.jsonl", want: "/f.{ext}"},
+		{name: "gorilla path route, encoded path", framework: mux, route: "/u/{id}", params: map[string]string{"id": "a%2Fb"}, requestURI: "/u/a%2Fb", want: "/u/{id}"},
+		// gorilla's regexp prefers the first alternative: PathPrefix("/p/{v:a|ab}")
+		// binds v to "a" in /p/ab.
+		{name: "gorilla prefix, first alternative", framework: mux, route: "/p/{v:a|ab}", params: map[string]string{"v": "a"}, requestURI: "/p/ab", want: "/p/{v}{param1}"},
+		{name: "gorilla prefix, first alternative, rest", framework: mux, route: "/p/{v:a|ab}", params: map[string]string{"v": "a"}, requestURI: "/p/ab/x", want: "/p/{v}{param1}"},
+		{name: "gorilla static escape, encoded path", framework: mux, route: "/a%2Fb", requestURI: "/a%2Fb", want: "/a%2Fb"},
+		{name: "gorilla static percent, unescaped path", framework: mux, route: "/a%2Fb", requestURI: "/a%252Fb", want: "/a%252Fb"},
+
+		// chi and echo v4 match URL.RawPath when net/http sets it.
+		{name: "chi static escape, raw path", framework: chi, route: "/a%2Fb", requestURI: "/a%2Fb", want: "/a%2Fb"},
+		{name: "chi static percent, unescaped path", framework: chi, route: "/100%", requestURI: "/100%25", want: "/100%25"},
+		{name: "echo v4 static escape, raw path", framework: echo, route: "/a%2Fb", requestURI: "/a%2Fb", want: "/a%2Fb"},
+
+		// echo escaped colons.
+		{name: "echo escaped colon", framework: echo, route: "/files/a\\:undelete", requestURI: "/files/a:undelete", want: "/files/a%3Aundelete"},
+		{name: "echo inline verb", framework: echo, route: "/tasks/:id\\:cancel", requestURI: "/tasks/1:cancel", want: "/tasks/{id}%3Acancel"},
+		{name: "echo escaped colon in a name", framework: echo, route: "/t/:a\\:b:c", requestURI: "/t/x", want: "/t/{a__b_c}"},
+		{name: "gin backslash", framework: gin, route: "/files/a\\:b", requestURI: "/files/a%5C:b", want: "/files/a%5C{b}"},
 
 		// fiber prefix routes (Use, Static, mounts) have an implicit catch-all.
 		{name: "fiber prefix", framework: fiber, route: "/api", requestURI: "/api/v1/x", want: "/api/{param1}"},
@@ -593,6 +610,11 @@ func TestNormalizeRoute(t *testing.T) {
 		{name: "fiber prefix, unknown value", framework: fiber, route: "/t/:tenant", requestURI: "/t/acme/x", want: "/t/{tenant}"},
 		{name: "fiber route, absent optional", framework: fiber, route: "/u/:id?", params: map[string]string{"id": ""}, requestURI: "/u", want: "/u"},
 		{name: "fiber catch-all, empty with slashes", framework: fiber, route: "/c/*", params: map[string]string{"*1": ""}, requestURI: "/c//", want: "/c/"},
+		{name: "fiber prefix after a wildcard", framework: fiber, route: "/api/*/fixed", params: map[string]string{"*1": "x"}, requestURI: "/api/x/fixed/rest", want: "/api/{param1}/fixed/{param2}"},
+		{name: "fiber consecutive colons", framework: fiber, route: "/color::color", params: map[string]string{"color": "blue"}, requestURI: "/color:blue", want: "/color%3A{color}"},
+		{name: "fiber regexp constraint with >", framework: fiber, route: "/r/:id<regex((?<n>abc))>", params: map[string]string{"id": "abc"}, requestURI: "/r/abc", want: "/r/{id}"},
+		{name: "fiber constraint then segment", framework: fiber, route: "/r/:id<int>/x", params: map[string]string{"id": "1"}, requestURI: "/r/1/x", want: "/r/{id}/x"},
+		{name: "fiber optional constraint", framework: fiber, route: "/r/:id<int>?", params: map[string]string{"id": ""}, requestURI: "/r", want: "/r"},
 
 		// net/http patterns.
 		{name: "servemux host", framework: netmux, route: "example.com/foo/{id}", want: "/foo/{id}"},

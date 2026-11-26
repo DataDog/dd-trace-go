@@ -913,9 +913,12 @@ func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
 	router.PathPrefix("/api").Handler(okHandler())
 	router.Handle("/users/{id}", okHandler())
 	router.Handle("/f.{ext:json|jsonl}", okHandler())
+	// gorilla's regexp prefers the first alternative: v is "a" in /p/ab.
+	router.PathPrefix("/p/{v:a|ab}").Handler(okHandler())
 	encoded := NewRouter()
 	encoded.UseEncodedPath()
 	encoded.Handle("/u/{id}", okHandler())
+	encoded.Handle("/a%2Fb", okHandler())
 	for _, tc := range []struct {
 		router       *Router
 		target, want string
@@ -927,7 +930,10 @@ func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
 		{router, "/api", "/api"},
 		{router, "/users/1", "/users/{id}"},
 		{router, "/f.jsonl", "/f.{ext}"},
+		{router, "/p/ab", "/p/{v}{param1}"},
+		{router, "/p/a/x", "/p/{v}/{param1}"},
 		{encoded, "/u/a%2Fb", "/u/{id}"},
+		{encoded, "/a%2Fb", "/a%2Fb"},
 	} {
 		mt := mocktracer.Start()
 		rec := httptest.NewRecorder()

@@ -408,14 +408,20 @@ route registered on a caller-provided `*http.ServeMux`.
 
 A prefix route has an implicit catch-all: the rest of the path after the part that
 the route matched. Routers report a prefix route as its template, so the listener
-finds that part:
-- gorilla/mux `PathPrefix`: the listener matches the template as gorilla does. A
-  template that matches the whole path, escaped or not, is a `Path` route, which
-  has no rest.
-- fiber `Use`, `Static` and mounts: the route's static text and parameter values
-  start the escaped path, ignoring case. A path that does not start with them
-  gets no catch-all, and neither does a route with `*` or `+`, which takes the
-  rest of the path.
+rebuilds that part from the route's static text and the values that the router
+bound to its parameters:
+- gorilla/mux `PathPrefix`: the part starts the unescaped path, or the escaped
+  path with `UseEncodedPath`; the one it starts tells how the `%XX` of the route
+  are read. A `Path` route matches the whole path, so it has no rest.
+- fiber `Use`, `Static` and mounts: the part starts the escaped path, ignoring
+  case. A route that ends with `*` or `+` takes the rest of the path.
 
-fiber reports no route when its router found none (404 or 405), so such a request
-gets no tag.
+Without the value of a parameter, or when the path does not start with the part,
+the route gets no catch-all.
+
+The `%XX` in the static text of a route are escaped bytes only when the router
+matched the escaped path: always for net/http and fiber, when net/http sets
+`URL.RawPath` for go-chi and echo v4, and as found above for gorilla/mux.
+
+fiber reports no route when its router found none (404 or 405): the last route
+that fiber ran is then a middleware (`GetRoutes(true)` leaves it out).
