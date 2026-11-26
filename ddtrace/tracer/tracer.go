@@ -956,10 +956,22 @@ func (c *chunk) releasableSpans() []*Span {
 	return c.spans
 }
 
+// clear drops references to spans held by this chunk and its slice backing
+// arrays, including trace.initialSpans when this chunk is trace.finalChunk.
+func (c *chunk) clear() {
+	clear(c.spans)
+	clear(c.spansToRelease)
+	c.spans = nil
+	c.spansToRelease = nil
+}
+
 func (t *tracer) processOutChunk(trace *chunk) {
+	origSpans := trace.spans
 	spansToRelease := trace.releasableSpans()
 	if trace.filterRejected {
 		releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
+		clear(origSpans)
+		trace.clear()
 		return
 	}
 	t.sampleChunk(trace)
@@ -967,6 +979,8 @@ func (t *tracer) processOutChunk(trace *chunk) {
 		t.traceWriter.add(trace.spans)
 	}
 	releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
+	clear(origSpans)
+	trace.clear()
 }
 
 // sampleChunk applies single-span sampling to the provided trace.
@@ -1003,6 +1017,7 @@ func (t *tracer) pushChunk(trace *chunk) {
 	tracerstats.Signal(tracerstats.SpansFinished, uint32(len(trace.spans)))
 	select {
 	case <-t.stop:
+		trace.clear()
 		return
 	default:
 	}
@@ -1021,6 +1036,7 @@ func (t *tracer) pushChunk(trace *chunk) {
 		// finish() while s.mu is held. clear() acquires s.mu to serialize
 		// after finish(), so calling it here deadlocks the same goroutine.
 		// Dropped spans are GC'd instead.
+		trace.clear()
 	}
 	select {
 	case <-t.logDroppedTraces.C:

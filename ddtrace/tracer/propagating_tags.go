@@ -145,12 +145,13 @@ func (t *trace) iteratePropagatingTags(f func(k, v string) bool) {
 }
 
 // setPropagatingTagUnsafe writes key=value directly into the propagating-tags
-// map without copy-on-write. Caller must guarantee the trace is not yet visible
-// to other goroutines (e.g. during header extraction, before SpanContext is
-// returned). The currently stored map is mutated in place; a new map is
-// allocated (and stored atomically) only when the atomic.Value holds nil. If
-// an intervening CoW write (e.g. from setSamplingPriority) has swapped in a
-// new map, this call loads and mutates that newer map instead.
+// map without copy-on-write. The caller must guarantee the trace is not yet
+// visible to other goroutines (for example, during header extraction before
+// SpanContext is returned). It mutates the stored map in place. It allocates
+// and stores a new map atomically only when the atomic.Value holds nil or a
+// shared prebuilt decision-maker snapshot, which must not be mutated. If an
+// intervening CoW write (for example, from setSamplingPriority) has swapped in
+// a new map, this call loads and mutates that newer map instead.
 // +checklocksignore - Caller guarantees no concurrent access.
 func (t *trace) setPropagatingTagUnsafe(key, value string) {
 	m := t.loadPropagatingTags()

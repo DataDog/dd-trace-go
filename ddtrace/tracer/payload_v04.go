@@ -15,9 +15,9 @@ import (
 	"github.com/tinylib/msgp/msgp"
 )
 
-// msgpWriterPool recycles msgp.Writer instances used by payloadV04.push so
-// encoding spanList avoids both the msgp.Encodable interface-boxing allocation
-// of msgp.Encode and per-payload writer buffer allocations.
+// msgpWriterPool recycles msgp.Writer instances used by payloadV04.push.
+// Calling spanList.EncodeMsg directly avoids the msgp.Encodable
+// interface-boxing allocation of msgp.Encode.
 var msgpWriterPool = sync.Pool{
 	New: func() any {
 		return msgp.NewWriter(io.Discard)

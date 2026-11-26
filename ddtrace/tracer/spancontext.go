@@ -1032,8 +1032,12 @@ func (t *trace) push(sp *Span) {
 	if len(t.spans) >= traceMaxSize {
 		// capacity is reached, we will not be able to complete this trace.
 		t.full = true
-		t.spans = nil                                                           // allow our spans to be collected by GC.
-		clear(t.initialSpans[:])                                                // drop inline references to spans.
+		t.spans = nil // allow our spans to be collected by GC.
+		// Preserve initialSpans if an earlier full flush transferred its
+		// ownership to finalChunk. The worker or drop path clears it instead.
+		if !t.finalChunkUsed {
+			clear(t.initialSpans[:]) // drop inline references to spans.
+		}
 		log.Error("trace buffer full (%d spans), dropping trace", traceMaxSize) //errtrack:ignore per-span capacity limit
 		if tr != nil {
 			tracerstats.Signal(tracerstats.TracesDropped, 1)
@@ -1043,7 +1047,11 @@ func (t *trace) push(sp *Span) {
 	if v, ok := sp.metrics[keySamplingPriority]; ok {
 		t.setSamplingPriorityLocked(int(v), samplernames.Unknown)
 	}
+	wasInline := !t.finalChunkUsed && len(t.spans) > 0 && len(t.spans) == cap(t.spans) && &t.spans[0] == &t.initialSpans[0]
 	t.spans = append(t.spans, sp)
+	if wasInline {
+		clear(t.initialSpans[:])
+	}
 	if tr != nil {
 		tracerstats.Signal(tracerstats.SpanStarted, 1)
 	}
@@ -1292,7 +1300,9 @@ func (t *trace) finishedOneLocked(s *Span) {
 func submitChunkWithTracer(tr Tracer, c *chunk) {
 	if t, ok := tr.(*tracer); ok {
 		t.submitChunk(c)
+		return
 	}
+	c.clear()
 }
 
 // setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from

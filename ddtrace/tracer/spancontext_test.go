@@ -10,11 +10,13 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+	"weak"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/internal"
@@ -1926,4 +1928,142 @@ func TestSpanSnapshotFieldsConcurrentAccess(t *testing.T) {
 	for err := range errCh {
 		assert.NoError(t, err)
 	}
+}
+
+func TestRetainedSpanContextDoesNotKeepChildSpansAlive(t *testing.T) {
+	t.Run("processed", func(t *testing.T) {
+		trc, _, _, stop, err := startTestTracer(t, WithSpanPool(false))
+		require.NoError(t, err)
+
+		rootCtx, weakChild := func() (*SpanContext, weak.Pointer[Span]) {
+			root := trc.StartSpan("root")
+			child := trc.StartSpan("child", ChildOf(root.Context()))
+			w := weak.Make(child)
+			child.Finish()
+			root.Finish()
+			return root.Context(), w
+		}()
+
+		// Stop drains trc.out so processOutChunk has completed for the trace.
+		stop()
+
+		tr := rootCtx.trace
+		assert.Nil(t, tr.finalChunk.spans)
+		assert.Nil(t, tr.finalChunk.spansToRelease)
+		for i, sp := range tr.initialSpans {
+			assert.Nil(t, sp, "initialSpans[%d] should be cleared after full flush", i)
+		}
+
+		for range 10 {
+			runtime.GC()
+			if weakChild.Value() == nil {
+				break
+			}
+		}
+		assert.Nil(t, weakChild.Value(), "retained SpanContext kept child span alive after full flush")
+		runtime.KeepAlive(rootCtx)
+	})
+
+	t.Run("queue_full_drop", func(t *testing.T) {
+		trc, err := newUnstartedTracer(WithSpanPool(false))
+		require.NoError(t, err)
+		defer trc.Stop()
+		prev := getGlobalTracer()
+		setGlobalTracer(trc)
+		defer setGlobalTracer(prev)
+
+		// Fill the output queue so the next full flush is dropped.
+		for range cap(trc.out) {
+			trc.out <- &chunk{}
+		}
+
+		rootCtx, weakChild := func() (*SpanContext, weak.Pointer[Span]) {
+			root := trc.StartSpan("root")
+			child := trc.StartSpan("child", ChildOf(root.Context()))
+			w := weak.Make(child)
+			child.Finish()
+			root.Finish()
+			return root.Context(), w
+		}()
+
+		tr := rootCtx.trace
+		assert.Nil(t, tr.finalChunk.spans)
+		assert.Nil(t, tr.finalChunk.spansToRelease)
+		for i, sp := range tr.initialSpans {
+			assert.Nil(t, sp, "initialSpans[%d] should be cleared after dropped flush", i)
+		}
+
+		for range 10 {
+			runtime.GC()
+			if weakChild.Value() == nil {
+				break
+			}
+		}
+		assert.Nil(t, weakChild.Value(), "retained SpanContext kept child span alive after dropped flush")
+		runtime.KeepAlive(rootCtx)
+	})
+
+	t.Run("inline_growth", func(t *testing.T) {
+		trc, _, _, stop, err := startTestTracer(t, WithSpanPool(false))
+		require.NoError(t, err)
+		defer stop()
+
+		root := trc.StartSpan("root")
+		for range defaultTraceStartSize {
+			child := trc.StartSpan("child", ChildOf(root.Context()))
+			child.Finish()
+		}
+
+		tr := root.context.trace
+		tr.mu.RLock()
+		for i, sp := range tr.initialSpans {
+			assert.Nil(t, sp, "initialSpans[%d] should be cleared after slice growth", i)
+		}
+		tr.mu.RUnlock()
+
+		root.Finish()
+	})
+
+	t.Run("late_overflow_preserves_queued_final_chunk", func(t *testing.T) {
+		defer setupteardown(defaultTraceStartSize, 3)()
+
+		trc, err := newUnstartedTracer(WithSpanPool(false))
+		require.NoError(t, err)
+		defer trc.Stop()
+		prev := getGlobalTracer()
+		setGlobalTracer(trc)
+		defer setGlobalTracer(prev)
+
+		root := trc.StartSpan("root")
+		child := trc.StartSpan("child", ChildOf(root.Context()))
+		child.Finish()
+		root.Finish()
+
+		require.Len(t, trc.out, 1, "first full flush should be queued")
+
+		// Push unfinished late children until traceMaxSize is exceeded while
+		// finalChunk is still queued.
+		late := make([]*Span, 4)
+		for i := range late {
+			late[i] = trc.StartSpan("late", ChildOf(root.Context()))
+		}
+		require.True(t, root.context.trace.full, "late children should overflow traceMaxSize")
+		for _, s := range late {
+			s.Finish()
+		}
+
+		queued := <-trc.out
+		require.Len(t, queued.spans, 2)
+		require.NotNil(t, queued.spans[0])
+		require.NotNil(t, queued.spans[1])
+
+		trc.processOutChunk(queued)
+
+		tr := root.context.trace
+		assert.Nil(t, tr.finalChunk.spans)
+		assert.Nil(t, tr.finalChunk.spansToRelease)
+		for i, sp := range tr.initialSpans {
+			assert.Nil(t, sp, "initialSpans[%d] should be cleared after worker processes finalChunk", i)
+		}
+	})
 }
