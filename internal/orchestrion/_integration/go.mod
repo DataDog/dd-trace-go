@@ -9,6 +9,7 @@ require (
 	example.com/confluentkafkadep v0.0.0-00010101000000-000000000000
 	example.com/goredisdep v0.0.0-00010101000000-000000000000
 	example.com/pgxdep v0.0.0-00010101000000-000000000000
+	example.com/rueidisdep v0.0.0-00010101000000-000000000000
 	github.com/99designs/gqlgen v0.17.97
 	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.14.0-dev
@@ -190,7 +191,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.14.0-dev
-	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.14.0-dev // indirect
@@ -405,7 +406,7 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0 // indirect
 	go.opentelemetry.io/otel v1.47.0
-	go.opentelemetry.io/otel/metric v1.47.0 // indirect
+	go.opentelemetry.io/otel/metric v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
 	go.opentelemetry.io/otelc/pkg v0.1.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
@@ -584,6 +585,8 @@ replace github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/otelc/v2 => ../
 
 replace example.com/goredisdep => ./internal/goredisdep
 
+replace example.com/rueidisdep => ./internal/rueidisdep
+
 replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis/otelc/v2 => ../../../contrib/go-redis/redis/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/otelc/v2 => ../../../contrib/go-redis/redis.v7/otelc
@@ -613,6 +616,8 @@ replace github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2
 require (
 	example.com/httprouterdep v0.0.0-00010101000000-000000000000
 	example.com/zerologdep v0.0.0-00010101000000-000000000000
+	github.com/redis/rueidis/rueidisaside v1.0.74
+	github.com/redis/rueidis/rueidisotel v1.0.74
 )
 
 replace example.com/httprouterdep => ./internal/httprouterdep
@@ -624,6 +629,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.14.0-dev // indirect
 	github.com/aws/aws-sdk-go-v2/service/kms v1.30.1 // indirect
@@ -680,3 +686,5 @@ replace example.com/confluentkafkadep => ./internal/confluentkafkadep
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../../contrib/aws/aws-sdk-go/otelc
 
 replace example.com/awsv1dep => ./internal/awsv1dep
+
+replace github.com/DataDog/dd-trace-go/contrib/redis/rueidis/otelc/v2 => ../../../contrib/redis/rueidis/otelc

@@ -27,6 +27,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/julienschmidt/httprouter"
 	redisv9 "github.com/redis/go-redis/v9"
+	"github.com/redis/rueidis"
 	"github.com/rs/zerolog"
 	"github.com/segmentio/kafka-go"
 	"github.com/valyala/fasthttp"
@@ -77,6 +78,10 @@ func useLibraries() {
 	_ = redisv7.NewClient(&redisv7.Options{}).Close()
 	_ = redisv8.NewClient(&redisv8.Options{}).Close()
 	_ = redisv9.NewClient(&redisv9.Options{}).Close()
+	// With no address, NewClient fails before any network call.
+	if c, err := rueidis.NewClient(rueidis.ClientOption{}); err == nil {
+		c.Close()
+	}
 	_, _ = gorm.Open(gormtests.DummyDialector{})
 	// The pool opens no connection until first used.
 	if pool, err := pgxpool.New(context.Background(), "postgres://localhost/db"); err == nil {

@@ -11,6 +11,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2 v2.14.0-dev
 	github.com/aws/aws-sdk-go-v2 v1.43.2
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.44.0
+	github.com/redis/rueidis v1.0.74
 	github.com/rs/zerolog v1.35.1
 	github.com/segmentio/kafka-go v0.4.42
 	google.golang.org/api v0.273.1
@@ -223,6 +224,10 @@ replace github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/otelc/v2 => ../
 
 replace github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 => ../../../contrib/redis/go-redis.v9
 
+replace github.com/DataDog/dd-trace-go/contrib/redis/rueidis/otelc/v2 => ../../../contrib/redis/rueidis/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 => ../../../contrib/redis/rueidis
+
 replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis/otelc/v2 => ../../../contrib/go-redis/redis/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 => ../../../contrib/go-redis/redis
@@ -362,6 +367,8 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 => ../../../contrib/labstack/echo.v5
 
 require (
+	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/otelc/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.14.0-dev // indirect
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.101.0 // indirect
@@ -404,3 +411,5 @@ replace github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/k
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/otelc/v2 => ../../../contrib/aws/aws-sdk-go-v2/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 => ../../../contrib/aws/aws-sdk-go-v2
+
+replace github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 => ../../../instrumentation/testutils/containers

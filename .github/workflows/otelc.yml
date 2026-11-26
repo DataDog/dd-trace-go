@@ -83,6 +83,8 @@ env:
     contrib/go-redis/redis.v8/otelc
     contrib/redis/go-redis.v9
     contrib/redis/go-redis.v9/otelc
+    contrib/redis/rueidis
+    contrib/redis/rueidis/otelc
     contrib/gorm.io/gorm.v1
     contrib/gorm.io/gorm.v1/otelc
     contrib/jackc/pgx.v5
@@ -124,6 +126,7 @@ env:
     go-redis.v7
     go-redis.v8
     go-redis.v9
+    rueidis
     gorm
     aws.v2
     pgx

@@ -30,6 +30,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/otelc/v2 v2.14.0-dev
+	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.14.0-dev
 )
@@ -66,6 +67,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.14.0-dev // indirect
@@ -135,6 +137,7 @@ require (
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/redis/go-redis/v9 v9.7.3 // indirect
+	github.com/redis/rueidis v1.0.74 // indirect
 	github.com/rs/zerolog v1.34.0 // indirect
 	github.com/segmentio/kafka-go v0.4.42 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
@@ -280,6 +283,10 @@ replace github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/otelc/v2 => ../
 
 replace github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 => ../../contrib/redis/go-redis.v9
 
+replace github.com/DataDog/dd-trace-go/contrib/redis/rueidis/otelc/v2 => ../../contrib/redis/rueidis/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 => ../../contrib/redis/rueidis
+
 replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis/otelc/v2 => ../../contrib/go-redis/redis/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 => ../../contrib/go-redis/redis
@@ -381,3 +388,5 @@ replace github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/k
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../contrib/aws/aws-sdk-go/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 => ../../contrib/aws/aws-sdk-go
+
+replace github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 => ../../instrumentation/testutils/containers

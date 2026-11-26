@@ -18,3 +18,39 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestAliasedImport(t *testing.T) {
+	harness.Run(t, new(TestCaseAliasedImport))
+}
+
+func TestCacheAside(t *testing.T) {
+	harness.Run(t, new(TestCaseCacheAside))
+}
+
+func TestContribClient(t *testing.T) {
+	harness.Run(t, new(TestCaseContribClient))
+}
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestFuncLiteral(t *testing.T) {
+	harness.Run(t, new(TestCaseFuncLiteral))
+}
+
+func TestLocker(t *testing.T) {
+	harness.Run(t, new(TestCaseLocker))
+}
+
+func TestNewClient(t *testing.T) {
+	harness.Run(t, new(TestCaseNewClient))
+}
+
+func TestOnlyImportUse(t *testing.T) {
+	harness.Run(t, new(TestCaseOnlyImportUse))
+}
+
+func TestOtelClient(t *testing.T) {
+	harness.Run(t, new(TestCaseOtelClient))
+}

@@ -1,0 +1,30 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# A call-site rule, not a hook on rueidis.NewClient: the rewritten package
+# imports the contrib, so it is initialized before a client built in a
+# package-level var or init. The contrib is excluded because it calls
+# rueidis.NewClient itself. Calls in rueidis subpackages such as rueidislock
+# and rueidisaside are wrapped, but not in rueidisotel: its client already
+# emits OTel spans, so wrapping it would add a second span per command. The
+# closure names the library's types, so the file's own import of rueidis
+# stays used when this call was its only use.
+new_client:
+  target:
+    - "**"
+    - not: "github.com/redis/rueidis"
+    - not: "github.com/redis/rueidis/rueidisotel/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/redis/rueidis/**"
+  where:
+    function_call: github.com/redis/rueidis.NewClient
+  do:
+    - wrap_call:
+        replace: |-
+          (func(option __dd_rueidis.ClientOption) (__dd_rueidis.Client, error) {
+            return __dd_rueidistrace.NewClient(option)
+          })({{ .CallArguments }})
+  imports:
+    __dd_rueidis: github.com/redis/rueidis
+    __dd_rueidistrace: github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2
