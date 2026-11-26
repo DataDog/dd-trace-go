@@ -17,11 +17,13 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/adaptor"
 	"github.com/stretchr/testify/require"
 	"github.com/valyala/fasthttp"
 
@@ -30,15 +32,8 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
-// appSecHijackRules has 5 rules with different types, so that the WAF reports
-// each match:
-//   - the request header X-Attack: attack blocks (403) before the handler;
-//   - the response header X-Block: attack blocks (403) after the handler;
-//   - the response header X-Redirect: attack redirects (303) after the handler;
-//   - the user ID attack-user blocks (403). The application sets it with the
-//     SDK, and AppSec writes the block after the handler;
-//   - the path parameter attack blocks (403). Only the router knows it, so the
-//     block comes after the handler with Middleware, and before it with Wrap.
+// Only the router knows the path parameter, so Middleware blocks after the
+// handler and Wrap blocks before it.
 const appSecHijackRules = `{
 	"version": "2.2",
 	"metadata": {"rules_version": "1.0.0"},
@@ -104,7 +99,6 @@ const appSecHijackRules = `{
 	}]
 }`
 
-// hijackRawResponse is what a hijack handler of the application writes.
 const hijackRawResponse = "HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\nAPP-BODY"
 
 // hijackWait is the deadline of each read in this file. Reads that wait for the
@@ -112,8 +106,6 @@ const hijackRawResponse = "HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: c
 // response use readFramed.
 const hijackWait = 5 * time.Second
 
-// hijackRawHandler is a hijack handler that writes a whole response, then
-// closes the connection. ran tells that fasthttp called it.
 func hijackRawHandler(ran *atomic.Bool) fasthttp.HijackHandler {
 	return func(conn net.Conn) {
 		ran.Store(true)
@@ -122,8 +114,6 @@ func hijackRawHandler(ran *atomic.Bool) fasthttp.HijackHandler {
 	}
 }
 
-// hijackNoWriteHandler is a hijack handler that closes the connection without a
-// write.
 func hijackNoWriteHandler(ran *atomic.Bool) fasthttp.HijackHandler {
 	return func(conn net.Conn) {
 		ran.Store(true)
@@ -149,7 +139,6 @@ func servePipe(t *testing.T, srv *fasthttp.Server) (net.Conn, <-chan fasthttp.Co
 	return clientConn, done
 }
 
-// waitConnState returns the last connection state after ServeConn returned.
 func waitConnState(t *testing.T, done <-chan fasthttp.ConnState) fasthttp.ConnState {
 	t.Helper()
 	select {
@@ -161,7 +150,6 @@ func waitConnState(t *testing.T, done <-chan fasthttp.ConnState) fasthttp.ConnSt
 	}
 }
 
-// writeRequest writes one raw request. extra holds the extra header lines.
 func writeRequest(t *testing.T, conn net.Conn, path string, extra ...string) {
 	t.Helper()
 	var req strings.Builder
@@ -207,8 +195,6 @@ func readFramed(t *testing.T, conn net.Conn, br *bufio.Reader) (wireResponse, st
 	return wireResponse{StatusCode: res.StatusCode, Header: res.Header, Close: res.Close}, string(body)
 }
 
-// parseFirstResponse returns the first response in raw, its body, and the
-// bytes after it.
 func parseFirstResponse(t *testing.T, raw []byte) (wireResponse, string, string) {
 	t.Helper()
 	br := bufio.NewReader(bytes.NewReader(raw))
@@ -255,20 +241,16 @@ func startAppSecHijackRules(t *testing.T) {
 	testutils.StartAppSec(t)
 }
 
-// requireHijackSpan waits for the server span and returns it.
 func requireHijackSpan(t *testing.T, mt mocktracer.Tracer) *mocktracer.Span {
 	t.Helper()
 	require.Eventually(t, func() bool { return len(mt.FinishedSpans()) == 1 }, hijackWait, time.Millisecond)
 	return mt.FinishedSpans()[0]
 }
 
-// hijackRow is a handler case of the matrix.
 type hijackRow struct {
-	name string
-	// closeRequest sends Connection: close in the request.
+	name         string
 	closeRequest bool
-	// handle is the application handler.
-	handle func(c *fiber.Ctx, ran *atomic.Bool) error
+	handle       func(c *fiber.Ctx, ran *atomic.Bool) error
 }
 
 func hijackRows() []hijackRow {
@@ -324,7 +306,6 @@ func hijackLate(phase string) bool {
 	return phase == "late-route" || phase == "response" || phase == "response-redirect" || phase == "user-sdk"
 }
 
-// hijackServer builds the fiber app of a cell and returns its server.
 func hijackServer(phase string, row hijackRow, ran *atomic.Bool) *fasthttp.Server {
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
 	if phase == "early-wrap" {
@@ -365,7 +346,6 @@ func hijackServer(phase string, row hijackRow, ran *atomic.Bool) *fasthttp.Serve
 	return app.Server()
 }
 
-// hijackTarget is the path of a cell.
 func hijackTarget(phase string) string {
 	if phase == "early-wrap" || phase == "late-route" {
 		return "/p/attack"
@@ -373,8 +353,6 @@ func hijackTarget(phase string) string {
 	return "/p/benign"
 }
 
-// requireBlockResponse checks one block response. The status is 303 with a
-// Location for a redirect, and 403 with the block body otherwise.
 func requireBlockResponse(t *testing.T, phase string, res wireResponse, body string) {
 	t.Helper()
 	if phase == "response-redirect" {
@@ -388,8 +366,6 @@ func requireBlockResponse(t *testing.T, phase string, res wireResponse, body str
 	require.NotContains(t, body, "APP-BODY")
 }
 
-// requireBlockTelemetry checks the span and the metric of a block that
-// reached the client.
 func requireBlockTelemetry[K comparable, H interface{ Get() float64 }](t *testing.T, phase string, mt mocktracer.Tracer, metrics map[K]H) {
 	t.Helper()
 	span := requireHijackSpan(t, mt)
@@ -402,6 +378,93 @@ func requireBlockTelemetry[K comparable, H interface{ Get() float64 }](t *testin
 	}
 	require.Equal(t, "403", span.Tag("http.status_code"))
 	requireWAFOutcome(t, metrics, true, false)
+}
+
+type hijackContextCloser struct {
+	closed atomic.Bool
+}
+
+func (c *hijackContextCloser) Close() error {
+	c.closed.Store(true)
+	return nil
+}
+
+func TestAppSecHijackAdaptorKeepsContext(t *testing.T) {
+	startAppSecHijackRules(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	const key = "adaptor-context-value"
+	value := &hijackContextCloser{}
+	started := make(chan struct{})
+	finished := make(chan struct{})
+	check := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(release) })
+		select {
+		case <-started:
+			select {
+			case <-finished:
+			case <-time.After(hijackWait):
+				t.Error("adapted handler did not finish")
+			}
+		default:
+		}
+	})
+	hijacked := make(chan error, 1)
+	observed := make(chan any, 1)
+	adapted := adaptor.HTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		defer close(finished)
+		conn, _, err := w.(http.Hijacker).Hijack()
+		hijacked <- err
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		select {
+		case <-check:
+			observed <- r.Context().Value(key)
+		case <-release:
+			return
+		}
+		<-release
+	}))
+	app := fiber.New(fiber.Config{DisableStartupMessage: true})
+	app.Use(func(c *fiber.Ctx) error {
+		c.Locals(key, value)
+		return c.Next()
+	})
+	app.Use(Middleware())
+	app.Get("/p/:v", adapted)
+	app.Handler()
+	conn, done := servePipe(t, app.Server())
+	writeRequest(t, conn, "/p/attack")
+	res, body, rest := parseFirstResponse(t, readUntilClose(t, conn))
+	requireBlockResponse(t, "late-route", res, body)
+	require.Empty(t, rest)
+	require.Equal(t, fasthttp.StateClosed, waitConnState(t, done))
+	select {
+	case err := <-hijacked:
+		require.NoError(t, err)
+	case <-time.After(hijackWait):
+		t.Fatal("adapted handler did not hijack")
+	}
+	close(check)
+	select {
+	case got := <-observed:
+		require.Same(t, value, got)
+	case <-time.After(hijackWait):
+		t.Fatal("adapted handler did not read its context")
+	}
+	require.False(t, value.closed.Load())
+	select {
+	case <-finished:
+		t.Fatal("adapted handler returned before release")
+	default:
+	}
 }
 
 // TestAppSecHijackWire runs a real fasthttp server with a real WAF. Each cell
@@ -441,8 +504,6 @@ func TestAppSecHijackWire(t *testing.T) {
 				}
 				switch {
 				case row.name == "outer-hijack-after":
-					// Code outside the AppSec scope hijacks after the block
-					// (gap G1). Same result as before the fix.
 					res, body, rest := parseFirstResponse(t, readUntilClose(t, conn))
 					requireBlockResponse(t, phase, res, body)
 					require.Equal(t, hijackRawResponse, rest)
@@ -454,7 +515,6 @@ func TestAppSecHijackWire(t *testing.T) {
 						requireBlockThenClose(t, phase, conn, done, &ran)
 						break
 					}
-					// The block response keeps the connection alive.
 					res, body := readFramed(t, conn, br)
 					requireBlockResponse(t, phase, res, body)
 					require.False(t, res.Close)
@@ -476,8 +536,6 @@ func TestAppSecHijackWire(t *testing.T) {
 	}
 }
 
-// requireBlockThenClose checks a block response with Connection: close, with
-// no byte after it, and a hijack handler that did not run.
 func requireBlockThenClose(t *testing.T, phase string, conn net.Conn, done <-chan fasthttp.ConnState, ran *atomic.Bool) {
 	t.Helper()
 	res, body, rest := parseFirstResponse(t, readUntilClose(t, conn))
@@ -542,7 +600,6 @@ func requireNoBlockTelemetry[K comparable, H interface{ Get() float64 }](t *test
 	requireWAFOutcome(t, metrics, false, false)
 }
 
-// hijackApp builds a fiber app with one route, and returns its server.
 func hijackApp(handler fiber.Handler) *fasthttp.Server {
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
 	app.Use(Middleware())
@@ -634,8 +691,6 @@ func TestAppSecHijackConcurrentAfterApplicationTimeout(t *testing.T) {
 	require.False(t, ran.Load())
 }
 
-// TestAppSecHijackResponseFlags checks the response flags after a block, on an
-// in-memory context.
 func TestAppSecHijackResponseFlags(t *testing.T) {
 	startAppSecHijackRules(t)
 

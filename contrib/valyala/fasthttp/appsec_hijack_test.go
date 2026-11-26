@@ -22,19 +22,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/valyala/fasthttp"
+	"github.com/valyala/fasthttp/fasthttpadaptor"
 
 	"github.com/DataDog/dd-trace-go/v2/appsec"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
-// appSecHijackRules has 4 rules with different types, so that the WAF reports
-// each match:
-//   - the request header X-Attack: attack blocks (403) before the handler;
-//   - the response header X-Block: attack blocks (403) after the handler;
-//   - the response header X-Redirect: attack redirects (303) after the handler;
-//   - the user ID attack-user blocks (403). The application sets it with the
-//     SDK, and AppSec writes the block after the handler.
 const appSecHijackRules = `{
 	"version": "2.2",
 	"metadata": {"rules_version": "1.0.0"},
@@ -91,7 +85,6 @@ const appSecHijackRules = `{
 	}]
 }`
 
-// hijackRawResponse is what a hijack handler of the application writes.
 const hijackRawResponse = "HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: close\r\n\r\nAPP-BODY"
 
 // hijackWait is the deadline of each read in this file. Reads that wait for the
@@ -99,8 +92,6 @@ const hijackRawResponse = "HTTP/1.1 200 OK\r\nContent-Length: 8\r\nConnection: c
 // response use readFramed.
 const hijackWait = 5 * time.Second
 
-// hijackRawHandler is a hijack handler that writes a whole response, then
-// closes the connection. ran tells that fasthttp called it.
 func hijackRawHandler(ran *atomic.Bool) fasthttp.HijackHandler {
 	return func(conn net.Conn) {
 		ran.Store(true)
@@ -109,8 +100,6 @@ func hijackRawHandler(ran *atomic.Bool) fasthttp.HijackHandler {
 	}
 }
 
-// hijackNoWriteHandler is a hijack handler that closes the connection without a
-// write.
 func hijackNoWriteHandler(ran *atomic.Bool) fasthttp.HijackHandler {
 	return func(conn net.Conn) {
 		ran.Store(true)
@@ -136,7 +125,6 @@ func servePipe(t *testing.T, srv *fasthttp.Server) (net.Conn, <-chan fasthttp.Co
 	return clientConn, done
 }
 
-// waitConnState returns the last connection state after ServeConn returned.
 func waitConnState(t *testing.T, done <-chan fasthttp.ConnState) fasthttp.ConnState {
 	t.Helper()
 	select {
@@ -148,7 +136,6 @@ func waitConnState(t *testing.T, done <-chan fasthttp.ConnState) fasthttp.ConnSt
 	}
 }
 
-// writeRequest writes one raw request. extra holds the extra header lines.
 func writeRequest(t *testing.T, conn net.Conn, path string, extra ...string) {
 	t.Helper()
 	var req strings.Builder
@@ -194,8 +181,6 @@ func readFramed(t *testing.T, conn net.Conn, br *bufio.Reader) (wireResponse, st
 	return wireResponse{StatusCode: res.StatusCode, Header: res.Header, Close: res.Close}, string(body)
 }
 
-// parseFirstResponse returns the first response in raw, its body, and the
-// bytes after it.
 func parseFirstResponse(t *testing.T, raw []byte) (wireResponse, string, string) {
 	t.Helper()
 	br := bufio.NewReader(bytes.NewReader(raw))
@@ -233,7 +218,6 @@ func requireWAFOutcome[K comparable, H interface{ Get() float64 }](t *testing.T,
 	require.ElementsMatch(t, []string{"request_blocked:" + strconv.FormatBool(blocked), "block_failure:" + strconv.FormatBool(failed)}, outcomes)
 }
 
-// requireHijackSpan waits for the server span and returns it.
 func requireHijackSpan(t *testing.T, mt mocktracer.Tracer) *mocktracer.Span {
 	t.Helper()
 	// servePipe calls Server.ServeConn, which Orchestrion does not instrument.
@@ -242,13 +226,10 @@ func requireHijackSpan(t *testing.T, mt mocktracer.Tracer) *mocktracer.Span {
 	return timeoutServerSpans(mt)[0]
 }
 
-// hijackRow is a handler case of the matrix.
 type hijackRow struct {
-	name string
-	// closeRequest sends Connection: close in the request.
+	name         string
 	closeRequest bool
-	// handle is the application handler.
-	handle func(ctx *fasthttp.RequestCtx, ran *atomic.Bool)
+	handle       func(ctx *fasthttp.RequestCtx, ran *atomic.Bool)
 }
 
 func hijackRows() []hijackRow {
@@ -271,7 +252,6 @@ func hijackRows() []hijackRow {
 	}
 }
 
-// hijackPhases are the block phases. none has no block.
 var hijackPhases = []string{"none", "early-request", "response", "response-redirect", "user-sdk"}
 
 func hijackApplicable(phase, row string) bool {
@@ -327,8 +307,6 @@ func hijackHandlerFor(phase string, row hijackRow, ran *atomic.Bool) fasthttp.Re
 	}
 }
 
-// requireBlockResponse checks one block response. The status is 303 with a
-// Location for a redirect, and 403 with the block body otherwise.
 func requireBlockResponse(t *testing.T, phase string, res wireResponse, body string) {
 	t.Helper()
 	if phase == "response-redirect" {
@@ -342,8 +320,6 @@ func requireBlockResponse(t *testing.T, phase string, res wireResponse, body str
 	require.NotContains(t, body, "APP-BODY")
 }
 
-// requireBlockTelemetry checks the span and the metric of a block that
-// reached the client.
 func requireBlockTelemetry[K comparable, H interface{ Get() float64 }](t *testing.T, phase string, mt mocktracer.Tracer, metrics map[K]H) {
 	t.Helper()
 	span := requireHijackSpan(t, mt)
@@ -356,6 +332,93 @@ func requireBlockTelemetry[K comparable, H interface{ Get() float64 }](t *testin
 	}
 	require.Equal(t, "403", span.Tag("http.status_code"))
 	requireWAFOutcome(t, metrics, true, false)
+}
+
+type hijackContextCloser struct {
+	closed atomic.Bool
+}
+
+func (c *hijackContextCloser) Close() error {
+	c.closed.Store(true)
+	return nil
+}
+
+func TestAppSecHijackAdaptorKeepsContext(t *testing.T) {
+	startAppSecRules(t, appSecHijackRules)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	const key = "adaptor-context-value"
+	value := &hijackContextCloser{}
+	started := make(chan struct{})
+	finished := make(chan struct{})
+	check := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(release) })
+		select {
+		case <-started:
+			select {
+			case <-finished:
+			case <-time.After(hijackWait):
+				t.Error("adapted handler did not finish")
+			}
+		default:
+		}
+	})
+	hijacked := make(chan error, 1)
+	observed := make(chan any, 1)
+	adapted := fasthttpadaptor.NewFastHTTPHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		defer close(finished)
+		conn, _, err := w.(http.Hijacker).Hijack()
+		hijacked <- err
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		select {
+		case <-check:
+			observed <- r.Context().Value(key)
+		case <-release:
+			return
+		}
+		<-release
+	}))
+	wrapped := WrapHandler(func(ctx *fasthttp.RequestCtx) {
+		ctx.Response.Header.Set("X-Block", "attack")
+		adapted(ctx)
+	})
+	srv := &fasthttp.Server{Handler: func(ctx *fasthttp.RequestCtx) {
+		ctx.SetUserValue(key, value)
+		wrapped(ctx)
+	}}
+	conn, done := servePipe(t, srv)
+	writeRequest(t, conn, "/case")
+	res, body, rest := parseFirstResponse(t, readUntilClose(t, conn))
+	requireBlockResponse(t, "response", res, body)
+	require.Empty(t, rest)
+	require.Equal(t, fasthttp.StateClosed, waitConnState(t, done))
+	select {
+	case err := <-hijacked:
+		require.NoError(t, err)
+	case <-time.After(hijackWait):
+		t.Fatal("adapted handler did not hijack")
+	}
+	close(check)
+	select {
+	case got := <-observed:
+		require.Same(t, value, got)
+	case <-time.After(hijackWait):
+		t.Fatal("adapted handler did not read its context")
+	}
+	require.False(t, value.closed.Load())
+	select {
+	case <-finished:
+		t.Fatal("adapted handler returned before release")
+	default:
+	}
 }
 
 // TestAppSecHijackWire runs a real fasthttp server with a real WAF. Each cell
@@ -396,8 +459,6 @@ func TestAppSecHijackWire(t *testing.T) {
 				}
 				switch {
 				case row.name == "outer-hijack-after":
-					// Code outside the AppSec scope hijacks after the block
-					// (gap G1). Same result as before the fix.
 					res, body, rest := parseFirstResponse(t, readUntilClose(t, conn))
 					requireBlockResponse(t, phase, res, body)
 					require.Equal(t, hijackRawResponse, rest)
@@ -409,7 +470,6 @@ func TestAppSecHijackWire(t *testing.T) {
 						requireBlockThenClose(t, phase, conn, done, &ran)
 						break
 					}
-					// The block response keeps the connection alive.
 					res, body := readFramed(t, conn, br)
 					requireBlockResponse(t, phase, res, body)
 					require.False(t, res.Close)
@@ -431,8 +491,6 @@ func TestAppSecHijackWire(t *testing.T) {
 	}
 }
 
-// requireBlockThenClose checks a block response with Connection: close, with
-// no byte after it, and a hijack handler that did not run.
 func requireBlockThenClose(t *testing.T, phase string, conn net.Conn, done <-chan fasthttp.ConnState, ran *atomic.Bool) {
 	t.Helper()
 	res, body, rest := parseFirstResponse(t, readUntilClose(t, conn))
@@ -578,7 +636,6 @@ func TestAppSecHijackConcurrentAfterApplicationTimeout(t *testing.T) {
 	require.False(t, ran.Load())
 }
 
-// hijackTimeoutOrders builds the 2 wrapper orders around app.
 func hijackTimeoutOrders(app fasthttp.RequestHandler) map[string]fasthttp.RequestHandler {
 	return map[string]fasthttp.RequestHandler{
 		"wrap-inside":  TimeoutHandler(WrapHandler(app), time.Hour, "outer"),
@@ -587,11 +644,9 @@ func hijackTimeoutOrders(app fasthttp.RequestHandler) map[string]fasthttp.Reques
 }
 
 // TestTimeoutHandlerHijackAtDeadline blocks a user at the deadline of a nested
-// timeout wrapper. AppSec then writes the block into the detached timeout
-// response, and the worker can still use the live context. AppSec must not
-// write to the live context. T2a: the worker calls Hijack once, before the
-// deadline. T2b: the worker calls Hijack again and again, before, during and
-// after the deadline. Run it with -race.
+// timeout wrapper. AppSec writes into the detached timeout response while
+// the worker can still use the live context, so AppSec must not write to it.
+// The worker calls Hijack once or repeatedly across the deadline.
 func TestTimeoutHandlerHijackAtDeadline(t *testing.T) {
 	startAppSecRules(t, appSecHijackRules)
 
@@ -682,8 +737,6 @@ func TestTimeoutHandlerHijackBeforeDeadline(t *testing.T) {
 	}
 }
 
-// TestAppSecHijackResponseFlags checks the response flags after a block, on an
-// in-memory context.
 func TestAppSecHijackResponseFlags(t *testing.T) {
 	startAppSecRules(t, appSecHijackRules)
 

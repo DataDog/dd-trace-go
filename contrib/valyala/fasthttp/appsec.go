@@ -223,7 +223,10 @@ func (w *responseWriter) discardHandlerResponse() {
 // blocking response closes the connection, so fasthttp does not call the
 // handler (see RequestCtx.Hijack). The handler stays set: fasthttpadaptor can
 // have given the live connection to a net/http handler, and fasthttp must not
-// read that connection again or reuse the context.
+// read that connection again or reuse the context. fasthttp skips per-request
+// cleanup when it keeps the context out of the pool. This limitation can be
+// removed when fasthttp can distinguish a pending hijack callback from a
+// transferred connection and cancel only a pending callback through a public API.
 func stopHijack(ctx *fasthttp.RequestCtx) {
 	ctx.HijackSetNoResponse(false)
 	if ctx.Hijacked() && !ctx.Response.ConnectionClose() {
