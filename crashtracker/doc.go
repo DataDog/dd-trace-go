@@ -34,12 +34,24 @@
 // supervisor and once in the application. Keep externally visible work after
 // Start. Crashes during package initialization or before Start are not captured.
 // The supervisor does not return from Start. The child registers the inherited
-// crash pipe, removes the internal marker, and returns. Subprocesses spawned
-// after Start do not inherit the crash pipe or the marker. Code that runs
+// crash pipe, removes the crash pipe marker, and returns. Subprocesses that
+// start after Start do not inherit the crash pipe or its marker. Code that runs
 // before Start, such as package init, can inherit both. The marker names the
-// supervisor's PID, and the child takes the child role only if that PID is its
+// supervisor's PID. The child takes the child role only if that PID is its
 // parent PID. If startup fails, Start returns an error so the application can
 // continue without crash tracking.
+//
+// On Unix, the application sets a separate marker after it registers the crash
+// pipe. A direct subprocess that runs the same binary uses this marker to
+// skip supervision. Other subprocesses and in-place exec restarts keep their
+// own crash tracking.
+//
+// If another component calls [runtime/debug.SetCrashOutput] after Start, it
+// replaces the crash pipe. On Unix, if the crash pipe is empty, the supervisor
+// warns when a qualifying fatal signal kills the application. It also warns
+// if the application exits with code 2 and the stderr relay sees a panic or
+// fatal error. The relay runs in detached mode with non-terminal stderr.
+// Windows does not emit this warning.
 //
 // With a manual Start as the first statement of main, a tracer or profiler that
 // main starts later runs only in the application. A tracer or profiler that a

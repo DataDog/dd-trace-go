@@ -72,6 +72,45 @@ func TestBuildDDTags(t *testing.T) {
 	}
 }
 
+func TestBuildDDTagsGitBranch(t *testing.T) {
+	for _, tt := range []struct {
+		name, branch, tags, want string
+		disabled                 bool
+	}{
+		{name: "unset"},
+		{name: "environment", branch: "feature/crashtracker", want: "feature/crashtracker"},
+		{name: "strip refs/heads prefix", branch: "refs/heads/feature/crashtracker", want: "feature/crashtracker"},
+		{name: "DD_TAGS fallback", tags: "env:prod,git.branch:refs/heads/tag-branch", want: "tag-branch"},
+		{name: "environment takes precedence", branch: "feature/crashtracker", tags: "git.branch:tag-branch", want: "feature/crashtracker"},
+		{name: "disabled", branch: "feature/crashtracker", tags: "git.branch:tag-branch", disabled: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			enabled := "true"
+			if tt.disabled {
+				enabled = "false"
+			}
+			t.Setenv("DD_TRACE_GIT_METADATA_ENABLED", enabled)
+			t.Setenv("DD_GIT_BRANCH", tt.branch)
+			t.Setenv("DD_TAGS", tt.tags)
+
+			tags := buildDDTags(nil, newTestCompleteReport())
+			var got []string
+			for tag := range strings.SplitSeq(tags, ",") {
+				if branch, ok := strings.CutPrefix(tag, "git.branch:"); ok {
+					got = append(got, branch)
+				}
+			}
+			if tt.want == "" {
+				if len(got) != 0 {
+					t.Errorf("git.branch tags = %q, want no git.branch", got)
+				}
+			} else if len(got) != 1 || got[0] != tt.want {
+				t.Errorf("git.branch tags = %q, want [%q]", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestBuildDDTagsOmitsUnsetConfig(t *testing.T) {
 	// With an empty config, the service/env/version tags must be absent, but
 	// the always-present language/version tags must remain. Check on parsed

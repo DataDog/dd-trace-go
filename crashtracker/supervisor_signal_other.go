@@ -284,6 +284,16 @@ func supervisorSignals(terminalMode bool) (start func(*os.Process), stop func())
 		}
 }
 
+func crashedBySignal(state *os.ProcessState) bool {
+	if status, ok := state.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+		switch status.Signal() {
+		case syscall.SIGSEGV, syscall.SIGBUS, syscall.SIGILL, syscall.SIGFPE, syscall.SIGTRAP, syscall.SIGABRT:
+			return true
+		}
+	}
+	return false
+}
+
 func exitWithChildStatus(state *os.ProcessState) {
 	if status, ok := state.Sys().(syscall.WaitStatus); ok && status.Signaled() {
 		sig := status.Signal()

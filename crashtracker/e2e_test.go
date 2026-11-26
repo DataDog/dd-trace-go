@@ -617,6 +617,7 @@ func filterE2EEnv(env []string) []string {
 			strings.HasPrefix(kv, "_CRASHTRACKER_E2E_AGENT_URL=") ||
 			strings.HasPrefix(kv, "DD_TRACE_AGENT_URL=") ||
 			strings.HasPrefix(kv, "DD_CRASHTRACKING_ENABLED=") ||
+			strings.HasPrefix(kv, "_DD_CRASHTRACKING_ACTIVE=") ||
 			strings.HasPrefix(kv, "DD_TRACE_ENABLED=") ||
 			strings.HasPrefix(kv, "DD_INSTRUMENTATION_TELEMETRY_ENABLED=") ||
 			strings.HasPrefix(kv, "DD_REMOTE_CONFIGURATION_ENABLED=") ||
@@ -682,6 +683,14 @@ func TestFilterE2EEnvStripsHyphenatedAPIKeyAlias(t *testing.T) {
 		if strings.HasPrefix(kv, "DD-API-KEY=") {
 			t.Errorf("filterE2EEnv(%v) = %v, want DD-API-KEY stripped", in, out)
 		}
+	}
+}
+
+func TestFilterE2EEnvStripsCrashTrackingActiveMarker(t *testing.T) {
+	in := []string{"PATH=/usr/bin", "_DD_CRASHTRACKING_ACTIVE=123:/path/to/executable"}
+	out := filterE2EEnv(in)
+	if len(out) != 1 || out[0] != in[0] {
+		t.Errorf("filterE2EEnv(%v) = %v, want [%s]", in, out, in[0])
 	}
 }
 
