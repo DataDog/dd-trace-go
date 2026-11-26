@@ -49,6 +49,31 @@ include:
   - project: 'DataDog/apm-reliability/apm-sdks-benchmarks'
     file: '.gitlab/ci-go-go-prof-app-parallel.yml'
     ref: 'main'
+  # Manual, allowed-to-fail Speedlab macrobenchmarks measuring this pipeline's commit.
+  - project: 'DataDog/apm-reliability/speedlab'
+    ref: 'fayssal/sdk-ci-dd-trace-go'
+    file: '.gitlab/ci-sdk-go-go-prof-app.yml'
+    inputs:
+      stage: macrobenchmarks
+      speedlab_ref: 'fayssal/sdk-ci-dd-trace-go'
+  - project: 'DataDog/apm-reliability/speedlab'
+    ref: 'fayssal/sdk-ci-dd-trace-go'
+    file: '.gitlab/ci-sdk-go-go-prof-app-matrix.yml'
+    inputs:
+      stage: macrobenchmarks
+      speedlab_ref: 'fayssal/sdk-ci-dd-trace-go'
+  - project: 'DataDog/apm-reliability/speedlab'
+    ref: 'fayssal/sdk-ci-dd-trace-go'
+    file: '.gitlab/ci-sdk-go-envoy-ext-proc.yml'
+    inputs:
+      stage: macrobenchmarks
+      speedlab_ref: 'fayssal/sdk-ci-dd-trace-go'
+  - project: 'DataDog/apm-reliability/speedlab'
+    ref: 'fayssal/sdk-ci-dd-trace-go'
+    file: '.gitlab/ci-sdk-go-haproxy-spoa.yml'
+    inputs:
+      stage: macrobenchmarks
+      speedlab_ref: 'fayssal/sdk-ci-dd-trace-go'
   # LLM Validation gate: reusable job shipped by the platform repo — only the local .llm-validation/ suite
   # stays in this repo. The job auto-skips when no monitored file changed; a FAIL blocks the merge.
   - project: 'ddoghq/llm-validation-platform'
