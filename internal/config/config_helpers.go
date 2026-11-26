@@ -585,27 +585,27 @@ func resolveOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[str
 
 // resolveOTLPProtocol returns the lowercased signal-specific protocol, else the generic one, else the default.
 func resolveOTLPProtocol(specific, generic string) string {
-	return normalizeOTLPProtocol(cmp.Or(specific, generic, defaultOTLPProtocol))
+	return normalizeOTLPValue(cmp.Or(specific, generic, defaultOTLPProtocol))
 }
 
 // supportsOTLPProtocol returns a validator accepting the given protocols, case-insensitively.
 func supportsOTLPProtocol(protocols []string) func(string) bool {
 	return func(v string) bool {
-		return slices.Contains(protocols, normalizeOTLPProtocol(v))
+		return slices.Contains(protocols, normalizeOTLPValue(v))
 	}
 }
 
 // resolveOTLPCompression returns the signal-specific compression, else the generic one, else "none".
 func resolveOTLPCompression(specific, generic string) string {
-	return normalizeOTLPProtocol(cmp.Or(specific, generic, otlpCompressions[0]))
+	return normalizeOTLPValue(cmp.Or(specific, generic, otlpCompressions[0]))
 }
 
 // supportsOTLPCompression accepts "none" and "gzip", case-insensitively.
 func supportsOTLPCompression(v string) bool {
-	return slices.Contains(otlpCompressions, normalizeOTLPProtocol(v))
+	return slices.Contains(otlpCompressions, normalizeOTLPValue(v))
 }
 
-func normalizeOTLPProtocol(v string) string {
+func normalizeOTLPValue(v string) string {
 	return strings.ToLower(strings.TrimSpace(v))
 }
 
