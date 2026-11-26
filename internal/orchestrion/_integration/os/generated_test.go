@@ -17,6 +17,14 @@ func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
 
+func TestAllowed(t *testing.T) {
+	harness.Run(t, new(TestCaseAllowed))
+}
+
 func TestCmdi(t *testing.T) {
 	harness.Run(t, new(TestCaseCmdi))
+}
+
+func TestRoot(t *testing.T) {
+	harness.Run(t, new(TestCaseRoot))
 }

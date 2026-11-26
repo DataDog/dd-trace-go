@@ -29,6 +29,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 v2.14.0-dev
+	github.com/DataDog/dd-trace-go/contrib/os/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/v2 v2.14.0-dev
@@ -255,6 +256,8 @@ replace github.com/DataDog/dd-trace-go/contrib/go-chi/chi/otelc/v2 => ../../cont
 replace github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2 => ../../contrib/go-chi/chi.v5/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 => ../../contrib/net/http/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/os/otelc/v2 => ../../contrib/os/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../contrib/net/http
 

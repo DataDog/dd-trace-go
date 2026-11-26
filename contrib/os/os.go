@@ -8,15 +8,12 @@
 // (CMDi) attacks.
 package os
 
-// These imports satisfy injected dependencies for Orchestrion auto instrumentation.
 import (
 	"context"
 	"os"
 
-	"github.com/DataDog/dd-trace-go/v2/appsec/events"
+	"github.com/DataDog/dd-trace-go/v2/contrib/os/internal/rasp"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/dyngo"
-	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/ossec"
 )
 
 var instr *instrumentation.Instrumentation
@@ -28,28 +25,8 @@ func init() {
 // OpenFile is a [context.Context]-aware version of [os.OpenFile], that allows
 // the use of ASM rules to protect against Local File Inclusion (LFI) attacks.
 func OpenFile(ctx context.Context, path string, flag int, perm os.FileMode) (file *os.File, err error) {
-	parent, _ := dyngo.FromContext(ctx)
-	if parent != nil {
-		op := &ossec.OpenOperation{
-			Operation: dyngo.NewOperation(parent),
-		}
-
-		var block bool
-		dyngo.OnData(op, func(*events.BlockingSecurityEvent) {
-			block = true
-		})
-
-		dyngo.StartOperation(op, ossec.OpenOperationArgs{
-			Path:  path,
-			Flags: flag,
-			Perms: perm,
-		})
-
-		defer dyngo.FinishOperation(op, ossec.OpenOperationRes[*os.File]{
-			File: &file,
-			Err:  &err,
-		})
-
+	if finish, block := rasp.StartOpen(ctx, path, flag, perm); finish != nil {
+		defer finish(&file, &err)
 		if block {
 			return
 		}
@@ -61,27 +38,8 @@ func OpenFile(ctx context.Context, path string, flag int, perm os.FileMode) (fil
 // StartProcess is a [context.Context]-aware version of [os.StartProcess], that allows
 // the use of ASM rules to protect against Command Injection (CMDi) attacks.
 func StartProcess(ctx context.Context, name string, argv []string, attr *os.ProcAttr) (proc *os.Process, err error) {
-	parent, _ := dyngo.FromContext(ctx)
-	if parent != nil {
-		op := &ossec.RunCommandOperation{
-			Operation: dyngo.NewOperation(parent),
-		}
-
-		var block bool
-		dyngo.OnData(op, func(*events.BlockingSecurityEvent) {
-			block = true
-		})
-
-		dyngo.StartOperation(op, ossec.RunCommandOperationArgs{
-			Name:     name,
-			Commands: argv,
-		})
-
-		defer dyngo.FinishOperation(op, ossec.RunCommandOperationRes[*os.Process]{
-			Process: &proc,
-			Err:     &err,
-		})
-
+	if finish, block := rasp.StartProcess(ctx, name, argv); finish != nil {
+		defer finish(&proc, &err)
 		if block {
 			return
 		}

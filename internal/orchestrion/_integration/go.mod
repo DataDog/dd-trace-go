@@ -556,6 +556,8 @@ replace github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2 => ../../.
 
 replace github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 => ../../../contrib/net/http/otelc
 
+replace github.com/DataDog/dd-trace-go/contrib/os/otelc/v2 => ../../../contrib/os/otelc
+
 replace github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2 => ../../../contrib/database/sql/otelc
 
 replace example.com/awsv2dep => ./internal/awsv2dep
@@ -624,6 +626,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/os/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.14.0-dev // indirect
 	github.com/aws/aws-sdk-go-v2/service/kms v1.30.1 // indirect

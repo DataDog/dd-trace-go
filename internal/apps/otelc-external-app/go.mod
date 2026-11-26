@@ -199,6 +199,8 @@ replace github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2 => ../../../cont
 
 replace github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 => ../../../contrib/net/http/otelc
 
+replace github.com/DataDog/dd-trace-go/contrib/os/otelc/v2 => ../../../contrib/os/otelc
+
 replace github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../../contrib/net/http
 
 replace github.com/DataDog/dd-trace-go/contrib/database/sql/otelc/v2 => ../../../contrib/database/sql/otelc
@@ -362,6 +364,7 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 => ../../../contrib/labstack/echo.v5
 
 require (
+	github.com/DataDog/dd-trace-go/contrib/os/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.14.0-dev // indirect
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.101.0 // indirect

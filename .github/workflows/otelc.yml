@@ -55,6 +55,7 @@ env:
     contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc
     contrib/net/http
     contrib/net/http/otelc
+    contrib/os/otelc
     contrib/rs/zerolog
     contrib/rs/zerolog/otelc
     contrib/database/sql
@@ -139,6 +140,7 @@ env:
     valyala_fasthttp
     segmentio_kafka.v0
     zerolog
+    os
 
 jobs:
   # Classifies the PR diff against .github/ci-components.yml. Fails open: every
