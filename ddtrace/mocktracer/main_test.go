@@ -12,6 +12,5 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	// TODO: seelog (indirect dependency) has a known goroutine leak where it leaks a single goroutine on init (https://github.com/cihub/seelog/issues/182)
-	goleak.VerifyTestMain(m, goleak.IgnoreAnyFunction("github.com/cihub/seelog.(*asyncLoopLogger).processQueue"))
+	goleak.VerifyTestMain(m)
 }

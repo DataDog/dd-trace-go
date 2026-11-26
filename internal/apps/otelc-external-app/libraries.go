@@ -14,6 +14,8 @@ import (
 
 	pubsubv1api "cloud.google.com/go/pubsub/apiv1"
 	pubsubv2api "cloud.google.com/go/pubsub/v2/apiv1"
+	ibmsarama "github.com/IBM/sarama"
+	shopifysarama "github.com/Shopify/sarama"
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go/aws"
@@ -21,9 +23,14 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	elasticsearch8 "github.com/elastic/go-elasticsearch/v8"
 	"github.com/gin-gonic/gin"
+	redisv6 "github.com/go-redis/redis"
+	redisv7 "github.com/go-redis/redis/v7"
+	redisv8 "github.com/go-redis/redis/v8"
+	"github.com/gocql/gocql"
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/julienschmidt/httprouter"
+	redisv9 "github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 	"github.com/segmentio/kafka-go"
 	"github.com/valyala/fasthttp"
@@ -57,6 +64,10 @@ func useLibraries() {
 	_ = mongooptions.Client()
 	_ = mongov2options.Client()
 	_, _ = elasticsearch8.NewClient(elasticsearch8.Config{})
+	// With no broker addresses, these fail before any network call.
+	_, _ = ibmsarama.NewSyncProducer(nil, nil)
+	_, _ = shopifysarama.NewSyncProducer(nil, nil)
+	_ = gocql.NewCluster("127.0.0.1")
 	// gRPC connects lazily, so nothing dials this endpoint.
 	pubsubOpts := []option.ClientOption{
 		option.WithEndpoint("localhost:1"),
@@ -71,6 +82,10 @@ func useLibraries() {
 	}
 	_ = zerolog.New(io.Discard)
 	_ = &rest.Config{Host: "http://127.0.0.1"}
+	_ = redisv6.NewClient(&redisv6.Options{}).Close()
+	_ = redisv7.NewClient(&redisv7.Options{}).Close()
+	_ = redisv8.NewClient(&redisv8.Options{}).Close()
+	_ = redisv9.NewClient(&redisv9.Options{}).Close()
 	_, _ = gorm.Open(gormtests.DummyDialector{})
 	// The pool opens no connection until first used.
 	if pool, err := pgxpool.New(context.Background(), "postgres://localhost/db"); err == nil {

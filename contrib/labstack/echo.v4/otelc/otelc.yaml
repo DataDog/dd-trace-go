@@ -17,6 +17,6 @@ echo_v4_new:
     function_call: github.com/labstack/echo/v4.New
   do:
     - wrap_call:
-        replace: echov4trace.Wrap({{ . }})
+        replace: __dd_echov4trace.Wrap({{ . }})
   imports:
-    echov4trace: github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2
+    __dd_echov4trace: github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2

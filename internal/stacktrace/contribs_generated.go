@@ -232,7 +232,6 @@ func generatedThirdPartyLibraries() []string {
 		"github.com/chzyer/logex",
 		"github.com/chzyer/readline",
 		"github.com/chzyer/test",
-		"github.com/cihub/seelog",
 		"github.com/circonus-labs/circonus-gometrics",
 		"github.com/circonus-labs/circonusllhist",
 		"github.com/client9/misspell",

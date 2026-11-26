@@ -21,6 +21,6 @@ new:
     function_call: github.com/rs/zerolog.New
   do:
     - wrap_call:
-        replace: "{{ . }}.Hook(zerologtrace.DDContextLogHook{})"
+        replace: "{{ . }}.Hook(__dd_zerologtrace.DDContextLogHook{})"
   imports:
-    zerologtrace: github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2
+    __dd_zerologtrace: github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2

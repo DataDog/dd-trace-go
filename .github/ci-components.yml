@@ -94,6 +94,8 @@ integration-suites:
   modules:
     contrib/99designs/gqlgen: [ 99designs.gqlgen ]
     contrib/99designs/gqlgen/otelc: [ 99designs.gqlgen ]
+    contrib/IBM/sarama/otelc: [ ibm_sarama ]
+    contrib/Shopify/sarama/otelc: [ shopify_sarama ]
     contrib/aerospike/aerospike-client-go.v7: [ aerospike.v7 ]
     contrib/aws/aws-sdk-go: [ aws.v1 ]
     contrib/aws/aws-sdk-go-v2: [ aws.v2 ]
@@ -111,6 +113,8 @@ integration-suites:
     contrib/cloudevents/sdk-go.v2: [ cloudevents ]
     contrib/confluentinc/confluent-kafka-go/kafka: [ confluent-kafka-go.v1 ]
     contrib/confluentinc/confluent-kafka-go/kafka.v2: [ confluent-kafka-go.v2 ]
+    contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc: [ confluent-kafka-go.v2 ]
+    contrib/confluentinc/confluent-kafka-go/kafka/otelc: [ confluent-kafka-go.v1 ]
     contrib/connectrpc.com/connect: [ connectrpc ]
     contrib/database/sql: [ sql ]
     contrib/database/sql/otelc: [ sql ]
@@ -129,13 +133,17 @@ integration-suites:
     contrib/go-pg/pg.v10: []
     contrib/go-redis/redis: [ go-redis.v0 ]
     contrib/go-redis/redis.v7: [ go-redis.v7 ]
+    contrib/go-redis/redis.v7/otelc: [ go-redis.v7 ]
     contrib/go-redis/redis.v8: [ go-redis.v8 ]
+    contrib/go-redis/redis.v8/otelc: [ go-redis.v8 ]
+    contrib/go-redis/redis/otelc: [ go-redis.v0 ]
     contrib/go.mongodb.org/mongo-driver: [ mongo ]
     contrib/go.mongodb.org/mongo-driver.v2: [mongo, mongo.v2]
     contrib/go.mongodb.org/mongo-driver.v2/otelc: [mongo, mongo.v2]
     contrib/go.mongodb.org/mongo-driver/otelc: [ mongo ]
     contrib/go.uber.org/zap: [ zap ]
     contrib/gocql/gocql: [ gocql ]
+    contrib/gocql/gocql/otelc: [ gocql ]
     contrib/gofiber/fiber.v2: [ fiber.v2 ]
     contrib/gofiber/fiber.v2/otelc: [ fiber.v2 ]
     contrib/gomodule/redigo: [ redigo ]
@@ -175,6 +183,7 @@ integration-suites:
     contrib/olivere/elastic.v5: []
     contrib/opensearch-project/opensearch-go.v4: [ opensearch-go.v4 ]
     contrib/redis/go-redis.v9: [ go-redis.v9 ]
+    contrib/redis/go-redis.v9/otelc: [ go-redis.v9 ]
     contrib/redis/rueidis: [ rueidis ]
     contrib/rs/zerolog: [ zerolog ]
     contrib/rs/zerolog/otelc: [ zerolog ]
@@ -260,6 +269,7 @@ workflow-gates:
   code_freeze_end.yml: []
   code_freeze_start.yml: []
   config-audit.yml: []
+  errtrack-audit.yml: []
   docker-build-and-push.yml: []
   docker-images-release.yml: []
   dora-metrics.yml: []
@@ -292,6 +302,7 @@ native-path-filters:
   - build-metrics.yml
   - config-audit.yml
   - dynamic-checks.yml
+  - errtrack-audit.yml
   - ecosystems-label-pr.yml
   - govulncheck.yml
   - sync-cue-actions.yml
@@ -488,18 +499,26 @@ components:
       contrib entry claims them without the gate.
     paths:
       - contrib/99designs/gqlgen/**
+      - contrib/IBM/sarama/**
+      - contrib/Shopify/sarama/**
       - contrib/aws/aws-sdk-go-v2/**
       - contrib/aws/aws-sdk-go/**
       - contrib/cloud.google.com/go/pubsub.v1/**
       - contrib/cloud.google.com/go/pubsub.v2/**
+      - contrib/confluentinc/confluent-kafka-go/kafka/**
+      - contrib/confluentinc/confluent-kafka-go/kafka.v2/**
       - contrib/database/sql/**
       - contrib/elastic/go-elasticsearch.v6/**
       - contrib/gin-gonic/gin/**
       - contrib/go-chi/chi/**
       - contrib/go-chi/chi.v5/**
+      - contrib/go-redis/redis.v7/**
+      - contrib/go-redis/redis.v8/**
+      - contrib/go-redis/redis/**
       - contrib/gofiber/fiber.v2/**
       - contrib/go.mongodb.org/mongo-driver/**
       - contrib/go.mongodb.org/mongo-driver.v2/**
+      - contrib/gocql/gocql/**
       - contrib/gomodule/redigo/**
       - contrib/google.golang.org/grpc/**
       - contrib/gorilla/mux/**
@@ -512,6 +531,7 @@ components:
       - contrib/net/http/**
       - contrib/segmentio/kafka-go/**
       - contrib/rs/zerolog/**
+      - contrib/redis/go-redis.v9/**
       - contrib/valyala/fasthttp/**
     module-scoped: true
     dependent-modules: []
@@ -691,7 +711,7 @@ components:
     gates: [ otelc, static-format, static-lint ]
 
   - id: release-tooling
-    why: Not imported by shipped code; own tests run under test-core.
+    why: Not imported by shipped code; root-module scripts test under test-core, and the scripts/errtrackaudit nested module tests under static-checks' check-modules job.
     paths:
       - scripts/**
       - tools/**
