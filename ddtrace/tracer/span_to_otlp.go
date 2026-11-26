@@ -297,6 +297,12 @@ var ddOnlyAttributeKeys = map[string]struct{}{
 	ext.SpanKind:           {},
 }
 
+// isDatadogIngestionKey reports whether Datadog ingestion depends on the tag.
+// The attribute limit must not drop these keys.
+func isDatadogIngestionKey(key string) bool {
+	return strings.HasPrefix(key, "_dd.") || key == keySamplingPriority
+}
+
 // +checklocksignore — Post-finish: reads finished span fields during payload encoding.
 func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics bool, resourceAttrs map[string]string) []*otlpcommon.KeyValue {
 	n := s.meta.Count() + len(s.metrics) + len(s.metaStruct) + 3
@@ -321,49 +327,67 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 			return attrs
 		}
 	}
-	for key, value := range s.meta.All() {
-		if v, ok := resourceAttrs[key]; ok && v == value {
-			continue // already carried by the resource
-		}
-		if otelSemantics {
-			if _, skip := ddOnlyAttributeKeys[key]; skip {
+	// When the span may exceed the limit, emit the Datadog keys first so that
+	// the limit drops user tags instead. Otherwise one pass is enough.
+	limited := n > maxAttributesCount
+	passes := []bool{false}
+	if limited {
+		passes = []bool{true, false}
+	}
+	for _, datadogPass := range passes {
+		for key, value := range s.meta.All() {
+			if limited && isDatadogIngestionKey(key) != datadogPass {
 				continue
 			}
-		}
-		av := otlpStringValue(value)
-		if otelSemantics {
-			if _, isInt := otelIntMetricKeys[key]; isInt {
-				if value, err := strconv.ParseInt(value, 10, 64); err == nil {
-					av = otlpIntValue(value)
+			if v, ok := resourceAttrs[key]; ok && v == value {
+				continue // already carried by the resource
+			}
+			if otelSemantics {
+				if _, skip := ddOnlyAttributeKeys[key]; skip {
+					continue
 				}
 			}
-		}
-		if !addAttribute(&attrs, key, av) {
-			return attrs
-		}
-	}
-	for key, value := range s.metrics {
-		if otelSemantics {
-			if _, skip := ddOnlyAttributeKeys[key]; skip {
-				continue
+			av := otlpStringValue(value)
+			if otelSemantics {
+				if _, isInt := otelIntMetricKeys[key]; isInt {
+					if value, err := strconv.ParseInt(value, 10, 64); err == nil {
+						av = otlpIntValue(value)
+					}
+				}
 			}
-			if _, exists := s.meta.Get(key); exists {
-				continue
+			if !addAttribute(&attrs, key, av) {
+				return attrs
 			}
 		}
-		var av *otlpcommon.AnyValue
-		if _, isInt := otelIntMetricKeys[key]; isInt {
-			av = otlpIntValue(int64(value))
-		} else {
-			av = otlpDoubleValue(value)
+		for key, value := range s.metrics {
+			if limited && isDatadogIngestionKey(key) != datadogPass {
+				continue
+			}
+			if otelSemantics {
+				if _, skip := ddOnlyAttributeKeys[key]; skip {
+					continue
+				}
+				if _, exists := s.meta.Get(key); exists {
+					continue
+				}
+			}
+			var av *otlpcommon.AnyValue
+			if _, isInt := otelIntMetricKeys[key]; isInt {
+				av = otlpIntValue(int64(value))
+			} else {
+				av = otlpDoubleValue(value)
+			}
+			if !addAttribute(&attrs, key, av) {
+				return attrs
+			}
 		}
-		if !addAttribute(&attrs, key, av) {
-			return attrs
-		}
-	}
-	for key, value := range s.metaStruct {
-		if !addAttribute(&attrs, key, anyToOTLPValue(value)) {
-			return attrs
+		for key, value := range s.metaStruct {
+			if limited && isDatadogIngestionKey(key) != datadogPass {
+				continue
+			}
+			if !addAttribute(&attrs, key, anyToOTLPValue(value)) {
+				return attrs
+			}
 		}
 	}
 	return attrs
