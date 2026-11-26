@@ -13,6 +13,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.44.0
 	github.com/rs/zerolog v1.35.1
 	github.com/segmentio/kafka-go v0.4.42
+	github.com/twmb/franz-go v1.22.0
 	google.golang.org/api v0.273.1
 	k8s.io/client-go v0.35.1
 )
@@ -364,8 +365,11 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 => ../../../c
 require (
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/otelc/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2 v2.14.0-dev // indirect
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.101.0 // indirect
-	github.com/pierrec/lz4/v4 v4.1.22 // indirect
+	github.com/pierrec/lz4/v4 v4.1.30 // indirect
+	github.com/twmb/franz-go/pkg/kmsg v1.14.0 // indirect
 	go.opentelemetry.io/otel/log v1.47.0 // indirect
 )
 
@@ -404,3 +408,7 @@ replace github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/k
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/otelc/v2 => ../../../contrib/aws/aws-sdk-go-v2/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 => ../../../contrib/aws/aws-sdk-go-v2
+
+replace github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/otelc/v2 => ../../../contrib/twmb/franz-go/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2 => ../../../contrib/twmb/franz-go

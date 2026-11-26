@@ -29,6 +29,7 @@ import (
 	redisv9 "github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 	"github.com/segmentio/kafka-go"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/valyala/fasthttp"
 	mongooptions "go.mongodb.org/mongo-driver/mongo/options"
 	mongov2options "go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -84,4 +85,8 @@ func useLibraries() {
 	}
 	// Writing no messages returns before any network call.
 	_ = (&kafka.Writer{Addr: kafka.TCP("localhost:9092")}).WriteMessages(context.Background())
+	// The client connects only when it first sends a request.
+	if cl, err := kgo.NewClient(); err == nil {
+		cl.Close()
+	}
 }

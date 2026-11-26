@@ -1,0 +1,41 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Call-site rules, not a hook on kgo.NewClient: the rewritten package imports
+# the contrib, so the contrib is initialized before a client built in a
+# package-level var. The contrib is excluded because this module imports it.
+kgo_new_client:
+  target:
+    - "**"
+    - not: "github.com/twmb/franz-go/pkg/kgo/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/**"
+  where:
+    function_call: github.com/twmb/franz-go/pkg/kgo.NewClient
+  do:
+    - wrap_call:
+        append_args:
+          - "__dd_kgotrace.WithTracing()"
+        variadic_type: "__dd_kgo.Opt"
+  imports:
+    __dd_kgo: github.com/twmb/franz-go/pkg/kgo
+    __dd_kgotrace: github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2
+
+# NewGroupTransactSession builds its client with an unqualified NewClient call
+# inside kgo, which kgo_new_client does not see.
+kgo_new_group_transact_session:
+  target:
+    - "**"
+    - not: "github.com/twmb/franz-go/pkg/kgo/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/**"
+  where:
+    function_call: github.com/twmb/franz-go/pkg/kgo.NewGroupTransactSession
+  do:
+    - wrap_call:
+        append_args:
+          - "__dd_kgotrace.WithTracing()"
+        variadic_type: "__dd_kgo.Opt"
+  imports:
+    __dd_kgo: github.com/twmb/franz-go/pkg/kgo
+    __dd_kgotrace: github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2
