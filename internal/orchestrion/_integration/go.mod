@@ -9,6 +9,7 @@ require (
 	example.com/confluentkafkadep v0.0.0-00010101000000-000000000000
 	example.com/goredisdep v0.0.0-00010101000000-000000000000
 	example.com/pgxdep v0.0.0-00010101000000-000000000000
+	example.com/valkeydep v0.0.0-00010101000000-000000000000
 	github.com/99designs/gqlgen v0.17.97
 	github.com/DataDog/dd-trace-go/contrib/aws/datadog-lambda-go/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.14.0-dev
@@ -196,7 +197,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2 v2.14.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.14.0-dev
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
 	github.com/DataDog/go-sqllexer v0.2.4 // indirect
 	github.com/DataDog/go-tuf v1.1.1-0.5.2 // indirect
@@ -626,6 +627,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/otelc/v2 v2.14.0-dev // indirect
 	github.com/aws/aws-sdk-go-v2/service/kms v1.30.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.101.0 // indirect
 	github.com/aws/aws-xray-sdk-go/v2 v2.0.0 // indirect
@@ -680,3 +682,7 @@ replace example.com/confluentkafkadep => ./internal/confluentkafkadep
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../../contrib/aws/aws-sdk-go/otelc
 
 replace example.com/awsv1dep => ./internal/awsv1dep
+
+replace example.com/valkeydep => ./internal/valkeydep
+
+replace github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/otelc/v2 => ../../../contrib/valkey-io/valkey-go/otelc

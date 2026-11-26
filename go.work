@@ -103,6 +103,7 @@ use (
 	./contrib/uptrace/bun
 	./contrib/urfave/negroni
 	./contrib/valkey-io/valkey-go
+	./contrib/valkey-io/valkey-go/otelc
 	./contrib/valyala/fasthttp
 	./contrib/valyala/fasthttp/otelc
 	./instrumentation/internal/namingschematest

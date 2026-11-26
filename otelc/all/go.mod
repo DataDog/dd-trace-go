@@ -68,6 +68,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.14.0-dev // indirect
 	github.com/aws/aws-sdk-go v1.55.5 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.43.2 // indirect
@@ -140,6 +141,7 @@ require (
 	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
+	github.com/valkey-io/valkey-go v1.0.74 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasthttp v1.75.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
@@ -381,3 +383,9 @@ replace github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/k
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../contrib/aws/aws-sdk-go/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 => ../../contrib/aws/aws-sdk-go
+
+require github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/otelc/v2 v2.14.0-dev
+
+replace github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/otelc/v2 => ../../contrib/valkey-io/valkey-go/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 => ../../contrib/valkey-io/valkey-go

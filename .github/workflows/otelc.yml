@@ -99,6 +99,8 @@ env:
     contrib/labstack/echo.v5/otelc
     contrib/segmentio/kafka-go
     contrib/segmentio/kafka-go/otelc
+    contrib/valkey-io/valkey-go
+    contrib/valkey-io/valkey-go/otelc
     contrib/valyala/fasthttp
     contrib/valyala/fasthttp/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
@@ -138,6 +140,7 @@ env:
     aws.v1
     valyala_fasthttp
     segmentio_kafka.v0
+    valkey-go
     zerolog
 
 jobs:

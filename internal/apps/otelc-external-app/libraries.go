@@ -29,6 +29,7 @@ import (
 	redisv9 "github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 	"github.com/segmentio/kafka-go"
+	"github.com/valkey-io/valkey-go"
 	"github.com/valyala/fasthttp"
 	mongooptions "go.mongodb.org/mongo-driver/mongo/options"
 	mongov2options "go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -84,4 +85,8 @@ func useLibraries() {
 	}
 	// Writing no messages returns before any network call.
 	_ = (&kafka.Writer{Addr: kafka.TCP("localhost:9092")}).WriteMessages(context.Background())
+	// Nothing listens on port 1, so the dial fails at once.
+	if c, err := valkey.NewClient(valkey.ClientOption{InitAddress: []string{"127.0.0.1:1"}}); err == nil {
+		c.Close()
+	}
 }

@@ -194,6 +194,7 @@ integration-suites:
     contrib/uptrace/bun: []
     contrib/urfave/negroni: []
     contrib/valkey-io/valkey-go: [ valkey-go ]
+    contrib/valkey-io/valkey-go/otelc: [ valkey-go ]
     contrib/valyala/fasthttp: [ valyala_fasthttp ]
     contrib/valyala/fasthttp/otelc: [ valyala_fasthttp ]
     instrumentation/internal/namingschematest: []
@@ -524,6 +525,7 @@ components:
       - contrib/segmentio/kafka-go/**
       - contrib/rs/zerolog/**
       - contrib/redis/go-redis.v9/**
+      - contrib/valkey-io/valkey-go/**
       - contrib/valyala/fasthttp/**
     module-scoped: true
     dependent-modules: []

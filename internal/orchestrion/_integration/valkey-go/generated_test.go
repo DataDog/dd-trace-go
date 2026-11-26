@@ -18,3 +18,27 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestAliasedImport(t *testing.T) {
+	harness.Run(t, new(TestCaseAliasedImport))
+}
+
+func TestContribClient(t *testing.T) {
+	harness.Run(t, new(TestCaseContribClient))
+}
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestOnlyImport(t *testing.T) {
+	harness.Run(t, new(TestCaseOnlyImport))
+}
+
+func TestOptionCall(t *testing.T) {
+	harness.Run(t, new(TestCaseOptionCall))
+}
+
+func TestValkeylock(t *testing.T) {
+	harness.Run(t, new(TestCaseValkeylock))
+}

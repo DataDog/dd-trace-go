@@ -1,0 +1,29 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# A call-site rule, not a hook on valkey.NewClient: the rewritten package
+# imports the contrib, so it is initialized before a client built in a
+# package-level var or init, and a client built with the contrib is not wrapped
+# a second time. Only the library's root package is excluded, so calls in its
+# subpackages, such as valkeylock, are wrapped too.
+# The closure names the library's types through __dd_valkey, which keeps the
+# file's own valkey-go import used when this call was its only use.
+new_client:
+  target:
+    - "**"
+    - not: "github.com/valkey-io/valkey-go"
+    - not: "github.com/valkey-io/valkey-go/internal/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/**"
+  where:
+    function_call: github.com/valkey-io/valkey-go.NewClient
+  do:
+    - wrap_call:
+        replace: |-
+          (func(option __dd_valkey.ClientOption) (__dd_valkey.Client, error) {
+            return __dd_valkeytrace.NewClient(option)
+          })({{ .CallArguments }})
+  imports:
+    __dd_valkey: github.com/valkey-io/valkey-go
+    __dd_valkeytrace: github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2
