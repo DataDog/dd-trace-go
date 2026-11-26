@@ -14,6 +14,7 @@ import (
 
 	pubsubv1api "cloud.google.com/go/pubsub/apiv1"
 	pubsubv2api "cloud.google.com/go/pubsub/v2/apiv1"
+	as "github.com/aerospike/aerospike-client-go/v7"
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go/aws"
@@ -84,4 +85,12 @@ func useLibraries() {
 	}
 	// Writing no messages returns before any network call.
 	_ = (&kafka.Writer{Addr: kafka.TCP("localhost:9092")}).WriteMessages(context.Background())
+	// The client starts with no node, and a batch with no keys fails before
+	// it sends anything.
+	asPolicy := as.NewClientPolicy()
+	asPolicy.FailIfNotConnected = false
+	if c, err := as.NewClientWithPolicy(asPolicy, "127.0.0.1", 1); err == nil {
+		_, _ = c.BatchGet(nil, nil)
+		c.Close()
+	}
 }

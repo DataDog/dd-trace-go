@@ -41,6 +41,8 @@ env:
     otelc/all
     contrib/99designs/gqlgen
     contrib/99designs/gqlgen/otelc
+    contrib/aerospike/aerospike-client-go.v7
+    contrib/aerospike/aerospike-client-go.v7/otelc
     contrib/aws/aws-sdk-go-v2
     contrib/aws/aws-sdk-go-v2/otelc
     contrib/aws/aws-sdk-go
@@ -138,6 +140,7 @@ env:
     aws.v1
     valyala_fasthttp
     segmentio_kafka.v0
+    aerospike.v7
     zerolog
 
 jobs:

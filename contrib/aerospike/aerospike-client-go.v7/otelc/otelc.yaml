@@ -1,0 +1,747 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Call-site rules, not hooks on the Client methods: the aerospike API takes no
+# context.Context, so only the call site can pass the caller's context to the
+# span, which also works on a goroutine that does not hold the parent span. The
+# library is excluded because its methods call each other (ScanAll calls
+# ScanPartitions), and the contrib because its wrapper calls the raw client.
+#
+# method_call also matches a Client method promoted through an embedded field,
+# where the receiver is the outer value, so WrapReceiver takes any receiver.
+#
+# FIXME: a call outside any function, such as in a package-level var
+# initializer, fails the build, because .FuncArgumentOfType returns an error
+# there instead of "". https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1895
+aerospike_v7_client_put:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.Put
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).Put({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_put_bins:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.PutBins
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).PutBins({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_append:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.Append
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).Append({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_append_bins:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.AppendBins
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).AppendBins({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_prepend:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.Prepend
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).Prepend({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_prepend_bins:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.PrependBins
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).PrependBins({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_add:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.Add
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).Add({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_add_bins:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.AddBins
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).AddBins({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_delete:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.Delete
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).Delete({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_touch:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.Touch
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).Touch({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_exists:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.Exists
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).Exists({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_batch_exists:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.BatchExists
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).BatchExists({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_get:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.Get
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).Get({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_get_header:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.GetHeader
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).GetHeader({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_batch_get:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.BatchGet
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).BatchGet({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_batch_get_header:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.BatchGetHeader
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).BatchGetHeader({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_batch_get_operate:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.BatchGetOperate
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).BatchGetOperate({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_operate:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.Operate
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).Operate({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_scan_all:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.ScanAll
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).ScanAll({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_scan_partitions:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.ScanPartitions
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).ScanPartitions({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_batch_get_complex:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.BatchGetComplex
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).BatchGetComplex({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_batch_delete:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.BatchDelete
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).BatchDelete({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_batch_operate:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.BatchOperate
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).BatchOperate({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_batch_execute:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.BatchExecute
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).BatchExecute({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_execute:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.Execute
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).Execute({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_execute_udf:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.ExecuteUDF
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).ExecuteUDF({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_execute_udf_node:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.ExecuteUDFNode
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).ExecuteUDFNode({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_query_execute:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.QueryExecute
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).QueryExecute({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_query_partitions:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.QueryPartitions
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).QueryPartitions({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_query:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.Query
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).Query({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_query_node:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.QueryNode
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).QueryNode({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_scan_node:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.ScanNode
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).ScanNode({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_truncate:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.Truncate
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).Truncate({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_query_aggregate:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.QueryAggregate
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).QueryAggregate({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_put_object:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.PutObject
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).PutObject({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_get_object:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.GetObject
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).GetObject({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_batch_get_objects:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.BatchGetObjects
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).BatchGetObjects({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_scan_all_objects:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.ScanAllObjects
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).ScanAllObjects({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_scan_node_objects:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.ScanNodeObjects
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).ScanNodeObjects({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_scan_partition_objects:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.ScanPartitionObjects
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).ScanPartitionObjects({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_query_objects:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.QueryObjects
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).QueryObjects({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_query_node_objects:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.QueryNodeObjects
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).QueryNodeObjects({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2
+
+aerospike_v7_client_query_partition_objects:
+  target:
+    - "**"
+    - not: "github.com/aerospike/aerospike-client-go/v7/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/**"
+  where:
+    method_call: github.com/aerospike/aerospike-client-go/v7.*Client.QueryPartitionObjects
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if eq $ctx "" -}}{{- $ctx = .FuncArgumentThatImplements "context.Context" -}}{{- end -}}
+          {{- if eq $ctx "" -}}{{- $ctx = "nil" -}}{{- end -}}
+          __dd_aerospikeotelc.WrapReceiver({{ .CallReceiver }}, {{ $ctx }}).QueryPartitionObjects({{ .CallArguments }})
+  imports:
+    __dd_aerospikeotelc: github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2

@@ -6,6 +6,7 @@ require (
 	cloud.google.com/go/pubsub v1.50.1
 	cloud.google.com/go/pubsub/v2 v2.0.0
 	connectrpc.com/connect v1.21.1
+	example.com/aerospikedep v0.0.0-00010101000000-000000000000
 	example.com/confluentkafkadep v0.0.0-00010101000000-000000000000
 	example.com/goredisdep v0.0.0-00010101000000-000000000000
 	example.com/pgxdep v0.0.0-00010101000000-000000000000
@@ -94,6 +95,7 @@ require github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 v
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/otelc/v2 v2.14.0-dev // indirect
@@ -147,7 +149,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2 v2.14.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/v2 v2.14.0-dev
@@ -584,6 +586,8 @@ replace github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/otelc/v2 => ../
 
 replace example.com/goredisdep => ./internal/goredisdep
 
+replace example.com/aerospikedep => ./internal/aerospikedep
+
 replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis/otelc/v2 => ../../../contrib/go-redis/redis/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/otelc/v2 => ../../../contrib/go-redis/redis.v7/otelc
@@ -593,6 +597,8 @@ replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/otelc/v2 => ../
 replace github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/otelc/v2 => ../../../contrib/gorm.io/gorm.v1/otelc
 
 replace example.com/gormdep => ./internal/gormdep
+
+replace github.com/DataDog/dd-trace-go/contrib/aerospike/aerospike-client-go.v7/otelc/v2 => ../../../contrib/aerospike/aerospike-client-go.v7/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/otelc/v2 => ../../../contrib/aws/aws-sdk-go-v2/otelc
 

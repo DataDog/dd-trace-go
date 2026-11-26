@@ -1,0 +1,19 @@
+// A module outside dd-trace-go's paths that calls an aerospike client,
+// standing in for a third-party library. otelc must instrument call sites in
+// dependencies, not only in the module being built.
+module example.com/aerospikedep
+
+go 1.26.0
+
+require github.com/aerospike/aerospike-client-go/v7 v7.10.2
+
+require (
+	github.com/yuin/gopher-lua v1.1.1 // indirect
+	golang.org/x/net v0.26.0 // indirect
+	golang.org/x/sync v0.7.0 // indirect
+	golang.org/x/sys v0.21.0 // indirect
+	golang.org/x/text v0.16.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240711142825-46eb208f015d // indirect
+	google.golang.org/grpc v1.63.3 // indirect
+	google.golang.org/protobuf v1.34.2 // indirect
+)
