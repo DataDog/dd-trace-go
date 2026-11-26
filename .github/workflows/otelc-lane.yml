@@ -48,6 +48,10 @@ env:
     contrib/cloud.google.com/go/pubsub.v1/otelc
     contrib/cloud.google.com/go/pubsub.v2
     contrib/cloud.google.com/go/pubsub.v2/otelc
+    contrib/confluentinc/confluent-kafka-go/kafka
+    contrib/confluentinc/confluent-kafka-go/kafka/otelc
+    contrib/confluentinc/confluent-kafka-go/kafka.v2
+    contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc
     contrib/net/http
     contrib/net/http/otelc
     contrib/rs/zerolog
@@ -108,6 +112,8 @@ env:
     gin
     chi
     chi.v5
+    confluent-kafka-go.v1
+    confluent-kafka-go.v2
     fiber.v2
     julienschmidt_httprouter
     k8s_client_go
