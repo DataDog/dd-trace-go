@@ -21,6 +21,8 @@ import (
 
 	// Integrations.
 	_ "github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2"
+	_ "github.com/DataDog/dd-trace-go/contrib/IBM/sarama/otelc/v2"
+	_ "github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/otelc/v2"

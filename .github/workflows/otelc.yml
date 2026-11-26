@@ -41,6 +41,10 @@ env:
     otelc/all
     contrib/99designs/gqlgen
     contrib/99designs/gqlgen/otelc
+    contrib/IBM/sarama
+    contrib/IBM/sarama/otelc
+    contrib/Shopify/sarama
+    contrib/Shopify/sarama/otelc
     contrib/aws/aws-sdk-go-v2
     contrib/aws/aws-sdk-go-v2/otelc
     contrib/aws/aws-sdk-go
@@ -122,6 +126,8 @@ env:
     grpc
     gorilla_mux
     99designs.gqlgen
+    ibm_sarama
+    shopify_sarama
     go-redis.v0
     go-redis.v7
     go-redis.v8
