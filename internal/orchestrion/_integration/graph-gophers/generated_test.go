@@ -16,3 +16,39 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestAliasedImport(t *testing.T) {
+	harness.Run(t, new(TestCaseAliasedImport))
+}
+
+func TestContribTracer(t *testing.T) {
+	harness.Run(t, new(TestCaseContribTracer))
+}
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestMultiValueArgs(t *testing.T) {
+	harness.Run(t, new(TestCaseMultiValueArgs))
+}
+
+func TestMustParseSchema(t *testing.T) {
+	harness.Run(t, new(TestCaseMustParseSchema))
+}
+
+func TestPackageLevelSchema(t *testing.T) {
+	harness.Run(t, new(TestCasePackageLevelSchema))
+}
+
+func TestParseSchema(t *testing.T) {
+	harness.Run(t, new(TestCaseParseSchema))
+}
+
+func TestShadowedAlias(t *testing.T) {
+	harness.Run(t, new(TestCaseShadowedAlias))
+}
+
+func TestSpreadOptions(t *testing.T) {
+	harness.Run(t, new(TestCaseSpreadOptions))
+}

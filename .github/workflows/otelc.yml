@@ -93,6 +93,8 @@ env:
     contrib/go.mongodb.org/mongo-driver.v2/otelc
     contrib/gorilla/mux
     contrib/gorilla/mux/otelc
+    contrib/graph-gophers/graphql-go
+    contrib/graph-gophers/graphql-go/otelc
     contrib/labstack/echo.v4
     contrib/labstack/echo.v4/otelc
     contrib/labstack/echo.v5
@@ -120,6 +122,7 @@ env:
     grpc
     gorilla_mux
     99designs.gqlgen
+    graph-gophers
     go-redis.v0
     go-redis.v7
     go-redis.v8

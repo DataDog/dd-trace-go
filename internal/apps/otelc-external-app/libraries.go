@@ -24,6 +24,7 @@ import (
 	redisv7 "github.com/go-redis/redis/v7"
 	redisv8 "github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
+	"github.com/graph-gophers/graphql-go"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/julienschmidt/httprouter"
 	redisv9 "github.com/redis/go-redis/v9"
@@ -72,6 +73,7 @@ func useLibraries() {
 		_ = c.Close()
 	}
 	_ = zerolog.New(io.Discard)
+	_, _ = graphql.ParseSchema("type Query { a: String }", nil)
 	_ = &rest.Config{Host: "http://127.0.0.1"}
 	_ = redisv6.NewClient(&redisv6.Options{}).Close()
 	_ = redisv7.NewClient(&redisv7.Options{}).Close()

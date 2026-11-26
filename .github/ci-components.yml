@@ -153,6 +153,7 @@ integration-suites:
     contrib/gorm.io/gorm.v1: [ gorm ]
     contrib/gorm.io/gorm.v1/otelc: [ gorm ]
     contrib/graph-gophers/graphql-go: [ graph-gophers ]
+    contrib/graph-gophers/graphql-go/otelc: [ graph-gophers ]
     contrib/graphql-go/graphql: [ graphql-go ]
     contrib/haproxy/stream-processing-offload: []
     contrib/hashicorp/consul: []
@@ -515,6 +516,7 @@ components:
       - contrib/google.golang.org/grpc/**
       - contrib/gorilla/mux/**
       - contrib/gorm.io/gorm.v1/**
+      - contrib/graph-gophers/graphql-go/**
       - contrib/jackc/pgx.v5/**
       - contrib/julienschmidt/httprouter/**
       - contrib/k8s.io/client-go/**

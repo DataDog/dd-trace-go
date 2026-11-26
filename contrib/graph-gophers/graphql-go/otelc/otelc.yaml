@@ -1,0 +1,43 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# A closure that takes the call's arguments, not append_args, so a call that
+# passes one multi-value expression, such as graphql.ParseSchema(args()), still
+# builds. The full slice expression copies the options, so appending the tracer
+# never writes into the backing array of a slice the caller spread. The contrib
+# is excluded because its tests pass their own tracer.
+parse_schema:
+  target:
+    - "**"
+    - not: "github.com/graph-gophers/graphql-go/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/graph-gophers/**"
+  where:
+    function_call: github.com/graph-gophers/graphql-go.ParseSchema
+  do:
+    - wrap_call:
+        replace: |-
+          func(schemaString string, resolver interface{}, opts ...__dd_graphql.SchemaOpt) (*__dd_graphql.Schema, error) {
+            return __dd_graphql.ParseSchema(schemaString, resolver, append(opts[:len(opts):len(opts)], __dd_graphql.Tracer(__dd_graphqltrace.NewTracer()))...)
+          }({{ .CallArguments }})
+  imports:
+    __dd_graphql: github.com/graph-gophers/graphql-go
+    __dd_graphqltrace: github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2
+
+must_parse_schema:
+  target:
+    - "**"
+    - not: "github.com/graph-gophers/graphql-go/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/graph-gophers/**"
+  where:
+    function_call: github.com/graph-gophers/graphql-go.MustParseSchema
+  do:
+    - wrap_call:
+        replace: |-
+          func(schemaString string, resolver interface{}, opts ...__dd_graphql.SchemaOpt) *__dd_graphql.Schema {
+            return __dd_graphql.MustParseSchema(schemaString, resolver, append(opts[:len(opts):len(opts)], __dd_graphql.Tracer(__dd_graphqltrace.NewTracer()))...)
+          }({{ .CallArguments }})
+  imports:
+    __dd_graphql: github.com/graph-gophers/graphql-go
+    __dd_graphqltrace: github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2
