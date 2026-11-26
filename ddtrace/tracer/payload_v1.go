@@ -607,6 +607,8 @@ func (p *payloadV1) encodeTraceChunks(bm bitmap, fieldID int, tc []traceChunk, s
 // attributes array (language and runtime-id). Kept out of line from encodeSpans
 // so spans with nil promotedAttrs avoid extra register pressure in the loop.
 //
+// +checklocksignore — Post-finish: reads finished span fields during payload encoding.
+//
 //go:noinline
 func (p *payloadV1) encodePromotedStringAttrs(span *Span, st *stringTable) int {
 	count := 0
