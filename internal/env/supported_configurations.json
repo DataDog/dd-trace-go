@@ -2153,7 +2153,7 @@
     ],
     "OTEL_EXPORTER_OTLP_COMPRESSION": [
       {
-        "implementation": "A",
+        "implementation": "B",
         "type": "string",
         "default": "none"
       }
@@ -2182,7 +2182,7 @@
     ],
     "OTEL_EXPORTER_OTLP_LOGS_COMPRESSION": [
       {
-        "implementation": "A",
+        "implementation": "B",
         "type": "string",
         "default": "none"
       }
@@ -2218,7 +2218,7 @@
     ],
     "OTEL_EXPORTER_OTLP_METRICS_COMPRESSION": [
       {
-        "implementation": "A",
+        "implementation": "B",
         "type": "string",
         "default": "none"
       }
