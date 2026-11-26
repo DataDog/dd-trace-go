@@ -1968,4 +1968,41 @@ func TestPropagatingTagsCachedDMImmutability(t *testing.T) {
 	tr2.mu.Unlock()
 	assert.Equal(t, "-1", tr2.propagatingTag(keyDecisionMaker))
 	assert.Equal(t, "", tr2.propagatingTag("_dd.p.custom"))
+
+	// replacePropagatingTags must clear propagatingTagsReadOnly.
+	tr2.replacePropagatingTags(map[string]string{"_dd.p.a": "1"})
+	tr2.mu.RLock()
+	assert.False(t, tr2.propagatingTagsReadOnly)
+	tr2.mu.RUnlock()
+}
+
+func TestNewSpanContextPreservesFusedTraceForExtractedParent(t *testing.T) {
+	parent := &SpanContext{spanID: 42}
+	parent.traceID.SetLower(99)
+	span := acquireSpanForContext(false, true)
+	fusedTrace := span.context.trace
+	require.NotNil(t, fusedTrace)
+
+	sc := newSpanContext(span, parent)
+	assert.Same(t, fusedTrace, sc.trace)
+}
+
+func TestStartSpanUnixEpochAndRuntimeIDGlobalTag(t *testing.T) {
+	tr, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+
+	// StartTime(time.Unix(0, 0)) must keep start == 0 rather than falling back to now().
+	s1 := tr.StartSpan("epoch", StartTime(time.Unix(0, 0)))
+	assert.Equal(t, int64(0), s1.start)
+	s1.Finish()
+
+	// GlobalTags runtime-id must still override a per-span runtime-id tag when len(GlobalTags) == 1.
+	wantRID, _ := tr.config.internalConfig.GlobalTags()[ext.RuntimeID].(string)
+	require.NotEmpty(t, wantRID)
+	s2 := tr.StartSpan("override-rid", Tag(ext.RuntimeID, "custom-rid"))
+	gotRID, ok := s2.meta.RuntimeID()
+	assert.True(t, ok)
+	assert.Equal(t, wantRID, gotRID)
+	s2.Finish()
 }

@@ -211,6 +211,7 @@ func (t *trace) unsetPropagatingTagLocked(key string) {
 func (t *trace) replacePropagatingTags(tags map[string]string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.propagatingTagsReadOnly = false
 	if len(tags) == 0 {
 		// Typed nil keeps the atomic.Value type consistent across all stores
 		// (Store(nil) would panic; a typed nil is a valid same-type value).

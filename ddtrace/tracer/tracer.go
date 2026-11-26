@@ -663,7 +663,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 }
 
 // buildSharedAttrs populates the tracer's two shared SpanAttributes instances
-// with process-level values (language, env, version) and marks them read-only.
+// with process-level values (language, runtime-id, env, version) and marks them read-only.
 // Every new span starts with a pointer to one of these; the copy-on-write
 // mechanism in SpanAttributes.Clone() creates a span-specific copy only when
 // a per-span override is needed.
@@ -1067,6 +1067,7 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 func spanStartWithContext(operationName string, sharedAttrs *traceinternal.SpanAttributes, poolEnabled bool, ctx gocontext.Context, ctxParent *SpanContext, overrideParent bool, options ...StartSpanOption) (*Span, bool, string) {
 	var (
 		startTime    int64
+		hasStartTime bool
 		context      *SpanContext
 		pprofContext = ctx
 		id           uint64
@@ -1077,6 +1078,7 @@ func spanStartWithContext(operationName string, sharedAttrs *traceinternal.SpanA
 		opts := parseStartSpanOptions(options)
 		if !opts.StartTime.IsZero() {
 			startTime = opts.StartTime.UnixNano()
+			hasStartTime = true
 		}
 		context = opts.Parent
 		if opts.Context != nil && pprofContext == nil {
@@ -1091,7 +1093,7 @@ func spanStartWithContext(operationName string, sharedAttrs *traceinternal.SpanA
 	} else if ctxParent != nil && context == nil {
 		context = ctxParent
 	}
-	if startTime == 0 {
+	if !hasStartTime {
 		startTime = now()
 	}
 
@@ -1259,10 +1261,12 @@ func (t *tracer) startSpanWithContext(operationName, ciVisibilityTracerType stri
 	span.supportsEvents = t.config.agent.load().spanEventsAvailable || t.otlpExportMode
 
 	// add global tags (fast-path when GlobalTags only carries the process
-	// runtime-id already pre-populated in t.sharedAttrs).
+	// runtime-id already set on the span).
 	if len(cSnap.GlobalTags) == 1 {
-		if rid, ok := cSnap.GlobalTags[ext.RuntimeID].(string); ok && t.sharedAttrs.Has(traceinternal.AttrRuntimeID) && rid == t.sharedAttrs.Val(traceinternal.AttrRuntimeID) {
-			// already present in sharedAttrs
+		if rid, ok := cSnap.GlobalTags[ext.RuntimeID].(string); ok {
+			if cur, has := span.meta.RuntimeID(); !has || cur != rid {
+				span.setTags(cSnap.GlobalTags)
+			}
 		} else {
 			span.setTags(cSnap.GlobalTags)
 		}

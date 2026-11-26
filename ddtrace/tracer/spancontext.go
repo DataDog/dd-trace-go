@@ -330,7 +330,9 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 	if parent != nil {
 		if !parent.baggageOnly { // +checklocksignore - Read-only after init.
 			context.traceID.SetUpper(parent.traceID.Upper())
-			context.trace = parent.trace
+			if parent.trace != nil {
+				context.trace = parent.trace
+			}
 			context.origin = parent.origin // +checklocksignore - Initialization time, not shared yet. Parent origin is read-only after init.
 			context.errors.Store(parent.errors.Load())
 			inheritLLMObsSpan(context, parent)
