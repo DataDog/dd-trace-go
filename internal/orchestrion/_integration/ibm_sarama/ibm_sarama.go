@@ -23,6 +23,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/kafka"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
 )
 
 const (
@@ -137,8 +138,16 @@ func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 
 func (tc *TestCase) ExpectedTraces() trace.Traces {
 	// The broker addresses passed to NewSyncProducer and NewConsumer are
-	// tagged as the bootstrap servers.
+	// tagged as the bootstrap servers. The otelc consumer rule does not pass
+	// them, see contrib/IBM/sarama/otelc/otelc.yaml.
 	bootstrapServers := strings.Join(tc.addrs, ",")
+	consumerMeta := map[string]string{
+		"span.kind": "consumer",
+		"component": "IBM/sarama",
+	}
+	if !otelc.Enabled() {
+		consumerMeta["messaging.kafka.bootstrap.servers"] = bootstrapServers
+	}
 	return trace.Traces{
 		{
 			Tags: map[string]any{
@@ -171,11 +180,7 @@ func (tc *TestCase) ExpectedTraces() trace.Traces {
 						"type":    "queue",
 						"service": "kafka",
 					},
-					Meta: map[string]string{
-						"span.kind":                         "consumer",
-						"component":                         "IBM/sarama",
-						"messaging.kafka.bootstrap.servers": bootstrapServers,
-					},
+					Meta: consumerMeta,
 				},
 			},
 		},

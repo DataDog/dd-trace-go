@@ -19,16 +19,12 @@ sarama_new_consumer:
   do:
     - wrap_call:
         replace: |-
-          (func(__dd_addrs []string, __dd_cfg *__dd_ibmsarama.Config) (__dd_ibmsarama.Consumer, error) {
-            if false {
-              return {{ . }}
+          (func(c __dd_ibmsarama.Consumer, err error) (__dd_ibmsarama.Consumer, error) {
+            if c != nil {
+              c = __dd_ibmsaramatrace.WrapConsumer(c)
             }
-            __dd_c, __dd_err := __dd_ibmsarama.NewConsumer(__dd_addrs, __dd_cfg)
-            if __dd_c != nil {
-              __dd_c = __dd_ibmsaramatrace.WrapConsumer(__dd_c, __dd_ibmsaramatrace.WithBrokers(__dd_addrs), __dd_ibmsaramatrace.WithSaramaConfig(__dd_cfg))
-            }
-            return __dd_c, __dd_err
-          })({{ .CallArguments }})
+            return c, err
+          })({{ . }})
   imports:
     __dd_ibmsarama: github.com/IBM/sarama
     __dd_ibmsaramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
@@ -54,10 +50,11 @@ sarama_new_consumer_from_client:
     __dd_ibmsarama: github.com/IBM/sarama
     __dd_ibmsaramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
 
-# The rules for the constructors that take broker addresses pass them to the
-# contrib with WithBrokers, for the bootstrap servers tag and the cluster ID
-# with Data Streams Monitoring. The consumer rule also passes the config with
-# WithSaramaConfig, which the cluster ID lookup connects with.
+# The producer rules for the constructors that take broker addresses pass them
+# to the contrib with WithBrokers, for the bootstrap servers tag and the
+# cluster ID with Data Streams Monitoring. The consumer rule does not: it
+# wraps the result of the original call, which wrap_call needs to keep the
+# file's sarama import in use, so it cannot also read the arguments.
 #
 # The producer rules pass the config from the call's arguments, or the client's
 # config, to the contrib. A nil config reaches the contrib as nil.
