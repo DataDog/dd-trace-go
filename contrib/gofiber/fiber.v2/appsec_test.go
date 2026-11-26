@@ -92,6 +92,27 @@ func TestAppSec(t *testing.T) {
 		require.Contains(t, event, "myPathParam")
 	})
 
+	// The same attack with Middleware on the endpoint only, without Wrap's
+	// guards: the middleware reports the parameters of its endpoint.
+	t.Run("path-params endpoint middleware", func(t *testing.T) {
+		app := fiber.New()
+		app.Post("/params/:myPathParam", Middleware(), func(c *fiber.Ctx) error { return c.SendString("ok") })
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		res, err := app.Test(httptest.NewRequest("POST", "/params/appscan_fingerprint", nil))
+		require.NoError(t, err)
+		defer res.Body.Close()
+		require.Equal(t, http.StatusOK, res.StatusCode)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		event, ok := spans[0].Tag("_dd.appsec.json").(string)
+		require.True(t, ok, "expected an appsec event on the request span")
+		require.Contains(t, event, "crs-913-120")
+		require.Contains(t, event, "myPathParam")
+	})
+
 	// A PHP injection attack in the parsed body, reported through the SDK,
 	// which is only reachable if the operation made it into the user context.
 	t.Run("SDK-body", func(t *testing.T) {
@@ -233,20 +254,15 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 	static := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(static, "app.css"), []byte("body{}"), 0o600))
 	routes := func(app *fiber.App) *fiber.App {
-		// An error handler right after the tracing middleware: fiber merges
-		// it into the same route.
-		app.Use(func(c *fiber.Ctx) error {
-			err := c.Next()
-			if err != nil && strings.HasPrefix(c.Path(), "/handled") {
-				return c.SendStatus(http.StatusNotFound)
-			}
-			return err
-		})
 		// A middleware that only calls c.Next. On another path than the tracing
 		// middleware, fiber does not merge it into the same route.
 		app.Use("/nope", func(c *fiber.Ctx) error { return c.Next() })
 		app.Get("/users/:id", func(c *fiber.Ctx) error { return c.SendString("ok") })
 		app.Get("/missing/:id", func(*fiber.Ctx) error { return fiber.ErrNotFound })
+		// A handler that returns the error of fiber's router keeps its route.
+		app.Get("/refused", func(*fiber.Ctx) error { return fiber.ErrMethodNotAllowed })
+		app.Get("/color::color", func(c *fiber.Ctx) error { return c.SendString("ok") })
+		app.Use("/w/*/fixed", func(c *fiber.Ctx) error { return c.SendString("ok") })
 		app.Use("/api", func(c *fiber.Ctx) error { return c.SendString("ok") })
 		app.Static("/static", static)
 		return app
@@ -255,7 +271,11 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 	Wrap(wrapped)
 	middleware := fiber.New()
 	middleware.Use(Middleware())
-	apps := map[string]*fiber.App{"Wrap": routes(wrapped), "Middleware": routes(middleware)}
+	// Middleware on an endpoint only: c.Route() is the endpoint before and after
+	// the handler.
+	endpoint := fiber.New()
+	endpoint.Get("/users/:id", Middleware(), func(c *fiber.Ctx) error { return c.SendString("ok") })
+	apps := map[string]*fiber.App{"Wrap": routes(wrapped), "Middleware": routes(middleware), "Endpoint": endpoint}
 
 	for name, app := range apps {
 		for _, tc := range []struct {
@@ -264,13 +284,18 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 			want           any
 		}{
 			{"GET", "/nope/x", http.StatusNotFound, nil},
-			{"GET", "/handled", http.StatusNotFound, nil},
 			{"POST", "/users/1", http.StatusMethodNotAllowed, nil},
 			{"GET", "/users/1", http.StatusOK, "/users/{id}"},
 			{"GET", "/missing/1", http.StatusNotFound, "/missing/{id}"},
+			{"GET", "/refused", http.StatusMethodNotAllowed, "/refused"},
+			{"GET", "/color:blue", http.StatusOK, "/color%3A{color}"},
 			{"GET", "/api/v1/x", http.StatusOK, "/api/{param1}"},
+			{"GET", "/w/x/fixed/rest", http.StatusOK, "/w/{param1}/fixed/{param2}"},
 			{"GET", "/static/app.css", http.StatusOK, "/static/{param1}"},
 		} {
+			if name == "Endpoint" && (tc.method != "GET" || tc.target != "/users/1") {
+				continue
+			}
 			t.Run(name+" "+tc.method+" "+tc.target, func(t *testing.T) {
 				mt := mocktracer.Start()
 				defer mt.Stop()

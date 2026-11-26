@@ -115,17 +115,12 @@ func useAppSec(c *fiber.Ctx, span trace.TagSetter, next func() error) (err error
 		dyngo.OnData(op, func(*actions.BlockHTTP) { request.blocked.Store(true) })
 	}
 
-	// The route of this middleware, until a later one matches.
-	ownRoute := c.Route()
-
 	err = next()
 
 	// Wrap's route guards already report parameters before user code. Keep
 	// this fallback for global Middleware users and routes without parameters.
-	// When no route handled the request, c.Route() is the last middleware that
-	// fiber ran (this one, or one that only calls c.Next): it is not reported.
 	if route := c.Route(); !request.blocked.Load() && route != nil && route.Path != "" && route != request.route &&
-		route != ownRoute && !isNoRouteError(c, err) {
+		!isNoRouteError(c, route, err) {
 		if blockErr := httpsec.RouteMatched(ctx, route.Path, c.AllParams()); blockErr != nil {
 			instr.Logger().Debug("gofiber/fiber.v2: request blocked on route parameters: %s", blockErr.Error())
 		}
@@ -150,15 +145,34 @@ func useAppSec(c *fiber.Ctx, span trace.TagSetter, next func() error) (err error
 
 // isNoRouteError reports whether err is the error that fiber's router returns
 // when no route handles the request: 405 when the path has routes for other
-// methods, otherwise 404 with a message that names the method and the path. A
-// handler that returns its own 404 has a route.
-func isNoRouteError(c *fiber.Ctx, err error) bool {
-	if errors.Is(err, fiber.ErrMethodNotAllowed) {
-		return true
+// methods, otherwise 404 with a message that names the method and the path.
+// route, the last route that fiber ran, is then a middleware that called c.Next:
+// it is not the route of the request. A handler that returns the same error has
+// a route.
+func isNoRouteError(c *fiber.Ctx, route *fiber.Route, err error) bool {
+	if !errors.Is(err, fiber.ErrMethodNotAllowed) {
+		var ferr *fiber.Error
+		if !errors.As(err, &ferr) || ferr.Code != fiber.StatusNotFound ||
+			ferr.Message != "Cannot "+c.Method()+" "+html.EscapeString(string(c.Request().URI().PathOriginal())) {
+			return false
+		}
 	}
-	var ferr *fiber.Error
-	return errors.As(err, &ferr) && ferr.Code == fiber.StatusNotFound &&
-		ferr.Message == "Cannot "+c.Method()+" "+html.EscapeString(string(c.Request().URI().PathOriginal()))
+	return isMiddlewareRoute(c.App(), route)
+}
+
+// isMiddlewareRoute reports whether route was registered with Use (or Static, or
+// a mount). fiber does not export it, but GetRoutes(true) leaves these routes
+// out. Its routes are copies that share the handlers of the app's routes.
+func isMiddlewareRoute(app *fiber.App, route *fiber.Route) bool {
+	if len(route.Handlers) == 0 {
+		return false
+	}
+	for _, r := range app.GetRoutes(true) {
+		if len(r.Handlers) == len(route.Handlers) && &r.Handlers[0] == &route.Handlers[0] {
+			return false
+		}
+	}
+	return true
 }
 
 // convertRequest builds the net/http request AppSec expects out of a fasthttp
