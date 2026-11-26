@@ -244,3 +244,27 @@ func BenchmarkOTLPTraceWriterConcurrent(b *testing.B) {
 		})
 	}
 }
+
+// benchConvert measures the cost of converting a span with n meta tags and n
+// metric tags (including Datadog ingestion keys) into OTLP attributes.
+func benchConvert(b *testing.B, n int) {
+	b.Helper()
+	s := newBasicSpan("bench-span")
+	for i := range n {
+		s.meta.Set(fmt.Sprintf("user.meta-%d", i), "val")
+		s.metrics[fmt.Sprintf("user.metric-%d", i)] = float64(i)
+	}
+	s.meta.Set("_dd.appsec.json", `{"triggers":[]}`)
+	s.metrics["_dd.appsec.enabled"] = 1
+	s.metrics[keySamplingPriority] = 2
+
+	b.ReportAllocs()
+	b.ResetTimer()
+
+	for b.Loop() {
+		convertSpanAttributes(s, "bench-svc", false, nil)
+	}
+}
+
+func BenchmarkConvertSpanAttributes20(b *testing.B)  { benchConvert(b, 20) }
+func BenchmarkConvertSpanAttributes300(b *testing.B) { benchConvert(b, 300) }

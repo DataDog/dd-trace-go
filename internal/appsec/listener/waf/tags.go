@@ -123,6 +123,6 @@ func addTruncationTag(th trace.TagSetter, reason libddwaf.TruncationReason, size
 func SetEventSpanTags(span trace.TagSetter) {
 	span.SetTag("_dd.origin", "appsec")
 	// Set the appsec.event tag needed by the appsec backend
-	span.SetTag("appsec.event", true)
+	span.SetTag(ext.AppSecEvent, true)
 	span.SetTag("_dd.p.ts", internal.TraceSourceTagValue{Value: internal.ASMTraceSource})
 }
