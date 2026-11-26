@@ -13,12 +13,8 @@
 #   Measured near the end of the calling job's main phase, NOT immediately after
 #   restore, so it is tagged `phase:end_of_job`.
 #
-#   Series transition: until this change these values were published as
-#   `ci.step.cache.restore.disk_size_bytes`, whose name wrongly implied they
-#   were restore-time sizes. That series is retired; queries must move to
-#   `ci.cache.disk_size_bytes` with `phase:end_of_job`. Compressed
-#   cache-service storage consumption is measured from the cache API's
-#   `size_in_bytes` by scripts/citiming, not from this action.
+#   Compressed cache-service storage consumption is measured from the
+#   cache API's `size_in_bytes` by scripts/citiming, not from this action.
 #
 # Common tags:
 # - `repository`: Repository name, e.g. `dd-trace-go`.

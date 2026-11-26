@@ -187,9 +187,7 @@ jobs:
       - name: Setup Go
         uses: ./.github/actions/setup-go
         with:
-          # oldstable (the supported floor), not the 1.26.4 corruption-era
-          # pin from #5056/#5066: the rest of CI runs the latest 1.26.x
-          # without the #77168 corruption, so the pin is no longer needed.
+          # oldstable: the supported floor.
           go-version: oldstable
           workload: otelc-matrix
           cache-provider: github-cache
@@ -243,19 +241,14 @@ jobs:
           # Default-branch seed set, stable-alias strata only: the nightly
           # schedule and a workflow_dispatch on the default branch save
           # these keys; every pull request run restores only. The oldstable
-          # strata stay unseeded — they cold-build exactly as they do
-          # today — because the shared pool measured at its 100 GiB
-          # eviction boundary (2026-11-17) cannot hold every stratum of
-          # three more families; widen the gate to `matrix.go-version ==
-          # 'stable' || matrix.go-version == 'oldstable'` once citiming
-          # shows the stable strata pay for their size. A dispatch that
-          # overrides otelc-version must stay restore-only: it would save
-          # a variant no ordinary pull request can ever restore. Windows
-          # skips the isolated caches: a 1.4 GiB restore there costs
-          # 2.6-3.3m in tar.exe extraction and saves about 2m of build
-          # time, measured on multios's windows-latest runners
-          # (APMLP-2248); the 8-core shared runners this lane uses are
-          # unmeasured, so the skip is the conservative default.
+          # strata stay unseeded and cold-build, because the bounded
+          # shared pool cannot hold every stratum of every family; widen
+          # the gate to `matrix.go-version == 'stable' ||
+          # matrix.go-version == 'oldstable'` once citiming shows the
+          # stable strata pay for their size. A dispatch that overrides
+          # otelc-version must stay restore-only: it would save a variant
+          # no ordinary pull request can ever restore. Windows skips the
+          # isolated caches (see .github/actions/setup-go/action.yml).
           cache: ${{ matrix.runs-on != 'windows' }}
           seed: ${{ matrix.runs-on != 'windows' && matrix.go-version == 'stable' && inputs.otelc-version == '' }}
           variant: |-
@@ -409,9 +402,7 @@ jobs:
       - name: Setup Go
         uses: ./.github/actions/setup-go
         with:
-          # oldstable (the supported floor), not the 1.26.4 corruption-era
-          # pin from #5056/#5066: the rest of CI runs the latest 1.26.x
-          # without the #77168 corruption, so the pin is no longer needed.
+          # oldstable: the supported floor.
           go-version: oldstable
           workload: otelc-external-app
           variant: |-
