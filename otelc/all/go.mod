@@ -26,6 +26,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/otelc/v2 v2.14.0-dev
+	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 v2.14.0-dev
@@ -60,6 +61,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 v2.14.0-dev // indirect
@@ -116,6 +118,9 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.14 // indirect
 	github.com/googleapis/gax-go/v2 v2.20.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
+	github.com/graphql-go/graphql v0.8.1 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.9.2 // indirect
@@ -295,6 +300,10 @@ replace github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2 => ../../con
 replace github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/otelc/v2 => ../../contrib/gorm.io/gorm.v1/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 => ../../contrib/gorm.io/gorm.v1
+
+replace github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/otelc/v2 => ../../contrib/graphql-go/graphql/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 => ../../contrib/graphql-go/graphql
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/otelc/v2 => ../../contrib/aws/aws-sdk-go-v2/otelc
 

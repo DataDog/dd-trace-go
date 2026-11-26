@@ -24,6 +24,7 @@ import (
 	redisv7 "github.com/go-redis/redis/v7"
 	redisv8 "github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
+	"github.com/graphql-go/graphql"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/julienschmidt/httprouter"
 	redisv9 "github.com/redis/go-redis/v9"
@@ -78,6 +79,12 @@ func useLibraries() {
 	_ = redisv8.NewClient(&redisv8.Options{}).Close()
 	_ = redisv9.NewClient(&redisv9.Options{}).Close()
 	_, _ = gorm.Open(gormtests.DummyDialector{})
+	_, _ = graphql.NewSchema(graphql.SchemaConfig{
+		Query: graphql.NewObject(graphql.ObjectConfig{
+			Name:   "Query",
+			Fields: graphql.Fields{"ok": &graphql.Field{Type: graphql.Boolean}},
+		}),
+	})
 	// The pool opens no connection until first used.
 	if pool, err := pgxpool.New(context.Background(), "postgres://localhost/db"); err == nil {
 		pool.Close()

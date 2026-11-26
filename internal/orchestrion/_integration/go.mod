@@ -178,7 +178,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 v2.14.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.14.0-dev
@@ -502,6 +502,8 @@ replace github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 => ../../../co
 
 replace github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 => ../../../contrib/graph-gophers/graphql-go
 
+replace github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/otelc/v2 => ../../../contrib/graphql-go/graphql/otelc
+
 replace github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 => ../../../contrib/graphql-go/graphql
 
 replace github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 => ../../../contrib/hashicorp/vault
@@ -578,6 +580,8 @@ replace github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 =
 
 replace example.com/gqlgendep => ./internal/gqlgendep
 
+replace example.com/graphqlgodep => ./internal/graphqlgodep
+
 replace github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../../../contrib/99designs/gqlgen/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/otelc/v2 => ../../../contrib/redis/go-redis.v9/otelc
@@ -611,6 +615,7 @@ require github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2
 replace github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2 => ../../../contrib/julienschmidt/httprouter/otelc
 
 require (
+	example.com/graphqlgodep v0.0.0-00010101000000-000000000000
 	example.com/httprouterdep v0.0.0-00010101000000-000000000000
 	example.com/zerologdep v0.0.0-00010101000000-000000000000
 )
@@ -623,6 +628,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.14.0-dev // indirect

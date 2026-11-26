@@ -65,6 +65,7 @@ use (
 	./contrib/gorm.io/gorm.v1/otelc
 	./contrib/graph-gophers/graphql-go
 	./contrib/graphql-go/graphql
+	./contrib/graphql-go/graphql/otelc
 	./contrib/haproxy/stream-processing-offload
 	./contrib/hashicorp/consul
 	./contrib/hashicorp/vault

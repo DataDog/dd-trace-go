@@ -47,13 +47,17 @@ const (
 )
 
 func NewSchema(config graphql.SchemaConfig, options ...Option) (graphql.Schema, error) {
+	config.Extensions = append(config.Extensions, newExtension(options...))
+	return graphql.NewSchema(config)
+}
+
+func newExtension(options ...Option) datadogExtension {
 	extension := datadogExtension{}
 	defaults(&extension.config)
 	for _, opt := range options {
 		opt.apply(&extension.config)
 	}
-	config.Extensions = append(config.Extensions, extension)
-	return graphql.NewSchema(config)
+	return extension
 }
 
 type datadogExtension struct{ config }

@@ -1,0 +1,26 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# A call-site rule, not a hook on NewSchema: the rewritten package imports this
+# package, and through it the contrib, so the contrib is initialized before a
+# schema built in a package-level variable. The contrib is excluded because its
+# own NewSchema already adds the extension.
+#
+# The rule keeps the original call and adds the extension to its result. A
+# call to the contrib's NewSchema in its place would leave the file's
+# graphql-go import unused when that call is its only use, and the build would
+# fail.
+new_schema:
+  target:
+    - "**"
+    - not: "github.com/graphql-go/graphql/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/**"
+  where:
+    function_call: github.com/graphql-go/graphql.NewSchema
+  do:
+    - wrap_call:
+        replace: "__dd_graphqlotelc.WrapSchema({{ . }})"
+  imports:
+    __dd_graphqlotelc: github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/otelc/v2
