@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -477,6 +478,70 @@ func TestPanicWithRecoveryMiddleware(t *testing.T) {
 		w := httptest.NewRecorder()
 		assert.Panics(t, func() {
 			router.ServeHTTP(w, httptest.NewRequest("GET", "/nil", nil))
+		})
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, "500", spans[0].Tag(ext.HTTPCode))
+	})
+
+	t.Run("runtime.Goexit is not turned into a panic", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := gin.New()
+		router.Use(Middleware("foobar"))
+		router.GET("/exit", func(*gin.Context) {
+			runtime.Goexit()
+		})
+
+		var panicked any
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			defer func() { panicked = recover() }()
+			router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/exit", nil))
+			t.Error("ServeHTTP returned after Goexit")
+		}()
+		<-done
+		assert.Nil(t, panicked)
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, "200", spans[0].Tag(ext.HTTPCode))
+	})
+
+	t.Run("gin errors are kept with WithStatusCheck(nil)", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := gin.New()
+		router.Use(gin.Recovery())
+		router.Use(Middleware("foobar", WithStatusCheck(nil), WithUseGinErrors()))
+		router.GET("/boom", func(c *gin.Context) {
+			_ = c.Error(errors.New("db down"))
+			panic("boom")
+		})
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest("GET", "/boom", nil))
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Contains(t, spans[0].Tag(ext.ErrorMsg), "db down")
+	})
+
+	t.Run("typed nil net.OpError does not replace the panic", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		var nilOpErr *net.OpError
+		router := gin.New()
+		router.Use(Middleware("foobar"))
+		router.GET("/nil", func(*gin.Context) {
+			panic(nilOpErr)
+		})
+
+		assert.PanicsWithValue(t, nilOpErr, func() {
+			router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/nil", nil))
 		})
 		spans := mt.FinishedSpans()
 		require.Len(t, spans, 1)

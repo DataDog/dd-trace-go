@@ -62,21 +62,20 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		opts = append(opts, cfg.routeTag(route, c.Request))
 		opts = append(opts, httptrace.HeaderTagsFromRequest(c.Request, cfg.headerTags))
 		span, ctx, finishSpans := httptrace.StartRequestSpan(c.Request, opts...)
-		completed := false
+		var (
+			normal    bool
+			panicked  bool
+			recovered any
+		)
 		defer func() {
-			if completed {
-				finishSpan(cfg, c, finishSpans, false, nil)
-				return
+			// Reached on normal return, after a panic was recovered below, or
+			// while runtime.Goexit unwinds (panicked stays false there).
+			finishSpan(cfg, c, finishSpans, panicked, recovered)
+			if panicked {
+				// A recovery middleware earlier in the chain only runs once the
+				// span is finished, so the panic is re-raised after recording it.
+				panic(recovered)
 			}
-			// c.Next did not return normally. A panic that unwinds through this
-			// middleware is usually turned into a 500 by a recovery middleware
-			// registered earlier in the chain, which only runs once the span is
-			// finished. Record it here so the span does not report the default
-			// 200, then let it continue. recover returns nil for panic(nil) when
-			// GODEBUG=panicnil=1, so completed is what tells the two cases apart.
-			recovered := recover()
-			finishSpan(cfg, c, finishSpans, true, recovered)
-			panic(recovered)
 		}()
 
 		// pass the span through the request context
@@ -88,8 +87,19 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		}
 
 		// serve the request to the next middleware
-		c.Next()
-		completed = true
+		func() {
+			defer func() {
+				if !normal {
+					// recover returns nil for runtime.Goexit and, with
+					// GODEBUG=panicnil=1, for panic(nil). Goexit keeps unwinding
+					// past this function, so the code below only runs for panics.
+					recovered = recover()
+				}
+			}()
+			c.Next()
+			normal = true
+		}()
+		panicked = !normal
 
 		if len(c.Errors) > 0 {
 			span.SetTag("gin.errors", c.Errors.String())
@@ -124,14 +134,14 @@ func finishSpan(cfg *config, c *gin.Context, finishSpans httptrace.FinishSpanFun
 		}
 		finishOpts = append(finishOpts, tracer.WithError(errHandlerPanic))
 	}
-	if cfg.isStatusError == nil {
-		finishSpans(status, nil, finishOpts...)
-		return
-	}
-	statusError := cfg.isStatusError(status)
+	statusError := cfg.isStatusError != nil && cfg.isStatusError(status)
 	if cfg.useGinErrors && (statusError || len(finishOpts) > 0) && len(c.Errors) > 0 {
 		// Applied after the panic error so that the errors the user opted into win.
 		finishOpts = append(finishOpts, tracer.WithError(errors.New(c.Errors.String())))
+	}
+	if cfg.isStatusError == nil {
+		finishSpans(status, nil, finishOpts...)
+		return
 	}
 	finishSpans(status, func(int) bool { return statusError }, finishOpts...)
 }
@@ -140,11 +150,11 @@ func finishSpan(cfg *config, c *gin.Context, finishSpans httptrace.FinishSpanFun
 // dead connection, for which it aborts without writing a status.
 func isBrokenConnection(v any) bool {
 	ne, ok := v.(*net.OpError)
-	if !ok {
+	if !ok || ne == nil {
 		return false
 	}
 	var se *os.SyscallError
-	if !errors.As(ne, &se) {
+	if !errors.As(ne, &se) || se == nil {
 		return false
 	}
 	msg := strings.ToLower(se.Error())
