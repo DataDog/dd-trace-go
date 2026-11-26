@@ -507,6 +507,7 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 	api := chi.NewRouter()
 	api.Get("/", okHandler)
 	api.Get("/static/*", okHandler)
+	api.Get("/users/{id}/*", okHandler)
 	router.Mount("/api", api)
 	router.Mount("/opaque", http.HandlerFunc(okHandler))
 	for target, want := range map[string]string{
@@ -517,6 +518,8 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 		"/api/":          "/api",
 		"/api/static/a":  "/api/static/{param1}",
 		"/api/static/":   "/api/static/",
+		"/api/users/1/":  "/api/users/{id}/",
+		"/api/users/1/a": "/api/users/{id}/{param1}",
 		"/opaque/x":      "/opaque/{param1}",
 	} {
 		assert.Equal(t, want, requestTags(t, router, target)["_dd.appsec.normalized_route"], target)

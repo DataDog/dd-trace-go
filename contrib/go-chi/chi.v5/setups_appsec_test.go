@@ -564,6 +564,7 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 	api := chi.NewRouter()
 	api.Get("/", okHandler)
 	api.Get("/static/*", okHandler)
+	api.Get("/users/{id}/*", okHandler)
 	router.Mount("/api", api)
 	// Mounted with a trailing "/", chi serves the root route only with "/".
 	slash := chi.NewRouter()
@@ -582,6 +583,8 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 		"/api/":           "/api",
 		"/api/static/a":   "/api/static/{param1}",
 		"/api/static/":    "/api/static/",
+		"/api/users/1/":   "/api/users/{id}/",
+		"/api/users/1/a":  "/api/users/{id}/{param1}",
 		"/slash/":         "/slash/",
 		"/opaque/x":       "/opaque/{param1}",
 		"/opaque/":        "/opaque/",

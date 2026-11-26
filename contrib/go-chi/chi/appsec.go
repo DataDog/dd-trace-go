@@ -155,13 +155,13 @@ func unmatchedSubrouter(rctx *chi.Context, cache *sync.Map) bool {
 // selectedParams returns the parameters of the route that chi selected, as
 // knownParams does. chi clears the "*" of a mount before it calls the mounted
 // handler, and gives the handler the rest of the path in RoutePath. A mounted chi
-// router matches RoutePath with its own patterns, so RoutePath starts with the
-// static text of its last pattern; a mounted handler that is not a chi router
-// leaves another rest there, which is the value of the "*".
+// router matches RoutePath with its own patterns, so RoutePath starts with what
+// its last pattern matched before the "*"; a mounted handler that is not a chi
+// router leaves another rest there, which is the value of the "*".
 func selectedParams(rctx *chi.Context) map[string]string {
 	params := knownParams(rctx)
 	if n := len(rctx.RoutePatterns); n > 0 && params != nil && params["*"] == "" {
-		if prefix, ok := strings.CutSuffix(rctx.RoutePatterns[n-1], "*"); ok && rctx.RoutePath != "" && !strings.HasPrefix(rctx.RoutePath, prefix) {
+		if prefix, ok := strings.CutSuffix(rctx.RoutePatterns[n-1], "*"); ok && rctx.RoutePath != "" && !strings.HasPrefix(rctx.RoutePath, expandPattern(prefix, params)) {
 			params["*"] = strings.TrimPrefix(rctx.RoutePath, "/")
 		}
 	}
@@ -181,4 +181,30 @@ func knownParams(rctx *chi.Context) map[string]string {
 		params[key] = values[i]
 	}
 	return params
+}
+
+// expandPattern returns the path that a chi pattern matches with params: each
+// {name} or {name:regexp} is replaced with the value of name.
+func expandPattern(pattern string, params map[string]string) string {
+	var path strings.Builder
+	for i := 0; i < len(pattern); i++ {
+		if pattern[i] != '{' {
+			path.WriteByte(pattern[i])
+			continue
+		}
+		depth, end := 0, i
+		for ; end < len(pattern); end++ {
+			if pattern[end] == '{' {
+				depth++
+			} else if pattern[end] == '}' {
+				if depth--; depth == 0 {
+					break
+				}
+			}
+		}
+		name, _, _ := strings.Cut(pattern[i+1:min(end, len(pattern))], ":")
+		path.WriteString(params[name])
+		i = end
+	}
+	return path.String()
 }

@@ -354,3 +354,26 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 		}
 	}
 }
+
+// TestAppSecNormalizedRouteBlocked checks that a request that a route guard of
+// Wrap blocks on its path parameters gets the normalized route that fiber
+// matched, with UnescapePath.
+func TestAppSecNormalizedRouteBlocked(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
+	t.Setenv("DD_API_SECURITY_ENABLED", "true")
+	testutils.StartAppSec(t)
+
+	app := fiber.New(fiber.Config{UnescapePath: true})
+	Wrap(app)
+	app.Get("/a%2Fb/:id", func(c *fiber.Ctx) error { return c.SendString("ok") })
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	res, err := app.Test(httptest.NewRequest("GET", "/a%252Fb/$globals", nil))
+	require.NoError(t, err)
+	defer res.Body.Close()
+	require.Equal(t, http.StatusForbidden, res.StatusCode)
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	require.Equal(t, "/a%252Fb/{id}", spans[0].Tag("_dd.appsec.normalized_route"))
+}

@@ -7,7 +7,6 @@ package wrap
 
 import (
 	"net/http"
-	"net/url"
 	pathpkg "path"
 	"strings"
 
@@ -88,14 +87,16 @@ func (mux *ServeMux) HandleFunc(pttrn string, handlerFunc func(http.ResponseWrit
 // to the WAF. A pattern without wildcards has no path values. A redirect that
 // ServeMux generates instead of serving a route reports no route: its pattern can
 // be the request path.
-type reportingServeMux struct{ *http.ServeMux }
+type reportingServeMux struct {
+	*http.ServeMux
+	redirect bool
+}
 
 func (mux reportingServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	path := r.URL.Path
 	// Deferred, so that a handler that panics still reports its path values.
 	defer func() {
 		switch {
-		case isGeneratedRedirect(w, path):
+		case mux.redirect:
 			httpsec.ReportMatchedRoute(r.Context(), httpsec.MatchedRoute{})
 		case strings.Contains(r.Pattern, "{"):
 			httpsec.ReportMatchedRoute(r.Context(), httpsec.MatchedRoute{
@@ -107,20 +108,19 @@ func (mux reportingServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	mux.ServeMux.ServeHTTP(w, r)
 }
 
-// isGeneratedRedirect reports that the response redirects path to the path that
-// ServeMux redirects it to: with "/" added for a subtree pattern, or cleaned.
-func isGeneratedRedirect(w http.ResponseWriter, path string) bool {
-	res, ok := w.(interface{ Status() int })
-	if !ok {
-		return false
+// isGeneratedRedirect reports that ServeMux redirects the request instead of
+// serving a route, as net/http decides it: its escaped path is not clean (but for
+// CONNECT), or it lacks the trailing "/" of the subtree pattern that matches it
+// with a "/" added. pttrn is the pattern that ServeMux.Handler returns for the
+// request: for a redirect, the pattern or the path that the redirect leads to.
+func isGeneratedRedirect(r *http.Request, pttrn string) bool {
+	escaped := r.URL.EscapedPath()
+	if r.Method != http.MethodConnect && cleanPath(escaped) != escaped {
+		return true
 	}
-	switch res.Status() {
-	case http.StatusMovedPermanently, http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
-	default:
-		return false
-	}
-	location, err := url.Parse(w.Header().Get("Location"))
-	return err == nil && location.Path != path && (location.Path == path+"/" || location.Path == cleanPath(path))
+	target := strings.TrimSuffix(pattern.Path(pttrn), "{$}")
+	return !strings.HasSuffix(escaped, "/") && strings.HasSuffix(target, "/") &&
+		strings.Count(target, "/") == strings.Count(escaped, "/")+1
 }
 
 // cleanPath returns the path that ServeMux redirects a request to: path.Clean,
@@ -165,7 +165,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	so = append(so, httptrace.HeaderTagsFromRequest(r, mux.cfg.HeaderTags))
 	var h http.Handler = mux.ServeMux
 	if internal.Instrumentation.AppSecEnabled() {
-		h = reportingServeMux{mux.ServeMux}
+		h = reportingServeMux{ServeMux: mux.ServeMux, redirect: isGeneratedRedirect(r, pttrn)}
 	}
 	TraceAndServe(h, w, r, &httptrace.ServeConfig{
 		Service:              mux.cfg.ServiceName,

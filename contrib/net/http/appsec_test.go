@@ -408,6 +408,11 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 	stripped := http.StripPrefix("/api", mux)
 
 	mux.HandleFunc("/users/{id}/", func(http.ResponseWriter, *http.Request) {})
+	mux.HandleFunc("/x/{id}", func(http.ResponseWriter, *http.Request) {})
+	// A handler that redirects itself keeps its route.
+	mux.HandleFunc("/moved/{id}", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
+	})
 
 	for _, tc := range []struct {
 		method, target string
@@ -425,6 +430,8 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 		{http.MethodConnect, "/users/123", ""},
 		{http.MethodGet, "/users/123", ""},
 		{http.MethodGet, "/static/a/../", ""},
+		{http.MethodGet, "/a%2Fb/../x/42", ""},
+		{http.MethodGet, "/moved/42", "/moved/{id}"},
 		{http.MethodGet, "/panics/a/b", "/panics/{path}"},
 	} {
 		var handler http.Handler = mux
