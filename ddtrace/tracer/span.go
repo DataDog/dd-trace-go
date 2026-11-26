@@ -23,7 +23,6 @@ import (
 	rt "runtime/trace"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -170,10 +169,6 @@ type Span struct {
 	// rootSpanBlock when span pooling is disabled. Nil for pooled spans or after use.
 	// +checklocks:mu
 	inlineStatSpan *tracerStatSpan `msg:"-"`
-	// inlineSpanCtx points to a pre-allocated spanCtx fused into
-	// rootSpanBlock/childSpanBlock when span pooling is disabled. Claimed at
-	// most once by ContextWithSpan via Swap(nil).
-	inlineSpanCtx atomic.Pointer[spanCtx] `msg:"-"`
 
 	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces

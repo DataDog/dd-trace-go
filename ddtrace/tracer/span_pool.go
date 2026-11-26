@@ -18,24 +18,21 @@ var spanPool = sync.Pool{
 	New: func() any { return &Span{} },
 }
 
-// rootSpanBlock fuses a Span, its SpanContext, its trace, its initial spanCtx,
-// and its tracerStatSpan into one heap allocation when span pooling is disabled
+// rootSpanBlock fuses a Span, its SpanContext, its trace, and its
+// tracerStatSpan into one heap allocation when span pooling is disabled
 // and a brand-new trace is started.
 type rootSpanBlock struct {
 	span     Span
 	ctx      SpanContext
 	tr       trace
-	sCtx     spanCtx
 	statSpan tracerStatSpan
 }
 
-// childSpanBlock fuses a Span, its SpanContext, and its initial spanCtx into
-// one heap allocation when span pooling is disabled and the span joins an
-// existing trace.
+// childSpanBlock fuses a Span and its SpanContext into one heap allocation
+// when span pooling is disabled and the span joins an existing trace.
 type childSpanBlock struct {
 	span Span
 	ctx  SpanContext
-	sCtx spanCtx
 }
 
 // +checklocksignore — Initialization time, span not yet shared.
@@ -55,12 +52,10 @@ func acquireSpanForContext(poolEnabled, needsNewTrace bool) *Span {
 		b.ctx.trace = &b.tr
 		b.span.context = &b.ctx
 		b.span.inlineStatSpan = &b.statSpan
-		b.span.inlineSpanCtx.Store(&b.sCtx)
 		return &b.span
 	}
 	b := &childSpanBlock{}
 	b.span.context = &b.ctx
-	b.span.inlineSpanCtx.Store(&b.sCtx)
 	return &b.span
 }
 
