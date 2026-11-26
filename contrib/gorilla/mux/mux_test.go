@@ -933,9 +933,10 @@ func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
 		{router, "/p/ab", "/p/{v}{param1}"},
 		{router, "/p/a/x", "/p/{v}/{param1}"},
 		{router, "/users/100%25", "/users/{id}"},
-		// UseEncodedPath cannot be read: the % of a route is static text.
+		// UseEncodedPath cannot be read, but only the escaped path starts with
+		// what gorilla matched.
 		{encoded, "/u/a%2Fb", "/u/{id}"},
-		{encoded, "/a%2Fb", "/a%252Fb"},
+		{encoded, "/a%2Fb", "/a%2Fb"},
 	} {
 		mt := mocktracer.Start()
 		rec := httptest.NewRecorder()

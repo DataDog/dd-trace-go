@@ -268,6 +268,11 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 		app.Use("/nope", func(c *fiber.Ctx) error { return c.Next() })
 		app.Get("/users/:id", func(c *fiber.Ctx) error { return c.SendString("ok") })
 		app.Get("/missing/:id", func(*fiber.Ctx) error { return fiber.ErrNotFound })
+		// An endpoint that returns the 404 of fiber's router keeps its route.
+		app.Get("/fixed/:id", func(c *fiber.Ctx) error {
+			return fiber.NewError(fiber.StatusNotFound, "Cannot "+c.Method()+" "+c.Path())
+		})
+		app.Get("/item", func(c *fiber.Ctx) error { return c.SendString("ok") })
 		// A handler that returns the error of fiber's router keeps its route.
 		app.Get("/refused", func(c *fiber.Ctx) error {
 			c.Set(fiber.HeaderAllow, fiber.MethodPost)
@@ -298,48 +303,53 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 	unescaped.Use(Middleware())
 	apps := map[string]*fiber.App{"Wrap": routes(wrapped), "Middleware": routes(middleware), "Endpoint": endpoint, "UnescapePath": routes(unescaped)}
 
-	for name, app := range apps {
-		for _, tc := range []struct {
-			method, target string
-			status         int
-			want           any
-		}{
-			{"GET", "/nope/x", http.StatusNotFound, nil},
-			{"GET", "/handled", http.StatusNotFound, nil},
-			{"GET", "/readonly/x", http.StatusMethodNotAllowed, "/readonly/{param1}"},
-			{"POST", "/users/1", http.StatusMethodNotAllowed, nil},
-			{"GET", "/users/1", http.StatusOK, "/users/{id}"},
-			{"GET", "/missing/1", http.StatusNotFound, "/missing/{id}"},
-			{"GET", "/refused", http.StatusMethodNotAllowed, "/refused"},
-			{"GET", "/color:blue", http.StatusOK, "/color%3A{color}"},
-			{"GET", "/files/report.txt", http.StatusOK, "/files/{param1}.txt"},
-			{"GET", "/a%2Fb", http.StatusOK, "/a%2Fb"},
-			{"GET", "/a%252Fb", http.StatusOK, "/a%252Fb"},
-			{"GET", "/p%2525/x", http.StatusOK, "/p%2525/{param1}"},
-			{"GET", "/api/v1/x", http.StatusOK, "/api/{param1}"},
-			{"GET", "/w/x/fixed/rest", http.StatusOK, "/w/{param1}/fixed/{param2}"},
-			{"GET", "/static/app.css", http.StatusOK, "/static/{param1}"},
-		} {
-			if name == "Endpoint" && (tc.method != "GET" || tc.target != "/users/1") {
-				continue
-			}
-			// The escaped path matches the route only without UnescapePath, the
-			// unescaped one only with it.
-			if escapedOnly, unescapedOnly := tc.target == "/a%2Fb", tc.target == "/a%252Fb" || tc.target == "/p%2525/x"; (escapedOnly && name == "UnescapePath") ||
-				(unescapedOnly && name != "UnescapePath") {
-				continue
-			}
+	// Rows without apps run on Wrap, Middleware and UnescapePath.
+	for _, tc := range []struct {
+		method, target string
+		status         int
+		want           string // empty: no tag
+		apps           []string
+	}{
+		{"GET", "/nope/x", http.StatusNotFound, "", nil},
+		{"GET", "/handled", http.StatusNotFound, "", nil},
+		{"GET", "/readonly/x", http.StatusMethodNotAllowed, "/readonly/{param1}", nil},
+		{"POST", "/users/1", http.StatusMethodNotAllowed, "", nil},
+		{"GET", "/users/1", http.StatusOK, "/users/{id}", []string{"Wrap", "Middleware", "UnescapePath", "Endpoint"}},
+		{"GET", "/missing/1", http.StatusNotFound, "/missing/{id}", nil},
+		{"GET", "/fixed/4", http.StatusNotFound, "/fixed/{id}", nil},
+		{"GET", "/refused", http.StatusMethodNotAllowed, "/refused", nil},
+		{"GET", "/color:blue", http.StatusOK, "/color%3A{color}", nil},
+		{"GET", "/files/report.txt", http.StatusOK, "/files/{param1}.txt", nil},
+		// Without StrictRouting, fiber matches "/item" with "/item///".
+		{"GET", "/item///", http.StatusOK, "/item", nil},
+		{"GET", "/api/v1/x", http.StatusOK, "/api/{param1}", nil},
+		{"GET", "/w/x/fixed/rest", http.StatusOK, "/w/{param1}/fixed/{param2}", nil},
+		{"GET", "/static/app.css", http.StatusOK, "/static/{param1}", nil},
+		// fiber matches the escaped path, or the unescaped path with UnescapePath.
+		{"GET", "/a%2Fb", http.StatusOK, "/a%2Fb", []string{"Wrap", "Middleware"}},
+		{"GET", "/a%252Fb", http.StatusOK, "/a%252Fb", []string{"UnescapePath"}},
+		{"GET", "/p%2525/x", http.StatusOK, "/p%2525/{param1}", []string{"UnescapePath"}},
+	} {
+		names := tc.apps
+		if names == nil {
+			names = []string{"Wrap", "Middleware", "UnescapePath"}
+		}
+		for _, name := range names {
 			t.Run(name+" "+tc.method+" "+tc.target, func(t *testing.T) {
 				mt := mocktracer.Start()
 				defer mt.Stop()
 
-				res, err := app.Test(httptest.NewRequest(tc.method, tc.target, nil))
+				res, err := apps[name].Test(httptest.NewRequest(tc.method, tc.target, nil))
 				require.NoError(t, err)
 				defer res.Body.Close()
 				require.Equal(t, tc.status, res.StatusCode)
 				spans := mt.FinishedSpans()
 				require.Len(t, spans, 1)
-				require.Equal(t, tc.want, spans[0].Tag("_dd.appsec.normalized_route"))
+				if tc.want == "" {
+					require.Nil(t, spans[0].Tag("_dd.appsec.normalized_route"))
+				} else {
+					require.Equal(t, tc.want, spans[0].Tag("_dd.appsec.normalized_route"))
+				}
 			})
 		}
 	}

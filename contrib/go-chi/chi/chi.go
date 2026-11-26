@@ -9,6 +9,7 @@ package chi // import "github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2"
 import (
 	"math"
 	"net/http"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -51,6 +52,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 		tracer.Tag(ext.Component, componentName),
 		tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	return func(next http.Handler) http.Handler {
+		var mountCache sync.Map
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if cfg.ignoreRequest(r) {
 				next.ServeHTTP(w, r)
@@ -73,7 +75,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 
 			next := next // avoid modifying the value of next in the outer closure scope
 			if instr.AppSecEnabled() {
-				next = withAppsec(next, span)
+				next = withAppsec(next, span, &mountCache)
 				// Note that the following response writer passed to the handler
 				// implements the `interface { Status() int }` expected by httpsec.
 			}

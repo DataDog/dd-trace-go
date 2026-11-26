@@ -142,19 +142,26 @@ func useAppSec(c *fiber.Ctx, span trace.TagSetter, next func() error) (err error
 
 // reportRoute reports the route of the request after the handler chain ran.
 // Wrap's route guards already report parameters before user code: this is the
-// fallback for global Middleware users and routes without parameters. API
-// Security also gets the path that fiber matched, and whether fiber matches the
-// unescaped path (UnescapePath), where the % of the route is static text.
+// fallback for global Middleware users and routes without parameters. On a
+// router miss, the last route is a middleware: the WAF gets its parameters, but
+// API Security gets no route. API Security also gets the path that fiber
+// matched, and whether fiber matches the unescaped path (UnescapePath), where the
+// % of the route is static text.
 func reportRoute(ctx context.Context, c *fiber.Ctx, request *appsecRequest, err error) {
-	matched := httpsec.MatchedRoute{Path: c.Path(), LiteralPercent: c.App().Config().UnescapePath}
 	route := c.Route()
-	if route != nil && route.Path != "" && !isNoRouteError(c, route, err) && !answeredByRootMiddleware(c, route, err) {
-		matched.Route, matched.Params = route.Path, c.AllParams()
-		if route != request.route {
-			if blockErr := httpsec.RouteMatched(ctx, route.Path, matched.Params); blockErr != nil {
-				instr.Logger().Debug("gofiber/fiber.v2: request blocked on route parameters: %s", blockErr.Error())
-			}
+	if route == nil || route.Path == "" {
+		httpsec.ReportMatchedRoute(ctx, httpsec.MatchedRoute{})
+		return
+	}
+	params := c.AllParams()
+	if route != request.route {
+		if blockErr := httpsec.RouteMatched(ctx, route.Path, params); blockErr != nil {
+			instr.Logger().Debug("gofiber/fiber.v2: request blocked on route parameters: %s", blockErr.Error())
 		}
+	}
+	matched := httpsec.MatchedRoute{Path: c.Path(), LiteralPercent: c.App().Config().UnescapePath}
+	if !isNoRouteError(c, route, err) && !answeredByRootMiddleware(c, route, err) {
+		matched.Route, matched.Params = route.Path, params
 	}
 	httpsec.ReportMatchedRoute(ctx, matched)
 }
@@ -163,17 +170,19 @@ func reportRoute(ctx context.Context, c *fiber.Ctx, request *appsecRequest, err 
 // when no route handles the request: 404 with a message that names the method
 // and the path, or 405 with the Allow header that the router sets for the
 // methods that have routes. route, the last route that fiber ran, is then a
-// middleware that called c.Next: it is not the route of the request. A handler
-// that returns its own 404, or its own 405 from an endpoint, has a route. A
-// prefix handler (Use) that sets Allow and returns 405 cannot be told from a
-// middleware before a router miss: it gets no route.
+// middleware that called c.Next: it is not the route of the request. An endpoint
+// that returns its own 404 or 405 has a route, and so has a prefix handler (Use)
+// that returns another error. A prefix handler that returns the router's 404, or
+// sets Allow and returns 405, cannot be told from a middleware before a router
+// miss: it gets no route.
 func isNoRouteError(c *fiber.Ctx, route *fiber.Route, err error) bool {
 	if errors.Is(err, fiber.ErrMethodNotAllowed) {
 		return len(c.Response().Header.Peek(fiber.HeaderAllow)) > 0 && isMiddlewareRoute(c.App(), route)
 	}
 	var ferr *fiber.Error
 	return errors.As(err, &ferr) && ferr.Code == fiber.StatusNotFound &&
-		ferr.Message == "Cannot "+c.Method()+" "+html.EscapeString(string(c.Request().URI().PathOriginal()))
+		ferr.Message == "Cannot "+c.Method()+" "+html.EscapeString(string(c.Request().URI().PathOriginal())) &&
+		isMiddlewareRoute(c.App(), route)
 }
 
 // middlewareRoutes caches whether a route was registered with Use (or Static, or

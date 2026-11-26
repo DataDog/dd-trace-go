@@ -7,6 +7,8 @@ package wrap
 
 import (
 	"net/http"
+	"net/url"
+	pathpkg "path"
 	"strings"
 
 	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
@@ -83,17 +85,58 @@ func (mux *ServeMux) HandleFunc(pttrn string, handlerFunc func(http.ResponseWrit
 // values. A route registered on a caller-provided *http.ServeMux reports no path
 // parameters (see NewServeMux). ServeMux sets the pattern and the path values of
 // the request that it serves: they go to API Security, which does not send them
-// to the WAF. A pattern without wildcards has no path values.
+// to the WAF. A pattern without wildcards has no path values. A redirect that
+// ServeMux generates instead of serving a route reports no route: its pattern can
+// be the request path.
 type reportingServeMux struct{ *http.ServeMux }
 
 func (mux reportingServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+	// Deferred, so that a handler that panics still reports its path values.
+	defer func() {
+		switch {
+		case isGeneratedRedirect(w, path):
+			httpsec.ReportMatchedRoute(r.Context(), httpsec.MatchedRoute{})
+		case strings.Contains(r.Pattern, "{"):
+			httpsec.ReportMatchedRoute(r.Context(), httpsec.MatchedRoute{
+				Route:  pattern.Route(r.Pattern),
+				Params: pattern.PathParameters(r.Pattern, r),
+			})
+		}
+	}()
 	mux.ServeMux.ServeHTTP(w, r)
-	if strings.Contains(r.Pattern, "{") {
-		httpsec.ReportMatchedRoute(r.Context(), httpsec.MatchedRoute{
-			Route:  pattern.Route(r.Pattern),
-			Params: pattern.PathParameters(r.Pattern, r),
-		})
+}
+
+// isGeneratedRedirect reports that the response redirects path to the path that
+// ServeMux redirects it to: with "/" added for a subtree pattern, or cleaned.
+func isGeneratedRedirect(w http.ResponseWriter, path string) bool {
+	res, ok := w.(interface{ Status() int })
+	if !ok {
+		return false
 	}
+	switch res.Status() {
+	case http.StatusMovedPermanently, http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+	default:
+		return false
+	}
+	location, err := url.Parse(w.Header().Get("Location"))
+	return err == nil && location.Path != path && (location.Path == path+"/" || location.Path == cleanPath(path))
+}
+
+// cleanPath returns the path that ServeMux redirects a request to: path.Clean,
+// which keeps a trailing "/".
+func cleanPath(p string) string {
+	if p == "" {
+		return "/"
+	}
+	if p[0] != '/' {
+		p = "/" + p
+	}
+	cleaned := pathpkg.Clean(p)
+	if p[len(p)-1] == '/' && cleaned != "/" {
+		cleaned += "/"
+	}
+	return cleaned
 }
 
 // ServeHTTP dispatches the request to the handler

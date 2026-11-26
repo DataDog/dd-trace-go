@@ -18,6 +18,7 @@ import (
 	_ "embed"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"sync/atomic"
 
 	"github.com/DataDog/go-libddwaf/v5"
@@ -54,9 +55,9 @@ type (
 		routeInferred bool
 		pathParams    map[string]string
 		requestPath   string
-		// matchedRoute is the route that the integration reported with
-		// ReportMatchedRoute, when matchedRouteReported.
-		matchedRoute         MatchedRoute
+		matchedRoute  MatchedRoute
+		// matchedRouteReported tells a report of no route, which gets no
+		// normalized route, from no report, which falls back to route.
 		matchedRouteReported bool
 
 		// downstreamRequestBodyAnalysis is the number of times a call to a downstream request body monitoring function was made.
@@ -94,8 +95,8 @@ type (
 		// RouteInferred reports that RequestRoute was inferred from the request URL, and not matched by a router.
 		RouteInferred bool
 		// RequestPath is the escaped path of the request URL, as the router reads
-		// it. A handler before the router can make it differ from the path of
-		// RequestURI (http.StripPrefix).
+		// it: URL.RawPath when net/http sets it. A handler before the router can
+		// make it differ from the path of RequestURI (http.StripPrefix).
 		RequestPath string
 	}
 
@@ -194,30 +195,22 @@ func (op *HandlerOperation) Route() string {
 	return op.route
 }
 
-// MatchedRoute returns the route that a router matched for the current handler
-// operation. It is empty when the route was inferred from the request URL.
-func (op *HandlerOperation) MatchedRoute() string {
-	if op.routeInferred {
-		return ""
+// MatchedRoute returns the route that the router selected for the current
+// handler operation: the last one reported with ReportMatchedRoute, otherwise the
+// route of the operation with its path parameters, unless it was inferred from
+// the request URL. Its Path is the escaped path of the request URL by default.
+func (op *HandlerOperation) MatchedRoute() MatchedRoute {
+	matched := op.matchedRoute
+	if !op.matchedRouteReported {
+		matched = MatchedRoute{Params: op.pathParams}
+		if !op.routeInferred {
+			matched.Route = op.route
+		}
 	}
-	return op.route
-}
-
-// PathParams returns the path parameters of the route of the current handler
-// operation, if the integration reported them.
-func (op *HandlerOperation) PathParams() map[string]string {
-	return op.pathParams
-}
-
-// RequestPath returns the escaped path of the request URL, as the router reads it.
-func (op *HandlerOperation) RequestPath() string {
-	return op.requestPath
-}
-
-// ReportedMatchedRoute returns the route that the integration reported with
-// ReportMatchedRoute. It returns false when the integration reported none.
-func (op *HandlerOperation) ReportedMatchedRoute() (MatchedRoute, bool) {
-	return op.matchedRoute, op.matchedRouteReported
+	if matched.Path == "" {
+		matched.Path = op.requestPath
+	}
+	return matched
 }
 
 // DownstreamRequestBodyAnalysis returns the number of times a call to a downstream request body monitoring function was made.
@@ -355,6 +348,8 @@ func RouteMatched(ctx context.Context, route string, routeParams map[string]stri
 // knows from its parameters which catch-alls and optional parameters the
 // request has. Nothing is sent to the WAF: the call causes no WAF evaluation,
 // and the route of the operation, its API Security sampling key, is unchanged.
+// It must be called before the operation finishes, and the parameters must not
+// change after.
 func ReportMatchedRoute(ctx context.Context, route MatchedRoute) {
 	op, ok := dyngo.FindOperation[HandlerOperation](ctx)
 	if !ok {
@@ -362,6 +357,15 @@ func ReportMatchedRoute(ctx context.Context, route MatchedRoute) {
 		return
 	}
 	op.matchedRoute, op.matchedRouteReported = route, true
+}
+
+// requestPath returns the escaped path that routers read: go-chi and echo read
+// URL.RawPath when net/http sets it, also when EscapedPath does not return it.
+func requestPath(u *url.URL) string {
+	if u.RawPath != "" {
+		return u.RawPath
+	}
+	return u.EscapedPath()
 }
 
 func responseStarted(w http.ResponseWriter) bool {
@@ -503,7 +507,7 @@ func BeforeHandle(
 		RequestURI:    r.RequestURI,
 		RequestRoute:  opts.Route,
 		RouteInferred: opts.RouteInferred,
-		RequestPath:   r.URL.EscapedPath(),
+		RequestPath:   requestPath(r.URL),
 		Host:          r.Host,
 		RemoteAddr:    r.RemoteAddr,
 		ClientIP:      clientIP,

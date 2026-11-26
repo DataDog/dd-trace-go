@@ -398,6 +398,7 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 
 	underlying := http.NewServeMux()
 	underlying.HandleFunc("/direct/{path...}", func(http.ResponseWriter, *http.Request) {})
+	underlying.HandleFunc("/panics/{path...}", func(http.ResponseWriter, *http.Request) { panic("handler") })
 	mux := NewServeMux(WithServeMux(underlying))
 	mux.HandleFunc("/wrapped/{path...}", func(http.ResponseWriter, *http.Request) {})
 
@@ -406,25 +407,45 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 	// of the request URI.
 	stripped := http.StripPrefix("/api", mux)
 
-	for target, want := range map[string]string{
-		"/direct/a/b":    "/direct/{path}",
-		"/direct/":       "/direct/",
-		"/wrapped/a/b":   "/wrapped/{path}",
-		"/wrapped/":      "/wrapped/",
-		"/api/static/":   "/static/",
-		"/api/static/a":  "/static/{param1}",
-		"/api/wrapped/a": "/wrapped/{path}",
-		"/api/wrapped/":  "/wrapped/",
+	mux.HandleFunc("/users/{id}/", func(http.ResponseWriter, *http.Request) {})
+
+	for _, tc := range []struct {
+		method, target string
+		want           string // empty: no tag
+	}{
+		{http.MethodGet, "/direct/a/b", "/direct/{path}"},
+		{http.MethodGet, "/direct/", "/direct/"},
+		{http.MethodGet, "/wrapped/a/b", "/wrapped/{path}"},
+		{http.MethodGet, "/wrapped/", "/wrapped/"},
+		{http.MethodGet, "/api/static/", "/static/"},
+		{http.MethodGet, "/api/static/a", "/static/{param1}"},
+		{http.MethodGet, "/api/wrapped/a", "/wrapped/{path}"},
+		{http.MethodGet, "/api/wrapped/", "/wrapped/"},
+		// Redirects that ServeMux generates: its pattern for them can be the path.
+		{http.MethodConnect, "/users/123", ""},
+		{http.MethodGet, "/users/123", ""},
+		{http.MethodGet, "/static/a/../", ""},
+		{http.MethodGet, "/panics/a/b", "/panics/{path}"},
 	} {
 		var handler http.Handler = mux
-		if strings.HasPrefix(target, "/api/") {
+		if strings.HasPrefix(tc.target, "/api/") {
 			handler = stripped
 		}
+		if strings.HasPrefix(tc.target, "/panics/") {
+			handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				defer func() { _ = recover() }()
+				mux.ServeHTTP(w, r)
+			})
+		}
 		mt := mocktracer.Start()
-		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, target, nil))
+		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(tc.method, tc.target, nil))
 		spans := mt.FinishedSpans()
 		mt.Stop()
-		require.Len(t, spans, 1, target)
-		assert.Equal(t, want, spans[0].Tag("_dd.appsec.normalized_route"), target)
+		require.Len(t, spans, 1, tc.target)
+		if tc.want == "" {
+			assert.Nil(t, spans[0].Tag("_dd.appsec.normalized_route"), tc.method+" "+tc.target)
+		} else {
+			assert.Equal(t, tc.want, spans[0].Tag("_dd.appsec.normalized_route"), tc.target)
+		}
 	}
 }

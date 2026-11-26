@@ -58,7 +58,7 @@ func normalizeRoute(framework string, matched httpsec.MatchedRoute) (string, boo
 	case "github.com/gorilla/mux":
 		parts, ok = parseBraceRoute(route, params, false)
 		if ok {
-			parts = appendGorillaRemainder(parts, params, path)
+			parts, escapes = appendGorillaRemainder(parts, params, path)
 		}
 	case "github.com/go-chi/chi", "github.com/go-chi/chi/v5":
 		parts, ok = parseBraceRoute(route, params, true)
@@ -121,7 +121,6 @@ func parseServeMuxRoute(route string, params map[string]string, path string) ([]
 	var parts []routePart
 	rest := route
 	for len(rest) > 0 {
-		// rest starts with "/".
 		rest = rest[1:]
 		var seg string
 		if i := strings.IndexByte(rest, '/'); i >= 0 {
@@ -130,7 +129,6 @@ func parseServeMuxRoute(route string, params map[string]string, path string) ([]
 			seg, rest = rest, ""
 		}
 		if seg == "" && rest == "" {
-			// Trailing slash: a prefix route.
 			parts = append(parts,
 				routePart{static: "/"},
 				routePart{param: true, absent: !hasServeMuxRemainder(route, path)},
@@ -183,7 +181,17 @@ func hasServeMuxRemainder(pattern string, path string) bool {
 		}
 		path = path[i+1:]
 	}
-	return path != ""
+	return !isEmptyRemainder(path)
+}
+
+// isEmptyRemainder reports that the rest of a path is empty or only "/": an
+// absent catch-all. CONNECT requests are not cleaned, and %2F is a "/" in the
+// value that the router gives.
+func isEmptyRemainder(rest string) bool {
+	if unescaped, err := url.PathUnescape(rest); err == nil {
+		rest = unescaped
+	}
+	return strings.Trim(rest, "/") == ""
 }
 
 // hasRawPath reports that net/http sets URL.RawPath for the escaped path: it is
@@ -239,10 +247,9 @@ func parseBraceRoute(route string, params map[string]string, chiWildcard bool) (
 }
 
 // appendCatchAll adds the implicit unnamed catch-all of a prefix route, given
-// the rest of the request path after the part that the route matched. An empty
-// rest, or only "/", is an absent catch-all.
+// the rest of the request path after the part that the route matched.
 func appendCatchAll(parts []routePart, rest string) []routePart {
-	if rest == "" || rest == "/" {
+	if isEmptyRemainder(rest) {
 		return parts
 	}
 	if strings.HasPrefix(rest, "/") {
@@ -260,16 +267,23 @@ func appendCatchAll(parts []routePart, rest string) []routePart {
 //
 // gorilla matches the unescaped path, or the escaped path with UseEncodedPath,
 // which the integration cannot read: this reads the unescaped path, where the %
-// of the route is static text. When the unescaped path does not start with the
-// matched text, or without the value of a variable, the presence of the
-// catch-all cannot be determined: it is left out.
-func appendGorillaRemainder(parts []routePart, params map[string]string, escaped string) []routePart {
+// of the route is static text. gorilla matched the escaped path only when the
+// unescaped one does not start with the matched text: the returned bool reports
+// it, the % of the route is then the start of an escaped byte. Without the value
+// of a variable, or when neither path starts with the matched text, the presence
+// of the catch-all cannot be determined: it is left out.
+func appendGorillaRemainder(parts []routePart, params map[string]string, escaped string) ([]routePart, bool) {
 	matched, known := matchedText(parts, params)
-	unescaped, err := url.PathUnescape(escaped)
-	if !known || err != nil || !strings.HasPrefix(unescaped, matched) {
-		return parts
+	if !known {
+		return parts, false
 	}
-	return appendCatchAll(parts, unescaped[len(matched):])
+	if unescaped, err := url.PathUnescape(escaped); err == nil && strings.HasPrefix(unescaped, matched) {
+		return appendCatchAll(parts, unescaped[len(matched):]), false
+	}
+	if strings.HasPrefix(escaped, matched) {
+		return appendCatchAll(parts, escaped[len(matched):]), true
+	}
+	return parts, false
 }
 
 // matchedText returns the path text that parts matched: their static text and

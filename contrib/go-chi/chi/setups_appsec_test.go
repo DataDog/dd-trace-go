@@ -505,15 +505,22 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 	router.Get("/users/{id}", okHandler)
 	router.Get("/files/*", okHandler)
 	api := chi.NewRouter()
+	api.Get("/", okHandler)
 	api.Get("/static/*", okHandler)
 	router.Mount("/api", api)
+	router.Mount("/opaque", http.HandlerFunc(okHandler))
 	for target, want := range map[string]string{
 		"/users/1":       "/users/{id}",
 		"/files/a/b.txt": "/files/{param1}",
 		"/files/":        "/files/",
+		"/api":           "/api",
+		"/api/":          "/api",
 		"/api/static/a":  "/api/static/{param1}",
 		"/api/static/":   "/api/static/",
+		"/opaque/x":      "/opaque/{param1}",
 	} {
 		assert.Equal(t, want, requestTags(t, router, target)["_dd.appsec.normalized_route"], target)
 	}
+	// A request that stops at a mounted chi router with no route for it.
+	assert.NotContains(t, requestTags(t, router, "/api/nope"), "_dd.appsec.normalized_route")
 }

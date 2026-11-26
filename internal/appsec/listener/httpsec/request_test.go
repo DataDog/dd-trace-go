@@ -505,12 +505,11 @@ func TestNormalizeRoute(t *testing.T) {
 		netmux = "net/http"
 	)
 	for _, tc := range []struct {
-		name      string
-		framework string
-		route     string
-		params    map[string]string
-		path      string
-		// literalPercent is MatchedRoute.LiteralPercent.
+		name           string
+		framework      string
+		route          string
+		params         map[string]string
+		path           string
 		literalPercent bool
 		want           string // empty: no tag
 	}{
@@ -588,19 +587,22 @@ func TestNormalizeRoute(t *testing.T) {
 		{name: "gorilla prefix, first alternative", framework: mux, route: "/p/{v:a|ab}", params: map[string]string{"v": "a"}, path: "/p/ab", want: "/p/{v}{param1}"},
 		{name: "gorilla prefix, first alternative, rest", framework: mux, route: "/p/{v:a|ab}", params: map[string]string{"v": "a"}, path: "/p/ab/x", want: "/p/{v}{param1}"},
 		// gorilla's UseEncodedPath cannot be read: % is static text, and the
-		// catch-all comes from the unescaped path.
-		{name: "gorilla static percent, encoded path", framework: mux, route: "/a%2Fb", path: "/a%2Fb", want: "/a%252Fb"},
+		// catch-all comes from the unescaped path, unless only the escaped path
+		// starts with what gorilla matched.
+		{name: "gorilla static escape, encoded path", framework: mux, route: "/a%2Fb", path: "/a%2Fb", want: "/a%2Fb"},
 		{name: "gorilla static percent, unescaped path", framework: mux, route: "/a%2Fb", path: "/a%252Fb", want: "/a%252Fb"},
 		{name: "gorilla prefix, percent in route", framework: mux, route: "/a%25", path: "/a%2525/x", want: "/a%2525/{param1}"},
 		{name: "gorilla percent in value", framework: mux, route: "/u/{id}", params: map[string]string{"id": "100%"}, path: "/u/100%25", want: "/u/{id}"},
 		{name: "gorilla prefix, escaped value", framework: mux, route: "/api", path: "/api/caf%C3%A9", want: "/api/{param1}"},
-		// With UseEncodedPath, the escaped value does not start the unescaped path:
-		// the presence of the catch-all is unknown, the route is kept.
-		{name: "gorilla prefix, encoded value", framework: mux, route: "/p/{v}", params: map[string]string{"v": "a%2Fb"}, path: "/p/a%2Fb/xyz", want: "/p/{v}"},
+		{name: "gorilla prefix, encoded value", framework: mux, route: "/p/{v}", params: map[string]string{"v": "a%2Fb"}, path: "/p/a%2Fb/xyz", want: "/p/{v}/{param1}"},
+		{name: "gorilla prefix, unknown value", framework: mux, route: "/p/{v}", path: "/p/a/xyz", want: "/p/{v}"},
+		{name: "gorilla prefix, only slashes", framework: mux, route: "/api", path: "/api//", want: "/api"},
 
 		// fiber wildcard with a literal suffix.
 		{name: "fiber wildcard, literal suffix", framework: fiber, route: "/files/*.txt", params: map[string]string{"*1": "report"}, path: "/files/report.txt", want: "/files/{param1}.txt"},
 		// fiber's UnescapePath: fiber matches the unescaped path, % is static text.
+		// Without StrictRouting, fiber matches "/item" with "/item///".
+		{name: "fiber endpoint, trailing slashes", framework: fiber, route: "/item", path: "/item///", want: "/item"},
 		{name: "fiber static escape", framework: fiber, route: "/a%2Fb", path: "/a%2Fb", want: "/a%2Fb"},
 		{name: "fiber UnescapePath, static percent", framework: fiber, route: "/a%2Fb", path: "/a%2Fb", literalPercent: true, want: "/a%252Fb"},
 		{name: "fiber UnescapePath, prefix", framework: fiber, route: "/a%25", path: "/a%25/x", literalPercent: true, want: "/a%2525/{param1}"},
@@ -640,6 +642,8 @@ func TestNormalizeRoute(t *testing.T) {
 		{name: "servemux root", framework: netmux, route: "/", path: "/", want: "/"},
 		{name: "servemux root prefix", framework: netmux, route: "/", path: "/foo", want: "/{param1}"},
 		{name: "servemux prefix, unknown path", framework: netmux, route: "/static/", want: "/static/"},
+		{name: "servemux prefix, only slashes", framework: netmux, route: "/static/", path: "/static//", want: "/static/"},
+		{name: "servemux prefix, escaped slash", framework: netmux, route: "/static/", path: "/static/%2F", want: "/static/"},
 		{name: "servemux prefix with param", framework: netmux, route: "/u/{id}/", path: "/u/1/x", want: "/u/{id}/{param1}"},
 		{name: "servemux catch-all", framework: netmux, route: "/files/{path...}", params: map[string]string{"path": "a/b"}, want: "/files/{path}"},
 		{name: "servemux escape", framework: netmux, route: "/caf%c3%a9", want: "/caf%C3%A9"},
@@ -733,12 +737,12 @@ func TestNormalizedRouteTag(t *testing.T) {
 	t.Run("reported path", func(t *testing.T) {
 		op, span, ctx := start(t, true, httpsec.HandlerOperationArgs{
 			Framework:    "github.com/gofiber/fiber/v2",
-			RequestPath:  "/a%252Fb",
-			RequestRoute: "/a%2Fb",
+			RequestPath:  "/api",
+			RequestRoute: "/api",
 		})
-		httpsec.ReportMatchedRoute(ctx, httpsec.MatchedRoute{Route: "/a%2Fb", Path: "/a%2Fb", LiteralPercent: true})
+		httpsec.ReportMatchedRoute(ctx, httpsec.MatchedRoute{Route: "/api", Path: "/api/x"})
 		op.Finish(httpsec.HandlerOperationRes{StatusCode: 200})
-		require.Equal(t, "/a%252Fb", span.Tags[normalizedRouteTag])
+		require.Equal(t, "/api/{param1}", span.Tags[normalizedRouteTag])
 	})
 
 	t.Run("reported no route", func(t *testing.T) {
