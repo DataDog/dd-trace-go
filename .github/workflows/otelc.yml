@@ -35,122 +35,6 @@ env:
   # The single place to bump the tested otelc release. Upstream only; do not point
   # this at a fork.
   OTELC_VERSION: ${{ inputs.otelc-version || 'v1.2.1-0.20261125163415-3a1f245d819e' }}
-  # Modules otelc reads, tidied by both jobs next to the application each one
-  # builds.
-  OTELC_MODULES: >-
-    otelc/all
-    contrib/99designs/gqlgen
-    contrib/99designs/gqlgen/otelc
-    contrib/IBM/sarama
-    contrib/IBM/sarama/otelc
-    contrib/Shopify/sarama
-    contrib/Shopify/sarama/otelc
-    contrib/aws/aws-sdk-go-v2
-    contrib/aws/aws-sdk-go-v2/otelc
-    contrib/aws/aws-sdk-go
-    contrib/aws/aws-sdk-go/otelc
-    contrib/cloud.google.com/go/pubsub.v1
-    contrib/cloud.google.com/go/pubsub.v1/otelc
-    contrib/cloud.google.com/go/pubsub.v2
-    contrib/cloud.google.com/go/pubsub.v2/otelc
-    contrib/confluentinc/confluent-kafka-go/kafka
-    contrib/confluentinc/confluent-kafka-go/kafka/otelc
-    contrib/confluentinc/confluent-kafka-go/kafka.v2
-    contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc
-    contrib/net/http
-    contrib/net/http/otelc
-    contrib/rs/zerolog
-    contrib/rs/zerolog/otelc
-    contrib/database/sql
-    contrib/database/sql/otelc
-    contrib/elastic/go-elasticsearch.v6
-    contrib/elastic/go-elasticsearch.v6/otelc
-    contrib/gin-gonic/gin
-    contrib/gin-gonic/gin/otelc
-    contrib/go-chi/chi
-    contrib/go-chi/chi/otelc
-    contrib/go-chi/chi.v5
-    contrib/go-chi/chi.v5/otelc
-    contrib/gofiber/fiber.v2
-    contrib/gofiber/fiber.v2/otelc
-    contrib/gocql/gocql
-    contrib/gocql/gocql/otelc
-    contrib/julienschmidt/httprouter
-    contrib/julienschmidt/httprouter/otelc
-    contrib/k8s.io/client-go
-    contrib/k8s.io/client-go/otelc
-    contrib/gomodule/redigo
-    contrib/gomodule/redigo/otelc
-    contrib/google.golang.org/grpc
-    contrib/google.golang.org/grpc/otelc
-    contrib/go-redis/redis
-    contrib/go-redis/redis/otelc
-    contrib/go-redis/redis.v7
-    contrib/go-redis/redis.v7/otelc
-    contrib/go-redis/redis.v8
-    contrib/go-redis/redis.v8/otelc
-    contrib/redis/go-redis.v9
-    contrib/redis/go-redis.v9/otelc
-    contrib/gorm.io/gorm.v1
-    contrib/gorm.io/gorm.v1/otelc
-    contrib/jackc/pgx.v5
-    contrib/jackc/pgx.v5/otelc
-    contrib/go.mongodb.org/mongo-driver
-    contrib/go.mongodb.org/mongo-driver/otelc
-    contrib/go.mongodb.org/mongo-driver.v2
-    contrib/go.mongodb.org/mongo-driver.v2/otelc
-    contrib/gorilla/mux
-    contrib/gorilla/mux/otelc
-    contrib/labstack/echo.v4
-    contrib/labstack/echo.v4/otelc
-    contrib/labstack/echo.v5
-    contrib/labstack/echo.v5/otelc
-    contrib/segmentio/kafka-go
-    contrib/segmentio/kafka-go/otelc
-    contrib/valyala/fasthttp
-    contrib/valyala/fasthttp/otelc
-  # Suites under internal/orchestrion/_integration that run with otelc.
-  OTELC_TEST_PACKAGES: >-
-    otelc
-    gls
-    gls-leak
-    gls-unfinished
-    otelc-autostart
-    net_http
-    sql
-    gin
-    chi
-    chi.v5
-    fiber.v2
-    julienschmidt_httprouter
-    k8s_client_go
-    redigo
-    grpc
-    gorilla_mux
-    99designs.gqlgen
-    ibm_sarama
-    shopify_sarama
-    go-redis.v0
-    go-redis.v7
-    go-redis.v8
-    go-redis.v9
-    gorm
-    aws.v2
-    pgx
-    mongo
-    mongo.v2
-    gcp_pubsub.v1
-    gcp_pubsub.v2
-    confluent-kafka-go.v1
-    confluent-kafka-go.v2
-    echo.v4
-    echo.v5
-    aws.v1
-    valyala_fasthttp
-    go-elasticsearch
-    gocql
-    segmentio_kafka.v0
-    zerolog
 
 jobs:
   # Classifies the PR diff against .github/ci-components.yml. Fails open: every
@@ -325,7 +209,11 @@ jobs:
         shell: bash
         run: |-
           source .github/workflows/apps/go-retry.sh
-          for dir in internal/orchestrion/_integration ${OTELC_MODULES}; do
+          otelc_modules_file="$(mktemp)"
+          trap 'rm -f "${otelc_modules_file}"' EXIT
+          retry_on_corruption_to_file "${otelc_modules_file}" go run ./scripts/ciselect -list-otelc-modules
+          OTELC_MODULES="$(cat "${otelc_modules_file}")"
+          for dir in ${OTELC_MODULES} internal/orchestrion/_integration; do
             retry_on_corruption go -C "${dir}" mod tidy
           done
 
@@ -357,7 +245,13 @@ jobs:
           "" | "NONE" | "ALL")
             # NONE widens to the full list on purpose: it can only arrive
             # with the gate off, so this arm is the last resort.
-            SUITES="${OTELC_TEST_PACKAGES}"
+            # Use relative paths from working-directory (internal/orchestrion/_integration)
+            # instead of ${{ github.workspace }} so Windows Git Bash does not see backslashes.
+            source ../../../.github/workflows/apps/go-retry.sh
+            otelc_suites_file="$(mktemp)"
+            trap 'rm -f "${otelc_suites_file}"' EXIT
+            retry_on_corruption_to_file "${otelc_suites_file}" go -C ../../.. run ./scripts/ciselect -list-otelc-suites
+            SUITES="$(cat "${otelc_suites_file}")"
             ;;
           *)
             SUITES="${OTELC_SUITES}"
@@ -456,7 +350,11 @@ jobs:
         shell: bash
         run: |-
           source .github/workflows/apps/go-retry.sh
-          for dir in internal/apps/otelc-external-app ${OTELC_MODULES}; do
+          otelc_modules_file="$(mktemp)"
+          trap 'rm -f "${otelc_modules_file}"' EXIT
+          retry_on_corruption_to_file "${otelc_modules_file}" go run ./scripts/ciselect -list-otelc-modules
+          OTELC_MODULES="$(cat "${otelc_modules_file}")"
+          for dir in ${OTELC_MODULES} internal/apps/otelc-external-app; do
             retry_on_corruption go -C "${dir}" mod tidy
           done
 

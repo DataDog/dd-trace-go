@@ -1061,6 +1061,37 @@ func TestOTelcGatedJobsKeepTheClassifierCondition(t *testing.T) {
 	}
 }
 
+// TestOTelcWorkflowUsesCiselectDiscoveryFlags verifies that otelc.yml invokes
+// ciselect with -list-otelc-modules in both integration-test and external-app,
+// and with -list-otelc-suites in integration-test, and that running ciselect
+// with both flags succeeds.
+func TestOTelcWorkflowUsesCiselectDiscoveryFlags(t *testing.T) {
+	_, _, root := testTable(t)
+	body := readText(t, root, workflowDir+"/otelc.yml")
+
+	// -list-otelc-modules must appear in both integration-test and external-app.
+	if count := strings.Count(body, "-list-otelc-modules"); count < 2 {
+		t.Errorf("otelc.yml contains -list-otelc-modules %d time(s), want at least 2 "+
+			"(one in integration-test, one in external-app)", count)
+	}
+	// -list-otelc-suites must appear in integration-test.
+	if !strings.Contains(body, "-list-otelc-suites") {
+		t.Error("otelc.yml does not contain -list-otelc-suites")
+	}
+
+	// Both flags must succeed when ciselect is invoked directly.
+	for _, flag := range []string{"-list-otelc-modules", "-list-otelc-suites"} {
+		var stdout strings.Builder
+		if err := run([]string{flag}, strings.NewReader(""), &stdout); err != nil {
+			t.Errorf("run(%s) failed: %v", flag, err)
+			continue
+		}
+		if stdout.Len() == 0 {
+			t.Errorf("run(%s) produced no output", flag)
+		}
+	}
+}
+
 // TestOrchestrionRunsOnTheMergeQueue pins the merge-queue push trigger on the
 // orchestrion lane: it is what makes a narrowed pull-request run safe, and
 // removing it stops the full lane run before landing on main with no test
