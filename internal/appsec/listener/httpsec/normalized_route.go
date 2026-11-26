@@ -70,8 +70,9 @@ func normalizeRoute(framework string, matched httpsec.MatchedRoute) (string, boo
 		parts, ok = parseColonRoute(route, params, false)
 		escapes = hasRawPath(path)
 	case "github.com/labstack/echo/v5":
-		// echo v5 matches URL.Path unless RouterConfig.UseEscapedPathForMatching
-		// is set, which the integration cannot read: % is static text.
+		// echo v5 matches URL.RawPath when net/http sets it, as v4, but
+		// RouterConfig.UseEscapedPathForMatching makes it match URL.Path (v5.4.1).
+		// The integration cannot read that setting: % is static text.
 		parts, ok = parseColonRoute(route, params, false)
 	case "github.com/gofiber/fiber/v2":
 		var text string
