@@ -14,6 +14,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2/internal/endpointhook"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
@@ -39,10 +41,27 @@ func init() {
 // make the response writers of the middlewares after it implement Unwrap(): AppSec
 // must see the response to decide if a block can still replace it.
 //
-// With Use before routing, chi selects the route after Middleware starts, so AppSec
-// gets the route after the handler returns. With Use at the root, it gets no path
-// parameters. Use r.With(Middleware()) on the endpoint to get the route and the path
-// parameters before the handler (for example for rules on path parameters).
+// With Orchestrion or otelc, no code change is necessary. They add Middleware to
+// the routers that chi.NewRouter and chi.NewMux return, and they wrap the endpoint
+// handlers of chi. After chi selected the endpoint, the wrapper gives AppSec the
+// route and the path parameters, before the handler: a rule on a path parameter can
+// then block the request before the handler. For a name used at 2 levels, AppSec
+// gets the value of the endpoint. AppSec gets "*" only for a catch-all route
+// registered with a method, such as Get("/files/*", h), and it gets the value of
+// that route. The nearest Middleware decides whether the wrapper runs: one with
+// WithNoAppsec(true), or one that ignores the request with WithIgnoreRequest,
+// turns the wrapper off.
+//
+// Without Orchestrion or otelc, chi runs a Middleware added with Use before routing:
+// AppSec gets no path parameters, and it gets the route after the handler. To give
+// AppSec the path parameters before the handler, add Middleware where chi already
+// selected the endpoint: on the endpoint (r.With(Middleware()).Get(...)), or with Use
+// in the Group that registers the endpoint. AppSec then also gets "*", and for a name
+// used at 2 levels, the first value. A Group around Route or Mount does not get the
+// path parameters of the child router. If you also keep a Middleware at the root,
+// AppSec also covers the requests that match no endpoint (404, 405) and the
+// middlewares before routing, and each matched request gets 1 more span. Both
+// middlewares use the same AppSec request context.
 func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 	cfg := new(config)
 	defaults(cfg)
@@ -58,8 +77,14 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 		// The cache is scoped to this handler because a
 		// chain is only meaningful relative to the router that recorded it.
 		var subrouterCache sync.Map
+		rep := &endpointRouteReporter{cfg: cfg, cache: &subrouterCache}
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			appsecEnabled := instr.AppSecEnabled()
+			mark := appsecEnabled && endpointhook.Woven()
 			if cfg.ignoreRequest(r) {
+				if mark {
+					r = r.WithContext(endpointhook.With(r.Context(), endpointhook.Marker{Disabled: true}))
+				}
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -76,10 +101,17 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			}()
 
 			// pass the span through the request context
+			if mark {
+				if cfg.appsecDisabled {
+					ctx = endpointhook.With(ctx, endpointhook.Marker{Disabled: true})
+				} else if rctx := chi.RouteContext(ctx); rctx != nil {
+					ctx = endpointhook.With(ctx, endpointhook.Marker{Depth: len(rctx.RoutePatterns), Route: rep})
+				}
+			}
 			r = r.WithContext(ctx)
 
 			next := next // avoid modifying the value of next in the outer closure scope
-			if instr.AppSecEnabled() && !cfg.appsecDisabled {
+			if appsecEnabled && !cfg.appsecDisabled {
 				next = withAppsec(next, httptrace.AppSecSpanTagSetter(span, cfg.otelEnabled), cfg, &subrouterCache)
 				// Note that the following response writer passed to the handler
 				// implements the `interface { Status() int }` expected by httpsec.
@@ -114,6 +146,15 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 			span.SetTag(ext.ResourceName, resourceName)
 		})
 	}
+}
+
+type endpointRouteReporter struct {
+	cfg   *config
+	cache *sync.Map
+}
+
+func (rep endpointRouteReporter) ReportedRoute(rctx *chi.Context) string {
+	return reportedRoute(rctx, rep.cfg, rep.cache)
 }
 
 // reportedRoute returns the route that chi selected for the request, as the

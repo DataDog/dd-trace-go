@@ -25,9 +25,11 @@ type Trace struct {
 	Meta     map[string]string
 	// MetaAbsent lists the tags that the span must not have.
 	MetaAbsent []string
-	Metrics    map[string]float64
-	Tags       map[string]any
-	Children   []*Trace
+	// MetaContains lists substrings that must appear in the corresponding tags.
+	MetaContains map[string]string
+	Metrics      map[string]float64
+	Tags         map[string]any
+	Children     []*Trace
 }
 
 type Traces = []*Trace

@@ -41,3 +41,40 @@ new_router:
   imports:
     __dd_chiv5: github.com/go-chi/chi/v5
     __dd_chiv5trace: github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2
+
+endpoint_hook_declaration:
+  target: github.com/go-chi/chi/v5
+  do:
+    - add_file:
+        file: endpointhook.go
+        path: github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/otelc/v2
+
+endpoint_hook:
+  target: github.com/go-chi/chi/v5
+  where:
+    func: handle
+    recv: "*Mux"
+  do:
+    - inject_code:
+        raw: |-
+          {{- $method := .FuncArgument 0 -}}
+          {{- $pattern := .FuncArgument 1 -}}
+          {{- $handler := .FuncArgument 2 -}}
+          // These unexported chi masks are required; mSTUB excludes mount dispatch.
+          if {{ $method }}&mSTUB == 0 {
+            {{ $handler }} = __dd_chitrace_wrapEndpoint({{ $handler }}, {{ $method }} != mALL && len({{ $pattern }}) > 0 && {{ $pattern }}[len({{ $pattern }})-1] == '*')
+          }
+
+mount_aliases:
+  target: github.com/go-chi/chi/v5
+  where:
+    func: Mount
+    recv: "*Mux"
+  do:
+    - inject_code:
+        raw: |-
+          {{- $pattern := .FuncArgument 0 -}}
+          {{- $handler := .FuncArgument 1 -}}
+          if _, ok := {{ $handler }}.(Routes); !ok {
+            {{ $handler }} = __dd_chitrace_wrapMountAliases({{ $handler }}, {{ $pattern }})
+          }

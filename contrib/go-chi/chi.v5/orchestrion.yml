@@ -31,3 +31,44 @@ aspects:
               mux.Use(chitrace.Middleware())
               return mux
             }()
+  - id: Mux.handle
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/go-chi/chi/v5.Mux'
+          - name: handle
+    advice:
+      - inject-declarations:
+          links:
+            - github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2/internal/endpointhook
+          imports:
+            http: net/http
+            unsafe: unsafe
+          template: |-
+            //go:linkname __dd_chitrace_wrapEndpoint github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2/internal/endpointhook.Wrap
+            func __dd_chitrace_wrapEndpoint(http.Handler, bool) http.Handler
+            //go:linkname __dd_chitrace_wrapMountAliases github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2/internal/endpointhook.WrapMountAliases
+            func __dd_chitrace_wrapMountAliases(http.Handler, string) http.Handler
+      - prepend-statements:
+          template: |-
+            {{- $method := .Function.Argument 0 -}}
+            {{- $pattern := .Function.Argument 1 -}}
+            {{- $handler := .Function.Argument 2 -}}
+            // These unexported chi masks are required; mSTUB excludes mount dispatch.
+            if {{ $method }}&mSTUB == 0 {
+              {{ $handler }} = __dd_chitrace_wrapEndpoint({{ $handler }}, {{ $method }} != mALL && len({{ $pattern }}) > 0 && {{ $pattern }}[len({{ $pattern }})-1] == '*')
+            }
+  - id: Mux.Mount
+    join-point:
+      function-body:
+        function:
+          - receiver: '*github.com/go-chi/chi/v5.Mux'
+          - name: Mount
+    advice:
+      - prepend-statements:
+          template: |-
+            {{- $pattern := .Function.Argument 0 -}}
+            {{- $handler := .Function.Argument 1 -}}
+            if _, ok := {{ $handler }}.(Routes); !ok {
+              {{ $handler }} = __dd_chitrace_wrapMountAliases({{ $handler }}, {{ $pattern }})
+            }

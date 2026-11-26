@@ -15,6 +15,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/contrib/go-chi/chi.v5/v2/internal/endpointhook"
+
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
@@ -44,6 +46,33 @@ const benchRules = `{
 // route report after the handler. The WAF gets no path parameters. A chain of 16
 // writers is too long for the tracker to find an outer tracker.
 func BenchmarkMiddlewareAppSec(b *testing.B) {
+	for _, mode := range []string{"plain-appsec-off", "woven-appsec-off"} {
+		b.Run(mode, func(b *testing.B) {
+			if instr.AppSecEnabled() {
+				b.Fatal("AppSec must be off")
+			}
+			b.Cleanup(endpointhook.SetWovenForTest(mode == "woven-appsec-off"))
+			mt := mocktracer.Start()
+			b.Cleanup(mt.Stop)
+			r := chi.NewRouter()
+			r.Use(Middleware())
+			leaf := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+			if mode == "woven-appsec-off" {
+				r.Method(http.MethodGet, "/users/{id}", endpointhook.Wrap(leaf, false))
+			} else {
+				r.Method(http.MethodGet, "/users/{id}", leaf)
+			}
+			req := httptest.NewRequest(http.MethodGet, "/users/42", nil)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				r.ServeHTTP(httptest.NewRecorder(), req)
+				if i%1000 == 0 {
+					mt.Reset()
+				}
+			}
+		})
+	}
 	rules := filepath.Join(b.TempDir(), "rules.json")
 	require.NoError(b, os.WriteFile(rules, []byte(benchRules), 0o600))
 	b.Setenv("DD_APPSEC_ENABLED", "true")
@@ -54,6 +83,58 @@ func BenchmarkMiddlewareAppSec(b *testing.B) {
 	}
 	mt := mocktracer.Start()
 	defer mt.Stop()
+
+	for _, mode := range []string{"plain-noappsec", "woven-noappsec", "plain-ignored", "woven-ignored"} {
+		b.Run(mode, func(b *testing.B) {
+			woven := mode == "woven-noappsec" || mode == "woven-ignored"
+			ignored := mode == "plain-ignored" || mode == "woven-ignored"
+			b.Cleanup(endpointhook.SetWovenForTest(woven))
+			r := chi.NewRouter()
+			if ignored {
+				r.Use(Middleware(WithIgnoreRequest(func(*http.Request) bool { return true })))
+			} else {
+				r.Use(Middleware(WithNoAppsec(true)))
+			}
+			leaf := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+			if woven {
+				r.Method(http.MethodGet, "/users/{id}", endpointhook.Wrap(leaf, false))
+			} else {
+				r.Method(http.MethodGet, "/users/{id}", leaf)
+			}
+			req := httptest.NewRequest(http.MethodGet, "/users/42", nil)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				r.ServeHTTP(httptest.NewRecorder(), req)
+				if i%1000 == 0 {
+					mt.Reset()
+				}
+			}
+		})
+	}
+
+	for _, mode := range []string{"woven-root", "manual-stacked"} {
+		b.Run(mode, func(b *testing.B) {
+			b.Cleanup(endpointhook.SetWovenForTest(mode == "woven-root"))
+			r := chi.NewRouter()
+			r.Use(Middleware())
+			leaf := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+			if mode == "woven-root" {
+				r.Method(http.MethodGet, "/users/{id}", endpointhook.Wrap(leaf, false))
+			} else {
+				r.With(Middleware()).Get("/users/{id}", leaf)
+			}
+			req := httptest.NewRequest(http.MethodGet, "/users/42", nil)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				r.ServeHTTP(httptest.NewRecorder(), req)
+				if i%1000 == 0 {
+					mt.Reset()
+				}
+			}
+		})
+	}
 
 	router := chi.NewRouter()
 	router.Use(Middleware())
