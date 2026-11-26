@@ -125,6 +125,7 @@ require (
 	example.com/fasthttpdep v0.0.0-00010101000000-000000000000
 	example.com/fiberdep v0.0.0-00010101000000-000000000000
 	example.com/gindep v0.0.0-00010101000000-000000000000
+	example.com/gocqldep v0.0.0-00010101000000-000000000000
 	example.com/gorillamuxdep v0.0.0-00010101000000-000000000000
 	example.com/gormdep v0.0.0-00010101000000-000000000000
 	example.com/gqlgendep v0.0.0-00010101000000-000000000000
@@ -170,7 +171,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2 v2.14.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/v2 v2.14.0-dev // indirect
@@ -622,6 +623,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/otelc/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.14.0-dev // indirect
@@ -676,6 +678,10 @@ replace github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/k
 replace github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2 => ../../../contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc
 
 replace example.com/confluentkafkadep => ./internal/confluentkafkadep
+
+replace github.com/DataDog/dd-trace-go/contrib/gocql/gocql/otelc/v2 => ../../../contrib/gocql/gocql/otelc
+
+replace example.com/gocqldep => ./internal/gocqldep
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../../contrib/aws/aws-sdk-go/otelc
 

@@ -22,6 +22,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/otelc/v2 v2.14.0-dev
+	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.14.0-dev
@@ -56,6 +57,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.14.0-dev // indirect
@@ -110,12 +112,15 @@ require (
 	github.com/go-redis/redis/v7 v7.4.1 // indirect
 	github.com/go-redis/redis/v8 v8.11.5 // indirect
 	github.com/goccy/go-json v0.10.4 // indirect
+	github.com/gocql/gocql v1.7.0 // indirect
 	github.com/gofiber/fiber/v2 v2.52.13 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
+	github.com/golang/snappy v1.0.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.14 // indirect
 	github.com/googleapis/gax-go/v2 v2.20.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
+	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.9.2 // indirect
@@ -161,6 +166,7 @@ require (
 	google.golang.org/genproto v0.0.0-20260319201613-d00831a3d3e7 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d // indirect
 	google.golang.org/grpc v1.83.2 // indirect
+	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gorm.io/gorm v1.25.12 // indirect
 	k8s.io/apimachinery v0.35.6 // indirect
@@ -377,6 +383,10 @@ replace github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/k
 replace github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2 => ../../contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 => ../../contrib/confluentinc/confluent-kafka-go/kafka.v2
+
+replace github.com/DataDog/dd-trace-go/contrib/gocql/gocql/otelc/v2 => ../../contrib/gocql/gocql/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 => ../../contrib/gocql/gocql
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../contrib/aws/aws-sdk-go/otelc
 

@@ -67,6 +67,8 @@ env:
     contrib/go-chi/chi.v5/otelc
     contrib/gofiber/fiber.v2
     contrib/gofiber/fiber.v2/otelc
+    contrib/gocql/gocql
+    contrib/gocql/gocql/otelc
     contrib/julienschmidt/httprouter
     contrib/julienschmidt/httprouter/otelc
     contrib/k8s.io/client-go
@@ -137,6 +139,7 @@ env:
     echo.v5
     aws.v1
     valyala_fasthttp
+    gocql
     segmentio_kafka.v0
     zerolog
 

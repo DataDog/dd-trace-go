@@ -11,6 +11,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2 v2.14.0-dev
 	github.com/aws/aws-sdk-go-v2 v1.43.2
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.44.0
+	github.com/gocql/gocql v1.7.0
 	github.com/rs/zerolog v1.35.1
 	github.com/segmentio/kafka-go v0.4.42
 	google.golang.org/api v0.273.1
@@ -291,6 +292,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/otelc/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.14.0-dev // indirect
@@ -323,6 +326,7 @@ require (
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.14 // indirect
 	github.com/googleapis/gax-go/v2 v2.20.0 // indirect
+	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
@@ -376,6 +380,10 @@ replace github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 => ../../..
 replace github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 => ../../../contrib/k8s.io/client-go/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 => ../../../contrib/k8s.io/client-go
+
+replace github.com/DataDog/dd-trace-go/contrib/gocql/gocql/otelc/v2 => ../../../contrib/gocql/gocql/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 => ../../../contrib/gocql/gocql
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../../contrib/aws/aws-sdk-go/otelc
 
