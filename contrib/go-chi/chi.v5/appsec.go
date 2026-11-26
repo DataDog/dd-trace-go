@@ -31,8 +31,11 @@ import (
 // route (RouteMatched without parameters): API Security uses the route as the
 // sampling key, and api_security.missing_route counts the requests without it. The
 // report sends only the route and causes no additional native WAF evaluation. The
-// path parameters of that route go to API Security only (ReportRouteParams), for
-// the catch-all of the normalized route; the WAF does not get them. A late
+// path parameters of the selected route always go to API Security only
+// (ReportRouteParams), for the catch-all of the normalized route; the WAF does not
+// get them. They can differ from what AppSec read before the handler even when the
+// route is the same: with r.With(Middleware()) in a mounted router, the first "*"
+// is the mount's. A late
 // block replaces the response only if it is not sent yet (see "Late blocks and route
 // reports in HTTP contribs" in internal/appsec/README.md).
 //
@@ -70,9 +73,9 @@ func withAppsec(next http.Handler, span trace.TagSetter, cfg *config, cache *syn
 				// The error is ignored: afterHandle applies the stored action, and the
 				// commitTracker tells if the response can still be replaced.
 				_ = httpsec.RouteMatched(tr.Context(), finalRoute, nil)
-				// API Security only: the WAF does not get the parameters.
-				httpsec.ReportRouteParams(tr.Context(), selectedParams(rc))
 			}
+			// API Security only: the WAF does not get the parameters.
+			httpsec.ReportRouteParams(tr.Context(), selectedParams(rc))
 		})
 
 		httpsec.WrapHandler(late, span, &appsecCfg).ServeHTTP(tw, r)

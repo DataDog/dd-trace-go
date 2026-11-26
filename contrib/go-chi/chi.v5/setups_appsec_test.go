@@ -571,4 +571,12 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 	} {
 		assert.Equal(t, want, requestTags(t, router, target)["_dd.appsec.normalized_route"], target)
 	}
+
+	// Middleware on an endpoint of a mounted router: the route is the same before
+	// and after the handler, but the first "*" is the mount's.
+	endpoint := chi.NewRouter()
+	child := chi.NewRouter()
+	child.With(Middleware()).Get("/files/*", okHandler)
+	endpoint.Mount("/api", child)
+	assert.Equal(t, "/api/files/{param1}", requestTags(t, endpoint, "/api/files/a")["_dd.appsec.normalized_route"])
 }
