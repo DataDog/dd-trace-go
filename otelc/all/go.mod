@@ -55,6 +55,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v7/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis.v8/v2 v2.14.0-dev // indirect
@@ -378,6 +379,12 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 => ../../contrib/labstack/echo.v5
 
 require github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.14.0-dev
+
+require github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/otelc/v2 v2.13.0-dev
+
+replace github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/otelc/v2 => ../../contrib/elastic/go-elasticsearch.v6/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 => ../../contrib/elastic/go-elasticsearch.v6
 
 replace github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 => ../../contrib/segmentio/kafka-go/otelc
 

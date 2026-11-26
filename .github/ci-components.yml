@@ -120,6 +120,7 @@ integration-suites:
     contrib/database/sql/otelc: [ sql ]
     contrib/dimfeld/httptreemux.v5: []
     contrib/elastic/go-elasticsearch.v6: [ go-elasticsearch ]
+    contrib/elastic/go-elasticsearch.v6/otelc: [ go-elasticsearch ]
     contrib/emicklei/go-restful.v3: []
     contrib/envoyproxy/go-control-plane: []
     contrib/gin-gonic/gin: [ gin ]
@@ -507,6 +508,7 @@ components:
       - contrib/confluentinc/confluent-kafka-go/kafka/**
       - contrib/confluentinc/confluent-kafka-go/kafka.v2/**
       - contrib/database/sql/**
+      - contrib/elastic/go-elasticsearch.v6/**
       - contrib/gin-gonic/gin/**
       - contrib/go-chi/chi/**
       - contrib/go-chi/chi.v5/**

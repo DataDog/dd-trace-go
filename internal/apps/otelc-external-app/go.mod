@@ -13,6 +13,7 @@ require (
 	github.com/Shopify/sarama v1.38.1
 	github.com/aws/aws-sdk-go-v2 v1.43.2
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.44.0
+	github.com/elastic/go-elasticsearch/v8 v8.12.1
 	github.com/gocql/gocql v1.7.0
 	github.com/rs/zerolog v1.35.1
 	github.com/segmentio/kafka-go v0.4.42
@@ -298,6 +299,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/otelc/v2 v2.13.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 v2.13.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 v2.14.0-dev // indirect
@@ -327,6 +330,7 @@ require (
 	github.com/eapache/go-resiliency v1.7.0 // indirect
 	github.com/eapache/go-xerial-snappy v0.0.0-20230731223053-c322873962e3 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
+	github.com/elastic/elastic-transport-go/v8 v8.4.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
@@ -383,6 +387,10 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 => ../../../c
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../../../contrib/labstack/echo.v5/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 => ../../../contrib/labstack/echo.v5
+
+replace github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/otelc/v2 => ../../../contrib/elastic/go-elasticsearch.v6/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/elastic/go-elasticsearch.v6/v2 => ../../../contrib/elastic/go-elasticsearch.v6
 
 require (
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.14.0-dev // indirect

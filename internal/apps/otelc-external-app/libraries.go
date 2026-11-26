@@ -21,6 +21,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
+	elasticsearch8 "github.com/elastic/go-elasticsearch/v8"
 	"github.com/gin-gonic/gin"
 	redisv6 "github.com/go-redis/redis"
 	redisv7 "github.com/go-redis/redis/v7"
@@ -62,6 +63,7 @@ func useLibraries() {
 	_ = dynamodb.NewFromConfig(awsv2.Config{Region: "us-east-1"})
 	_ = mongooptions.Client()
 	_ = mongov2options.Client()
+	_, _ = elasticsearch8.NewClient(elasticsearch8.Config{})
 	// With no broker addresses, these fail before any network call.
 	_, _ = ibmsarama.NewSyncProducer(nil, nil)
 	_, _ = shopifysarama.NewSyncProducer(nil, nil)
