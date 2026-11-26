@@ -317,6 +317,20 @@ reopen_unless_recovered() {
         gh issue close "$issue" --repo "$REPO" \
           --comment 'Reclosed: a newer recovery is the newest record.' \
           >/dev/null
+        # And re-read after this close too: records are durable, so
+        # anything recorded before the re-read is caught here, and
+        # anything recording after it has its own triage to
+        # reconcile. This closes the loop — no snapshot-and-write
+        # gap remains without an after-write check.
+        records=$(issue_newest_records "$issue") || exit 1
+        read -r latest_fail latest_green <<<"$records"
+        latest_fail=${latest_fail:-0}
+        latest_green=${latest_green:-0}
+        if [ "$latest_fail" -gt "$latest_green" ] \
+          && [ "$latest_fail" -gt "$RUN_ID" ]; then
+          log "newer failure recorded during close: reopening #$issue"
+          gh issue reopen "$issue" --repo "$REPO" >/dev/null
+        fi
       fi
     fi
   fi
