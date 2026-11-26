@@ -203,6 +203,25 @@ func TestParseSqlServerDSN(t *testing.T) {
 			},
 		},
 		{
+			name: "url_database_in_two_cases",
+			dsn:  "sqlserver://bob:secret@1.2.3.4:1433?database=app&Database=other",
+			expected: map[string]string{
+				"user": "bob",
+				"host": "1.2.3.4",
+				"port": "1433",
+			},
+		},
+		{
+			name: "url_database_in_two_cases_same_value",
+			dsn:  "sqlserver://bob:secret@1.2.3.4:1433?database=app&DATABASE=app",
+			expected: map[string]string{
+				"user":   "bob",
+				"host":   "1.2.3.4",
+				"port":   "1433",
+				"dbname": "app",
+			},
+		},
+		{
 			name: "odbc_prefix",
 			dsn:  "odbc:server=1.2.3.4;port=1444;user id=dog;password=secret;database=mydb",
 			expected: map[string]string{

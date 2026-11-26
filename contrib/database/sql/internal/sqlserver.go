@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	nurl "net/url"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -51,12 +52,18 @@ func parseSQLServerURL(url string) (map[string]string, error) {
 		accrue(ext.MicrosoftSQLServerInstanceName, u.Path[1:])
 	}
 
-	q := u.Query()
-	for k := range q {
-		// go-mssqldb lowercases the parameter names of the URL form.
+	// go-mssqldb lowercases the parameter names of the URL form, so when two
+	// names differ only in case it is not defined which value it uses. Leave
+	// the tag out in that case unless the values agree.
+	var dbnames []string
+	for k, vs := range u.Query() {
 		if strings.EqualFold(k, "database") {
-			accrue("dbname", q.Get(k))
+			dbnames = append(dbnames, vs[0])
 		}
+	}
+	slices.Sort(dbnames)
+	if dbnames = slices.Compact(dbnames); len(dbnames) == 1 {
+		accrue("dbname", dbnames[0])
 	}
 
 	return kvs, nil
