@@ -76,8 +76,8 @@ func (e *jsonExporter) Export(ctx context.Context, records []sdklog.Record) erro
 	if len(records) == 0 {
 		return nil
 	}
-	buf := otlpjson.GetBuffer()
-	defer otlpjson.PutBuffer(buf)
+	buf, release := e.sender.Buffer()
+	defer release()
 	*buf = otlpjson.EncodeLogs(*buf, records)
 	return e.sender.Send(ctx, *buf)
 }

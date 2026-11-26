@@ -67,6 +67,20 @@ type Sender struct {
 	maxElapsedTime  time.Duration
 }
 
+// Buffer returns an empty buffer to encode a request into, and a function to call once Send returned.
+//
+// Without gzip, Send hands the buffer itself to the HTTP transport, which can still read
+// the request body after Send returns (for example when the context is canceled).
+// Reusing it from a pool could then race with that read, so the buffer is left to the GC.
+// With gzip, the transport only sees a compressed copy, so the buffer is safe to pool.
+func (s *Sender) Buffer() (buf *[]byte, release func()) {
+	if !s.cfg.Gzip {
+		return new([]byte), func() {}
+	}
+	buf = GetBuffer()
+	return buf, func() { PutBuffer(buf) }
+}
+
 // Close releases the idle connections of the underlying HTTP client.
 func (s *Sender) Close() { s.client.CloseIdleConnections() }
 

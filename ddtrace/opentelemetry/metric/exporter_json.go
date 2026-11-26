@@ -65,8 +65,8 @@ func (e *jsonExporter) Export(ctx context.Context, rm *metricdata.ResourceMetric
 	if e.stopped.Load() {
 		return errShutdown
 	}
-	buf := otlpjson.GetBuffer()
-	defer otlpjson.PutBuffer(buf)
+	buf, release := e.sender.Buffer()
+	defer release()
 	// A metric that cannot be encoded is dropped from the request; the rest is still sent.
 	var encodeErr error
 	*buf, encodeErr = otlpjson.EncodeMetrics(*buf, rm)
