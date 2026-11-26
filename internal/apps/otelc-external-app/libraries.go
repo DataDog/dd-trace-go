@@ -29,6 +29,7 @@ import (
 	redisv9 "github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog"
 	"github.com/segmentio/kafka-go"
+	"github.com/twitchtv/twirp"
 	"github.com/valyala/fasthttp"
 	mongooptions "go.mongodb.org/mongo-driver/mongo/options"
 	mongov2options "go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -73,6 +74,7 @@ func useLibraries() {
 	}
 	_ = zerolog.New(io.Discard)
 	_ = &rest.Config{Host: "http://127.0.0.1"}
+	_ = &twirp.ServerOptions{}
 	_ = redisv6.NewClient(&redisv6.Options{}).Close()
 	_ = redisv7.NewClient(&redisv7.Options{}).Close()
 	_ = redisv8.NewClient(&redisv8.Options{}).Close()

@@ -378,8 +378,9 @@ func TestSuiteSelection(t *testing.T) {
 		{
 			name:        "an imported suite pulls in its importer",
 			files:       []string{"internal/orchestrion/_integration/twirp/base.go"},
-			otelc:       SuiteVerdict{},
+			otelc:       SuiteVerdict{Suites: []string{"twirp", "twirp_quantize"}},
 			orchestrion: SuiteVerdict{Suites: []string{"twirp", "twirp_quantize"}},
+			wantOtelc:   true,
 			wantOrch:    true,
 		},
 	}

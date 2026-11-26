@@ -100,6 +100,7 @@ use (
 	./contrib/tidwall/buntdb
 	./contrib/twmb/franz-go
 	./contrib/twitchtv/twirp
+	./contrib/twitchtv/twirp/otelc
 	./contrib/uptrace/bun
 	./contrib/urfave/negroni
 	./contrib/valkey-io/valkey-go

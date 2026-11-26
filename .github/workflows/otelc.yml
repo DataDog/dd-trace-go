@@ -99,6 +99,8 @@ env:
     contrib/labstack/echo.v5/otelc
     contrib/segmentio/kafka-go
     contrib/segmentio/kafka-go/otelc
+    contrib/twitchtv/twirp
+    contrib/twitchtv/twirp/otelc
     contrib/valyala/fasthttp
     contrib/valyala/fasthttp/otelc
   # Suites under internal/orchestrion/_integration that run with otelc.
@@ -138,6 +140,8 @@ env:
     aws.v1
     valyala_fasthttp
     segmentio_kafka.v0
+    twirp
+    twirp_quantize
     zerolog
 
 jobs:
