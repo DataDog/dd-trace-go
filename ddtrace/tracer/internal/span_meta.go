@@ -149,6 +149,9 @@ func (sm *SpanMeta) Language() (string, bool) { return sm.promotedAttrs.Get(Attr
 // RuntimeID returns the value of the "runtime-id" promoted attribute.
 func (sm *SpanMeta) RuntimeID() (string, bool) { return sm.promotedAttrs.Get(AttrRuntimeID) }
 
+// HasPromoted reports whether promotedAttrs is allocated on this SpanMeta.
+func (sm *SpanMeta) HasPromoted() bool { return sm.promotedAttrs != nil }
+
 // ---------------------------------------------------------------------------
 // Write methods
 // ---------------------------------------------------------------------------

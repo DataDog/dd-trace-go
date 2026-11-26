@@ -335,3 +335,23 @@ func TestSpanMetaReserveIfLargeEnough(t *testing.T) {
 		})
 	}
 }
+
+func TestSpanMetaRuntimeIDAndHasPromoted(t *testing.T) {
+	var sm SpanMeta
+	assert.False(t, sm.HasPromoted())
+	v, ok := sm.RuntimeID()
+	assert.False(t, ok)
+	assert.Empty(t, v)
+
+	sm.Set("runtime-id", "rid-42")
+	assert.True(t, sm.HasPromoted())
+	v, ok = sm.RuntimeID()
+	assert.True(t, ok)
+	assert.Equal(t, "rid-42", v)
+	assert.Nil(t, sm.Map(false))
+
+	sm.Delete("runtime-id")
+	v, ok = sm.RuntimeID()
+	assert.False(t, ok)
+	assert.Empty(t, v)
+}
