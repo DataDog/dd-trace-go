@@ -702,23 +702,20 @@ func TestStreamSendsErrorCode(t *testing.T) {
 	err = stream.CloseSend()
 	require.NoError(t, err, "should not return error after closing stream")
 
-	// to flush the spans
-	_, _ = stream.Recv()
-
-	spans := mt.FinishedSpans()
-
-	// check if at least one span with spank.kind=server has error code
-	var span mocktracer.Span
-	for _, s := range spans {
-		if s.Tag(tagCode) != wantCode {
-			continue
+	// Poll as a guard. The interceptor finishes the server span before
+	// grpc-go writes the status, so the span is normally present already.
+	hasServerErrorSpan := func() bool {
+		for _, s := range mt.FinishedSpans() {
+			if s.Tag(ext.SpanKind) == ext.SpanKindServer && s.Tag(tagCode) == wantCode {
+				return true
+			}
 		}
-		if s.Tag(ext.SpanKind) != ext.SpanKindServer {
-			continue
-		}
-		span = *s
+		return false
 	}
-	assert.NotNilf(t, span, "at least one span should contain error code, the spans were:\n%v", spans)
+	if !assert.Eventuallyf(t, hasServerErrorSpan, 5*time.Second, 10*time.Millisecond,
+		"no server span has %s=%s", tagCode, wantCode) {
+		t.Logf("finished spans:\n%v", mt.FinishedSpans())
+	}
 }
 
 // rig contains all of the servers and connections we'd need for a
@@ -1637,4 +1634,44 @@ func TestOTBaggageEnforcesLimitsOverGRPC(t *testing.T) {
 	}
 	assert.LessOrEqual(t, count, 64)
 	assert.LessOrEqual(t, totalBytes, 8192)
+}
+
+// TestUnknownServiceHandlerResourceName checks that calls served by
+// grpc.UnknownServiceHandler do not use the client-chosen method as the
+// span resource name, which would make resource cardinality unbounded.
+func TestUnknownServiceHandlerResourceName(t *testing.T) {
+	t.Skip("reproduces #5813; remove when fixed")
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	server := grpc.NewServer(
+		grpc.StreamInterceptor(StreamServerInterceptor()),
+		grpc.UnknownServiceHandler(func(_ any, stream grpc.ServerStream) error {
+			return status.Error(codes.Unimplemented, "catch-all")
+		}),
+	)
+	li, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	go server.Serve(li)
+	defer server.Stop()
+
+	conn, err := grpc.NewClient(li.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	defer conn.Close()
+
+	methods := []string{"/junk.A/One", "/junk.B/Two", "/junk.C/Three"}
+	for _, m := range methods {
+		_ = conn.Invoke(context.Background(), m, &fixturepb.FixtureRequest{}, &fixturepb.FixtureReply{})
+	}
+
+	resources := map[any]struct{}{}
+	for _, s := range mt.FinishedSpans() {
+		if s.OperationName() == "grpc.server" {
+			resources[s.Tag(ext.ResourceName)] = struct{}{}
+		}
+	}
+	require.NotEmpty(t, resources)
+	for _, m := range methods {
+		assert.NotContains(t, resources, m, "client-chosen method must not become the resource name")
+	}
 }

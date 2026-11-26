@@ -80,7 +80,7 @@ jobs:
         id: setup-go
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.27"
+          go-version: stable
           check-latest: "true"
           workload: orchestrion-generate
 
@@ -88,7 +88,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Run generator
@@ -116,7 +116,7 @@ jobs:
       - name: Setup Go
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.27"
+          go-version: stable
           workload: orchestrion-matrix
           cache-provider: github-cache
           cache: "false"
@@ -232,6 +232,22 @@ jobs:
         with:
           go-version: ${{ matrix.go-version }}
           workload: orchestrion-integration
+          # Default-branch seed set, stable-alias DRIVER strata only:
+          # the nightly schedule and a workflow_dispatch on the default
+          # branch save these keys; every pull request and merge-queue
+          # run restores only. The oldstable strata and the two ubuntu
+          # alternate-mode strata stay unseeded — they cold-build exactly
+          # as they do today — because the shared pool measured at its
+          # 100 GiB eviction boundary (2026-11-17) cannot hold every
+          # stratum of three more families; widen the gate once citiming
+          # shows the stable strata pay for their size. Windows skips the
+          # isolated caches: a 1.4 GiB restore there costs 2.6-3.3m in
+          # tar.exe extraction and saves about 2m of build time, measured
+          # on multios's windows-latest runners (APMLP-2248); the 8-core
+          # shared runners this lane uses are unmeasured, so the skip is
+          # the conservative default.
+          cache: ${{ matrix.runs-on != 'windows' }}
+          seed: ${{ matrix.runs-on != 'windows' && matrix.go-version == 'stable' && matrix.mode == 'DRIVER' }}
           variant: |-
             {"runner":"${{ matrix.runs-on }}",
              "mode":"${{ matrix.mode }}",
@@ -414,10 +430,13 @@ jobs:
         shell: bash
         run: |-
           set -euo pipefail
-          echo "version=$(echo '${{ steps.setup-go.outputs.go-version }}' | cut -d'.' -f1,2)" >> "${GITHUB_OUTPUT}"
+          # The centralized resolution (setup-go's go-version-key), not a
+          # local re-derivation: one definition of "the Go minor" everywhere.
+          echo "version=${{ steps.setup-go.outputs.go-version-key }}" \
+            >> "${GITHUB_OUTPUT}"
       - name: Upload coverage report
         if: inputs.collect-coverage
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-integration+${{ matrix.mode }}+go${{ steps.go.outputs.version }}+${{ runner.os }}+${{ runner.arch }}
           path: ${{ github.workspace }}/orchestrion/coverage/integration.out

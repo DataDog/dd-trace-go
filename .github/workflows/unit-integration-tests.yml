@@ -134,14 +134,6 @@ jobs:
       - name: Start CI service containers
         run: docker compose up -d
 
-      - name: Warn on unsupported seed alias
-        if: inputs.go-version != '1.26' && inputs.go-version != '1.27'
-        env:
-          GO_VERSION: ${{ inputs.go-version }}
-        run: >-
-          echo "::warning::go-version '${GO_VERSION}' matches
-          no seed alias; this job restores only"
-
       - name: Setup Go
         id: setup-go
         uses: ./.github/actions/setup-go
@@ -159,22 +151,22 @@ jobs:
              "tags":${{ toJSON(inputs.build_tags || 'standard') }},
              "coverage":"contrib"}
           # Default-branch seed set: the nightly main runs of this
-          # workflow (Go 1.26 and 1.27) save the standard-variant keys,
-          # and the nightly dynamic-checks runs (Go 1.27 only) save the
-          # debug and deadlock families; every other run, including all
-          # PR and merge-queue runs, restores only. Narrowed PR matrices
-          # keep the nightly shard keys by construction: the variant
-          # names the fixed shard, not the module list, so any pull
-          # request restores the seed. The seed comparison uses the
-          # raw input: pass the alias ("1.27"), not a resolved
-          # version ("1.27.2"), or the job stops seeding.
-          seed: ${{ inputs.go-version == '1.26' || inputs.go-version == '1.27' }}
+          # workflow save the standard-variant keys, and the nightly
+          # dynamic-checks runs save the debug and deadlock families;
+          # every other run, including all PR and merge-queue runs,
+          # restores only. Narrowed PR matrices keep the nightly shard
+          # keys by construction: the variant names the fixed shard,
+          # not the module list, so any pull request restores the seed.
+          # Any go-version spelling seeds: the action derives the
+          # cache key from the resolved minor and floors unsupported
+          # toolchains against the go.mod directive.
+          seed: "true"
 
       - name: Restore and install development tools
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       # Containers were started (non-blocking) before Go setup above, so most of
@@ -207,7 +199,7 @@ jobs:
         with:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULT_PATH }}
-          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
+          tags: go:${{ steps.setup-go.outputs.go-version-key }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
 
       - name: Report cache metrics to Datadog
         if: always()
@@ -269,7 +261,7 @@ jobs:
       - name: Upload Trace Check Results
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           # The version and build tags are part of the name: callers run
           # one matrix of this workflow per version, and dynamic-checks
@@ -296,7 +288,7 @@ jobs:
     steps:
       - name: Download Trace Check Results
         if: needs.test-contrib-matrix.result != 'skipped'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: /tmp/trace-check-results
           # Scoped to this version's and lane's artifacts: the merge would
@@ -387,14 +379,6 @@ jobs:
       - name: Start CI service containers
         run: docker compose up -d datadog-agent
 
-      - name: Warn on unsupported seed alias
-        if: inputs.go-version != '1.26' && inputs.go-version != '1.27'
-        env:
-          GO_VERSION: ${{ inputs.go-version }}
-        run: >-
-          echo "::warning::go-version '${GO_VERSION}' matches
-          no seed alias; this job restores only"
-
       - name: Setup Go
         id: setup-go
         uses: ./.github/actions/setup-go
@@ -407,13 +391,15 @@ jobs:
              "modules":["core"],
              "tags":${{ toJSON(inputs.build_tags || 'standard') }},
              "coverage":"core"}
-          seed: ${{ inputs.go-version == '1.26' || inputs.go-version == '1.27' }}
+          # Any go-version spelling seeds; the action keys on the
+          # resolved minor and floors unsupported toolchains itself.
+          seed: "true"
 
       - name: Restore and install development tools
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       # The gotesting fixture tests invoke this binary directly; without it
@@ -488,7 +474,7 @@ jobs:
         with:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULT_PATH }}
-          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
+          tags: go:${{ steps.setup-go.outputs.go-version-key }},arch:${{ runner.arch }},os:${{ runner.os }},analysis:${{ inputs.build_tags || 'standard' }}
 
       - name: Upload Coverage to Datadog
         if: always() && (inputs.rerun-fails == '' || inputs.rerun-fails == '0')
@@ -542,14 +528,6 @@ jobs:
           clean: false
           submodules: recursive
 
-      - name: Warn on unsupported seed alias
-        if: inputs.go-version != '1.26' && inputs.go-version != '1.27'
-        env:
-          GO_VERSION: ${{ inputs.go-version }}
-        run: >-
-          echo "::warning::go-version '${GO_VERSION}' matches
-          no seed alias; this job restores only"
-
       - name: Setup Go
         id: setup-go
         uses: ./.github/actions/setup-go
@@ -561,13 +539,15 @@ jobs:
             {"runner":"APM Larger Runners",
              "modules":["internal/apps/telemetry-errors"],
              "coverage":"none"}
-          seed: ${{ inputs.go-version == '1.26' || inputs.go-version == '1.27' }}
+          # Any go-version spelling seeds; the action keys on the
+          # resolved minor and floors unsupported toolchains itself.
+          seed: "true"
 
       - name: Restore and install development tools
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Test telemetry-errors seccomp E2E

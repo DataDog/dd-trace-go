@@ -32,7 +32,7 @@ env:
   # without having to download a newer one.
   GOTOOLCHAIN: local
   GODEBUG: "x509negativeserial=1"
-  GOLANGCI_LINT_VERSION: v2.12.2 # NOTICE: Make sure this is synced with the version in the _tools/go.mod file.
+  GOLANGCI_LINT_VERSION: v2.15.0 # NOTICE: Make sure this is synced with the version in the _tools/go.mod file.
 
 permissions:
   contents: read
@@ -98,7 +98,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
   copyright:
@@ -129,7 +129,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Copyright
@@ -164,7 +164,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Lint GitHub Actions workflows
@@ -209,7 +209,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Run fixmodules
@@ -218,6 +218,14 @@ jobs:
           ./scripts/fix_modules.sh
       - name: Check for changes
         run: git diff --exit-code
+      - name: Test errtrackaudit module
+        # The root-module test suites never cross the nested-module boundary,
+        # and the advisory errtrack-audit workflow is ignored by all-green,
+        # so this is the only gated run of the audit tool's tests:
+        # check-modules fires for every scripts/** change via the
+        # @go-hygiene group and on every push, so a regression in the tool
+        # blocks the PR instead of merging silently.
+        run: cd scripts/errtrackaudit && GOWORK=off go test -race -count=1 ./...
 
   check-docs:
     needs: [changes, warm-tools-cache]
@@ -243,7 +251,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Update documentation
@@ -277,7 +285,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Format
@@ -306,7 +314,7 @@ jobs:
           fetch-depth: 2 # HEAD^1 is the base for the nested-modules lint step
 
       - name: golangci-lint
-        uses: reviewdog/action-golangci-lint@c76cceaaab89abe74e649d2e34c6c9adc26662d2 # v2.10.0
+        uses: reviewdog/action-golangci-lint@284129a3ac23bc5d8ac1522e0b6511df74a8836d # v2.10.2
         with:
           cache: false
           golangci_lint_flags: "--timeout 10m" # We are hitting timeout when there is no cache
@@ -317,7 +325,7 @@ jobs:
           filter_mode: nofilter
 
       - name: golangci-lint (internal/orchestrion/_integration)
-        uses: reviewdog/action-golangci-lint@c76cceaaab89abe74e649d2e34c6c9adc26662d2 # v2.10.0
+        uses: reviewdog/action-golangci-lint@284129a3ac23bc5d8ac1522e0b6511df74a8836d # v2.10.2
         with:
           cache: false
           golangci_lint_flags: "--timeout 10m --disable=gocritic" # We are hitting timeout when there is no cache
@@ -344,7 +352,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       # The golangci-lint steps above stop at Go workspace module boundaries.
@@ -393,7 +401,7 @@ jobs:
           policy: self.static-checks-shellcheck
 
       - name: shellcheck
-        uses: reviewdog/action-shellcheck@0a90156c6e0553996a217f0a9e09be6b0f6bee4c # v1.34.0
+        uses: reviewdog/action-shellcheck@950c9d71535c8c49e5c029c33a438ade63b9009c # v1.35.1
         with:
           github_token: ${{ steps.generate-token.outputs.token }}
           reporter: github-pr-review
@@ -441,7 +449,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Run checklocks

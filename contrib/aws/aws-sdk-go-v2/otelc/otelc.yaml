@@ -24,10 +24,10 @@ config_literal:
     - set_fields:
         field:
           - name: APIOptions
-            wrap: "awsv2trace.APIOptionsWithTracing({{ . }})"
-            value: "awsv2trace.APIOptionsWithTracing(nil)"
+            wrap: "__dd_awsv2trace.APIOptionsWithTracing({{ . }})"
+            value: "__dd_awsv2trace.APIOptionsWithTracing(nil)"
   imports:
-    awsv2trace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws
+    __dd_awsv2trace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws
 
 # A call-site rule, not a hook on NewConfig: the rewritten package imports the
 # contrib, so it is initialized before a config built in a package-level var or
@@ -43,13 +43,13 @@ new_config:
   do:
     - wrap_call:
         replace: |-
-          (func(cfg *awsv2.Config) *awsv2.Config {
-            cfg.APIOptions = awsv2trace.APIOptionsWithTracing(cfg.APIOptions)
+          (func(cfg *__dd_awsv2.Config) *__dd_awsv2.Config {
+            cfg.APIOptions = __dd_awsv2trace.APIOptionsWithTracing(cfg.APIOptions)
             return cfg
           })({{ . }})
   imports:
-    awsv2: github.com/aws/aws-sdk-go-v2/aws
-    awsv2trace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws
+    __dd_awsv2: github.com/aws/aws-sdk-go-v2/aws
+    __dd_awsv2trace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws
 
 # LoadDefaultConfig replaces the API options of its literal with the ones the
 # application passed, for example with config.WithAPIOptions, so the middleware
@@ -64,12 +64,12 @@ load_default_config:
   do:
     - wrap_call:
         replace: |-
-          (func(cfg awsv2.Config, err error) (awsv2.Config, error) {
+          (func(cfg __dd_awsv2.Config, err error) (__dd_awsv2.Config, error) {
             if err == nil {
-              cfg.APIOptions = awsv2trace.APIOptionsWithTracing(cfg.APIOptions)
+              cfg.APIOptions = __dd_awsv2trace.APIOptionsWithTracing(cfg.APIOptions)
             }
             return cfg, err
           })({{ . }})
   imports:
-    awsv2: github.com/aws/aws-sdk-go-v2/aws
-    awsv2trace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws
+    __dd_awsv2: github.com/aws/aws-sdk-go-v2/aws
+    __dd_awsv2trace: github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2/aws

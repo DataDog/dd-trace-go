@@ -16,10 +16,14 @@ use (
 	./contrib/aws/datadog-lambda-go
 	./contrib/bradfitz/gomemcache
 	./contrib/cloud.google.com/go/pubsub.v1
+	./contrib/cloud.google.com/go/pubsub.v1/otelc
 	./contrib/cloud.google.com/go/pubsub.v2
+	./contrib/cloud.google.com/go/pubsub.v2/otelc
 	./contrib/cloudevents/sdk-go.v2
 	./contrib/confluentinc/confluent-kafka-go/kafka
+	./contrib/confluentinc/confluent-kafka-go/kafka/otelc
 	./contrib/confluentinc/confluent-kafka-go/kafka.v2
+	./contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc
 	./contrib/connectrpc.com/connect
 	./contrib/database/sql
 	./contrib/database/sql/otelc
@@ -36,8 +40,11 @@ use (
 	./contrib/go-chi/chi.v5/otelc
 	./contrib/go-pg/pg.v10
 	./contrib/go-redis/redis
+	./contrib/go-redis/redis/otelc
 	./contrib/go-redis/redis.v7
+	./contrib/go-redis/redis.v7/otelc
 	./contrib/go-redis/redis.v8
+	./contrib/go-redis/redis.v8/otelc
 	./contrib/go.mongodb.org/mongo-driver
 	./contrib/go.mongodb.org/mongo-driver/otelc
 	./contrib/go.mongodb.org/mongo-driver.v2
@@ -68,6 +75,7 @@ use (
 	./contrib/julienschmidt/httprouter
 	./contrib/julienschmidt/httprouter/otelc
 	./contrib/k8s.io/client-go
+	./contrib/k8s.io/client-go/otelc
 	./contrib/k8s.io/gateway-api
 	./contrib/labstack/echo.v4
 	./contrib/labstack/echo.v4/otelc
@@ -81,10 +89,13 @@ use (
 	./contrib/net/http/otelc
 	./contrib/olivere/elastic.v5
 	./contrib/redis/go-redis.v9
+	./contrib/redis/go-redis.v9/otelc
 	./contrib/opensearch-project/opensearch-go.v4
 	./contrib/redis/rueidis
 	./contrib/rs/zerolog
+	./contrib/rs/zerolog/otelc
 	./contrib/segmentio/kafka-go
+	./contrib/segmentio/kafka-go/otelc
 	./contrib/sirupsen/logrus
 	./contrib/syndtr/goleveldb
 	./contrib/tidwall/buntdb

@@ -6,8 +6,11 @@
 package http
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -542,5 +545,33 @@ func BenchmarkTraceAndServe(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		TraceAndServe(handler, noopWriter{}, req, &cfg)
+	}
+}
+
+type flusherHijackerWriter struct{ noopWriter }
+
+func (flusherHijackerWriter) Flush() {}
+func (flusherHijackerWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	return nil, nil, errors.New("not supported")
+}
+
+// BenchmarkTraceAndServeFlusherHijacker is BenchmarkTraceAndServe with a writer
+// that has Flusher and Hijacker, so that the wrapper has both.
+func BenchmarkTraceAndServeFlusherHijacker(b *testing.B) {
+	handler := new(noopHandler)
+	req, err := http.NewRequest("POST", "http://localhost:8181/widgets", nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	cfg := ServeConfig{
+		Service:     "service-name",
+		Resource:    "resource-name",
+		FinishOpts:  []tracer.FinishOption{},
+		SpanOpts:    []tracer.StartSpanOption{},
+		QueryParams: false,
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		TraceAndServe(handler, flusherHijackerWriter{}, req, &cfg)
 	}
 }

@@ -15,4 +15,11 @@ const (
 	PubsubMessageID       = "message_id"
 	PubsubPublishTime     = "publish_time"
 	PubsubDeliveryAttempt = "delivery_attempt"
+
+	// PubsubTopicName is the full path of a Pub/Sub topic,
+	// projects/<project>/topics/<topic>.
+	PubsubTopicName = "gcp.pubsub.topic.name"
+	// PubsubSubscriptionName is the full path of a Pub/Sub subscription,
+	// projects/<project>/subscriptions/<subscription>.
+	PubsubSubscriptionName = "gcp.pubsub.subscription.name"
 )
