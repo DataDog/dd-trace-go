@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"encoding/binary"
+	"fmt"
 	"maps"
 	"reflect"
 	"slices"
@@ -298,6 +299,14 @@ var ddOnlyAttributeKeys = map[string]struct{}{
 	ext.SpanKind:           {},
 }
 
+// prioritySpanAttributes are security attributes that should not be evicted by
+// ordinary span tags when a span exceeds the 128-attribute OTLP cap.
+var prioritySpanAttributes = [...]string{
+	"_dd.appsec.json",
+	"_dd.iast.json",
+	"_dd.stack",
+}
+
 // +checklocksignore — Post-finish: reads finished span fields during payload encoding.
 func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics bool, resourceAttrs map[string]string) []*otlpcommon.KeyValue {
 	n := s.meta.Count() + len(s.metrics) + len(s.metaStruct) + 3
@@ -323,30 +332,66 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 		}
 	}
 	metaStruct := s.metaStruct
-	var failedMetaStruct map[string]struct{}
-	for key, value := range metaStruct {
-		// Carry the same per-entry MessagePack bytes as the native span encoder.
-		data, err := marshalMetaStructValue(value)
-		if err != nil {
-			log.Warn("failed to serialize meta_struct value for key %s: %s", key, err.Error()) //errtrack:ignore per-span payload encoding; report only an aggregate at a non-hot boundary
-			if failedMetaStruct == nil {
-				failedMetaStruct = make(map[string]struct{})
+	var encodedMetaStruct map[string]bool
+	encodeMetaStruct := func(key string, structured any) *otlpcommon.AnyValue {
+		av := otlpMetaStructValue(key, structured)
+		if encodedMetaStruct == nil {
+			encodedMetaStruct = make(map[string]bool)
+		}
+		encodedMetaStruct[key] = av != nil
+		return av
+	}
+
+	var emittedPriority [len(prioritySpanAttributes)]bool
+	hasEmittedPriority := false
+	for i, key := range prioritySpanAttributes {
+		if structured, ok := metaStruct[key]; ok {
+			if av := encodeMetaStruct(key, structured); av != nil {
+				emittedPriority[i] = true
+				hasEmittedPriority = true
+				if !addAttribute(&attrs, key, av) {
+					return attrs
+				}
+				continue
 			}
-			failedMetaStruct[key] = struct{}{}
+		}
+		value, ok := s.meta.Get(key)
+		if !ok {
 			continue
 		}
-		if !addAttribute(&attrs, key, otlpBytesValue(data)) {
+		if v, ok := resourceAttrs[key]; ok && v == value {
+			continue // already carried by the resource
+		}
+		emittedPriority[i] = true
+		hasEmittedPriority = true
+		if !addAttribute(&attrs, key, otlpStringValue(value)) {
 			return attrs
 		}
 	}
-	for key, value := range s.meta.All() {
-		if len(metaStruct) > 0 {
-			if _, ok := metaStruct[key]; ok {
-				if _, failed := failedMetaStruct[key]; !failed {
-					continue
+
+	// When a key exists in both forms, use its structured value in the
+	// ordinary attribute's slot instead of spending an extra slot.
+	addSpanAttribute := func(key string, value *otlpcommon.AnyValue) bool {
+		if hasEmittedPriority {
+			for i, pk := range prioritySpanAttributes {
+				if emittedPriority[i] && key == pk {
+					return true
 				}
 			}
 		}
+		if structured, ok := metaStruct[key]; ok {
+			if encoded, attempted := encodedMetaStruct[key]; attempted {
+				if encoded {
+					return true // already emitted under this key
+				}
+			} else if av := encodeMetaStruct(key, structured); av != nil {
+				value = av
+			}
+		}
+		return addAttribute(&attrs, key, value)
+	}
+
+	for key, value := range s.meta.All() {
 		if v, ok := resourceAttrs[key]; ok && v == value {
 			continue // already carried by the resource
 		}
@@ -363,18 +408,11 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 				}
 			}
 		}
-		if !addAttribute(&attrs, key, av) {
+		if !addSpanAttribute(key, av) {
 			return attrs
 		}
 	}
 	for key, value := range s.metrics {
-		if len(metaStruct) > 0 {
-			if _, ok := metaStruct[key]; ok {
-				if _, failed := failedMetaStruct[key]; !failed {
-					continue
-				}
-			}
-		}
 		if otelSemantics {
 			if _, skip := ddOnlyAttributeKeys[key]; skip {
 				continue
@@ -389,22 +427,48 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 		} else {
 			av = otlpDoubleValue(value)
 		}
-		if !addAttribute(&attrs, key, av) {
+		if !addSpanAttribute(key, av) {
+			return attrs
+		}
+	}
+	// Non-priority structured metadata uses whatever space the ordinary attributes left.
+	for key, value := range metaStruct {
+		if _, attempted := encodedMetaStruct[key]; attempted {
+			continue
+		}
+		if av := otlpMetaStructValue(key, value); av != nil && !addAttribute(&attrs, key, av) {
 			return attrs
 		}
 	}
 	return attrs
 }
 
-// marshalMetaStructValue encodes a single meta_struct value using MessagePack,
-// normalizing typed-nil pointers to MessagePack nil before msgp.AppendIntf
-// dispatches to Marshaler/Extension methods that may have value receivers.
-func marshalMetaStructValue(value any) ([]byte, error) {
-	if value != nil {
-		if rv := reflect.ValueOf(value); rv.Kind() == reflect.Pointer && rv.IsNil() {
-			return msgp.AppendNil(nil), nil
-		}
+// otlpMetaStructValue encodes a single meta_struct entry to OTLP bytesValue,
+// logging a warning and returning nil if encoding fails.
+func otlpMetaStructValue(key string, value any) *otlpcommon.AnyValue {
+	// Carry the same per-entry MessagePack bytes as the native span encoder.
+	data, err := marshalMetaStructValue(value)
+	if err != nil {
+		log.Warn("failed to serialize meta_struct value for key %s: %s", key, err.Error()) //errtrack:ignore per-span payload encoding; report only an aggregate at a non-hot boundary
+		return nil
 	}
+	return otlpBytesValue(data)
+}
+
+// marshalMetaStructValue encodes a single meta_struct value using MessagePack,
+// normalizing top-level typed-nil pointers to MessagePack nil and recovering
+// panics (such as nested typed-nil Marshaler/Extension pointers inside maps or
+// slices) per entry so a malformed value cannot crash OTLP export.
+func marshalMetaStructValue(value any) (data []byte, err error) {
+	if rv := reflect.ValueOf(value); rv.Kind() == reflect.Pointer && rv.IsNil() {
+		return msgp.AppendNil(nil), nil
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			data = nil
+			err = fmt.Errorf("panic marshaling meta_struct value: %v", r)
+		}
+	}()
 	return msgp.AppendIntf(nil, value)
 }
 

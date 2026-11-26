@@ -542,12 +542,15 @@ func TestConvertSpanAttributesWithMetaStruct(t *testing.T) {
 			s := newBasicSpan("op")
 			s.meta.Set("custom", "shadowed-meta")
 			s.meta.Set("invalid", "fallback-meta")
-			s.metrics = map[string]float64{"raw": 42}
+			s.meta.Set("nested-typed-nil", "fallback-nested-nil")
+			s.metrics = map[string]float64{"raw": 42, "custom": 17}
 			s.metaStruct = metaStructMap{
-				"custom":    map[string]any{"nested": []any{"value", true}},
-				"raw":       msgp.Raw(raw),
-				"typed-nil": (*msgp.Raw)(nil),
-				"invalid":   failingMarshaler{},
+				"custom":                 map[string]any{"nested": []any{"value", true}},
+				"raw":                    msgp.Raw(raw),
+				"typed-nil":              (*msgp.Raw)(nil),
+				"nested-typed-nil":       map[string]any{"x": (*msgp.Raw)(nil)},
+				"nested-slice-typed-nil": []any{(*msgp.Raw)(nil)},
+				"invalid":                failingMarshaler{},
 			}
 
 			rawAttrs := convertSpanAttributes(s, "", otelSemantics, nil)
@@ -561,6 +564,8 @@ func TestConvertSpanAttributesWithMetaStruct(t *testing.T) {
 
 			attrs := keyValuesToMap(rawAttrs)
 			assert.Equal(t, "fallback-meta", attrs["invalid"])
+			assert.Equal(t, "fallback-nested-nil", attrs["nested-typed-nil"])
+			assert.NotContains(t, attrs, "nested-slice-typed-nil")
 			assert.Equal(t, raw, attrs["raw"])
 
 			require.IsType(t, []byte(nil), attrs["custom"])
@@ -577,18 +582,39 @@ func TestConvertSpanAttributesWithMetaStruct(t *testing.T) {
 		})
 	}
 
-	t.Run("survives max attribute cap", func(t *testing.T) {
-		s := newBasicSpan("op")
-		for i := range maxAttributesCount {
-			s.meta.Set(fmt.Sprintf("key-%d", i), "val")
-		}
-		s.metaStruct = metaStructMap{"_dd.stack": map[string]any{"exploit": []any{}}}
+	for _, otelSemantics := range []bool{false, true} {
+		t.Run(fmt.Sprintf("survives max attribute cap/otelSemantics=%t", otelSemantics), func(t *testing.T) {
+			s := newBasicSpan("op")
+			for i := range maxAttributesCount {
+				s.meta.Set(fmt.Sprintf("key-%d", i), "val")
+			}
+			const (
+				appsecReport = `{"triggers":[]}`
+				iastReport   = `{"vulnerabilities":[]}`
+			)
+			s.meta.Set("_dd.appsec.json", appsecReport)
+			s.meta.Set("_dd.iast.json", iastReport)
+			s.metaStruct = metaStructMap{
+				"_dd.stack":         map[string]any{"exploit": []any{}},
+				"custom-structured": map[string]any{"k": "v"},
+			}
 
-		attrs := convertSpanAttributes(s, "", false, nil)
-		assert.Len(t, attrs, maxAttributesCount)
-		m := keyValuesToMap(attrs)
-		assert.Contains(t, m, "_dd.stack")
-	})
+			attrs := convertSpanAttributes(s, "", otelSemantics, nil)
+			assert.Len(t, attrs, maxAttributesCount)
+			seen := make(map[string]int, len(attrs))
+			for _, kv := range attrs {
+				seen[kv.Key]++
+			}
+			for key, count := range seen {
+				assert.Equal(t, 1, count, "duplicate OTLP attribute key %q", key)
+			}
+			m := keyValuesToMap(attrs)
+			assert.Contains(t, m, "_dd.stack")
+			assert.Equal(t, appsecReport, m["_dd.appsec.json"])
+			assert.Equal(t, iastReport, m["_dd.iast.json"])
+			assert.NotContains(t, m, "custom-structured")
+		})
+	}
 }
 
 func TestConvertSpanAttributesMaxLimit(t *testing.T) {
