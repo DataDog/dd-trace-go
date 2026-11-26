@@ -19,15 +19,15 @@ sarama_new_consumer:
   do:
     - wrap_call:
         replace: |-
-          (func(c shopifysarama.Consumer, err error) (shopifysarama.Consumer, error) {
+          (func(c __dd_shopifysarama.Consumer, err error) (__dd_shopifysarama.Consumer, error) {
             if c != nil {
-              c = shopifysaramatrace.WrapConsumer(c)
+              c = __dd_shopifysaramatrace.WrapConsumer(c)
             }
             return c, err
           })({{ . }})
   imports:
-    shopifysarama: github.com/Shopify/sarama
-    shopifysaramatrace: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
+    __dd_shopifysarama: github.com/Shopify/sarama
+    __dd_shopifysaramatrace: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
 
 sarama_new_consumer_from_client:
   target:
@@ -40,15 +40,15 @@ sarama_new_consumer_from_client:
   do:
     - wrap_call:
         replace: |-
-          (func(c shopifysarama.Consumer, err error) (shopifysarama.Consumer, error) {
+          (func(c __dd_shopifysarama.Consumer, err error) (__dd_shopifysarama.Consumer, error) {
             if c != nil {
-              c = shopifysaramatrace.WrapConsumer(c)
+              c = __dd_shopifysaramatrace.WrapConsumer(c)
             }
             return c, err
           })({{ . }})
   imports:
-    shopifysarama: github.com/Shopify/sarama
-    shopifysaramatrace: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
+    __dd_shopifysarama: github.com/Shopify/sarama
+    __dd_shopifysaramatrace: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
 
 # The producer rules pass the config from the call's arguments, or the client's
 # config, to the contrib. A nil config reaches the contrib as nil.
@@ -71,16 +71,16 @@ sarama_new_sync_producer:
   do:
     - wrap_call:
         replace: |-
-          (func(__dd_addrs []string, __dd_cfg *shopifysarama.Config) (shopifysarama.SyncProducer, error) {
-            __dd_p, __dd_err := shopifysarama.NewSyncProducer(__dd_addrs, __dd_cfg)
+          (func(__dd_addrs []string, __dd_cfg *__dd_shopifysarama.Config) (__dd_shopifysarama.SyncProducer, error) {
+            __dd_p, __dd_err := __dd_shopifysarama.NewSyncProducer(__dd_addrs, __dd_cfg)
             if __dd_p != nil {
-              __dd_p = shopifysaramatrace.WrapSyncProducer(__dd_cfg, __dd_p)
+              __dd_p = __dd_shopifysaramatrace.WrapSyncProducer(__dd_cfg, __dd_p)
             }
             return __dd_p, __dd_err
           })({{ .CallArguments }})
   imports:
-    shopifysarama: github.com/Shopify/sarama
-    shopifysaramatrace: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
+    __dd_shopifysarama: github.com/Shopify/sarama
+    __dd_shopifysaramatrace: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
 
 sarama_new_sync_producer_from_client:
   target:
@@ -93,16 +93,16 @@ sarama_new_sync_producer_from_client:
   do:
     - wrap_call:
         replace: |-
-          (func(__dd_client shopifysarama.Client) (shopifysarama.SyncProducer, error) {
-            __dd_p, __dd_err := shopifysarama.NewSyncProducerFromClient(__dd_client)
+          (func(__dd_client __dd_shopifysarama.Client) (__dd_shopifysarama.SyncProducer, error) {
+            __dd_p, __dd_err := __dd_shopifysarama.NewSyncProducerFromClient(__dd_client)
             if __dd_p != nil {
-              __dd_p = shopifysaramatrace.WrapSyncProducer(__dd_client.Config(), __dd_p)
+              __dd_p = __dd_shopifysaramatrace.WrapSyncProducer(__dd_client.Config(), __dd_p)
             }
             return __dd_p, __dd_err
           })({{ .CallArgument 0 }})
   imports:
-    shopifysarama: github.com/Shopify/sarama
-    shopifysaramatrace: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
+    __dd_shopifysarama: github.com/Shopify/sarama
+    __dd_shopifysaramatrace: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
 
 sarama_new_async_producer:
   target:
@@ -115,16 +115,16 @@ sarama_new_async_producer:
   do:
     - wrap_call:
         replace: |-
-          (func(__dd_addrs []string, __dd_cfg *shopifysarama.Config) (shopifysarama.AsyncProducer, error) {
-            __dd_p, __dd_err := shopifysarama.NewAsyncProducer(__dd_addrs, __dd_cfg)
+          (func(__dd_addrs []string, __dd_cfg *__dd_shopifysarama.Config) (__dd_shopifysarama.AsyncProducer, error) {
+            __dd_p, __dd_err := __dd_shopifysarama.NewAsyncProducer(__dd_addrs, __dd_cfg)
             if __dd_p != nil {
-              __dd_p = shopifysaramatrace.WrapAsyncProducer(__dd_cfg, __dd_p)
+              __dd_p = __dd_shopifysaramatrace.WrapAsyncProducer(__dd_cfg, __dd_p)
             }
             return __dd_p, __dd_err
           })({{ .CallArguments }})
   imports:
-    shopifysarama: github.com/Shopify/sarama
-    shopifysaramatrace: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
+    __dd_shopifysarama: github.com/Shopify/sarama
+    __dd_shopifysaramatrace: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
 
 sarama_new_async_producer_from_client:
   target:
@@ -137,13 +137,13 @@ sarama_new_async_producer_from_client:
   do:
     - wrap_call:
         replace: |-
-          (func(__dd_client shopifysarama.Client) (shopifysarama.AsyncProducer, error) {
-            __dd_p, __dd_err := shopifysarama.NewAsyncProducerFromClient(__dd_client)
+          (func(__dd_client __dd_shopifysarama.Client) (__dd_shopifysarama.AsyncProducer, error) {
+            __dd_p, __dd_err := __dd_shopifysarama.NewAsyncProducerFromClient(__dd_client)
             if __dd_p != nil {
-              __dd_p = shopifysaramatrace.WrapAsyncProducer(__dd_client.Config(), __dd_p)
+              __dd_p = __dd_shopifysaramatrace.WrapAsyncProducer(__dd_client.Config(), __dd_p)
             }
             return __dd_p, __dd_err
           })({{ .CallArgument 0 }})
   imports:
-    shopifysarama: github.com/Shopify/sarama
-    shopifysaramatrace: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2
+    __dd_shopifysarama: github.com/Shopify/sarama
+    __dd_shopifysaramatrace: github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/v2

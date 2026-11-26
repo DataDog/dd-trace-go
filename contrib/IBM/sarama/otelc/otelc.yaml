@@ -19,15 +19,15 @@ sarama_new_consumer:
   do:
     - wrap_call:
         replace: |-
-          (func(c ibmsarama.Consumer, err error) (ibmsarama.Consumer, error) {
+          (func(c __dd_ibmsarama.Consumer, err error) (__dd_ibmsarama.Consumer, error) {
             if c != nil {
-              c = ibmsaramatrace.WrapConsumer(c)
+              c = __dd_ibmsaramatrace.WrapConsumer(c)
             }
             return c, err
           })({{ . }})
   imports:
-    ibmsarama: github.com/IBM/sarama
-    ibmsaramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
+    __dd_ibmsarama: github.com/IBM/sarama
+    __dd_ibmsaramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
 
 sarama_new_consumer_from_client:
   target:
@@ -40,15 +40,15 @@ sarama_new_consumer_from_client:
   do:
     - wrap_call:
         replace: |-
-          (func(c ibmsarama.Consumer, err error) (ibmsarama.Consumer, error) {
+          (func(c __dd_ibmsarama.Consumer, err error) (__dd_ibmsarama.Consumer, error) {
             if c != nil {
-              c = ibmsaramatrace.WrapConsumer(c)
+              c = __dd_ibmsaramatrace.WrapConsumer(c)
             }
             return c, err
           })({{ . }})
   imports:
-    ibmsarama: github.com/IBM/sarama
-    ibmsaramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
+    __dd_ibmsarama: github.com/IBM/sarama
+    __dd_ibmsaramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
 
 # The producer rules pass the config from the call's arguments, or the client's
 # config, to the contrib. A nil config reaches the contrib as nil.
@@ -71,16 +71,16 @@ sarama_new_sync_producer:
   do:
     - wrap_call:
         replace: |-
-          (func(__dd_addrs []string, __dd_cfg *ibmsarama.Config) (ibmsarama.SyncProducer, error) {
-            __dd_p, __dd_err := ibmsarama.NewSyncProducer(__dd_addrs, __dd_cfg)
+          (func(__dd_addrs []string, __dd_cfg *__dd_ibmsarama.Config) (__dd_ibmsarama.SyncProducer, error) {
+            __dd_p, __dd_err := __dd_ibmsarama.NewSyncProducer(__dd_addrs, __dd_cfg)
             if __dd_p != nil {
-              __dd_p = ibmsaramatrace.WrapSyncProducer(__dd_cfg, __dd_p)
+              __dd_p = __dd_ibmsaramatrace.WrapSyncProducer(__dd_cfg, __dd_p)
             }
             return __dd_p, __dd_err
           })({{ .CallArguments }})
   imports:
-    ibmsarama: github.com/IBM/sarama
-    ibmsaramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
+    __dd_ibmsarama: github.com/IBM/sarama
+    __dd_ibmsaramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
 
 sarama_new_sync_producer_from_client:
   target:
@@ -93,16 +93,16 @@ sarama_new_sync_producer_from_client:
   do:
     - wrap_call:
         replace: |-
-          (func(__dd_client ibmsarama.Client) (ibmsarama.SyncProducer, error) {
-            __dd_p, __dd_err := ibmsarama.NewSyncProducerFromClient(__dd_client)
+          (func(__dd_client __dd_ibmsarama.Client) (__dd_ibmsarama.SyncProducer, error) {
+            __dd_p, __dd_err := __dd_ibmsarama.NewSyncProducerFromClient(__dd_client)
             if __dd_p != nil {
-              __dd_p = ibmsaramatrace.WrapSyncProducer(__dd_client.Config(), __dd_p)
+              __dd_p = __dd_ibmsaramatrace.WrapSyncProducer(__dd_client.Config(), __dd_p)
             }
             return __dd_p, __dd_err
           })({{ .CallArgument 0 }})
   imports:
-    ibmsarama: github.com/IBM/sarama
-    ibmsaramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
+    __dd_ibmsarama: github.com/IBM/sarama
+    __dd_ibmsaramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
 
 sarama_new_async_producer:
   target:
@@ -115,16 +115,16 @@ sarama_new_async_producer:
   do:
     - wrap_call:
         replace: |-
-          (func(__dd_addrs []string, __dd_cfg *ibmsarama.Config) (ibmsarama.AsyncProducer, error) {
-            __dd_p, __dd_err := ibmsarama.NewAsyncProducer(__dd_addrs, __dd_cfg)
+          (func(__dd_addrs []string, __dd_cfg *__dd_ibmsarama.Config) (__dd_ibmsarama.AsyncProducer, error) {
+            __dd_p, __dd_err := __dd_ibmsarama.NewAsyncProducer(__dd_addrs, __dd_cfg)
             if __dd_p != nil {
-              __dd_p = ibmsaramatrace.WrapAsyncProducer(__dd_cfg, __dd_p)
+              __dd_p = __dd_ibmsaramatrace.WrapAsyncProducer(__dd_cfg, __dd_p)
             }
             return __dd_p, __dd_err
           })({{ .CallArguments }})
   imports:
-    ibmsarama: github.com/IBM/sarama
-    ibmsaramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
+    __dd_ibmsarama: github.com/IBM/sarama
+    __dd_ibmsaramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
 
 sarama_new_async_producer_from_client:
   target:
@@ -137,13 +137,13 @@ sarama_new_async_producer_from_client:
   do:
     - wrap_call:
         replace: |-
-          (func(__dd_client ibmsarama.Client) (ibmsarama.AsyncProducer, error) {
-            __dd_p, __dd_err := ibmsarama.NewAsyncProducerFromClient(__dd_client)
+          (func(__dd_client __dd_ibmsarama.Client) (__dd_ibmsarama.AsyncProducer, error) {
+            __dd_p, __dd_err := __dd_ibmsarama.NewAsyncProducerFromClient(__dd_client)
             if __dd_p != nil {
-              __dd_p = ibmsaramatrace.WrapAsyncProducer(__dd_client.Config(), __dd_p)
+              __dd_p = __dd_ibmsaramatrace.WrapAsyncProducer(__dd_client.Config(), __dd_p)
             }
             return __dd_p, __dd_err
           })({{ .CallArgument 0 }})
   imports:
-    ibmsarama: github.com/IBM/sarama
-    ibmsaramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
+    __dd_ibmsarama: github.com/IBM/sarama
+    __dd_ibmsaramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
