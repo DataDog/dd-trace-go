@@ -122,12 +122,18 @@ func BenchmarkPlainSpanFromContext(b *testing.B) {
 		assert.NoError(b, err)
 		defer stop()
 
-		root, parentCtx := StartSpanFromContext(context.Background(), "root")
-		defer root.Finish()
+		const maxChildrenPerRoot = 10000
+		bg := context.Background()
+		root, parentCtx := StartSpanFromContext(bg, "root")
+		defer func() { root.Finish() }()
 
 		b.ReportAllocs()
 		b.ResetTimer()
-		for range b.N { //nolint:modernize
+		for i := range b.N { //nolint:modernize
+			if i > 0 && i%maxChildrenPerRoot == 0 {
+				root.Finish()
+				root, parentCtx = StartSpanFromContext(bg, "root")
+			}
 			span, _ := StartSpanFromContext(parentCtx, "op")
 			span.Finish()
 		}
@@ -160,12 +166,18 @@ func BenchmarkPlainSpanFromContext(b *testing.B) {
 		assert.NoError(b, err)
 		defer stop()
 
-		root, parentCtx := StartSpanFromContext(context.Background(), "root")
-		defer root.Finish()
+		const maxChildrenPerRoot = 10000
+		bg := context.Background()
+		root, parentCtx := StartSpanFromContext(bg, "root")
+		defer func() { root.Finish() }()
 
 		b.ReportAllocs()
 		b.ResetTimer()
-		for range b.N { //nolint:modernize
+		for i := range b.N { //nolint:modernize
+			if i > 0 && i%maxChildrenPerRoot == 0 {
+				root.Finish()
+				root, parentCtx = StartSpanFromContext(bg, "root")
+			}
 			span, _ := StartSpanFromContext(parentCtx, "op")
 			span.Finish()
 		}
