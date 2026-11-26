@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync/atomic"
 	"testing"
 
@@ -179,6 +180,49 @@ func TestEndpointHookEarlyBlockBody(t *testing.T) {
 	require.NotEmpty(t, payload.SecurityResponseID)
 	require.Equal(t, fmt.Sprintf(`{"errors":[{"title":"You've been blocked","detail":"Sorry, you cannot access this page. Please contact the customer service team. Security provided by Datadog."}],"security_response_id":%q}`, payload.SecurityResponseID), string(body))
 	require.Equal(t, float64(1), count(metrics.since(before), "waf.requests", "request_blocked:true", "block_failure:false"))
+}
+
+func TestEndpointHookBlockingUnavailable(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		unavailable bool
+		status      int
+		body        string
+		handled     bool
+		blocked     string
+		failure     string
+	}{
+		{"available", false, http.StatusForbidden, "", false, "request_blocked:true", "block_failure:false"},
+		{"unavailable", true, http.StatusOK, "application response", true, "request_blocked:false", "block_failure:true"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("_DD_APPSEC_BLOCKING_UNAVAILABLE", strconv.FormatBool(tc.unavailable))
+			t.Cleanup(endpointhook.SetWovenForTest(true))
+			metrics := startEndpointAppSecRules(t, "1s", rulePathBlock)
+			mt := mocktracer.Start()
+			t.Cleanup(mt.Stop)
+			before := metrics.snapshot()
+			handled := false
+			r := chi.NewRouter()
+			r.Use(Middleware())
+			r.Method(http.MethodGet, "/users/{id}", endpointhook.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				handled = true
+				_, _ = w.Write([]byte("application response"))
+			}), false))
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/users/attack", nil))
+			require.Equal(t, tc.status, w.Code)
+			require.Equal(t, tc.handled, handled)
+			if tc.unavailable {
+				require.Equal(t, tc.body, w.Body.String())
+			} else {
+				require.NotContains(t, w.Body.String(), "application response")
+			}
+			require.Len(t, mt.FinishedSpans(), 1)
+			require.Contains(t, eventRules(mt.FinishedSpans()[0].Tag("_dd.appsec.json")), "path-block")
+			require.Equal(t, float64(1), count(metrics.since(before), "waf.requests", tc.blocked, tc.failure))
+		})
+	}
 }
 
 func TestEndpointHookWrappedMount(t *testing.T) {

@@ -14,3 +14,6 @@ import (
 
 //go:linkname __dd_chitrace_wrapEndpoint github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2/internal/endpointhook.Wrap
 func __dd_chitrace_wrapEndpoint(http.Handler, bool) http.Handler
+
+//go:linkname __dd_chitrace_wrapMountAliases github.com/DataDog/dd-trace-go/contrib/go-chi/chi/v2/internal/endpointhook.WrapMountAliases
+func __dd_chitrace_wrapMountAliases(http.Handler, string) http.Handler

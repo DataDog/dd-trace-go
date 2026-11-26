@@ -51,6 +51,7 @@ func (tc *TestCaseAppSec) Setup(_ context.Context, t *testing.T) {
 	child.Get("/items/{id}", h)
 	root.Mount("/mounted/{tenant}", child)
 	root.Mount("/files", http.HandlerFunc(h))
+	root.Mount("/terminal/{id}", http.HandlerFunc(h))
 	api := chi.NewRouter()
 	api.Get("/items/{id}", h)
 	root.Mount("/w/{tenant}", http.HandlerFunc(api.ServeHTTP))
@@ -74,7 +75,10 @@ func (tc *TestCaseAppSec) Run(_ context.Context, t *testing.T) {
 	}{
 		{"/users/attack", 403, false}, {"/users/42", 200, true},
 		{"/catch/attack", 403, false}, {"/hx/acme/attack", 200, true},
-		{"/routed/acme/items/attack", 403, false}, {"/routed/attack", 404, false},
+		{"/routed/acme/items/attack", 403, false}, {"/routed/attack", 404, false}, {"/routed/attack/", 404, false},
+		{"/terminal/attack", 403, false}, {"/terminal/attack/", 403, false},
+		{"/terminal/42", 200, true}, {"/terminal/42/", 200, true},
+		{"/terminal/attack/child", 403, false}, {"/terminal/42/child", 200, true},
 		{"/mounted/acme/items/attack", 403, false}, {"/files/attack", 200, true},
 		{"/w/attack/items/42", 403, false}, {"/w/acme/items/attack", 403, false},
 		{"/ignore/attack", 200, true},
@@ -106,7 +110,7 @@ func (tc *TestCaseAppSec) Run(_ context.Context, t *testing.T) {
 	}
 }
 
-func (*TestCaseAppSec) ExpectedSpanCount() int { return 40 }
+func (*TestCaseAppSec) ExpectedSpanCount() int { return 61 }
 
 func (*TestCaseAppSec) ExpectedTraces() trace.Traces {
 	cases := []struct {
@@ -119,6 +123,13 @@ func (*TestCaseAppSec) ExpectedTraces() trace.Traces {
 		{"GET /hx/acme/attack", "GET /hx/{tenant}/hx/{tenant}/{name}", "200", 1},
 		{"GET /routed/acme/items/attack", "GET /routed/{tenant}/items/{id}", "403", 1},
 		{"GET /routed/attack", "GET /routed/{tenant}", "404", 1},
+		{"GET /routed/attack/", "GET /routed/{tenant}/", "404", 1},
+		{"GET /terminal/attack", "GET /terminal/{id}", "403", 1},
+		{"GET /terminal/attack/", "GET /terminal/{id}/", "403", 1},
+		{"GET /terminal/42", "GET /terminal/{id}", "200", 1},
+		{"GET /terminal/42/", "GET /terminal/{id}/", "200", 1},
+		{"GET /terminal/attack/child", "GET /terminal/{id}/*", "403", 1},
+		{"GET /terminal/42/child", "GET /terminal/{id}/*", "200", 1},
 		{"GET /mounted/acme/items/attack", "GET /mounted/{tenant}/items/{id}", "403", 2},
 		{"GET /files/attack", "GET /files/*", "200", 1},
 		{"GET /w/attack/items/42", "GET /w/{tenant}/*", "403", 1},
@@ -132,7 +143,7 @@ func (*TestCaseAppSec) ExpectedTraces() trace.Traces {
 		root := &trace.Trace{Tags: map[string]any{"name": "http.request", "resource": c.client}, Meta: map[string]string{"component": "net/http", "span.kind": "client", "http.status_code": c.status}}
 		server := &trace.Trace{Meta: map[string]string{"component": "net/http", "span.kind": "server", "http.status_code": c.status}}
 		switch c.client {
-		case "GET /users/attack", "GET /routed/acme/items/attack", "GET /mounted/acme/items/attack", "GET /w/acme/items/attack", "GET /manual/attack":
+		case "GET /users/attack", "GET /routed/acme/items/attack", "GET /mounted/acme/items/attack", "GET /w/acme/items/attack", "GET /manual/attack", "GET /terminal/attack", "GET /terminal/attack/", "GET /terminal/attack/child":
 			server.MetaContains = map[string]string{"_dd.appsec.json": `"id":"id-block"`}
 		case "GET /catch/attack":
 			server.MetaContains = map[string]string{"_dd.appsec.json": `"id":"wildcard-block"`}

@@ -31,6 +31,34 @@ func Wrap(h http.Handler, includeWildcard bool) http.Handler {
 	return &endpoint{handler: h, includeWildcard: includeWildcard}
 }
 
+type mountAliases struct {
+	handler  http.Handler
+	endpoint http.Handler
+	pattern  string
+}
+
+// WrapMountAliases reports terminal mount aliases that chi marks as stubs.
+func WrapMountAliases(h http.Handler, pattern string) http.Handler {
+	if h == nil || len(pattern) == 0 || pattern[len(pattern)-1] == '/' {
+		return h
+	}
+	return &mountAliases{handler: h, endpoint: Wrap(h, false), pattern: pattern}
+}
+
+func (m *mountAliases) Unwrap() http.Handler { return m.handler }
+
+func (m *mountAliases) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	rctx := chi.RouteContext(r.Context())
+	if rctx != nil && len(rctx.RoutePatterns) > 0 {
+		pattern := rctx.RoutePatterns[len(rctx.RoutePatterns)-1]
+		if pattern == m.pattern || pattern == m.pattern+"/" {
+			m.endpoint.ServeHTTP(w, r)
+			return
+		}
+	}
+	m.handler.ServeHTTP(w, r)
+}
+
 func (e *endpoint) Unwrap() http.Handler { return e.handler }
 
 func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -61,8 +89,12 @@ func (e *endpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := routeMatched(r.Context(), marker.Route.ReportedRoute(rctx), params); err != nil {
 		if op, ok := dyngo.FindOperation[httpsec.HandlerOperation](r.Context()); ok {
 			dyngo.EmitData(op, httpsec.EarlyBlock{})
+			if !op.ContextOperation.BlockingUnavailable() {
+				return
+			}
+		} else {
+			return
 		}
-		return
 	}
 	e.handler.ServeHTTP(w, r)
 }

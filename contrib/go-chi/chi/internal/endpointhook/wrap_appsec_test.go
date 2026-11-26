@@ -75,6 +75,44 @@ func TestWrapGateAndParams(t *testing.T) {
 	}
 }
 
+func TestWrapMountAliases(t *testing.T) {
+	for _, tc := range []struct {
+		pattern string
+		calls   int
+	}{
+		{"/files/{id}", 1},
+		{"/files/{id}/", 1},
+		{"/files/{id}/*", 0},
+		{"/other", 0},
+	} {
+		t.Run(tc.pattern, func(t *testing.T) {
+			t.Cleanup(SetWovenForTest(false))
+			calls, handled := 0, 0
+			t.Cleanup(SetRouteMatchedForTest(func(context.Context, string, map[string]string) error {
+				calls++
+				return nil
+			}))
+			original := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { handled++ })
+			h := WrapMountAliases(original, "/files/{id}")
+			if got := h.(interface{ Unwrap() http.Handler }).Unwrap(); reflect.ValueOf(got).Pointer() != reflect.ValueOf(original).Pointer() {
+				t.Fatal("Unwrap did not return the original handler")
+			}
+			rctx := chi.NewRouteContext()
+			rctx.RoutePatterns = []string{tc.pattern}
+			rctx.URLParams.Keys, rctx.URLParams.Values = []string{"id"}, []string{"42"}
+			ctx := context.WithValue(context.Background(), chi.RouteCtxKey, rctx)
+			ctx = With(ctx, Marker{Route: reporter{}})
+			h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil).WithContext(ctx))
+			if calls != tc.calls || handled != 1 {
+				t.Fatalf("calls=%d handled=%d", calls, handled)
+			}
+		})
+	}
+	if WrapMountAliases(nil, "/files") != nil {
+		t.Fatal("nil handler changed")
+	}
+}
+
 func TestWrapNoRouteContext(t *testing.T) {
 	t.Cleanup(SetWovenForTest(false))
 	calls, handled := 0, 0
