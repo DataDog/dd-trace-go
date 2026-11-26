@@ -81,11 +81,6 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		// pass the span through the request context
 		c.Request = c.Request.WithContext(ctx)
 
-		// Use AppSec if enabled by user
-		if instr.AppSecEnabled() {
-			useAppSec(c, httptrace.AppSecSpanTagSetter(span, cfg.otelEnabled))
-		}
-
 		// serve the request to the next middleware
 		func() {
 			defer func() {
@@ -96,12 +91,19 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 					recovered = recover()
 				}
 			}()
+			// AppSec runs the rest of the chain itself, so it has to sit inside
+			// the recovery boundary too. c.Next is then a no-op.
+			if instr.AppSecEnabled() {
+				useAppSec(c, httptrace.AppSecSpanTagSetter(span, cfg.otelEnabled))
+			}
 			c.Next()
 			normal = true
 		}()
 		panicked = !normal
 
-		if len(c.Errors) > 0 {
+		// A panicking request never reached this tag before, and the errors the
+		// user opted into are recorded by finishSpan instead.
+		if !panicked && len(c.Errors) > 0 {
 			span.SetTag("gin.errors", c.Errors.String())
 		}
 	}

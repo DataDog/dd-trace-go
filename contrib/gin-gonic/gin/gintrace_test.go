@@ -464,6 +464,27 @@ func TestPanicWithRecoveryMiddleware(t *testing.T) {
 		assert.Contains(t, spans[0].Tag(ext.ErrorMsg), "db down")
 	})
 
+	t.Run("gin errors are not tagged on a panic without WithUseGinErrors", func(t *testing.T) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		router := gin.New()
+		router.Use(gin.Recovery())
+		router.Use(Middleware("foobar"))
+		router.GET("/boom", func(c *gin.Context) {
+			_ = c.Error(errors.New("db down"))
+			panic("boom")
+		})
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest("GET", "/boom", nil))
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Nil(t, spans[0].Tag("gin.errors"))
+		assert.Equal(t, "handler panicked", spans[0].Tag(ext.ErrorMsg))
+	})
+
 	t.Run("nil panic is propagated with panicnil=1", func(t *testing.T) {
 		t.Setenv("GODEBUG", "panicnil=1")
 		mt := mocktracer.Start()
