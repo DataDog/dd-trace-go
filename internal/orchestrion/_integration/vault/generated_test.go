@@ -18,3 +18,31 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestAliasedImport(t *testing.T) {
+	harness.Run(t, new(TestCaseAliasedImport))
+}
+
+func TestContribHTTPClient(t *testing.T) {
+	harness.Run(t, new(TestCaseContribHTTPClient))
+}
+
+func TestCustomHTTPClient(t *testing.T) {
+	harness.Run(t, new(TestCaseCustomHTTPClient))
+}
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestPackageLevelConfig(t *testing.T) {
+	harness.Run(t, new(TestCasePackageLevelConfig))
+}
+
+func TestPointerLiteral(t *testing.T) {
+	harness.Run(t, new(TestCasePointerLiteral))
+}
+
+func TestValueLiteral(t *testing.T) {
+	harness.Run(t, new(TestCaseValueLiteral))
+}

@@ -157,6 +157,7 @@ integration-suites:
     contrib/haproxy/stream-processing-offload: []
     contrib/hashicorp/consul: []
     contrib/hashicorp/vault: [ vault ]
+    contrib/hashicorp/vault/otelc: [ vault ]
     contrib/IBM/sarama: [ ibm_sarama ]
     contrib/jackc/pgx.v5: [ pgx ]
     contrib/jackc/pgx.v5/otelc: [ pgx ]
@@ -515,6 +516,7 @@ components:
       - contrib/google.golang.org/grpc/**
       - contrib/gorilla/mux/**
       - contrib/gorm.io/gorm.v1/**
+      - contrib/hashicorp/vault/**
       - contrib/jackc/pgx.v5/**
       - contrib/julienschmidt/httprouter/**
       - contrib/k8s.io/client-go/**

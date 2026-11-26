@@ -71,6 +71,8 @@ env:
     contrib/julienschmidt/httprouter/otelc
     contrib/k8s.io/client-go
     contrib/k8s.io/client-go/otelc
+    contrib/hashicorp/vault
+    contrib/hashicorp/vault/otelc
     contrib/gomodule/redigo
     contrib/gomodule/redigo/otelc
     contrib/google.golang.org/grpc
@@ -138,6 +140,7 @@ env:
     aws.v1
     valyala_fasthttp
     segmentio_kafka.v0
+    vault
     zerolog
 
 jobs:

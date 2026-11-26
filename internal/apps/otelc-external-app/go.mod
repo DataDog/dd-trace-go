@@ -11,6 +11,7 @@ require (
 	github.com/DataDog/dd-trace-go/v2 v2.14.0-dev
 	github.com/aws/aws-sdk-go-v2 v1.43.2
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.44.0
+	github.com/hashicorp/vault/api v1.23.0
 	github.com/rs/zerolog v1.35.1
 	github.com/segmentio/kafka-go v0.4.42
 	google.golang.org/api v0.273.1
@@ -362,16 +363,37 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 => ../../../contrib/labstack/echo.v5
 
 require (
+	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/otelc/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.14.0-dev // indirect
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.101.0 // indirect
+	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
+	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
+	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
+	github.com/hashicorp/go-secure-stdlib/parseutil v0.2.0 // indirect
+	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
+	github.com/hashicorp/go-sockaddr v1.0.7 // indirect
+	github.com/hashicorp/hcl v1.0.1-vault-7 // indirect
+	github.com/hashicorp/vault/sdk v0.15.0 // indirect
+	github.com/mitchellh/go-homedir v1.1.0 // indirect
+	github.com/mitchellh/mapstructure v1.5.1-0.20231216201459-8508981c8b6c // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
+	github.com/ryanuber/go-glob v1.0.0 // indirect
 	go.opentelemetry.io/otel/log v1.47.0 // indirect
 )
 
 replace github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 => ../../../contrib/segmentio/kafka-go/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 => ../../../contrib/segmentio/kafka-go
+
+replace github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/otelc/v2 => ../../../contrib/hashicorp/vault/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 => ../../../contrib/hashicorp/vault
 
 replace github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 => ../../../contrib/k8s.io/client-go/otelc
 

@@ -261,14 +261,14 @@ func TestSuiteSelection(t *testing.T) {
 			wantOrch:    true,
 		},
 		{
-			// The vault suite is not in the otelc lane's list and nothing in
+			// The os suite is not in the otelc lane's list and nothing in
 			// the otelc lane imports it, so the suite's import closure proves the
 			// otelc lane unaffected: the coarse orchestrion-suite gate is
 			// suppressed instead of failing the lane open.
 			name:        "a suite outside the otelc lane does not turn otelc on",
-			files:       []string{"internal/orchestrion/_integration/vault/x.go"},
+			files:       []string{"internal/orchestrion/_integration/os/x.go"},
 			otelc:       SuiteVerdict{},
-			orchestrion: SuiteVerdict{Suites: []string{"vault"}},
+			orchestrion: SuiteVerdict{Suites: []string{"os"}},
 			wantOrch:    true,
 		},
 		{
@@ -277,11 +277,11 @@ func TestSuiteSelection(t *testing.T) {
 			// otelc lane open.
 			name: "a suppressed suite and an otelc change fail the otelc lane open",
 			files: []string{
-				"internal/orchestrion/_integration/vault/x.go",
+				"internal/orchestrion/_integration/os/x.go",
 				"otelc/all/otel.instrumentation.go",
 			},
 			otelc:       SuiteVerdict{All: true},
-			orchestrion: SuiteVerdict{Suites: []string{"vault"}},
+			orchestrion: SuiteVerdict{Suites: []string{"os"}},
 			wantOtelc:   true,
 			wantOrch:    true,
 		},
@@ -364,6 +364,8 @@ func TestSuiteSelection(t *testing.T) {
 			name:         "a vault contrib change names the vault suite",
 			files:        []string{"contrib/hashicorp/vault/vault.go"},
 			orchContains: []string{"vault"},
+			otelc:        SuiteVerdict{Suites: []string{"vault"}},
+			wantOtelc:    true,
 			wantOrch:     true,
 		},
 		{

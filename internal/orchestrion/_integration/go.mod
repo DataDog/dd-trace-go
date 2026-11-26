@@ -133,6 +133,7 @@ require (
 	example.com/k8sclientgodep v0.0.0-00010101000000-000000000000
 	example.com/mongodep v0.0.0-00010101000000-000000000000
 	example.com/pubsubdep v0.0.0-00010101000000-000000000000
+	example.com/vaultdep v0.0.0-00010101000000-000000000000
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/DataDog/datadog-agent/comp/core/tagger/origindetection v0.82.3 // indirect
 	github.com/DataDog/datadog-agent/pkg/obfuscate v0.82.3 // indirect
@@ -179,7 +180,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 v2.14.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 v2.14.0-dev
@@ -623,6 +624,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.14.0-dev // indirect
@@ -680,3 +682,7 @@ replace example.com/confluentkafkadep => ./internal/confluentkafkadep
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/otelc/v2 => ../../../contrib/aws/aws-sdk-go/otelc
 
 replace example.com/awsv1dep => ./internal/awsv1dep
+
+replace github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/otelc/v2 => ../../../contrib/hashicorp/vault/otelc
+
+replace example.com/vaultdep => ./internal/vaultdep

@@ -24,6 +24,7 @@ import (
 	redisv7 "github.com/go-redis/redis/v7"
 	redisv8 "github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
+	vaultapi "github.com/hashicorp/vault/api"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/julienschmidt/httprouter"
 	redisv9 "github.com/redis/go-redis/v9"
@@ -73,6 +74,7 @@ func useLibraries() {
 	}
 	_ = zerolog.New(io.Discard)
 	_ = &rest.Config{Host: "http://127.0.0.1"}
+	_ = &vaultapi.Config{Address: "http://127.0.0.1"}
 	_ = redisv6.NewClient(&redisv6.Options{}).Close()
 	_ = redisv7.NewClient(&redisv7.Options{}).Close()
 	_ = redisv8.NewClient(&redisv8.Options{}).Close()

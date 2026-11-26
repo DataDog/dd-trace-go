@@ -26,6 +26,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gomodule/redigo/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/otelc/v2 v2.14.0-dev
+	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 v2.14.0-dev
@@ -60,6 +61,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 v2.14.0-dev // indirect
@@ -91,6 +93,7 @@ require (
 	github.com/aws/smithy-go v1.27.5 // indirect
 	github.com/bytedance/sonic v1.12.6 // indirect
 	github.com/bytedance/sonic/loader v0.2.1 // indirect
+	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudwego/base64x v0.1.4 // indirect
 	github.com/cloudwego/iasm v0.2.0 // indirect
@@ -101,6 +104,7 @@ require (
 	github.com/gabriel-vasile/mimetype v1.4.8 // indirect
 	github.com/gin-contrib/sse v1.0.0 // indirect
 	github.com/gin-gonic/gin v1.10.1 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
@@ -116,6 +120,17 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.14 // indirect
 	github.com/googleapis/gax-go/v2 v2.20.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
+	github.com/hashicorp/go-retryablehttp v0.7.8 // indirect
+	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
+	github.com/hashicorp/go-secure-stdlib/parseutil v0.2.0 // indirect
+	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
+	github.com/hashicorp/go-sockaddr v1.0.7 // indirect
+	github.com/hashicorp/hcl v1.0.1-vault-7 // indirect
+	github.com/hashicorp/vault/api v1.23.0 // indirect
+	github.com/hashicorp/vault/sdk v0.15.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.9.2 // indirect
@@ -131,11 +146,14 @@ require (
 	github.com/mattn/go-colorable v0.1.16 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mattn/go-runewidth v0.0.28 // indirect
+	github.com/mitchellh/go-homedir v1.1.0 // indirect
+	github.com/mitchellh/mapstructure v1.5.1-0.20231216201459-8508981c8b6c // indirect
 	github.com/molecule-man/go-brrr v1.1.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/redis/go-redis/v9 v9.7.3 // indirect
 	github.com/rs/zerolog v1.34.0 // indirect
+	github.com/ryanuber/go-glob v1.0.0 // indirect
 	github.com/segmentio/kafka-go v0.4.42 // indirect
 	github.com/sosodev/duration v1.4.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
@@ -299,6 +317,10 @@ replace github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 => ../../contr
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/otelc/v2 => ../../contrib/aws/aws-sdk-go-v2/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go-v2/v2 => ../../contrib/aws/aws-sdk-go-v2
+
+replace github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/otelc/v2 => ../../contrib/hashicorp/vault/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 => ../../contrib/hashicorp/vault
 
 replace github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/otelc/v2 => ../../contrib/jackc/pgx.v5/otelc
 

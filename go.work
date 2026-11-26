@@ -68,6 +68,7 @@ use (
 	./contrib/haproxy/stream-processing-offload
 	./contrib/hashicorp/consul
 	./contrib/hashicorp/vault
+	./contrib/hashicorp/vault/otelc
 	./contrib/jackc/pgx.v5
 	./contrib/jackc/pgx.v5/otelc
 	./contrib/jmoiron/sqlx
