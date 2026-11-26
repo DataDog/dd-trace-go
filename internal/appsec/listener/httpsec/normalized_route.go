@@ -7,6 +7,7 @@ package httpsec
 
 import (
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -53,9 +54,8 @@ func normalizeRoute(framework, route string, params map[string]string, requestUR
 		parts, ok = parseServeMuxRoute(route, params, requestURI)
 		escapes = true
 	case "github.com/gorilla/mux":
-		parts, ok = parseBraceRoute(route, params, false)
-		if ok {
-			parts, escapes = appendGorillaRemainder(parts, params, requestURI)
+		if parts, ok = parseBraceRoute(route, params, false); ok {
+			return normalizeGorillaRoute(parts, params, requestURI)
 		}
 	case "github.com/go-chi/chi", "github.com/go-chi/chi/v5":
 		parts, ok = parseBraceRoute(route, params, true)
@@ -268,28 +268,48 @@ func appendCatchAll(parts []routePart, rest string) []routePart {
 	return append(parts, routePart{param: true})
 }
 
-// appendGorillaRemainder adds the implicit unnamed catch-all of a gorilla/mux
-// PathPrefix route: the rest of the request path after the text that the route
-// matched, its literal text and the values that gorilla bound to its variables.
-// The template does not tell a PathPrefix route from a Path route, but a Path
-// route matches the whole path, so it has no rest. gorilla matches the unescaped
-// path, or the escaped path with UseEncodedPath. The one that starts with the
-// matched text is the one that gorilla matched: the returned bool reports that
-// it is the escaped path, where the %XX of the route are escaped bytes. Without
-// the value of a variable, the route gets no catch-all.
-func appendGorillaRemainder(parts []routePart, params map[string]string, requestURI string) ([]routePart, bool) {
-	matched, ok := matchedText(parts, params)
-	if !ok || requestURI == "" {
-		return parts, false
-	}
+// normalizeGorillaRoute normalizes a gorilla/mux route, with the implicit
+// unnamed catch-all of a PathPrefix route: the rest of the request path after
+// the text that the route matched, its literal text and the values that gorilla
+// bound to its variables. The template does not tell a PathPrefix route from a
+// Path route, but a Path route matches the whole path, so it has no rest.
+// gorilla matches the unescaped path, or the escaped path with UseEncodedPath,
+// where the %XX of the route are escaped bytes, and the operation does not tell
+// which. Each path that starts with the matched text is a candidate: when they
+// give different routes, the route is unknown. Without the value of a variable,
+// the route gets no catch-all.
+func normalizeGorillaRoute(parts []routePart, params map[string]string, requestURI string) (string, bool) {
 	escaped := requestPath(requestURI)
-	if unescaped, err := url.PathUnescape(escaped); err == nil && strings.HasPrefix(unescaped, matched) {
-		return appendCatchAll(parts, unescaped[len(matched):]), false
+	trailingSlash := strings.HasSuffix(escaped, "/")
+	matched, known := matchedText(parts, params)
+	if !known || requestURI == "" {
+		return assembleRoute(parts, false, trailingSlash)
 	}
-	if strings.HasPrefix(escaped, matched) {
-		return appendCatchAll(parts, escaped[len(matched):]), true
+	candidates := []struct {
+		path    string
+		escapes bool
+	}{{escaped, true}}
+	if unescaped, err := url.PathUnescape(escaped); err == nil {
+		candidates = append(candidates, struct {
+			path    string
+			escapes bool
+		}{unescaped, false})
 	}
-	return parts, false
+	var normalized string
+	for _, candidate := range candidates {
+		if !strings.HasPrefix(candidate.path, matched) {
+			continue
+		}
+		route, ok := assembleRoute(appendCatchAll(slices.Clip(parts), candidate.path[len(matched):]), candidate.escapes, trailingSlash)
+		if !ok || (normalized != "" && route != normalized) {
+			return "", false
+		}
+		normalized = route
+	}
+	if normalized == "" {
+		return assembleRoute(parts, false, trailingSlash)
+	}
+	return normalized, true
 }
 
 // matchedText returns the path text that parts matched: their static text and

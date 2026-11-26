@@ -587,6 +587,10 @@ func TestNormalizeRoute(t *testing.T) {
 		{name: "gorilla prefix, first alternative, rest", framework: mux, route: "/p/{v:a|ab}", params: map[string]string{"v": "a"}, requestURI: "/p/ab/x", want: "/p/{v}{param1}"},
 		{name: "gorilla static escape, encoded path", framework: mux, route: "/a%2Fb", requestURI: "/a%2Fb", want: "/a%2Fb"},
 		{name: "gorilla static percent, unescaped path", framework: mux, route: "/a%2Fb", requestURI: "/a%252Fb", want: "/a%252Fb"},
+		// Both paths start with "/a%25": UseEncodedPath leaves "25/x", the unescaped
+		// path leaves "/x", and the operation does not tell which gorilla matched.
+		{name: "gorilla prefix, unknown matching mode", framework: mux, route: "/a%25", requestURI: "/a%2525/x", want: ""},
+		{name: "gorilla prefix, same route in both modes", framework: mux, route: "/api", requestURI: "/api/caf%C3%A9", want: "/api/{param1}"},
 
 		// chi and echo v4 match URL.RawPath when net/http sets it.
 		{name: "chi static escape, raw path", framework: chi, route: "/a%2Fb", requestURI: "/a%2Fb", want: "/a%2Fb"},

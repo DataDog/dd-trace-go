@@ -411,8 +411,10 @@ the route matched. Routers report a prefix route as its template, so the listene
 rebuilds that part from the route's static text and the values that the router
 bound to its parameters:
 - gorilla/mux `PathPrefix`: the part starts the unescaped path, or the escaped
-  path with `UseEncodedPath`; the one it starts tells how the `%XX` of the route
-  are read. A `Path` route matches the whole path, so it has no rest.
+  path with `UseEncodedPath`, where the `%XX` of the route are escaped bytes.
+  The operation does not tell which: when both paths start with the part and
+  give different routes, the request gets no tag. A `Path` route matches the
+  whole path, so it has no rest.
 - fiber `Use`, `Static` and mounts: the part starts the escaped path, ignoring
   case. A route that ends with `*` or `+` takes the rest of the path.
 
@@ -423,5 +425,8 @@ The `%XX` in the static text of a route are escaped bytes only when the router
 matched the escaped path: always for net/http and fiber, when net/http sets
 `URL.RawPath` for go-chi and echo v4, and as found above for gorilla/mux.
 
-fiber reports no route when its router found none (404 or 405): the last route
-that fiber ran is then a middleware (`GetRoutes(true)` leaves it out).
+fiber reports no route when its router found none: its 404 names the method and
+the path, and its 405 sets `Allow`. A handler's own 404 or 405 keeps its route.
+fiber also reports no route when a middleware without a path prefix answers
+another path than `/` with an error: it answered before routing, or after a
+router miss whose error it handled.
