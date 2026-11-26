@@ -43,6 +43,11 @@ canonical="$(printf '{"variant":%s}' "$variant_json" \
 digest="$(printf '%s' "$canonical" \
   | openssl dgst -sha256 | awk '{print $NF}' | cut -c1-16)"
 
+# The marker below is the single definition of the key layout version.
+# Comments elsewhere call it <marker> and never repeat its value. Bump
+# it only when existing entries must stop matching: a bump orphans the
+# whole pool until each seeding workflow runs again on the default
+# branch.
 prefix="ddtg-cx1-${FAMILY}-${digest}"
 printf 'prefix=%s\n' "$prefix" >> "$GITHUB_OUTPUT"
 printf 'Computed cache key prefix: %s\n' "$prefix"

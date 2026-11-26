@@ -1593,7 +1593,11 @@ func (c *Config) SetFeatureFlags(features []string, origin telemetry.Origin, pro
 		c.featureFlags = make(map[string]struct{})
 	}
 	for _, feat := range features {
-		c.featureFlags[strings.TrimSpace(feat)] = struct{}{}
+		feat = strings.TrimSpace(feat)
+		if feat == "" {
+			continue
+		}
+		c.featureFlags[feat] = struct{}{}
 	}
 	all := make([]string, 0, len(c.featureFlags))
 	for feat := range c.featureFlags {

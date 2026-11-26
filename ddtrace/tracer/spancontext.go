@@ -306,6 +306,7 @@ func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
 			context.trace = parent.trace
 			context.origin = parent.origin // +checklocksignore - Initialization time, not shared yet. Parent origin is read-only after init.
 			context.errors.Store(parent.errors.Load())
+			inheritLLMObsSpan(context, parent)
 		}
 		parent.ForeachBaggageItem(func(k, v string) bool {
 			context.setBaggageItem(k, v)
@@ -655,6 +656,10 @@ type trace struct {
 	dm uint32
 	// samplingDecision indicates whether to send the trace to the agent.
 	samplingDecision samplingDecision // +checkatomic
+
+	// llmobs is the LLMObs context of this local trace. It is allocated only for
+	// traces that carry one, so other traces and every span pay nothing.
+	llmobs atomic.Pointer[traceLLMObs]
 
 	// root specifies the root of the trace, if known; it is nil when a span
 	// context is extracted from a carrier, at which point there are no spans in
@@ -1161,6 +1166,8 @@ func (t *trace) finishedOneLocked(s *Span) {
 	// partial-flush chunks through unfiltered and applies the root's decision once
 	// it is known — same as the full-flush path above.
 	filterRejected := t.filterReject
+
+	t.forgetLLMObsSpans(finishedSpans)
 
 	// Update trace state and release lock BEFORE acquiring fSpan lock
 	// Clear the tail so the GC can collect the flushed spans; without this the

@@ -51,8 +51,8 @@ func TestCrashtrackerMainInjection(t *testing.T) {
 		plainBinary += ".exe"
 	}
 
-	buildVictim(t, moduleRoot, injectedBinary, true)
-	buildVictim(t, moduleRoot, plainBinary, false)
+	buildVictim(t, moduleRoot, injectedBinary, victimImportPath, true)
+	buildVictim(t, moduleRoot, plainBinary, victimImportPath, false)
 
 	received := make(chan []byte, 2)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -79,8 +79,8 @@ func TestCrashtrackerMainInjection(t *testing.T) {
 		// crashtracker.Start() called directly, not via injection, is
 		// otherwise known to work there), and discarding stdout/stderr left
 		// no way to tell whether the injected Start() call ran at all, ran
-		// and failed to spawn the monitor, or spawned a monitor that failed
-		// to upload.
+		// and failed to start the application child, or started it and the
+		// supervisor failed to upload.
 		t.Fatalf("timed out waiting for crash report from orchestrion-built victim\nvictim output:\n%s", injectedOut)
 	}
 
@@ -236,16 +236,16 @@ func integrationModuleRoot(t *testing.T) string {
 // uninstrumented `go build` otherwise. The two modes share their timeout and
 // error-reporting shape so a fix to one (e.g. the deadline) cannot miss the
 // other.
-func buildVictim(t *testing.T, moduleRoot, output string, instrumented bool) {
+func buildVictim(t *testing.T, moduleRoot, output, importPath string, instrumented bool) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	var cmd *exec.Cmd
 	if instrumented {
-		cmd = orchestrionCommand(ctx, "go", "build", "-o", output, victimImportPath)
+		cmd = orchestrionCommand(ctx, "go", "build", "-o", output, importPath)
 	} else {
-		cmd = exec.CommandContext(ctx, "go", "build", "-o", output, victimImportPath)
+		cmd = exec.CommandContext(ctx, "go", "build", "-o", output, importPath)
 		// This build must never be orchestrion-instrumented -- that is the
 		// whole point of the negative assertion in TestCrashtrackerMainInjection.
 		// DRIVER and TOOLEXEC CI modes activate orchestrion via an explicit
@@ -335,13 +335,14 @@ func runVictim(t *testing.T, binary, agentURL string) []byte {
 // DD_TRACE_AGENT_URL: an ambient key from a developer's shell or CI
 // environment would send the victim's report to the real intake instead of
 // srv, and the caller would wait out its full 15s timeout for a report that
-// never arrives.
+// never arrives. The internal crash-pipe marker must not select the child
+// role in an unrelated victim process.
 func filterInjectionEnv(env []string) []string {
 	filtered := make([]string, 0, len(env))
 	for _, kv := range env {
 		if strings.HasPrefix(kv, "DD_TRACE_AGENT_URL=") ||
 			strings.HasPrefix(kv, "DD_CRASHTRACKING_ENABLED=") ||
-			strings.HasPrefix(kv, "DD_CRASHTRACKING_IS_MONITOR_PROCESS=") ||
+			strings.HasPrefix(kv, "_DD_CRASHTRACKING_SUPERVISED_FD=") ||
 			strings.HasPrefix(kv, "DD_TRACE_ENABLED=") ||
 			strings.HasPrefix(kv, "DD_INSTRUMENTATION_TELEMETRY_ENABLED=") ||
 			strings.HasPrefix(kv, "DD_REMOTE_CONFIGURATION_ENABLED=") ||

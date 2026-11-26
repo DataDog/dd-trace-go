@@ -26,6 +26,10 @@ The config package also supports reporting telemetry. This functionality is buil
 
 Contains Test Optimization internals, including Go `testing` instrumentation, CI metadata collection, backend feature negotiation, ITR skippable-test handling, code coverage payloads, and subprocess fixtures. The [overview](./civisibility/CIVISIBILITY_OVERVIEW.md) documents the ITR coverage backfill safety model and its manual and Orchestrion validation fixtures.
 
+### Crashtracker State
+
+Tells the tracer and the profiler that the current process is about to become the crashtracker supervisor. With the crashtracker Orchestrion integration, the supervisor does not start the tracer or the profiler, and the application does. See [./crashtrackerstate](./crashtrackerstate/) and the [crashtracker package documentation](../crashtracker/doc.go).
+
 ### Env
 
 Contains important functions for getting and looking up environment variables. Whenever needed, use `env.Lookup` or `env.Get` instead of built in `os.Getenv` functions. This is also available at [instrumentation/env](../instrumentation/env/) for those packages that cannot import internal modules.
@@ -37,6 +41,10 @@ It also holds `supported_configurations*`, which maintains which environment var
 ### Client IP
 
 Owns the shared HTTP client-IP resolution policy used by tracing and AppSec.
+
+### Codeowners
+
+Provides the dependency-free CODEOWNERS parser and matcher used by CI Visibility and repository audit tools. Repository-specific pattern validation remains in `scripts/check_codeowners.go`.
 
 ### Locking
 
@@ -80,6 +88,8 @@ Adopting this in an existing `log.Error` call site means calling `ReportError`/`
 4. **It fires on the tracer's own startup/poll path, not a customer request.** `ReportError`/`ReportPanic` capture the stack trace eagerly at the call site (`WithCaptureStacktraceNow`), so a report made before `telemetry.StartApp` still points at the real call site once replayed — that is not a reason to avoid reporting early. The actual risk with reporting before `StartApp` is the 512-entry ring buffer shared by every global telemetry call: an early burst (e.g. a startup race with a concurrent poll) can evict earlier queued reports before they are ever transmitted, with only a single debug-level log (off by default) as a signal. Prefer a site that fires after `StartApp` when you have the choice; if you don't, know that eviction — not a bad stack trace — is the failure mode to watch for.
 
 A `statsd`/telemetry **count** is the right tool when you want to know *how often* something happens; `ReportError` is the right tool when you want to know *where*. A site that already emits a count with a `reason:` tag and carries no error value usually needs nothing more.
+
+The `scripts/errtrackaudit` tool (`make errtrack-audit`, posted as a PR comment by the errtrack-audit workflow) reports the current inventory of `internal/log.Error`/`Warn` call sites against this policy, tagged `CANDIDATE` or `LIKELY_INELIGIBLE` by textual triage heuristics and grouped by owning team. A site marked `//errtrack:ignore` has been reviewed and drops out of that audit.
 
 **Picking a helper.** Use `LogAndReportError`/`LogAndReportPanic` only when the site already matches `log.Error("<constant>: %s", err.Error())` exactly — the rewrite is then output-identical, including `internal/log`'s dedup key. Otherwise leave the existing `log.Error` call as-is and add a bare `ReportError`/`ReportPanic` next to it.
 
