@@ -79,10 +79,6 @@ func (mux *ServeMux) HandleFunc(pttrn string, handlerFunc func(http.ResponseWrit
 	mux.Handle(pttrn, http.HandlerFunc(handlerFunc))
 }
 
-// ServeHTTP dispatches the request to the handler
-// whose pattern most closely matches the request URL.
-// We only need to rewrite this function to be able to trace
-// all the incoming requests to the underlying multiplexer
 // reportingServeMux serves a request with a ServeMux, then reports its path
 // values. A route registered on a caller-provided *http.ServeMux reports no path
 // parameters (see NewServeMux). ServeMux sets the pattern and the path values of
@@ -93,10 +89,17 @@ type reportingServeMux struct{ *http.ServeMux }
 func (mux reportingServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	mux.ServeMux.ServeHTTP(w, r)
 	if strings.Contains(r.Pattern, "{") {
-		httpsec.ReportRouteParams(r.Context(), pattern.PathParameters(r.Pattern, r))
+		httpsec.ReportMatchedRoute(r.Context(), httpsec.MatchedRoute{
+			Route:  pattern.Route(r.Pattern),
+			Params: pattern.PathParameters(r.Pattern, r),
+		})
 	}
 }
 
+// ServeHTTP dispatches the request to the handler
+// whose pattern most closely matches the request URL.
+// We only need to rewrite this function to be able to trace
+// all the incoming requests to the underlying multiplexer
 func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if mux.cfg.IgnoreRequest(r) {
 		mux.ServeMux.ServeHTTP(w, r)

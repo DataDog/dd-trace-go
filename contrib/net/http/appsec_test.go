@@ -401,14 +401,27 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 	mux := NewServeMux(WithServeMux(underlying))
 	mux.HandleFunc("/wrapped/{path...}", func(http.ResponseWriter, *http.Request) {})
 
+	mux.HandleFunc("/static/", func(http.ResponseWriter, *http.Request) {})
+	// The normalized route follows the path that the mux matched, not the path
+	// of the request URI.
+	stripped := http.StripPrefix("/api", mux)
+
 	for target, want := range map[string]string{
-		"/direct/a/b":  "/direct/{path}",
-		"/direct/":     "/direct/",
-		"/wrapped/a/b": "/wrapped/{path}",
-		"/wrapped/":    "/wrapped/",
+		"/direct/a/b":    "/direct/{path}",
+		"/direct/":       "/direct/",
+		"/wrapped/a/b":   "/wrapped/{path}",
+		"/wrapped/":      "/wrapped/",
+		"/api/static/":   "/static/",
+		"/api/static/a":  "/static/{param1}",
+		"/api/wrapped/a": "/wrapped/{path}",
+		"/api/wrapped/":  "/wrapped/",
 	} {
+		var handler http.Handler = mux
+		if strings.HasPrefix(target, "/api/") {
+			handler = stripped
+		}
 		mt := mocktracer.Start()
-		mux.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, target, nil))
+		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, target, nil))
 		spans := mt.FinishedSpans()
 		mt.Stop()
 		require.Len(t, spans, 1, target)

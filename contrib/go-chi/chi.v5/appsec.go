@@ -7,6 +7,7 @@ package chi
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
@@ -31,13 +32,14 @@ import (
 // route (RouteMatched without parameters): API Security uses the route as the
 // sampling key, and api_security.missing_route counts the requests without it. The
 // report sends only the route and causes no additional native WAF evaluation. The
-// path parameters of the selected route always go to API Security only
-// (ReportRouteParams), for the catch-all of the normalized route; the WAF does not
-// get them. They can differ from what AppSec read before the handler even when the
-// route is the same: with r.With(Middleware()) in a mounted router, the first "*"
-// is the mount's. A late
-// block replaces the response only if it is not sent yet (see "Late blocks and route
-// reports in HTTP contribs" in internal/appsec/README.md).
+// route as chi's patterns declare it and the path parameters of the selected route
+// always go to API Security only (ReportMatchedRoute), for the normalized route; the
+// WAF does not get them. Unlike the reported route, that route keeps a declared
+// trailing "/" and is not renamed by WithModifyResourceName. The parameters can
+// differ from what AppSec read before the handler even when the route is the same:
+// with r.With(Middleware()) in a mounted router, the first "*" is the mount's. A
+// late block replaces the response only if it is not sent yet (see "Late blocks and
+// route reports in HTTP contribs" in internal/appsec/README.md).
 //
 // The response writer is wrapped in a commitTracker (see writer_appsec.go) to know
 // if the response is sent.
@@ -63,6 +65,16 @@ func withAppsec(next http.Handler, span trace.TagSetter, cfg *config, cache *syn
 		appsecCfg.Route, appsecCfg.RouteParams = route, params
 
 		late := http.HandlerFunc(func(w http.ResponseWriter, tr *http.Request) {
+			// Deferred, so that the normalized route of a request whose handler
+			// panics is not built from the renamed route.
+			defer func() {
+				if rc := chi.RouteContext(tr.Context()); rc != nil {
+					httpsec.ReportMatchedRoute(tr.Context(), httpsec.MatchedRoute{
+						Route:  declaredRoute(rc, cache),
+						Params: selectedParams(rc),
+					})
+				}
+			}()
 			next.ServeHTTP(w, tr)
 
 			rc := chi.RouteContext(tr.Context())
@@ -74,12 +86,33 @@ func withAppsec(next http.Handler, span trace.TagSetter, cfg *config, cache *syn
 				// commitTracker tells if the response can still be replaced.
 				_ = httpsec.RouteMatched(tr.Context(), finalRoute, nil)
 			}
-			// API Security only: the WAF does not get the parameters.
-			httpsec.ReportRouteParams(tr.Context(), selectedParams(rc))
 		})
 
 		httpsec.WrapHandler(late, span, &appsecCfg).ServeHTTP(tw, r)
 	})
+}
+
+// declaredRoute returns the route that chi selected, as its patterns declare it.
+// Unlike RoutePattern, it keeps a declared trailing "/": /users/{id}/. The root
+// route "/" of a mounted router adds none, as chi serves it for the mount path
+// with and without "/". It is empty when routing stopped at a mounted chi router
+// that has no route for the request.
+func declaredRoute(rctx *chi.Context, cache *sync.Map) string {
+	n := len(rctx.RoutePatterns)
+	if n == 0 || unmatchedSubrouter(rctx, cache) {
+		return ""
+	}
+	route := strings.Join(rctx.RoutePatterns, "")
+	for strings.Contains(route, "/*/") {
+		route = strings.ReplaceAll(route, "/*/", "/")
+	}
+	if n > 1 && rctx.RoutePatterns[n-1] == "/" {
+		route = strings.TrimRight(route, "/")
+	}
+	if route == "" {
+		return "/"
+	}
+	return route
 }
 
 // selectedParams returns the parameters of the route that chi selected. The last

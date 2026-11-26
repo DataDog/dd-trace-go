@@ -389,41 +389,55 @@ go-chi details are next to the code: the route timing and the WAF input in
 
 With API Security enabled, `listener/httpsec` sets `_dd.appsec.normalized_route`
 (RFC-1125) when the response is reported: the route of the request as an OpenAPI
-path template, such as `/users/{id}`. It is computed from the route, the path
-parameters and the request URI of the `httpsec.HandlerOperation`, after any
-`RouteMatched` call, with the grammar of the framework that started the operation
-(`normalized_route.go`). An unknown framework or a route that cannot be expressed
-as segments and parameters gets no tag.
+path template, such as `/users/{id}`. It is computed with the grammar of the
+framework that started the `httpsec.HandlerOperation` (`normalized_route.go`)
+from the route, its path parameters, and the path that the router matched. An
+unknown framework or a route that cannot be expressed as segments and parameters
+gets no tag.
 
-The route must come from a router. `httptrace.BeforeHandle` uses a route inferred
-from the request URL as the API Security sampling key when the integration has no
-route, and sets `httpsec.Config.RouteInferred` for it: such a route gets no tag.
+The route must come from a router. By default it is the route of the operation,
+after any `RouteMatched` call, with its path parameters. `httptrace.BeforeHandle`
+uses a route inferred from the request URL as the API Security sampling key when
+the integration has no route, and sets `httpsec.Config.RouteInferred` for it: such
+a route gets no tag. An integration whose operation route is not the router's own,
+or that learns the route after the handler started, reports it with
+`httpsec.ReportMatchedRoute`, which is for API Security only: no WAF evaluation,
+and the sampling key is unchanged. An empty reported route gets no tag.
+- go-chi v5 reports the route from `RoutePatterns`, which keeps a declared trailing
+  `/` and is not renamed by `WithModifyResourceName`, with the parameters of the
+  selected route. A request that stops at a mounted chi router with no route for
+  it reports no route. go-chi v1 reports the late route and its parameters.
+- net/http reports the pattern and the path values of a route registered on a
+  caller-provided `*http.ServeMux`, which reports no path parameters to the WAF.
+- fiber reports the path that it matched (`c.Path()`) and `UnescapePath`.
 
-An optional parameter or a catch-all is in the tag only when its path parameter
-has a non-empty value. Without a value, it is left out, which is the fallback that
-RFC-1125 allows. go-chi reports a late route without parameters to the WAF, so it
-gives the parameters of that route with `httpsec.ReportRouteParams`, which stores
-them for API Security and causes no WAF evaluation. net/http does the same for a
-route registered on a caller-provided `*http.ServeMux`.
+The path that the router matched is the escaped path of the request URL that
+`httpsec.BeforeHandle` gets, as the router reads it, so a handler before the
+router that rewrites it (`http.StripPrefix`) is followed.
+
+Every Go integration that sets the tag resolves the presence of its optional parts:
+an optional parameter or a catch-all is in the tag only when its path parameter
+has a non-empty value. When the parameter has no value, or a prefix catch-all
+below cannot be found, it is left out: the fallback that RFC-1125 allows.
 
 A prefix route has an implicit catch-all: the rest of the path after the part that
 the route matched. Routers report a prefix route as its template, so the listener
 rebuilds that part from the route's static text and the values that the router
 bound to its parameters:
-- gorilla/mux `PathPrefix`: the part starts the unescaped path, or the escaped
-  path with `UseEncodedPath`, where the `%XX` of the route are escaped bytes.
-  The operation does not tell which: when both paths start with the part and
-  give different routes, the request gets no tag. A `Path` route matches the
-  whole path, so it has no rest.
-- fiber `Use`, `Static` and mounts: the part starts the escaped path, ignoring
-  case. A route that ends with `*` or `+` takes the rest of the path.
+- gorilla/mux `PathPrefix`: the part starts the unescaped path (the escaped path
+  with `UseEncodedPath`, which the integration cannot read). A `Path` route
+  matches the whole path, so it has no rest.
+- fiber `Use`, `Static` and mounts: the part starts the path that fiber matched,
+  ignoring case. A route that ends with `*` or `+` takes the rest of the path.
 
 Without the value of a parameter, or when the path does not start with the part,
 the route gets no catch-all.
 
 The `%XX` in the static text of a route are escaped bytes only when the router
-matched the escaped path: always for net/http and fiber, when net/http sets
-`URL.RawPath` for go-chi and echo v4, and as found above for gorilla/mux.
+matches the escaped path: always for net/http, for fiber without `UnescapePath`,
+and for go-chi and echo v4 when net/http sets `URL.RawPath`. When the setting
+that decides it cannot be read (gorilla/mux `UseEncodedPath`, echo v5
+`UseEscapedPathForMatching`), `%` is static text and is encoded as `%25`.
 
 fiber reports no route when its router found none: its 404 names the method and
 the path, and its 405 sets `Allow` after a middleware. A handler's own 404, and

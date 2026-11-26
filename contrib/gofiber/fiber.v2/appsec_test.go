@@ -274,6 +274,9 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 			return fiber.ErrMethodNotAllowed
 		})
 		app.Get("/color::color", func(c *fiber.Ctx) error { return c.SendString("ok") })
+		app.Get("/files/*.txt", func(c *fiber.Ctx) error { return c.SendString("ok") })
+		app.Get("/a%2Fb", func(c *fiber.Ctx) error { return c.SendString("ok") })
+		app.Use("/p%25", func(c *fiber.Ctx) error { return c.SendString("ok") })
 		app.Use("/w/*/fixed", func(c *fiber.Ctx) error { return c.SendString("ok") })
 		// A prefix handler that answers 405 itself keeps its route.
 		app.Use("/readonly", func(*fiber.Ctx) error { return fiber.ErrMethodNotAllowed })
@@ -289,7 +292,11 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 	// the handler.
 	endpoint := fiber.New()
 	endpoint.Get("/users/:id", Middleware(), func(c *fiber.Ctx) error { return c.SendString("ok") })
-	apps := map[string]*fiber.App{"Wrap": routes(wrapped), "Middleware": routes(middleware), "Endpoint": endpoint}
+	// UnescapePath: fiber matches the unescaped path, where the % of a route
+	// is static text.
+	unescaped := fiber.New(fiber.Config{UnescapePath: true})
+	unescaped.Use(Middleware())
+	apps := map[string]*fiber.App{"Wrap": routes(wrapped), "Middleware": routes(middleware), "Endpoint": endpoint, "UnescapePath": routes(unescaped)}
 
 	for name, app := range apps {
 		for _, tc := range []struct {
@@ -305,11 +312,21 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 			{"GET", "/missing/1", http.StatusNotFound, "/missing/{id}"},
 			{"GET", "/refused", http.StatusMethodNotAllowed, "/refused"},
 			{"GET", "/color:blue", http.StatusOK, "/color%3A{color}"},
+			{"GET", "/files/report.txt", http.StatusOK, "/files/{param1}.txt"},
+			{"GET", "/a%2Fb", http.StatusOK, "/a%2Fb"},
+			{"GET", "/a%252Fb", http.StatusOK, "/a%252Fb"},
+			{"GET", "/p%2525/x", http.StatusOK, "/p%2525/{param1}"},
 			{"GET", "/api/v1/x", http.StatusOK, "/api/{param1}"},
 			{"GET", "/w/x/fixed/rest", http.StatusOK, "/w/{param1}/fixed/{param2}"},
 			{"GET", "/static/app.css", http.StatusOK, "/static/{param1}"},
 		} {
 			if name == "Endpoint" && (tc.method != "GET" || tc.target != "/users/1") {
+				continue
+			}
+			// The escaped path matches the route only without UnescapePath, the
+			// unescaped one only with it.
+			if escapedOnly, unescapedOnly := tc.target == "/a%2Fb", tc.target == "/a%252Fb" || tc.target == "/p%2525/x"; (escapedOnly && name == "UnescapePath") ||
+				(unescapedOnly && name != "UnescapePath") {
 				continue
 			}
 			t.Run(name+" "+tc.method+" "+tc.target, func(t *testing.T) {

@@ -558,18 +558,41 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 	router := chi.NewRouter()
 	router.Use(Middleware())
 	router.Get("/users/{id}", okHandler)
+	router.Get("/posts/{id}/", okHandler)
 	router.Get("/files/*", okHandler)
 	api := chi.NewRouter()
+	api.Get("/", okHandler)
 	api.Get("/static/*", okHandler)
 	router.Mount("/api", api)
 	for target, want := range map[string]string{
 		"/users/1":       "/users/{id}",
+		"/posts/1/":      "/posts/{id}/",
 		"/files/a/b.txt": "/files/{param1}",
 		"/files/":        "/files/",
+		"/api":           "/api",
+		"/api/":          "/api",
 		"/api/static/a":  "/api/static/{param1}",
 		"/api/static/":   "/api/static/",
 	} {
 		assert.Equal(t, want, requestTags(t, router, target)["_dd.appsec.normalized_route"], target)
+	}
+
+	// WithModifyResourceName renames http.route, not the normalized route. A
+	// request that matches no route gets no tag, also when the renamed route is
+	// not empty.
+	renamed := chi.NewRouter()
+	renamed.Use(Middleware(WithModifyResourceName(func(string) string { return "/renamed" })))
+	renamed.Get("/users/{id}/", okHandler)
+	renamedAPI := chi.NewRouter()
+	renamedAPI.Get("/x", okHandler)
+	renamed.Mount("/api", renamedAPI)
+	tags := requestTags(t, renamed, "/users/1/")
+	assert.Equal(t, "/renamed", tags["http.route"])
+	assert.Equal(t, "/users/{id}/", tags["_dd.appsec.normalized_route"])
+	for _, target := range []string{"/nope", "/api/nope"} {
+		tags := requestTags(t, renamed, target)
+		assert.Equal(t, "/renamed", tags["http.route"], target)
+		assert.NotContains(t, tags, "_dd.appsec.normalized_route", target)
 	}
 
 	// Middleware on an endpoint of a mounted router: the route is the same before

@@ -7,9 +7,10 @@ package httpsec
 
 import (
 	"net/url"
-	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 )
 
 // normalizedRouteTag is the span tag that holds the route of the request as an
@@ -20,8 +21,7 @@ const normalizedRouteTag = "_dd.appsec.normalized_route"
 type routePart struct {
 	// static is the text of a static part, as the framework matches it.
 	static string
-	// param reports that the part is a path parameter.
-	param bool
+	param  bool
 	// name is the framework name of the parameter. It is empty for an unnamed
 	// catch-all.
 	name string
@@ -39,48 +39,49 @@ type routePart struct {
 //
 // The normalized route describes the current request: an optional parameter or
 // a catch-all is in it only when the framework bound a non-empty value to it.
-// When params has no value for it, its presence cannot be determined and it is
-// left out.
-func normalizeRoute(framework, route string, params map[string]string, requestURI string) (string, bool) {
+// When the parameters have no value for it, its presence cannot be determined
+// and it is left out.
+func normalizeRoute(framework string, matched httpsec.MatchedRoute) (string, bool) {
+	route, params, path := matched.Route, matched.Params, matched.Path
 	var (
 		parts []routePart
 		ok    bool
 		// escapes reports that the framework matches a %XX in a route as an
-		// escaped byte. Otherwise % is static text.
+		// escaped byte. Otherwise % is static text, as when the setting that
+		// decides it cannot be read.
 		escapes bool
 	)
 	switch framework {
 	case "net/http":
-		parts, ok = parseServeMuxRoute(route, params, requestURI)
+		parts, ok = parseServeMuxRoute(route, params, path)
 		escapes = true
 	case "github.com/gorilla/mux":
-		if parts, ok = parseBraceRoute(route, params, false); ok {
-			return normalizeGorillaRoute(parts, params, requestURI)
+		parts, ok = parseBraceRoute(route, params, false)
+		if ok {
+			parts = appendGorillaRemainder(parts, params, path)
 		}
 	case "github.com/go-chi/chi", "github.com/go-chi/chi/v5":
 		parts, ok = parseBraceRoute(route, params, true)
 		// chi matches URL.RawPath when net/http sets it, otherwise URL.Path.
-		escapes = hasRawPath(requestURI)
+		escapes = hasRawPath(path)
 	case "github.com/gin-gonic/gin":
 		parts, ok = parseColonRoute(route, params, true)
 	case "github.com/labstack/echo/v4":
 		parts, ok = parseColonRoute(route, params, false)
-		// As chi, echo v4 matches URL.RawPath when net/http sets it.
-		escapes = hasRawPath(requestURI)
+		escapes = hasRawPath(path)
 	case "github.com/labstack/echo/v5":
-		// echo v5 matches URL.Path, unless the application sets
-		// RouterConfig.UseEscapedPathForMatching.
+		// echo v5 matches URL.Path unless RouterConfig.UseEscapedPathForMatching
+		// is set, which the integration cannot read: % is static text.
 		parts, ok = parseColonRoute(route, params, false)
 	case "github.com/gofiber/fiber/v2":
-		var matched string
-		parts, matched, ok = parseFiberRoute(route, params)
+		var text string
+		parts, text, ok = parseFiberRoute(route, params)
 		if ok {
-			parts = appendFiberRemainder(parts, matched, requestURI)
+			parts = appendFiberRemainder(parts, text, path)
 		}
-		// fiber matches the route with the path as the client sent it, still
-		// escaped (unless UnescapePath is set, but then a route with %XX does
-		// not match anything).
-		escapes = true
+		// fiber matches the path as the client sent it, still escaped, unless
+		// UnescapePath is set.
+		escapes = !matched.LiteralPercent
 	default:
 		// Other integrations report a route that is not the router's own
 		// (httprouter and httptreemux rebuild it from the request path), or
@@ -90,7 +91,7 @@ func normalizeRoute(framework, route string, params map[string]string, requestUR
 	if !ok {
 		return "", false
 	}
-	return assembleRoute(parts, escapes, strings.HasSuffix(requestPath(requestURI), "/"))
+	return assembleRoute(parts, escapes, strings.HasSuffix(path, "/"))
 }
 
 // hasValue reports that the framework bound a value to the catch-all or
@@ -107,8 +108,9 @@ func hasValue(params map[string]string, key string, trimSlash bool) bool {
 // parseServeMuxRoute parses a [net/http.ServeMux] pattern, without its method:
 // [HOST]/[PATH], where a segment of PATH is a literal, {name}, {name...} or
 // {$}. The host contributes nothing. A pattern that ends with "/" matches a
-// whole subtree: the rest of the path is an unnamed catch-all.
-func parseServeMuxRoute(route string, params map[string]string, requestURI string) ([]routePart, bool) {
+// whole subtree: the rest of path, the escaped path that ServeMux matched, is
+// an unnamed catch-all.
+func parseServeMuxRoute(route string, params map[string]string, path string) ([]routePart, bool) {
 	i := strings.IndexByte(route, '/')
 	if i < 0 {
 		return nil, false
@@ -131,7 +133,7 @@ func parseServeMuxRoute(route string, params map[string]string, requestURI strin
 			// Trailing slash: a prefix route.
 			parts = append(parts,
 				routePart{static: "/"},
-				routePart{param: true, absent: !hasServeMuxRemainder(route, requestURI)},
+				routePart{param: true, absent: !hasServeMuxRemainder(route, path)},
 			)
 			break
 		}
@@ -170,11 +172,10 @@ func parseServeMuxRoute(route string, params map[string]string, requestURI strin
 	return parts, true
 }
 
-// hasServeMuxRemainder reports that the request path continues after the
-// segments of the prefix route pattern (which ends with "/"). It returns false
-// when the request path is unknown.
-func hasServeMuxRemainder(pattern string, requestURI string) bool {
-	path := requestPath(requestURI)
+// hasServeMuxRemainder reports that path continues after the segments of the
+// prefix route pattern (which ends with "/"). It returns false when the path is
+// unknown.
+func hasServeMuxRemainder(pattern string, path string) bool {
 	for range strings.Count(pattern, "/") {
 		i := strings.IndexByte(path, '/')
 		if i < 0 {
@@ -185,28 +186,11 @@ func hasServeMuxRemainder(pattern string, requestURI string) bool {
 	return path != ""
 }
 
-// hasRawPath reports that net/http sets URL.RawPath for requestURI: its escaped
-// path is not the default escaping of its unescaped path, as in /a%2Fb.
-func hasRawPath(requestURI string) bool {
-	escaped := requestPath(requestURI)
+// hasRawPath reports that net/http sets URL.RawPath for the escaped path: it is
+// not the default escaping of its unescaped path, as in /a%2Fb.
+func hasRawPath(escaped string) bool {
 	unescaped, err := url.PathUnescape(escaped)
 	return err == nil && (&url.URL{Path: unescaped}).EscapedPath() != escaped
-}
-
-// requestPath returns the escaped path of a request URI.
-func requestPath(requestURI string) string {
-	if i := strings.IndexByte(requestURI, '?'); i >= 0 {
-		requestURI = requestURI[:i]
-	}
-	if strings.HasPrefix(requestURI, "/") || requestURI == "" {
-		return requestURI
-	}
-	// Absolute form, as sent to a proxy.
-	u, err := url.Parse(requestURI)
-	if err != nil {
-		return ""
-	}
-	return u.EscapedPath()
 }
 
 // parseBraceRoute parses a gorilla/mux or go-chi route: {name} or
@@ -268,48 +252,24 @@ func appendCatchAll(parts []routePart, rest string) []routePart {
 	return append(parts, routePart{param: true})
 }
 
-// normalizeGorillaRoute normalizes a gorilla/mux route, with the implicit
-// unnamed catch-all of a PathPrefix route: the rest of the request path after
-// the text that the route matched, its literal text and the values that gorilla
-// bound to its variables. The template does not tell a PathPrefix route from a
-// Path route, but a Path route matches the whole path, so it has no rest.
+// appendGorillaRemainder adds the implicit unnamed catch-all of a gorilla/mux
+// PathPrefix route: the rest of the path after the text that the route matched,
+// its literal text and the values that gorilla bound to its variables. The
+// template does not tell a PathPrefix route from a Path route, but a Path route
+// matches the whole path, so it has no rest.
+//
 // gorilla matches the unescaped path, or the escaped path with UseEncodedPath,
-// where the %XX of the route are escaped bytes, and the operation does not tell
-// which. Each path that starts with the matched text is a candidate: when they
-// give different routes, the route is unknown. Without the value of a variable,
-// the route gets no catch-all.
-func normalizeGorillaRoute(parts []routePart, params map[string]string, requestURI string) (string, bool) {
-	escaped := requestPath(requestURI)
-	trailingSlash := strings.HasSuffix(escaped, "/")
+// which the integration cannot read: this reads the unescaped path, where the %
+// of the route is static text. When the unescaped path does not start with the
+// matched text, or without the value of a variable, the presence of the
+// catch-all cannot be determined: it is left out.
+func appendGorillaRemainder(parts []routePart, params map[string]string, escaped string) []routePart {
 	matched, known := matchedText(parts, params)
-	if !known || requestURI == "" {
-		return assembleRoute(parts, false, trailingSlash)
+	unescaped, err := url.PathUnescape(escaped)
+	if !known || err != nil || !strings.HasPrefix(unescaped, matched) {
+		return parts
 	}
-	candidates := []struct {
-		path    string
-		escapes bool
-	}{{escaped, true}}
-	if unescaped, err := url.PathUnescape(escaped); err == nil {
-		candidates = append(candidates, struct {
-			path    string
-			escapes bool
-		}{unescaped, false})
-	}
-	var normalized string
-	for _, candidate := range candidates {
-		if !strings.HasPrefix(candidate.path, matched) {
-			continue
-		}
-		route, ok := assembleRoute(appendCatchAll(slices.Clip(parts), candidate.path[len(matched):]), candidate.escapes, trailingSlash)
-		if !ok || (normalized != "" && route != normalized) {
-			return "", false
-		}
-		normalized = route
-	}
-	if normalized == "" {
-		return assembleRoute(parts, false, trailingSlash)
-	}
-	return normalized, true
+	return appendCatchAll(parts, unescaped[len(matched):])
 }
 
 // matchedText returns the path text that parts matched: their static text and
@@ -420,7 +380,6 @@ func colonParamEnd(route string, start int, gin bool) int {
 	return i
 }
 
-// isEscapedColon reports that route has "\:" at i.
 func isEscapedColon(route string, i int) bool {
 	return route[i] == '\\' && i+1 < len(route) && route[i+1] == ':'
 }
@@ -572,13 +531,12 @@ func fiberConstraintEnd(param string) int {
 }
 
 // appendFiberRemainder adds the implicit unnamed catch-all of a fiber prefix
-// route (Use, Static, a mount): the rest of the escaped request path after the
-// text that the route matched. fiber matches the other routes with the whole
-// path, but for a trailing "/", so they have no rest. fiber ignores the case of
-// the path by default. A path that does not start with the matched text has a
-// route or values that fiber rewrote: it gets no catch-all.
-func appendFiberRemainder(parts []routePart, matched, requestURI string) []routePart {
-	path := requestPath(requestURI)
+// route (Use, Static, a mount): the rest of path, the path that fiber matched,
+// after the text that the route matched. fiber matches the other routes with
+// the whole path, but for a trailing "/", so they have no rest. fiber ignores
+// the case of the path by default. A path that does not start with the matched
+// text has a route or values that fiber rewrote: it gets no catch-all.
+func appendFiberRemainder(parts []routePart, matched, path string) []routePart {
 	if matched == "" || len(path) <= len(matched) || !strings.EqualFold(path[:len(matched)], matched) {
 		return parts
 	}

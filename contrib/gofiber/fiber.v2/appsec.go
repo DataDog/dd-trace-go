@@ -119,13 +119,8 @@ func useAppSec(c *fiber.Ctx, span trace.TagSetter, next func() error) (err error
 
 	err = next()
 
-	// Wrap's route guards already report parameters before user code. Keep
-	// this fallback for global Middleware users and routes without parameters.
-	if route := c.Route(); !request.blocked.Load() && route != nil && route.Path != "" && route != request.route &&
-		!isNoRouteError(c, route, err) && !answeredByRootMiddleware(c, route, err) {
-		if blockErr := httpsec.RouteMatched(ctx, route.Path, c.AllParams()); blockErr != nil {
-			instr.Logger().Debug("gofiber/fiber.v2: request blocked on route parameters: %s", blockErr.Error())
-		}
+	if !request.blocked.Load() {
+		reportRoute(ctx, c, request, err)
 	}
 
 	if err != nil && !request.blocked.Load() {
@@ -143,6 +138,25 @@ func useAppSec(c *fiber.Ctx, span trace.TagSetter, next func() error) (err error
 		return nil, true
 	}
 	return err, handledResponse
+}
+
+// reportRoute reports the route of the request after the handler chain ran.
+// Wrap's route guards already report parameters before user code: this is the
+// fallback for global Middleware users and routes without parameters. API
+// Security also gets the path that fiber matched, and whether fiber matches the
+// unescaped path (UnescapePath), where the % of the route is static text.
+func reportRoute(ctx context.Context, c *fiber.Ctx, request *appsecRequest, err error) {
+	matched := httpsec.MatchedRoute{Path: c.Path(), LiteralPercent: c.App().Config().UnescapePath}
+	route := c.Route()
+	if route != nil && route.Path != "" && !isNoRouteError(c, route, err) && !answeredByRootMiddleware(c, route, err) {
+		matched.Route, matched.Params = route.Path, c.AllParams()
+		if route != request.route {
+			if blockErr := httpsec.RouteMatched(ctx, route.Path, matched.Params); blockErr != nil {
+				instr.Logger().Debug("gofiber/fiber.v2: request blocked on route parameters: %s", blockErr.Error())
+			}
+		}
+	}
+	httpsec.ReportMatchedRoute(ctx, matched)
 }
 
 // isNoRouteError reports whether err is the error that fiber's router returns

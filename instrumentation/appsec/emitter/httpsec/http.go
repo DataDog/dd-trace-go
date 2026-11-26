@@ -52,10 +52,12 @@ type (
 		route string
 		// routeInferred reports that route was inferred from the request URL, and not matched by a router.
 		routeInferred bool
-		// pathParams are the path parameters of the route.
-		pathParams map[string]string
-		// requestURI is the request URI, as sent by the client.
-		requestURI string
+		pathParams    map[string]string
+		requestPath   string
+		// matchedRoute is the route that the integration reported with
+		// ReportMatchedRoute, when matchedRouteReported.
+		matchedRoute         MatchedRoute
+		matchedRouteReported bool
 
 		// downstreamRequestBodyAnalysis is the number of times a call to a downstream request body monitoring function was made.
 		downstreamRequestBodyAnalysis atomic.Int32
@@ -91,6 +93,26 @@ type (
 
 		// RouteInferred reports that RequestRoute was inferred from the request URL, and not matched by a router.
 		RouteInferred bool
+		// RequestPath is the escaped path of the request URL, as the router reads
+		// it. A handler before the router can make it differ from the path of
+		// RequestURI (http.StripPrefix).
+		RequestPath string
+	}
+
+	// MatchedRoute is the route that a router selected for a request, as API
+	// Security reads it to describe the route (see ReportMatchedRoute).
+	MatchedRoute struct {
+		// Route is the route as the router declares it, before any renaming.
+		// It is empty when the router selected no route.
+		Route string
+		// Params are the values that the router bound to the parameters of Route.
+		Params map[string]string
+		// Path is the path that the router matched Route with, when it is not
+		// the escaped path of the request.
+		Path string
+		// LiteralPercent reports that the router matches a "%" in Route as
+		// itself, when its default is to match it as the start of an escaped byte.
+		LiteralPercent bool
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
@@ -136,7 +158,7 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.T
 		route:            args.RequestRoute,
 		routeInferred:    args.RouteInferred,
 		pathParams:       args.PathParams,
-		requestURI:       args.RequestURI,
+		requestPath:      args.RequestPath,
 	}
 
 	// We need to use an atomic pointer to store the action because the action may be created asynchronously in the future.
@@ -187,9 +209,15 @@ func (op *HandlerOperation) PathParams() map[string]string {
 	return op.pathParams
 }
 
-// RequestURI returns the request URI of the current handler operation.
-func (op *HandlerOperation) RequestURI() string {
-	return op.requestURI
+// RequestPath returns the escaped path of the request URL, as the router reads it.
+func (op *HandlerOperation) RequestPath() string {
+	return op.requestPath
+}
+
+// ReportedMatchedRoute returns the route that the integration reported with
+// ReportMatchedRoute. It returns false when the integration reported none.
+func (op *HandlerOperation) ReportedMatchedRoute() (MatchedRoute, bool) {
+	return op.matchedRoute, op.matchedRouteReported
 }
 
 // DownstreamRequestBodyAnalysis returns the number of times a call to a downstream request body monitoring function was made.
@@ -321,18 +349,19 @@ func RouteMatched(ctx context.Context, route string, routeParams map[string]stri
 	return err
 }
 
-// ReportRouteParams records the path parameters of the route that the router
-// selected, for an integration that learns them after the handler started and
-// reports the route with RouteMatched without parameters. They are not sent to
-// the WAF: the call causes no WAF evaluation. API Security uses them to know
-// which catch-alls and optional parameters the request has.
-func ReportRouteParams(ctx context.Context, routeParams map[string]string) {
+// ReportMatchedRoute records the route that the router selected, for API
+// Security only: it describes the route of the request with it instead of the
+// route of the operation, which can be renamed for the span resource, and it
+// knows from its parameters which catch-alls and optional parameters the
+// request has. Nothing is sent to the WAF: the call causes no WAF evaluation,
+// and the route of the operation, its API Security sampling key, is unchanged.
+func ReportMatchedRoute(ctx context.Context, route MatchedRoute) {
 	op, ok := dyngo.FindOperation[HandlerOperation](ctx)
 	if !ok {
-		log.Debug("appsec: ReportRouteParams called without an active HandlerOperation in the context, ignoring")
+		log.Debug("appsec: ReportMatchedRoute called without an active HandlerOperation in the context, ignoring")
 		return
 	}
-	op.pathParams = routeParams
+	op.matchedRoute, op.matchedRouteReported = route, true
 }
 
 func responseStarted(w http.ResponseWriter) bool {
@@ -474,6 +503,7 @@ func BeforeHandle(
 		RequestURI:    r.RequestURI,
 		RequestRoute:  opts.Route,
 		RouteInferred: opts.RouteInferred,
+		RequestPath:   r.URL.EscapedPath(),
 		Host:          r.Host,
 		RemoteAddr:    r.RemoteAddr,
 		ClientIP:      clientIP,

@@ -121,14 +121,21 @@ func (feature *Feature) OnResponse(op *httpsec.HandlerOperation, resp httpsec.Ha
 	}
 }
 
-// setNormalizedRouteTag sets the normalized route of the request, when a router
-// matched a route that can be normalized.
+// setNormalizedRouteTag prefers the route that the integration reported with
+// ReportMatchedRoute: the route of the operation can be renamed, and its
+// parameters can be the ones that AppSec read before the router selected it.
 func setNormalizedRouteTag(op *httpsec.HandlerOperation) {
-	route := op.MatchedRoute()
-	if route == "" {
+	matched, reported := op.ReportedMatchedRoute()
+	if !reported {
+		matched = httpsec.MatchedRoute{Route: op.MatchedRoute(), Params: op.PathParams()}
+	}
+	if matched.Route == "" {
 		return
 	}
-	if normalized, ok := normalizeRoute(op.Framework(), route, op.PathParams(), op.RequestURI()); ok {
+	if matched.Path == "" {
+		matched.Path = op.RequestPath()
+	}
+	if normalized, ok := normalizeRoute(op.Framework(), matched); ok {
 		op.SetTag(normalizedRouteTag, normalized)
 	}
 }
