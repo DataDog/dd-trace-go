@@ -901,7 +901,7 @@ func TestJoinJobsRejectDependencyInducedSkips(t *testing.T) {
 				"needs.integration-test.result != 'success'",
 				"needs.external-app.result != 'success'",
 			},
-			deps: []string{"changes", "go-versions-matrix", "integration-test", "external-app"},
+			deps: []string{"changes", "go-versions-matrix", "service-containers", "integration-test", "external-app"},
 		},
 		{
 			workflow: "benchmark-apps.yml",

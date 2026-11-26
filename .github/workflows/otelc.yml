@@ -203,7 +203,31 @@ jobs:
           echo -n "json="                      >> "${GITHUB_OUTPUT}"
           go run ./internal/orchestrion/matrix >> "${GITHUB_OUTPUT}"
 
+  # The same service containers as the orchestrion lane, so the suites reuse
+  # them on Linux instead of starting their own with default settings.
+  service-containers:
+    name: Service containers
+    needs:
+      - changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      (needs.changes.outputs.otelc == 'true' &&
+      needs.changes.outputs.otelc-suites != 'NONE')
+    runs-on: ubuntu-latest
+    outputs:
+      services_json: ${{ steps.set-services.outputs.services_json }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Define Services JSON
+        id: set-services
+        run: |
+          echo "SERVICES_JSON=$(jq -c . ./internal/orchestrion/_integration/ci-services.json)" >> "${GITHUB_OUTPUT}"
+
   integration-test:
+    services: ${{ fromJSON(matrix.runs-on == 'ubuntu' && needs.service-containers.outputs.services_json || '{}') }}
     env:
       REPORT: gotestsum-report-otelc.xml
       # The suites the classifier selected: space-separated names, or the
@@ -217,6 +241,7 @@ jobs:
     needs:
       - changes
       - go-versions-matrix
+      - service-containers
     if: >-
       github.event_name != 'pull_request' ||
       (needs.changes.outputs.otelc == 'true' &&
@@ -318,6 +343,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |-
           docker compose -f "${{ github.workspace }}/instrumentation/testutils/containers/images/docker-compose.yaml" pull
+
+      # The Redis service needs memory overcommit. The setting is not namespaced,
+      # so it is set on the host.
+      - name: Enable memory overcommit
+        if: runner.os == 'Linux'
+        run: sudo sysctl vm.overcommit_memory=1
 
       - name: Run Tests
         shell: bash
@@ -448,6 +479,7 @@ jobs:
     needs:
       - changes
       - go-versions-matrix
+      - service-containers
       - integration-test
       - external-app
     runs-on: ubuntu-latest
@@ -464,6 +496,8 @@ jobs:
           needs.changes.result != 'success'
           || contains(fromJSON('["failure", "cancelled"]'),
           needs.go-versions-matrix.result)
+          || contains(fromJSON('["failure", "cancelled"]'),
+          needs.service-containers.result)
           || contains(fromJSON('["failure", "cancelled"]'),
           needs.integration-test.result)
           || contains(fromJSON('["failure", "cancelled"]'),
