@@ -17,13 +17,13 @@ gocql_new_cluster:
   do:
     - wrap_call:
         replace: |-
-          (func(cluster *gocql.ClusterConfig) *gocql.ClusterConfig {
-            gocqlotelc.ObserveCluster(cluster)
+          (func(cluster *__dd_gocql.ClusterConfig) *__dd_gocql.ClusterConfig {
+            __dd_gocqlotelc.ObserveCluster(cluster)
             return cluster
           })({{ . }})
   imports:
-    gocql: github.com/gocql/gocql
-    gocqlotelc: github.com/DataDog/dd-trace-go/contrib/gocql/gocql/otelc/v2
+    __dd_gocql: github.com/gocql/gocql
+    __dd_gocqlotelc: github.com/DataDog/dd-trace-go/contrib/gocql/gocql/otelc/v2
 
 # A hook for clusters built with a struct literal or any other way, because
 # set_fields cannot read Hosts from the literal it rewrites, and the observer
@@ -51,10 +51,10 @@ gocql_new_session:
   do:
     - wrap_call:
         replace: |-
-          (func(cluster gocql.ClusterConfig) (*gocql.Session, error) {
-            gocqlotelc.ObserveCluster(&cluster)
-            return gocql.NewSession(cluster)
+          (func(cluster __dd_gocql.ClusterConfig) (*__dd_gocql.Session, error) {
+            __dd_gocqlotelc.ObserveCluster(&cluster)
+            return __dd_gocql.NewSession(cluster)
           })({{ .CallArgument 0 }})
   imports:
-    gocql: github.com/gocql/gocql
-    gocqlotelc: github.com/DataDog/dd-trace-go/contrib/gocql/gocql/otelc/v2
+    __dd_gocql: github.com/gocql/gocql
+    __dd_gocqlotelc: github.com/DataDog/dd-trace-go/contrib/gocql/gocql/otelc/v2
