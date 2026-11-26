@@ -107,6 +107,10 @@ const (
 	// as an APM event.
 	EventSampleRate = "_dd1.sr.eausr"
 
+	// AppSecEvent marks a span as carrying an AppSec event. It is required by
+	// the AppSec backend.
+	AppSecEvent = "appsec.event"
+
 	// AnalyticsEvent specifies whether the span should be recorded as a Trace
 	// Search & Analytics event.
 	AnalyticsEvent = "analytics.event"
