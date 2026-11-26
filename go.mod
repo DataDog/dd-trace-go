@@ -15,7 +15,6 @@ require (
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d
 	github.com/DataDog/sketches-go v1.4.8
 	github.com/cenkalti/backoff/v5 v5.0.3
-	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575
 	github.com/google/pprof v0.0.0-20250403155104-27863c87afa6
 	github.com/google/uuid v1.6.0
 	github.com/json-iterator/go v1.1.12

@@ -17,9 +17,9 @@ echo_v5_new:
     function_call: github.com/labstack/echo/v5.New
   do:
     - wrap_call:
-        replace: echov5trace.Wrap({{ . }})
+        replace: __dd_echov5trace.Wrap({{ . }})
   imports:
-    echov5trace: github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2
+    __dd_echov5trace: github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2
 
 # Wraps echo.NewWithConfig call sites, like echo_v5_new. NewWithConfig calls New
 # inside echo, where echo_v5_new does not apply, so each instance is wrapped
@@ -33,6 +33,6 @@ echo_v5_new_with_config:
     function_call: github.com/labstack/echo/v5.NewWithConfig
   do:
     - wrap_call:
-        replace: echov5trace.Wrap({{ . }})
+        replace: __dd_echov5trace.Wrap({{ . }})
   imports:
-    echov5trace: github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2
+    __dd_echov5trace: github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2

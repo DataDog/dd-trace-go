@@ -51,7 +51,10 @@ type ClusterIDClient interface {
 // NewAdminClientFromConsumer or NewAdminClientFromProducer, so the lookup does
 // not open a connection of its own.
 type ClusterIDFetch struct {
-	tr        *Tracer
+	tr *Tracer
+	// newClient is dropped once it was called or Close was called, so the
+	// fetch does not keep the traced client alive. Read and written under mu
+	// after construction.
 	newClient func() (ClusterIDClient, error)
 
 	// Waits between attempts; zero means clusterIDRetryMin and clusterIDRetryMax. Set by tests.
@@ -80,7 +83,9 @@ func (f *ClusterIDFetch) Start() {
 		return
 	}
 	f.started.Store(true)
-	c, err := f.newClient()
+	newClient := f.newClient
+	f.newClient = nil
+	c, err := newClient()
 	if err != nil {
 		f.logFailure("failed to create admin client for cluster ID, not adding cluster_id tags: %s", err)
 		return
@@ -103,6 +108,7 @@ func (f *ClusterIDFetch) Close() {
 	}
 	f.mu.Lock()
 	f.closed = true
+	f.newClient = nil
 	stop := f.stop // kept: stop can be called more than once
 	f.mu.Unlock()
 	if stop != nil {

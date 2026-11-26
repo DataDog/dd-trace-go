@@ -26,7 +26,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	ddtracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
 )
 
@@ -39,8 +39,10 @@ func main() {
 	// at the tracer-start rule alone.
 	fmt.Printf("otelc.Enabled=%t\n", otelc.Enabled())
 
-	span := tracer.StartSpan(spanName)
-	span.Finish()
+	// A local named like a package that a rule imports must not break the
+	// build. The tracer start rule injects code into this function.
+	tracer := ddtracer.StartSpan(spanName)
+	tracer.Finish()
 
 	// The injected `defer tracer.Stop()` is what flushes the span, so main has to
 	// return normally. os.Exit here would skip it and drop the span.

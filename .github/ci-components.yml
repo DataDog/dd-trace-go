@@ -111,6 +111,8 @@ integration-suites:
     contrib/cloudevents/sdk-go.v2: [ cloudevents ]
     contrib/confluentinc/confluent-kafka-go/kafka: [ confluent-kafka-go.v1 ]
     contrib/confluentinc/confluent-kafka-go/kafka.v2: [ confluent-kafka-go.v2 ]
+    contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc: [ confluent-kafka-go.v2 ]
+    contrib/confluentinc/confluent-kafka-go/kafka/otelc: [ confluent-kafka-go.v1 ]
     contrib/connectrpc.com/connect: [ connectrpc ]
     contrib/database/sql: [ sql ]
     contrib/database/sql/otelc: [ sql ]
@@ -263,6 +265,7 @@ workflow-gates:
   code_freeze_end.yml: []
   code_freeze_start.yml: []
   config-audit.yml: []
+  errtrack-audit.yml: []
   docker-build-and-push.yml: []
   docker-images-release.yml: []
   dora-metrics.yml: []
@@ -295,6 +298,7 @@ native-path-filters:
   - build-metrics.yml
   - config-audit.yml
   - dynamic-checks.yml
+  - errtrack-audit.yml
   - ecosystems-label-pr.yml
   - govulncheck.yml
   - sync-cue-actions.yml
@@ -495,6 +499,8 @@ components:
       - contrib/aws/aws-sdk-go/**
       - contrib/cloud.google.com/go/pubsub.v1/**
       - contrib/cloud.google.com/go/pubsub.v2/**
+      - contrib/confluentinc/confluent-kafka-go/kafka/**
+      - contrib/confluentinc/confluent-kafka-go/kafka.v2/**
       - contrib/database/sql/**
       - contrib/gin-gonic/gin/**
       - contrib/go-chi/chi/**
@@ -697,7 +703,7 @@ components:
     gates: [ otelc, static-format, static-lint ]
 
   - id: release-tooling
-    why: Not imported by shipped code; own tests run under test-core.
+    why: Not imported by shipped code; root-module scripts test under test-core, and the scripts/errtrackaudit nested module tests under static-checks' check-modules job.
     paths:
       - scripts/**
       - tools/**

@@ -65,7 +65,7 @@ jobs:
         id: setup-go
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.27"
+          go-version: stable
           check-latest: "true"
           workload: smoke-setup
           # Default-branch seed set: only the nightly schedule and a
@@ -78,7 +78,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Compile dd-trace-go with updated dependencies (sandboxed)
@@ -151,7 +151,7 @@ jobs:
         id: setup-go
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.27"
+          go-version: stable
           check-latest: "true"
           workload: smoke-deps-update
           seed: "true"
@@ -160,7 +160,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Capture trusted commit SHA
@@ -248,7 +248,7 @@ jobs:
         with:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULTS }}
-          tags: go:stable,arch:${{ runner.arch }},os:${{ runner.os }}
+          tags: go:${{ steps.setup-go.outputs.go-version-key }},arch:${{ runner.arch }},os:${{ runner.os }}
 
       - name: Merge contrib coverage files
         if: always() && steps.restore.outcome == 'success'
@@ -296,7 +296,7 @@ jobs:
         id: setup-go
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.26"
+          go-version: oldstable
           check-latest: "true"
           workload: smoke-tracer
           seed: "true"
@@ -305,7 +305,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       # The gotesting fixture tests resolve orchestrion through their `go run`
@@ -339,7 +339,7 @@ jobs:
         with:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULTS }}
-          tags: go:1.26,arch:${{ runner.arch }},os:${{ runner.os }}
+          tags: go:${{ steps.setup-go.outputs.go-version-key }},arch:${{ runner.arch }},os:${{ runner.os }}
 
       - name: Report cache metrics to Datadog
         if: always()
@@ -369,7 +369,7 @@ jobs:
         id: setup-go
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.26"
+          go-version: oldstable
           check-latest: "true"
           workload: smoke-gen
           seed: "true"
@@ -378,7 +378,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Run generate scripts and check diff
