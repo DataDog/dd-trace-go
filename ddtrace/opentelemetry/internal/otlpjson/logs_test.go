@@ -167,8 +167,7 @@ func TestEncodeLogsGroupsByResourceAndScope(t *testing.T) {
 }
 
 func TestEncodeLogsFollowsOTLPJSONRules(t *testing.T) {
-	var records []sdklog.Record
-	records = append(records, emitRecords(t, resource.Empty(), func(l func(string, ...otellog.LoggerOption) otellog.Logger) {
+	records := emitRecords(t, resource.Empty(), func(l func(string, ...otellog.LoggerOption) otellog.Logger) {
 		var r otellog.Record
 		r.SetSeverity(otellog.SeverityInfo)
 		r.SetBody(attribute.StringValue("x"))
@@ -179,7 +178,7 @@ func TestEncodeLogsFollowsOTLPJSONRules(t *testing.T) {
 			TraceID: trace.TraceID{0xAB, 1}, SpanID: trace.SpanID{0xCD, 2},
 		}))
 		l("").Emit(ctx, r)
-	})...)
+	})
 
 	assert.JSONEq(t, `{"resourceLogs":[{"scopeLogs":[{"logRecords":[{
 		"timeUnixNano":"42",

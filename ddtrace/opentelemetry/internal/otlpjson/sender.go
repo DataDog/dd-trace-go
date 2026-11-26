@@ -111,8 +111,8 @@ func (s *Sender) Send(ctx context.Context, body []byte) error {
 		if err == nil {
 			return nil
 		}
-		var re *retryableError
-		if !errors.As(err, &re) {
+		_, ok := errors.AsType[*retryableError](err)
+		if !ok {
 			return err
 		}
 		// Randomize the wait by +-50% so exporters that failed together do not retry together.
