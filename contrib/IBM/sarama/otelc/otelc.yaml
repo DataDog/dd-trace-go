@@ -20,6 +20,9 @@ sarama_new_consumer:
     - wrap_call:
         replace: |-
           (func(__dd_addrs []string, __dd_cfg *__dd_ibmsarama.Config) (__dd_ibmsarama.Consumer, error) {
+            if false {
+              return {{ . }}
+            }
             __dd_c, __dd_err := __dd_ibmsarama.NewConsumer(__dd_addrs, __dd_cfg)
             if __dd_c != nil {
               __dd_c = __dd_ibmsaramatrace.WrapConsumer(__dd_c, __dd_ibmsaramatrace.WithBrokers(__dd_addrs), __dd_ibmsaramatrace.WithSaramaConfig(__dd_cfg))
