@@ -613,3 +613,32 @@ func TestAsyncProducerAsyncCloseDoesNotWaitForClusterIDFetch(t *testing.T) {
 	for range p.Errors() {
 	}
 }
+
+// TestCloseDoesNotWaitForClusterIDFetch checks that the synchronous Close of
+// the producers and the consumer returns at once while the cluster ID fetch
+// waits for a stalled broker.
+func TestCloseDoesNotWaitForClusterIDFetch(t *testing.T) {
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0
+	for name, newClient := range map[string]func(t *testing.T, addr string) interface{ Close() error }{
+		"sync producer": func(t *testing.T, addr string) interface{ Close() error } {
+			return WrapSyncProducer(cfg, mocks.NewSyncProducer(t, cfg), WithDataStreams(), WithBrokers([]string{addr}))
+		},
+		"async producer": func(t *testing.T, addr string) interface{ Close() error } {
+			return WrapAsyncProducer(cfg, mocks.NewAsyncProducer(t, cfg), WithDataStreams(), WithBrokers([]string{addr}))
+		},
+		"consumer": func(t *testing.T, addr string) interface{ Close() error } {
+			return WrapConsumer(mocks.NewConsumer(t, cfg), WithDataStreams(), WithBrokers([]string{addr}))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			addr, waitForFetch := newStalledBroker(t)
+			c := newClient(t, addr)
+			waitForFetch()
+
+			start := time.Now()
+			assert.NoError(t, c.Close())
+			assert.Less(t, time.Since(start), 5*time.Second, "Close must not wait for the broker's network timeout")
+		})
+	}
+}

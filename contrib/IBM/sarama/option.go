@@ -158,14 +158,13 @@ func WithSaramaConfig(saramaConfig *sarama.Config) OptionFn {
 }
 
 // startClusterIDFetch launches a goroutine to fetch the cluster ID from one of
-// the configured brokers. It returns a stop function that cancels the fetch and
-// waits for the goroutine to exit.
+// the configured brokers. It returns a function that cancels the fetch without
+// waiting for it: the fetch uses its own broker connection, so closing the
+// client does not wait for a broker request bounded only by the sarama
+// network timeouts.
 func startClusterIDFetch(cfg *config) func() {
-	cancel, done := launchClusterIDFetch(cfg)
-	return func() {
-		cancel()
-		<-done
-	}
+	cancel, _ := launchClusterIDFetch(cfg)
+	return cancel
 }
 
 // launchClusterIDFetch launches a goroutine to fetch the cluster ID from one

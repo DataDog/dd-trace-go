@@ -24,7 +24,7 @@ type syncProducer struct {
 	sarama.SyncProducer
 	version    sarama.KafkaVersion
 	cfg        *config
-	closeAsync []func() // async jobs to cancel and wait for on Close
+	closeAsync []func() // async jobs to cancel on Close
 	// spanCfg holds the tags that are constant for every message produced
 	// through this producer (component, span kind, messaging system, service
 	// name, any static analytics rate, and the bootstrap servers set with
@@ -107,7 +107,7 @@ type asyncProducer struct {
 	input      chan *sarama.ProducerMessage
 	successes  chan *sarama.ProducerMessage
 	errors     chan *sarama.ProducerError
-	closeAsync []func() // async jobs to cancel and wait for on Close
+	closeAsync []func() // async jobs to cancel on Close
 	// cancelAsync cancels the async jobs without waiting for them, for
 	// AsyncClose.
 	cancelAsync []func()
@@ -254,12 +254,9 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 		}
 	}()
 	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
-		cancel, done := launchClusterIDFetch(cfg)
+		cancel := startClusterIDFetch(cfg)
 		wrapped.cancelAsync = append(wrapped.cancelAsync, cancel)
-		wrapped.closeAsync = append(wrapped.closeAsync, func() {
-			cancel()
-			<-done
-		})
+		wrapped.closeAsync = append(wrapped.closeAsync, cancel)
 	}
 	return wrapped
 }
