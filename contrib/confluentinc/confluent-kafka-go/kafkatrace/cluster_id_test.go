@@ -20,18 +20,21 @@ import (
 // fakeClusterIDClient returns id, or blocks until the context is done when
 // block is set, or until release is closed when release is set, ignoring the
 // context like a lookup that can't be cancelled. Its first fail attempts fail;
-// fail < 0 fails them all.
+// fail < 0 fails them all. With err set, every attempt returns err.
 type fakeClusterIDClient struct {
 	id       string
 	block    bool
 	release  chan struct{}
 	fail     int32
+	err      error // returned by every attempt when set
 	attempts atomic.Int32
 	closed   atomic.Bool
 }
 
 func (c *fakeClusterIDClient) ClusterID(ctx context.Context) (string, error) {
-	if n := c.attempts.Add(1); c.fail < 0 || n <= c.fail {
+	if n := c.attempts.Add(1); c.err != nil {
+		return "", c.err
+	} else if c.fail < 0 || n <= c.fail {
 		return "", errors.New("brokers not reachable")
 	}
 	if c.release != nil {
@@ -138,6 +141,17 @@ func TestClusterIDFetch(t *testing.T) {
 		assert.Equal(t, int32(1), client.attempts.Load())
 		assert.True(t, client.closed.Load())
 		assert.Empty(t, tr.ClusterID())
+	})
+	t.Run("a closed client stops the retries", func(t *testing.T) {
+		tr := newTracer()
+		client := &fakeClusterIDClient{err: ErrClientClosed}
+		f := NewClusterIDFetch(tr, func() (ClusterIDClient, error) { return client, nil })
+		f.retryMin, f.retryMax = time.Millisecond, time.Millisecond
+		f.Start()
+		require.Eventually(t, client.closed.Load, time.Second, time.Millisecond, "the lookup must exit")
+		assert.Equal(t, int32(1), client.attempts.Load())
+		assert.Empty(t, tr.ClusterID())
+		f.Close()
 	})
 	t.Run("client creation fails", func(t *testing.T) {
 		tr := newTracer()

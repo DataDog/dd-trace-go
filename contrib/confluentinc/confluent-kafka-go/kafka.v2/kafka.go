@@ -7,6 +7,7 @@
 package kafka // import "github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/v2"
 
 import (
+	"context"
 	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -81,7 +82,7 @@ func WrapConsumer(c *kafka.Consumer, opts ...Option) *Consumer {
 		if err != nil {
 			return nil, err
 		}
-		return admin, nil
+		return clusterIDClient{AdminClient: admin, closed: c.IsClosed}, nil
 	})
 	wrapped.events = kafkatrace.WrapConsumeEventsChannel(wrapped.tracer, c.Events(), c, func(evt kafka.Event) kafkatrace.Event {
 		if _, ok := evt.(*kafka.Message); ok {
@@ -240,7 +241,7 @@ func WrapProducer(p *kafka.Producer, opts ...Option) *Producer {
 		if err != nil {
 			return nil, err
 		}
-		return admin, nil
+		return clusterIDClient{AdminClient: admin, closed: p.IsClosed}, nil
 	})
 	wrapped.produceChannel, wrapped.produceDone = kafkatrace.WrapProduceChannelWithDone(wrapped.tracer, p.ProduceChannel(), func(msg *kafka.Message) kafkatrace.Message {
 		wrapped.clusterID.Start()
@@ -325,4 +326,22 @@ func (p *Producer) BeforeProduce(msg *kafka.Message, deliveryChan chan kafka.Eve
 // send them to the underlying producer channel.
 func (p *Producer) ProduceChannel() chan *kafka.Message {
 	return p.produceChannel
+}
+
+// clusterIDClient is an AdminClient derived from a consumer or producer. The
+// derived client shares the native handle of that client, which Close on the
+// embedded kafka.Consumer or kafka.Producer destroys without the wrapper
+// knowing. Each attempt checks the client first and stops the lookup once it
+// is closed. An attempt that is running when the client is closed is not
+// covered: close the wrapper, not the embedded client.
+type clusterIDClient struct {
+	*kafka.AdminClient
+	closed func() bool
+}
+
+func (c clusterIDClient) ClusterID(ctx context.Context) (string, error) {
+	if c.closed() {
+		return "", kafkatrace.ErrClientClosed
+	}
+	return c.AdminClient.ClusterID(ctx)
 }

@@ -7,6 +7,7 @@ package kafkatrace
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,6 +34,12 @@ func retryBounds(minWait, maxWait time.Duration) (time.Duration, time.Duration) 
 	}
 	return minWait, maxWait
 }
+
+// ErrClientClosed is returned by a ClusterIDClient whose traced client was
+// closed without the wrapper's Close, for example by calling Close on the
+// embedded confluent-kafka-go client. The lookup then stops, because the
+// native handle it uses is destroyed.
+var ErrClientClosed = errors.New("kafka client is closed")
 
 // ClusterIDClient fetches the Kafka cluster ID. It is implemented by the
 // confluent-kafka-go AdminClient.
@@ -134,7 +141,7 @@ func (f *ClusterIDFetch) run(c ClusterIDClient) func() {
 				clusterIDsFound.Add(1)
 				return
 			}
-			if ctx.Err() != nil {
+			if ctx.Err() != nil || errors.Is(err, ErrClientClosed) {
 				return
 			}
 			if !logged {
