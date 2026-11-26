@@ -119,10 +119,10 @@ fallback works and where it stops.
   `OTELC_TEST_PACKAGES`, in `.github/workflows/otelc.yml`.
 - In `.github/ci-components.yml`, map both modules to the suite, and add `contrib/<name>/**` to the
   `otelc-integrations` component.
-- When a rule adds an import of the contrib, or the hooks use it, call the library once from
-  `internal/apps/otelc-external-app/libraries.go` with a call that needs no network, and add its
-  `replace`. The External Application Build job then checks that the rules module brings its
-  contrib into an application that never imports it.
+- When a rule adds an import of the contrib, or the hooks use it, add a new `lib_<name>.go` file in
+  `internal/apps/otelc-external-app` that calls `registerLibrary` from `init()` with a call that
+  needs no network, and add its `replace`. The External Application Build job then checks that the
+  rules module brings its contrib into an application that never imports it.
 
 ## Integration tests
 
