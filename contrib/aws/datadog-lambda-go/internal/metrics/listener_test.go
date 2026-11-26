@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -95,6 +96,47 @@ func TestAddDistributionMetricWithForceLogForwarder(t *testing.T) {
 	listener.AddDistributionMetric("the-metric", 2, time.Now(), true, "tag:a", "tag:b")
 	listener.HandlerFinished(ctx, nil)
 	assert.False(t, called)
+}
+
+func TestAddDistributionMetricDoesNotModifyCallerTags(t *testing.T) {
+	listener := MakeListener(Config{APIKey: "12345", ShouldUseLogForwarder: true}, &extension.ExtensionManager{})
+	ctx, _ := listener.HandlerStarted(context.Background(), json.RawMessage{})
+
+	// The caller hands over a prefix of a longer slice, so there is spare
+	// capacity behind it that must not be written to.
+	all := []string{"tag:a", "tag:b", "tag:c"}
+	logger.SetLogLevel(logger.LevelDebug)
+	out := captureOutput(func() {
+		listener.AddDistributionMetric("the-metric", 2, time.Now(), false, all[:1]...)
+	})
+	listener.HandlerFinished(ctx, nil)
+
+	assert.Equal(t, []string{"tag:a", "tag:b", "tag:c"}, all)
+	assert.Contains(t, out, `"t":["tag:a","`+runtimeTag+`"]`)
+}
+
+func TestAddDistributionMetricKeepsTagsAfterCallerReusesSlice(t *testing.T) {
+	var body []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	listener := MakeListener(Config{APIKey: "12345", Site: server.URL}, &extension.ExtensionManager{})
+	ctx, _ := listener.HandlerStarted(context.Background(), json.RawMessage{})
+
+	// Spare capacity lets the runtime tag be appended in place, so the queued
+	// metric would share its tags with the buffer the caller keeps reusing.
+	buf := make([]string, 1, 4)
+	buf[0] = "tag:first"
+	listener.AddDistributionMetric("the-metric", 1, time.Now(), false, buf...)
+	buf = append(buf[:0], "tag:second")
+	listener.AddDistributionMetric("the-metric", 2, time.Now(), false, buf...)
+	listener.HandlerFinished(ctx, nil)
+
+	assert.Contains(t, string(body), "tag:first")
+	assert.Contains(t, string(body), "tag:second")
 }
 
 func TestAddDistributionMetricWithFIPSMode(t *testing.T) {

@@ -176,8 +176,11 @@ func (l *Listener) HandlerFinished(ctx context.Context, err error) {
 // AddDistributionMetric sends a distribution metric
 func (l *Listener) AddDistributionMetric(metric string, value float64, timestamp time.Time, forceLogForwarder bool, tags ...string) {
 
-	// We add our own runtime tag to the metric for version tracking
-	tags = append(tags, runtimeTag)
+	// We add our own runtime tag to the metric for version tracking. The
+	// capacity is capped so that the append always copies: tags may be a
+	// sub-slice of a caller's buffer, which we must neither overwrite nor keep
+	// sharing with the queued metric.
+	tags = append(tags[:len(tags):len(tags)], runtimeTag)
 
 	if l.isAgentRunning {
 		err := l.statsdClient.Distribution(metric, value, tags, 1)
