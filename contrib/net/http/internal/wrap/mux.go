@@ -110,8 +110,8 @@ func (mux reportingServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // isGeneratedRedirect reports that ServeMux redirects the request instead of
 // serving a route, as net/http decides it: its escaped path is not clean (but for
-// CONNECT), or it lacks the trailing "/" of the subtree pattern that matches it
-// with a "/" added. pttrn is the pattern that ServeMux.Handler returns for the
+// CONNECT), or it lacks the trailing "/" of the subtree pattern (ending with "/",
+// {$} or {name...}) that matches it with a "/" added. pttrn is the pattern that ServeMux.Handler returns for the
 // request: for a redirect, the pattern or the path that the redirect leads to.
 func isGeneratedRedirect(r *http.Request, pttrn string) bool {
 	escaped := r.URL.EscapedPath()
@@ -119,6 +119,9 @@ func isGeneratedRedirect(r *http.Request, pttrn string) bool {
 		return true
 	}
 	target := strings.TrimSuffix(pattern.Path(pttrn), "{$}")
+	if strings.HasSuffix(target, "...}") {
+		target = target[:strings.LastIndexByte(target, '/')+1]
+	}
 	return !strings.HasSuffix(escaped, "/") && strings.HasSuffix(target, "/") &&
 		strings.Count(target, "/") == strings.Count(escaped, "/")+1
 }

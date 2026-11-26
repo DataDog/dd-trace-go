@@ -431,6 +431,7 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 		{http.MethodGet, "/users/123", ""},
 		{http.MethodGet, "/static/a/../", ""},
 		{http.MethodGet, "/a%2Fb/../x/42", ""},
+		{http.MethodGet, "/direct", ""},
 		{http.MethodGet, "/moved/42", "/moved/{id}"},
 		{http.MethodGet, "/panics/a/b", "/panics/{path}"},
 	} {
