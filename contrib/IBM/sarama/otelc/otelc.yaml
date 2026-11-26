@@ -19,12 +19,13 @@ sarama_new_consumer:
   do:
     - wrap_call:
         replace: |-
-          (func(c __dd_ibmsarama.Consumer, err error) (__dd_ibmsarama.Consumer, error) {
-            if c != nil {
-              c = __dd_ibmsaramatrace.WrapConsumer(c)
+          (func(__dd_addrs []string, __dd_cfg *__dd_ibmsarama.Config) (__dd_ibmsarama.Consumer, error) {
+            __dd_c, __dd_err := __dd_ibmsarama.NewConsumer(__dd_addrs, __dd_cfg)
+            if __dd_c != nil {
+              __dd_c = __dd_ibmsaramatrace.WrapConsumer(__dd_c, __dd_ibmsaramatrace.WithBrokers(__dd_addrs), __dd_ibmsaramatrace.WithSaramaConfig(__dd_cfg))
             }
-            return c, err
-          })({{ . }})
+            return __dd_c, __dd_err
+          })({{ .CallArguments }})
   imports:
     __dd_ibmsarama: github.com/IBM/sarama
     __dd_ibmsaramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
@@ -50,6 +51,11 @@ sarama_new_consumer_from_client:
     __dd_ibmsarama: github.com/IBM/sarama
     __dd_ibmsaramatrace: github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2
 
+# The rules for the constructors that take broker addresses pass them to the
+# contrib with WithBrokers, for the bootstrap servers tag and the cluster ID
+# with Data Streams Monitoring. The consumer rule also passes the config with
+# WithSaramaConfig, which the cluster ID lookup connects with.
+#
 # The producer rules pass the config from the call's arguments, or the client's
 # config, to the contrib. A nil config reaches the contrib as nil.
 # {{ .CallArguments }} also covers a call whose only argument returns both
@@ -74,7 +80,7 @@ sarama_new_sync_producer:
           (func(__dd_addrs []string, __dd_cfg *__dd_ibmsarama.Config) (__dd_ibmsarama.SyncProducer, error) {
             __dd_p, __dd_err := __dd_ibmsarama.NewSyncProducer(__dd_addrs, __dd_cfg)
             if __dd_p != nil {
-              __dd_p = __dd_ibmsaramatrace.WrapSyncProducer(__dd_cfg, __dd_p)
+              __dd_p = __dd_ibmsaramatrace.WrapSyncProducer(__dd_cfg, __dd_p, __dd_ibmsaramatrace.WithBrokers(__dd_addrs))
             }
             return __dd_p, __dd_err
           })({{ .CallArguments }})
@@ -118,7 +124,7 @@ sarama_new_async_producer:
           (func(__dd_addrs []string, __dd_cfg *__dd_ibmsarama.Config) (__dd_ibmsarama.AsyncProducer, error) {
             __dd_p, __dd_err := __dd_ibmsarama.NewAsyncProducer(__dd_addrs, __dd_cfg)
             if __dd_p != nil {
-              __dd_p = __dd_ibmsaramatrace.WrapAsyncProducer(__dd_cfg, __dd_p)
+              __dd_p = __dd_ibmsaramatrace.WrapAsyncProducer(__dd_cfg, __dd_p, __dd_ibmsaramatrace.WithBrokers(__dd_addrs))
             }
             return __dd_p, __dd_err
           })({{ .CallArguments }})
