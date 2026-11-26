@@ -25,6 +25,7 @@ import (
 	redisv6 "github.com/go-redis/redis"
 	redisv7 "github.com/go-redis/redis/v7"
 	redisv8 "github.com/go-redis/redis/v8"
+	"github.com/gocql/gocql"
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/julienschmidt/httprouter"
@@ -64,6 +65,7 @@ func useLibraries() {
 	// With no broker addresses, these fail before any network call.
 	_, _ = ibmsarama.NewSyncProducer(nil, nil)
 	_, _ = shopifysarama.NewSyncProducer(nil, nil)
+	_ = gocql.NewCluster("127.0.0.1")
 	// gRPC connects lazily, so nothing dials this endpoint.
 	pubsubOpts := []option.ClientOption{
 		option.WithEndpoint("localhost:1"),

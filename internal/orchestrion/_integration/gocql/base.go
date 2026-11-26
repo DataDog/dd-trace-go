@@ -131,3 +131,23 @@ func (b *base) expectedTraces() trace.Traces {
 		},
 	}
 }
+
+// querySpan is a cassandra.query span from a cluster whose only host is the
+// container.
+func (b *base) querySpan(resource string) *trace.Trace {
+	return &trace.Trace{
+		Tags: map[string]any{
+			"name":     "cassandra.query",
+			"service":  "gocql.query",
+			"resource": resource,
+			"type":     "cassandra",
+		},
+		Meta: map[string]string{
+			"component":                   "gocql/gocql",
+			"span.kind":                   "client",
+			"db.system":                   "cassandra",
+			"out.port":                    b.port,
+			"db.cassandra.contact.points": b.hostPort,
+		},
+	}
+}

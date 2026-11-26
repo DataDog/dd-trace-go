@@ -34,7 +34,7 @@ concurrency:
 env:
   # The single place to bump the tested otelc release. Upstream only; do not point
   # this at a fork.
-  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.2.1-0.20261117102139-486faefff22f' }}
+  OTELC_VERSION: ${{ inputs.otelc-version || 'v1.2.1-0.20261125163415-3a1f245d819e' }}
   # Modules otelc reads, tidied by both jobs next to the application each one
   # builds.
   OTELC_MODULES: >-
@@ -53,6 +53,10 @@ env:
     contrib/cloud.google.com/go/pubsub.v1/otelc
     contrib/cloud.google.com/go/pubsub.v2
     contrib/cloud.google.com/go/pubsub.v2/otelc
+    contrib/confluentinc/confluent-kafka-go/kafka
+    contrib/confluentinc/confluent-kafka-go/kafka/otelc
+    contrib/confluentinc/confluent-kafka-go/kafka.v2
+    contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc
     contrib/net/http
     contrib/net/http/otelc
     contrib/rs/zerolog
@@ -67,6 +71,8 @@ env:
     contrib/go-chi/chi.v5/otelc
     contrib/gofiber/fiber.v2
     contrib/gofiber/fiber.v2/otelc
+    contrib/gocql/gocql
+    contrib/gocql/gocql/otelc
     contrib/julienschmidt/httprouter
     contrib/julienschmidt/httprouter/otelc
     contrib/k8s.io/client-go
@@ -133,10 +139,13 @@ env:
     mongo.v2
     gcp_pubsub.v1
     gcp_pubsub.v2
+    confluent-kafka-go.v1
+    confluent-kafka-go.v2
     echo.v4
     echo.v5
     aws.v1
     valyala_fasthttp
+    gocql
     segmentio_kafka.v0
     zerolog
 
