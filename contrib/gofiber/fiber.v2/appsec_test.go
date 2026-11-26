@@ -254,6 +254,15 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 	static := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(static, "app.css"), []byte("body{}"), 0o600))
 	routes := func(app *fiber.App) *fiber.App {
+		// A middleware that renders the router's 404 itself: its route is not the
+		// route of the request.
+		app.Use(func(c *fiber.Ctx) error {
+			err := c.Next()
+			if err != nil && strings.HasPrefix(c.Path(), "/handled") {
+				return c.SendStatus(http.StatusNotFound)
+			}
+			return err
+		})
 		// A middleware that only calls c.Next. On another path than the tracing
 		// middleware, fiber does not merge it into the same route.
 		app.Use("/nope", func(c *fiber.Ctx) error { return c.Next() })
@@ -263,6 +272,8 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 		app.Get("/refused", func(*fiber.Ctx) error { return fiber.ErrMethodNotAllowed })
 		app.Get("/color::color", func(c *fiber.Ctx) error { return c.SendString("ok") })
 		app.Use("/w/*/fixed", func(c *fiber.Ctx) error { return c.SendString("ok") })
+		// A prefix handler that answers 405 itself keeps its route.
+		app.Use("/readonly", func(*fiber.Ctx) error { return fiber.ErrMethodNotAllowed })
 		app.Use("/api", func(c *fiber.Ctx) error { return c.SendString("ok") })
 		app.Static("/static", static)
 		return app
@@ -284,6 +295,8 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 			want           any
 		}{
 			{"GET", "/nope/x", http.StatusNotFound, nil},
+			{"GET", "/handled", http.StatusNotFound, nil},
+			{"GET", "/readonly/x", http.StatusMethodNotAllowed, "/readonly/{param1}"},
 			{"POST", "/users/1", http.StatusMethodNotAllowed, nil},
 			{"GET", "/users/1", http.StatusOK, "/users/{id}"},
 			{"GET", "/missing/1", http.StatusNotFound, "/missing/{id}"},
