@@ -15,11 +15,14 @@
 //	    ddzap.TraceFields(ctx)...,
 //	)
 //
-// # Automatic use via Orchestrion
+// # Automatic use via Orchestrion or otelc
 //
-// When built with Orchestrion, call sites of (*zap.Logger) and (*zap.SugaredLogger)
-// log methods are automatically rewritten to inject trace fields whenever a
-// context.Context (or a value implementing it) or a *http.Request is in scope.
+// When built with Orchestrion or otelc, call sites of (*zap.Logger) and
+// (*zap.SugaredLogger) log methods are automatically rewritten to inject trace
+// fields whenever a context.Context (or a value implementing it) or a
+// *http.Request is in scope. With otelc, it must be a parameter of the
+// enclosing top-level function or method. A call in a function literal uses
+// the parameters of the function that contains the literal.
 package zap
 
 import (

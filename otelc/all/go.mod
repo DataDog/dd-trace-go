@@ -56,6 +56,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver.v2/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/go.mongodb.org/mongo-driver/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gofiber/fiber.v2/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.14.0-dev // indirect
@@ -353,6 +354,12 @@ replace github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 => ../../co
 replace github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 => ../../contrib/rs/zerolog/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 => ../../contrib/rs/zerolog
+
+require github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/otelc/v2 v2.14.0-dev
+
+replace github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/otelc/v2 => ../../contrib/go.uber.org/zap/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2 => ../../contrib/go.uber.org/zap
 
 require github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/otelc/v2 v2.14.0-dev
 

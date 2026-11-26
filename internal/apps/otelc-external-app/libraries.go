@@ -32,6 +32,7 @@ import (
 	"github.com/valyala/fasthttp"
 	mongooptions "go.mongodb.org/mongo-driver/mongo/options"
 	mongov2options "go.mongodb.org/mongo-driver/v2/mongo/options"
+	"go.uber.org/zap"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -72,6 +73,7 @@ func useLibraries() {
 		_ = c.Close()
 	}
 	_ = zerolog.New(io.Discard)
+	logWithContext(context.Background())
 	_ = &rest.Config{Host: "http://127.0.0.1"}
 	_ = redisv6.NewClient(&redisv6.Options{}).Close()
 	_ = redisv7.NewClient(&redisv7.Options{}).Close()
@@ -84,4 +86,11 @@ func useLibraries() {
 	}
 	// Writing no messages returns before any network call.
 	_ = (&kafka.Writer{Addr: kafka.TCP("localhost:9092")}).WriteMessages(context.Background())
+}
+
+// logWithContext logs with a context.Context in scope, which the zap rules
+// need to rewrite the call.
+func logWithContext(ctx context.Context) {
+	_ = ctx
+	zap.NewNop().Info("otelc external app")
 }

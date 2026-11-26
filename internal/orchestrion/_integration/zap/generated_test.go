@@ -13,8 +13,28 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/harness"
 )
 
+func TestAliasedImport(t *testing.T) {
+	harness.Run(t, new(TestCaseAliasedImport))
+}
+
 func TestChildLogger(t *testing.T) {
 	harness.Run(t, new(TestCaseChildLogger))
+}
+
+func TestContextImplementer(t *testing.T) {
+	harness.Run(t, new(TestCaseContextImplementer))
+}
+
+func TestDeferred(t *testing.T) {
+	harness.Run(t, new(TestCaseDeferred))
+}
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestEvaluation(t *testing.T) {
+	harness.Run(t, new(TestCaseEvaluation))
 }
 
 func TestGlobalLogger(t *testing.T) {
@@ -51,6 +71,10 @@ func TestSugaredLogMethod(t *testing.T) {
 
 func TestSugaredLogger(t *testing.T) {
 	harness.Run(t, new(TestCaseSugaredLogger))
+}
+
+func TestSugaredVariadicForward(t *testing.T) {
+	harness.Run(t, new(TestCaseSugaredVariadicForward))
 }
 
 func TestValueReceiver(t *testing.T) {

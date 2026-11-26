@@ -57,6 +57,8 @@ env:
     contrib/net/http/otelc
     contrib/rs/zerolog
     contrib/rs/zerolog/otelc
+    contrib/go.uber.org/zap
+    contrib/go.uber.org/zap/otelc
     contrib/database/sql
     contrib/database/sql/otelc
     contrib/gin-gonic/gin
@@ -139,6 +141,7 @@ env:
     valyala_fasthttp
     segmentio_kafka.v0
     zerolog
+    zap
 
 jobs:
   # Classifies the PR diff against .github/ci-components.yml. Fails open: every

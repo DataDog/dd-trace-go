@@ -13,6 +13,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.44.0
 	github.com/rs/zerolog v1.35.1
 	github.com/segmentio/kafka-go v0.4.42
+	go.uber.org/zap v1.28.0
 	google.golang.org/api v0.273.1
 	k8s.io/client-go v0.35.1
 )
@@ -166,7 +167,6 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	go.uber.org/zap v1.28.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/arch v0.8.0 // indirect
 	golang.org/x/crypto v0.58.1-0.20261009181718-2f1f834330b2 // indirect
@@ -362,6 +362,8 @@ replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../.
 replace github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 => ../../../contrib/labstack/echo.v5
 
 require (
+	github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/otelc/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.14.0-dev // indirect
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.101.0 // indirect
@@ -384,6 +386,10 @@ replace github.com/DataDog/dd-trace-go/contrib/aws/aws-sdk-go/v2 => ../../../con
 replace github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 => ../../../contrib/rs/zerolog/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 => ../../../contrib/rs/zerolog
+
+replace github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/otelc/v2 => ../../../contrib/go.uber.org/zap/otelc
+
+replace github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2 => ../../../contrib/go.uber.org/zap
 
 replace github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v1/otelc/v2 => ../../../contrib/cloud.google.com/go/pubsub.v1/otelc
 

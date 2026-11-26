@@ -50,6 +50,7 @@ use (
 	./contrib/go.mongodb.org/mongo-driver.v2
 	./contrib/go.mongodb.org/mongo-driver.v2/otelc
 	./contrib/go.uber.org/zap
+	./contrib/go.uber.org/zap/otelc
 	./contrib/gocql/gocql
 	./contrib/gofiber/fiber.v2
 	./contrib/gofiber/fiber.v2/otelc

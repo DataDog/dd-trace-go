@@ -612,6 +612,7 @@ replace github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2
 
 require (
 	example.com/httprouterdep v0.0.0-00010101000000-000000000000
+	example.com/zapdep v0.0.0-00010101000000-000000000000
 	example.com/zerologdep v0.0.0-00010101000000-000000000000
 )
 
@@ -622,6 +623,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/confluentinc/confluent-kafka-go/kafka/otelc/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.14.0-dev // indirect
@@ -657,7 +659,11 @@ replace example.com/echodep => ./internal/echodep
 
 replace github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 => ../../../contrib/segmentio/kafka-go/otelc
 
+replace example.com/zapdep => ./internal/zapdep
+
 replace example.com/zerologdep => ./internal/zerologdep
+
+replace github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/otelc/v2 => ../../../contrib/go.uber.org/zap/otelc
 
 replace github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 => ../../../contrib/rs/zerolog/otelc
 

@@ -1,0 +1,1019 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Rewrites logger.Info(args) into logger.With(trace fields).Info(args) at the
+# call site, with the context.Context, or else the *http.Request, of the
+# enclosing function. A hook on the logger methods would only see the
+# goroutine's span, not the caller's context. The receiver and the arguments
+# stay outside any closure, so a deferred call still evaluates them at the
+# defer statement.
+#
+# FIXME: the enclosing function is always the top-level declaration, so a call
+# in a function literal uses the outer function's context and ignores the
+# literal's own parameters. A call in a function literal assigned to a
+# package-level variable fails the build, since there is no enclosing
+# declaration.
+# https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1895
+zap_logger_debug:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*Logger.Debug
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.With(__dd_zaptrace.TraceFields({{ $ctx }})...).Debug({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Debug({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_logger_info:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*Logger.Info
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.With(__dd_zaptrace.TraceFields({{ $ctx }})...).Info({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Info({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_logger_warn:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*Logger.Warn
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.With(__dd_zaptrace.TraceFields({{ $ctx }})...).Warn({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Warn({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_logger_error:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*Logger.Error
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.With(__dd_zaptrace.TraceFields({{ $ctx }})...).Error({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Error({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_logger_dpanic:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*Logger.DPanic
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.With(__dd_zaptrace.TraceFields({{ $ctx }})...).DPanic({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).DPanic({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_logger_panic:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*Logger.Panic
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.With(__dd_zaptrace.TraceFields({{ $ctx }})...).Panic({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Panic({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_logger_fatal:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*Logger.Fatal
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.With(__dd_zaptrace.TraceFields({{ $ctx }})...).Fatal({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Fatal({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_logger_log:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*Logger.Log
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.With(__dd_zaptrace.TraceFields({{ $ctx }})...).Log({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Log({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+# Same as above for the SugaredLogger methods, through Desugar and Sugar, since
+# SugaredLogger.With takes loosely typed key-value pairs.
+zap_sugared_logger_debug:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Debug
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Debug({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Debug({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_debugf:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Debugf
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Debugf({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Debugf({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_debugw:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Debugw
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Debugw({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Debugw({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_debugln:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Debugln
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Debugln({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Debugln({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_info:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Info
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Info({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Info({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_infof:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Infof
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Infof({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Infof({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_infow:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Infow
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Infow({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Infow({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_infoln:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Infoln
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Infoln({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Infoln({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_warn:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Warn
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Warn({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Warn({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_warnf:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Warnf
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Warnf({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Warnf({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_warnw:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Warnw
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Warnw({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Warnw({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_warnln:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Warnln
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Warnln({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Warnln({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_error:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Error
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Error({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Error({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_errorf:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Errorf
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Errorf({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Errorf({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_errorw:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Errorw
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Errorw({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Errorw({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_errorln:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Errorln
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Errorln({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Errorln({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_dpanic:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.DPanic
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().DPanic({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().DPanic({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_dpanicf:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.DPanicf
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().DPanicf({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().DPanicf({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_dpanicw:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.DPanicw
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().DPanicw({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().DPanicw({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_dpanicln:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.DPanicln
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().DPanicln({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().DPanicln({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_panic:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Panic
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Panic({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Panic({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_panicf:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Panicf
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Panicf({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Panicf({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_panicw:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Panicw
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Panicw({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Panicw({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_panicln:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Panicln
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Panicln({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Panicln({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_fatal:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Fatal
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Fatal({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Fatal({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_fatalf:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Fatalf
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Fatalf({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Fatalf({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_fatalw:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Fatalw
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Fatalw({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Fatalw({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_fatalln:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Fatalln
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Fatalln({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Fatalln({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_log:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Log
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Log({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Log({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_logf:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Logf
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Logf({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Logf({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_logw:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Logw
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Logw({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Logw({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
+
+zap_sugared_logger_logln:
+  target:
+    - "**"
+    - not: "go.uber.org/zap/**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/**"
+  where:
+    method_call: go.uber.org/zap.*SugaredLogger.Logln
+  do:
+    - wrap_call:
+        replace: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- if not $ctx -}}
+            {{- $ctx = .FuncArgumentThatImplements "context.Context" -}}
+          {{- end -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if $ctx -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFields({{ $ctx }})...).Sugar().Logln({{ .CallArguments }})
+          {{- else if $req -}}
+            {{ .CallReceiver }}.Desugar().With(__dd_zaptrace.TraceFieldsFromRequest({{ $req }})...).Sugar().Logln({{ .CallArguments }})
+          {{- else -}}
+            {{ . }}
+          {{- end -}}
+  imports:
+    __dd_zaptrace: github.com/DataDog/dd-trace-go/contrib/go.uber.org/zap/v2
