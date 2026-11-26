@@ -94,6 +94,8 @@ integration-suites:
   modules:
     contrib/99designs/gqlgen: [ 99designs.gqlgen ]
     contrib/99designs/gqlgen/otelc: [ 99designs.gqlgen ]
+    contrib/IBM/sarama/otelc: [ ibm_sarama ]
+    contrib/Shopify/sarama/otelc: [ shopify_sarama ]
     contrib/aerospike/aerospike-client-go.v7: [ aerospike.v7 ]
     contrib/aws/aws-sdk-go: [ aws.v1 ]
     contrib/aws/aws-sdk-go-v2: [ aws.v2 ]
@@ -140,6 +142,7 @@ integration-suites:
     contrib/go.mongodb.org/mongo-driver/otelc: [ mongo ]
     contrib/go.uber.org/zap: [ zap ]
     contrib/gocql/gocql: [ gocql ]
+    contrib/gocql/gocql/otelc: [ gocql ]
     contrib/gofiber/fiber.v2: [ fiber.v2 ]
     contrib/gofiber/fiber.v2/otelc: [ fiber.v2 ]
     contrib/gomodule/redigo: [ redigo ]
@@ -495,6 +498,8 @@ components:
       contrib entry claims them without the gate.
     paths:
       - contrib/99designs/gqlgen/**
+      - contrib/IBM/sarama/**
+      - contrib/Shopify/sarama/**
       - contrib/aws/aws-sdk-go-v2/**
       - contrib/aws/aws-sdk-go/**
       - contrib/cloud.google.com/go/pubsub.v1/**
@@ -511,6 +516,7 @@ components:
       - contrib/gofiber/fiber.v2/**
       - contrib/go.mongodb.org/mongo-driver/**
       - contrib/go.mongodb.org/mongo-driver.v2/**
+      - contrib/gocql/gocql/**
       - contrib/gomodule/redigo/**
       - contrib/google.golang.org/grpc/**
       - contrib/gorilla/mux/**

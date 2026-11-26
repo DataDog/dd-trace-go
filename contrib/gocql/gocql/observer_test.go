@@ -445,3 +445,24 @@ func assertCommonTags(t *testing.T, span *mocktracer.Span) {
 	assert.Nil(t, span.Tag(ext.CassandraPaginated))
 	assert.Nil(t, span.Tag(ext.CassandraConsistencyLevel))
 }
+
+type otelcObserver struct{ *Observer }
+
+func (*otelcObserver) DDOtelcAutomatic() {}
+
+func TestAutomatic(t *testing.T) {
+	cluster := gocql.NewCluster("10.0.0.1")
+	for _, tc := range []struct {
+		name string
+		obs  any
+		want bool
+	}{
+		{name: "otelc", obs: &otelcObserver{NewObserver(cluster)}, want: true},
+		{name: "contrib", obs: NewObserver(cluster)},
+		{name: "nil", obs: nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, automatic(tc.obs))
+		})
+	}
+}

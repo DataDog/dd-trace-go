@@ -3,9 +3,10 @@
 # writes `go-version-key=<value>` and `go-version-provider=<value>` to
 # GITHUB_OUTPUT.
 #
-# Stable toolchains key on the resolved MINOR: `stable`, `oldstable`,
-# `1.27` and `1.27.4` all key on `1.27` (an exact patch keys the cloudx
-# cache on that patch; see below). The minor rotates only when the
+# Stable toolchains key on the resolved MINOR: every spelling that
+# resolves to one minor (`stable`, `oldstable`, `1.N`, `1.N.P`) keys on
+# `1.N` (an exact patch keys the cloudx cache on that patch; see
+# below). The minor rotates only when the
 # toolchain minor changes, and patch releases change nothing. Reading
 # `go env GOVERSION` (not the input string) reports the installed
 # toolchain: setup-go pins GOTOOLCHAIN=local, so GOVERSION is what the
@@ -15,15 +16,14 @@
 # the cloudx provider's nested installer resolves the go-version input as a
 # semver range, and a range cannot match a prerelease, so only the exact
 # spec finds the rc binary the select-go step installed. Prerelease legs
-# therefore hold their own keys — today no seeding caller passes a
-# prerelease, but nothing blocks one.
+# therefore hold their own keys.
 #
-# A fully-specified request (e.g. "1.27.1") installs exactly that patch —
+# A fully-specified request (`1.N.P`) installs exactly that patch —
 # check-latest never upgrades a full version — but a minor key would let
 # the provider's nested installer resolve the range to the LATEST patch
 # and swap the toolchain out from under the "Verify" step. Exact-patch
-# requests therefore pass their exact version to the provider (and their
-# cache keys carry that patch, as they did before cx2); every other
+# requests therefore pass their exact version to the provider (so their
+# cloudx keys carry that patch); every other
 # spelling keeps the version class. The provider input and the
 # matched-key parsing below MUST stay the same string, so both read the
 # go-version-provider output, not go-version-key.

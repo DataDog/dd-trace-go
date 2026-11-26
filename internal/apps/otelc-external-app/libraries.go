@@ -14,6 +14,8 @@ import (
 
 	pubsubv1api "cloud.google.com/go/pubsub/apiv1"
 	pubsubv2api "cloud.google.com/go/pubsub/v2/apiv1"
+	ibmsarama "github.com/IBM/sarama"
+	shopifysarama "github.com/Shopify/sarama"
 	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go/aws"
@@ -23,6 +25,7 @@ import (
 	redisv6 "github.com/go-redis/redis"
 	redisv7 "github.com/go-redis/redis/v7"
 	redisv8 "github.com/go-redis/redis/v8"
+	"github.com/gocql/gocql"
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/julienschmidt/httprouter"
@@ -59,6 +62,10 @@ func useLibraries() {
 	_ = dynamodb.NewFromConfig(awsv2.Config{Region: "us-east-1"})
 	_ = mongooptions.Client()
 	_ = mongov2options.Client()
+	// With no broker addresses, these fail before any network call.
+	_, _ = ibmsarama.NewSyncProducer(nil, nil)
+	_, _ = shopifysarama.NewSyncProducer(nil, nil)
+	_ = gocql.NewCluster("127.0.0.1")
 	// gRPC connects lazily, so nothing dials this endpoint.
 	pubsubOpts := []option.ClientOption{
 		option.WithEndpoint("localhost:1"),
