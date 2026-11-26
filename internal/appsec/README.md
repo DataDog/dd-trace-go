@@ -426,7 +426,10 @@ matched the escaped path: always for net/http and fiber, when net/http sets
 `URL.RawPath` for go-chi and echo v4, and as found above for gorilla/mux.
 
 fiber reports no route when its router found none: its 404 names the method and
-the path, and its 405 sets `Allow`. A handler's own 404 or 405 keeps its route.
+the path, and its 405 sets `Allow` after a middleware. A handler's own 404, and
+an endpoint's own 405, keep their route. A prefix handler (`Use`) that sets
+`Allow` and answers 405 cannot be told from a middleware before a router miss:
+it gets no route.
 fiber also reports no route when a middleware without a path prefix answers
 another path than `/` with an error: it answered before routing, or after a
 router miss whose error it handled.

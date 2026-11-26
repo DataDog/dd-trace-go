@@ -269,7 +269,10 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 		app.Get("/users/:id", func(c *fiber.Ctx) error { return c.SendString("ok") })
 		app.Get("/missing/:id", func(*fiber.Ctx) error { return fiber.ErrNotFound })
 		// A handler that returns the error of fiber's router keeps its route.
-		app.Get("/refused", func(*fiber.Ctx) error { return fiber.ErrMethodNotAllowed })
+		app.Get("/refused", func(c *fiber.Ctx) error {
+			c.Set(fiber.HeaderAllow, fiber.MethodPost)
+			return fiber.ErrMethodNotAllowed
+		})
 		app.Get("/color::color", func(c *fiber.Ctx) error { return c.SendString("ok") })
 		app.Use("/w/*/fixed", func(c *fiber.Ctx) error { return c.SendString("ok") })
 		// A prefix handler that answers 405 itself keeps its route.
