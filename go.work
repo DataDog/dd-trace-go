@@ -6,6 +6,7 @@ use (
 	./contrib/99designs/gqlgen
 	./contrib/99designs/gqlgen/otelc
 	./contrib/aerospike/aerospike-client-go.v7
+	./contrib/aerospike/aerospike-client-go.v7/otelc
 	./contrib/IBM/sarama
 	./contrib/IBM/sarama/otelc
 	./contrib/Shopify/sarama

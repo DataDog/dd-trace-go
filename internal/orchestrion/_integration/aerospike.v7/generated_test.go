@@ -19,8 +19,32 @@ func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
 
+func TestAliasedImport(t *testing.T) {
+	harness.Run(t, new(TestCaseAliasedImport))
+}
+
+func TestCallForms(t *testing.T) {
+	harness.Run(t, new(TestCaseCallForms))
+}
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestEmbedded(t *testing.T) {
+	harness.Run(t, new(TestCaseEmbedded))
+}
+
+func TestGoDefer(t *testing.T) {
+	harness.Run(t, new(TestCaseGoDefer))
+}
+
 func TestGoroutine(t *testing.T) {
 	harness.Run(t, new(TestCaseGoroutine))
+}
+
+func TestLibraryCalls(t *testing.T) {
+	harness.Run(t, new(TestCaseLibraryCalls))
 }
 
 func TestQuery(t *testing.T) {
@@ -33,4 +57,8 @@ func TestScanAll(t *testing.T) {
 
 func TestValueReceiver(t *testing.T) {
 	harness.Run(t, new(TestCaseValueReceiver))
+}
+
+func TestWrappedClient(t *testing.T) {
+	harness.Run(t, new(TestCaseWrappedClient))
 }

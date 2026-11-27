@@ -109,6 +109,7 @@ integration-suites:
     contrib/IBM/sarama/otelc: [ ibm_sarama ]
     contrib/Shopify/sarama/otelc: [ shopify_sarama ]
     contrib/aerospike/aerospike-client-go.v7: [ aerospike.v7 ]
+    contrib/aerospike/aerospike-client-go.v7/otelc: [ aerospike.v7 ]
     contrib/aws/aws-sdk-go: [ aws.v1 ]
     contrib/aws/aws-sdk-go-v2: [ aws.v2 ]
     contrib/aws/aws-sdk-go-v2/otelc: [ aws.v2 ]
@@ -514,6 +515,7 @@ components:
       - contrib/99designs/gqlgen/**
       - contrib/IBM/sarama/**
       - contrib/Shopify/sarama/**
+      - contrib/aerospike/aerospike-client-go.v7/**
       - contrib/aws/aws-sdk-go-v2/**
       - contrib/aws/aws-sdk-go/**
       - contrib/cloud.google.com/go/pubsub.v1/**
