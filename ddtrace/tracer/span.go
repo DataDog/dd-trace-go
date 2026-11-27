@@ -393,7 +393,7 @@ func (s *Span) matchTagsForSampling(tagPatterns map[string]func(string) bool) bo
 				// sampling on numbers with floating point is not supported,
 				// thus 'math.Floor(v) != v'
 				if math.Floor(v) == v {
-					strVal := strconv.FormatFloat(v, 'g', -1, 64)
+					strVal := strconv.FormatFloat(v, 'f', -1, 64)
 					if matchFunc(strVal) {
 						continue
 					}
