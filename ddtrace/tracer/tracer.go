@@ -1578,6 +1578,10 @@ func (t *tracer) TracerConf() TracerConf {
 // +checklocks:trace.mu
 func (t *tracer) computeSpanStats(trace *trace, span *Span) {
 	agentFeatures := t.config.agent.load()
+	// statSpan may hold a pre-allocated tracerStatSpan fused into the span's
+	// allocation block (span pooling disabled, brand-new trace). Capture it
+	// before clearing, so newTracerStatSpanPrealloc can reuse it.
+	preallocStatSpan := span.statSpan
 	span.statSpan = nil
 	// A capable agent and OTLP span metrics are independent paths to stats
 	// computation: don't let the agent-capability check gate out OTLP-only mode.
@@ -1588,7 +1592,7 @@ func (t *tracer) computeSpanStats(trace *trace, span *Span) {
 		}
 		return
 	}
-	span.statSpan, _ = t.stats.newTracerStatSpan(span, t.obfuscator)
+	span.statSpan, _ = t.stats.newTracerStatSpanPrealloc(span, t.obfuscator, preallocStatSpan)
 	if span == trace.root {
 		trace.filterReject = agentFeatures.traceFilters != nil && agentFeatures.traceFilters.reject(span)
 	}
@@ -1597,6 +1601,8 @@ func (t *tracer) computeSpanStats(trace *trace, span *Span) {
 // +checklocks:span.mu
 func (t *tracer) computeOversizedSpanStats(span *Span) {
 	agentFeatures := t.config.agent.load()
+	// See computeSpanStats: capture the fused pre-allocation, if any.
+	preallocStatSpan := span.statSpan
 	span.statSpan = nil
 	// A capable agent and OTLP span metrics are independent paths to stats
 	// computation: don't let the agent-capability check gate out OTLP-only mode.
@@ -1606,7 +1612,7 @@ func (t *tracer) computeOversizedSpanStats(span *Span) {
 	}
 	// The oversized-trace path sends the stat span immediately and never
 	// assembles a chunk, so there is no need to retain it on the span.
-	statSpan, _ := t.stats.newTracerStatSpan(span, t.obfuscator)
+	statSpan, _ := t.stats.newTracerStatSpanPrealloc(span, t.obfuscator, preallocStatSpan)
 	if statSpan != nil {
 		t.stats.trySendSpan(statSpan)
 	}

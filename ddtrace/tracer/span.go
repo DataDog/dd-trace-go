@@ -164,11 +164,12 @@ type Span struct {
 	// +checklocks:mu
 	spanEvents []spanEvent `msg:"span_events,omitempty"` // events produced related to this span
 	// +checklocks:mu
+	// statSpan holds the tracerStatSpan computed at finish time. For spans
+	// created inside a rootSpanBlock (span pooling disabled, brand-new trace),
+	// it is pre-set before the span is shared to point at the tracerStatSpan
+	// fused into the block, so stats computation can reuse it without
+	// allocating. computeSpanStats consumes and replaces it.
 	statSpan *tracerStatSpan `msg:"-"`
-	// inlineStatSpan points to a pre-allocated tracerStatSpan fused into
-	// rootSpanBlock when span pooling is disabled. Nil for pooled spans or after use.
-	// +checklocks:mu
-	inlineStatSpan *tracerStatSpan `msg:"-"`
 
 	goExecTraced bool         `msg:"-"`
 	noDebugStack bool         `msg:"-"` // disables debug stack traces

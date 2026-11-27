@@ -43,6 +43,10 @@ type statsConcentrator interface {
 	Stop()
 	flushAndSend(now time.Time, includeCurrent bool)
 	newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool)
+	// newTracerStatSpanPrealloc behaves like newTracerStatSpan, but reuses a
+	// pre-allocated tracerStatSpan (for example one fused into a span's
+	// allocation block) instead of allocating a new one. Pass nil to allocate.
+	newTracerStatSpanPrealloc(s *Span, obfuscator *obfuscate.Obfuscator, prealloc *tracerStatSpan) (*tracerStatSpan, bool)
 	trySendSpan(s *tracerStatSpan)
 	trySendSpans(spans []*tracerStatSpan)
 }
@@ -311,8 +315,12 @@ var (
 	emptyStatsMetrics = map[string]float64{}
 )
 
-// +checklocksignore — Post-finish: reads finished span fields during stats computation.
 func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
+	return c.newTracerStatSpanPrealloc(s, obfuscator, nil)
+}
+
+// +checklocksignore — Post-finish: reads finished span fields during stats computation.
+func (c *concentrator) newTracerStatSpanPrealloc(s *Span, obfuscator *obfuscate.Obfuscator, prealloc *tracerStatSpan) (*tracerStatSpan, bool) {
 	spanMeta := s.meta.Map(false) // stats reads span.kind, _dd.svc_src, status codes, peer tags — no promoted keys needed
 	if len(spanMeta) == 0 && s.metrics[keyTopLevel] != 1 && s.metrics[keyMeasured] != 1 {
 		return nil, false
@@ -371,12 +379,11 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 	}
 	origin, _ := s.meta.Get(keyOrigin)
 	version, _ := s.meta.Version()
-	if ts := s.inlineStatSpan; ts != nil {
-		s.inlineStatSpan = nil
-		ts.statSpan = statSpan
-		ts.origin = origin
-		ts.version = version
-		return ts, true
+	if prealloc != nil {
+		prealloc.statSpan = statSpan
+		prealloc.origin = origin
+		prealloc.version = version
+		return prealloc, true
 	}
 	return &tracerStatSpan{
 		statSpan: statSpan,
@@ -544,6 +551,9 @@ func (c *noopConcentrator) Start()                           {}
 func (c *noopConcentrator) Stop()                            {}
 func (c *noopConcentrator) flushAndSend(_ time.Time, _ bool) {}
 func (c *noopConcentrator) newTracerStatSpan(_ *Span, _ *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
+	return nil, false
+}
+func (c *noopConcentrator) newTracerStatSpanPrealloc(_ *Span, _ *obfuscate.Obfuscator, _ *tracerStatSpan) (*tracerStatSpan, bool) {
 	return nil, false
 }
 func (c *noopConcentrator) trySendSpan(_ *tracerStatSpan)    {}

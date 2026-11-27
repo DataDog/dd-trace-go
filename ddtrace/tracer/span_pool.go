@@ -51,7 +51,7 @@ func acquireSpanForContext(poolEnabled, needsNewTrace bool) *Span {
 		b.tr.initSpans()
 		b.ctx.trace = &b.tr
 		b.span.context = &b.ctx
-		b.span.inlineStatSpan = &b.statSpan
+		b.span.statSpan = &b.statSpan
 		return &b.span
 	}
 	b := &childSpanBlock{}

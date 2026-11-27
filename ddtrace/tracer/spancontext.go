@@ -1269,9 +1269,10 @@ func (t *trace) finishedOneLocked(s *Span) {
 		t.mu.RLock()
 		t.setTraceTagsLocked(fSpan)
 		t.mu.RUnlock()
-		// recompute stats after trace tags propagation
+		// recompute stats after trace tags propagation; reuse the stat span
+		// already stored on the span (it may be the fused pre-allocation).
 		if realTracer, ok := tr.(*tracer); ok && fSpan.statSpan != nil {
-			fSpan.statSpan, _ = realTracer.stats.newTracerStatSpan(fSpan, realTracer.obfuscator)
+			fSpan.statSpan, _ = realTracer.stats.newTracerStatSpanPrealloc(fSpan, realTracer.obfuscator, fSpan.statSpan)
 		}
 	}
 	if !finishingSpanIsFirstInChunk {
