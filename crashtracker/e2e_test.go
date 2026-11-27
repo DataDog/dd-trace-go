@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"runtime"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -55,6 +56,7 @@ const e2eRoleEnv = "_CRASHTRACKER_E2E"
 
 // TestMain selects the same application role in both re-executed processes.
 func TestMain(m *testing.M) {
+	crashtracker.WatchTestProcessOwner()
 	switch os.Getenv(e2eRoleEnv) {
 	case "panic":
 		if err := crashtracker.Start(); err != nil {
@@ -82,21 +84,23 @@ func TestMain(m *testing.M) {
 		}
 		os.Exit(0)
 
-	case "panic-many-goroutines", "panic-large-dump":
+	case "panic-large-dump":
 		// GOTRACEBACK=all includes enough goroutines to exercise truncation.
 		if err := crashtracker.Start(); err != nil {
 			os.Stderr.WriteString("crashtracker.Start: " + err.Error() + "\n")
 			os.Exit(1)
 		}
-		manyGoroutines := 150
-		if os.Getenv(e2eRoleEnv) == "panic-large-dump" {
-			manyGoroutines = 2000
-		}
+		const manyGoroutines = 2000
+		var ready sync.WaitGroup
+		ready.Add(manyGoroutines)
 		block := make(chan struct{})
 		for range manyGoroutines {
-			go func() { <-block }()
+			go func() {
+				ready.Done()
+				<-block
+			}()
 		}
-		time.Sleep(200 * time.Millisecond) // let the goroutines actually park before crashing
+		ready.Wait()
 		panic("e2e many-goroutines crash")
 
 	case "stderr-pattern":
@@ -182,8 +186,12 @@ func crashWithKind(role string) {
 	case "crash-map-writes":
 		runtime.GOMAXPROCS(max(runtime.GOMAXPROCS(0), 2))
 		m := make(map[int]int)
+		ready := make(chan struct{}, 2)
+		begin := make(chan struct{})
 		for range 2 {
 			go func() {
+				ready <- struct{}{}
+				<-begin
 				for {
 					for i := range 1024 {
 						m[i] = i
@@ -191,6 +199,9 @@ func crashWithKind(role string) {
 				}
 			}()
 		}
+		<-ready
+		<-ready
+		close(begin)
 		select {}
 	case "crash-mutex-unlock":
 		var mu sync.Mutex
@@ -253,7 +264,6 @@ func TestE2ECrashReport_Panic(t *testing.T) {
 	defer srv.Close()
 
 	cmd := exec.Command(os.Args[0], "-test.run=^$", "-test.v=false")
-	detachSupervisor(cmd)
 	cmd.Env = append(filterE2EEnv(os.Environ()),
 		e2eRoleEnv+"=panic",
 		"DD_TRACE_AGENT_URL="+srv.URL,
@@ -261,7 +271,7 @@ func TestE2ECrashReport_Panic(t *testing.T) {
 	)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
-	if err := cmd.Start(); err != nil {
+	if err := startVictim(t, cmd); err != nil {
 		t.Fatalf("spawn crash victim: %v", err)
 	}
 	// The victim panics, so non-zero exit is expected.
@@ -277,73 +287,24 @@ func TestE2ECrashReport_Panic(t *testing.T) {
 	}
 }
 
-// TestE2ECrashReport_ManyGoroutines exercises the real diagnostics and
-// upload path with more goroutines than the report cap.
-func TestE2ECrashReport_ManyGoroutines(t *testing.T) {
-	t.Parallel()
-
+func TestSupervisorLargeCrashDump(t *testing.T) {
 	received := make(chan []byte, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assertCanonicalAgentRequest(t, r)
-		body := decompressGzipBody(t, r)
 		select {
-		case received <- body:
+		case received <- decompressGzipBody(t, r):
 		default:
 		}
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	defer srv.Close()
-
-	cmd := exec.Command(os.Args[0], "-test.run=^$", "-test.v=false")
-	detachSupervisor(cmd)
-	cmd.Env = append(filterE2EEnv(os.Environ()),
-		e2eRoleEnv+"=panic-many-goroutines",
-		"DD_TRACE_AGENT_URL="+srv.URL,
-		"DD_CRASHTRACKING_ENABLED=true",
-		"GOTRACEBACK=all",
-	)
-	cmd.Stdout = io.Discard
-	cmd.Stderr = io.Discard
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("spawn crash victim: %v", err)
-	}
-	_ = waitForVictim(t, cmd, 15*time.Second)
-
-	select {
-	case body := <-received:
-		report := assertRFC0013Body(t, body)
-		errObj := report["error"].(map[string]any)
-		threads, _ := errObj["threads"].([]any)
-		// maxReportThreads=100 is the exact cap; the victim's own goroutines
-		// (150) plus runtime/testing-internal ones comfortably exceed it, so
-		// this proves truncation engaged rather than merely "some threads
-		// arrived".
-		if len(threads) != 100 {
-			t.Errorf("error.threads length = %d, want exactly 100 (the maxReportThreads cap)", len(threads))
-		}
-
-	case <-time.After(15 * time.Second):
-		t.Fatal("timeout waiting for crash report from supervisor")
-	}
-}
-
-func TestSupervisorLargeCrashDump(t *testing.T) {
-	received := make(chan struct{}, 1)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assertCanonicalAgentRequest(t, r)
-		assertCrashReport(t, decompressGzipBody(t, r), "panic", "e2e many-goroutines crash")
-		received <- struct{}{}
-		w.WriteHeader(http.StatusAccepted)
-	}))
-	defer srv.Close()
 	cmd := exec.Command(os.Args[0], "-test.run=^$")
-	detachSupervisor(cmd)
 	cmd.Env = append(filterE2EEnv(os.Environ()), e2eRoleEnv+"=panic-large-dump",
 		"DD_TRACE_AGENT_URL="+srv.URL, "DD_CRASHTRACKING_ENABLED=true",
 		"GOTRACEBACK=all", "GORACE=atexit_sleep_ms=0")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	if err := cmd.Start(); err != nil {
+	if err := startVictim(t, cmd); err != nil {
 		t.Fatal(err)
 	}
 	_ = waitForVictim(t, cmd, 15*time.Second)
@@ -351,7 +312,12 @@ func TestSupervisorLargeCrashDump(t *testing.T) {
 		t.Fatalf("crash output = %d bytes, want more than 64 KiB", stderr.Len())
 	}
 	select {
-	case <-received:
+	case body := <-received:
+		report := assertCrashReport(t, body, "panic", "e2e many-goroutines crash")
+		threads, _ := report["error"].(map[string]any)["threads"].([]any)
+		if len(threads) != 100 {
+			t.Errorf("error.threads length = %d, want 100", len(threads))
+		}
 		t.Logf("supervisor delivered a report from %d bytes of crash output", stderr.Len())
 	default:
 		t.Fatal("large crash dump did not reach the intake")
@@ -382,7 +348,6 @@ func TestE2ECrashReport_PanicWithOptions(t *testing.T) {
 	// the mock server URL via WithAgentURL instead, through a side-channel env
 	// var the test controls (not a crashtracker-recognised variable).
 	cmd := exec.Command(os.Args[0], "-test.run=^$", "-test.v=false")
-	detachSupervisor(cmd)
 	cmd.Env = append(filterE2EEnv(os.Environ()),
 		e2eRoleEnv+"=panic-with-options",
 		"_CRASHTRACKER_E2E_AGENT_URL="+srv.URL,
@@ -390,7 +355,7 @@ func TestE2ECrashReport_PanicWithOptions(t *testing.T) {
 	)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
-	if err := cmd.Start(); err != nil {
+	if err := startVictim(t, cmd); err != nil {
 		t.Fatalf("spawn crash victim: %v", err)
 	}
 	_ = waitForVictim(t, cmd, 15*time.Second)
@@ -430,7 +395,6 @@ func TestE2ECrashReport_CleanExit(t *testing.T) {
 	defer srv.Close()
 
 	cmd := exec.Command(os.Args[0], "-test.run=^$", "-test.v=false")
-	detachSupervisor(cmd)
 	cmd.Env = append(filterE2EEnv(os.Environ()),
 		e2eRoleEnv+"=clean",
 		"DD_TRACE_AGENT_URL="+srv.URL,
@@ -438,7 +402,7 @@ func TestE2ECrashReport_CleanExit(t *testing.T) {
 	)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
-	if err := cmd.Start(); err != nil {
+	if err := startVictim(t, cmd); err != nil {
 		t.Fatalf("spawn crash victim: %v", err)
 	}
 	if err := waitForVictim(t, cmd, 15*time.Second); err != nil {
@@ -483,7 +447,7 @@ func decompressGzipBody(t *testing.T, r *http.Request) []byte {
 
 // assertCrashReport validates the structure and key fields of an errorsintake
 // crash report payload.
-func assertCrashReport(t *testing.T, body []byte, wantType, wantMsgSubstr string) {
+func assertCrashReport(t *testing.T, body []byte, wantType, wantMsgSubstr string) map[string]any {
 	t.Helper()
 
 	if len(body) == 0 {
@@ -506,6 +470,7 @@ func assertCrashReport(t *testing.T, body []byte, wantType, wantMsgSubstr string
 	if !strings.Contains(ddtags, "language_name:go") {
 		t.Errorf("ddtags = %q, want it to contain \"language_name:go\"", ddtags)
 	}
+	return report
 }
 
 func assertRFC0013Body(t *testing.T, body []byte) map[string]any {
@@ -643,75 +608,13 @@ func filterE2EEnv(env []string) []string {
 	return filtered
 }
 
-// TestFilterE2EEnvStripsAPIKeyAndSite proves the fix for the bug where an
-// ambient DD_API_KEY survived filtering and forced a crash-victim subprocess
-// into agentless mode, bypassing the test's mock intake entirely.
 func TestFilterE2EEnvStripsAPIKeyAndSite(t *testing.T) {
-	in := []string{
-		"PATH=/usr/bin",
-		"DD_API_KEY=some-real-key",
-		"DD_SITE=datadoghq.com",
-		"DD_ENV=prod",
-	}
-	out := filterE2EEnv(in)
-
-	for _, kv := range out {
-		if strings.HasPrefix(kv, "DD_API_KEY=") || strings.HasPrefix(kv, "DD_SITE=") {
-			t.Errorf("filterE2EEnv(%v) = %v, want DD_API_KEY/DD_SITE stripped", in, out)
-		}
-	}
-	found := false
-	for _, kv := range out {
-		if kv == "DD_ENV=prod" {
-			found = true
-		}
-	}
-	if !found {
-		t.Errorf("filterE2EEnv(%v) = %v, want DD_ENV to survive (only DD_API_KEY/DD_SITE are stripped)", in, out)
+	want := []string{"PATH=/usr/bin", "DD_ENV=prod"}
+	in := append(slices.Clone(want), "DD_API_KEY=dummy", "DD-API-KEY=dummy", "DD_SITE=datadoghq.com", "_DD_CRASHTRACKING_ACTIVE=123:/path/to/executable")
+	if got := filterE2EEnv(in); !slices.Equal(got, want) {
+		t.Errorf("filterE2EEnv = %v, want %v", got, want)
 	}
 }
 
-// TestFilterE2EEnvStripsHyphenatedAPIKeyAlias proves the fix for the bug
-// where DD-API-KEY (the hyphenated alias internal/env also resolves
-// DD_API_KEY from) survived filtering because only the canonical
-// underscored name was checked.
-func TestFilterE2EEnvStripsHyphenatedAPIKeyAlias(t *testing.T) {
-	in := []string{"PATH=/usr/bin", "DD-API-KEY=dummy"}
-	out := filterE2EEnv(in)
-
-	for _, kv := range out {
-		if strings.HasPrefix(kv, "DD-API-KEY=") {
-			t.Errorf("filterE2EEnv(%v) = %v, want DD-API-KEY stripped", in, out)
-		}
-	}
-}
-
-func TestFilterE2EEnvStripsCrashTrackingActiveMarker(t *testing.T) {
-	in := []string{"PATH=/usr/bin", "_DD_CRASHTRACKING_ACTIVE=123:/path/to/executable"}
-	out := filterE2EEnv(in)
-	if len(out) != 1 || out[0] != in[0] {
-		t.Errorf("filterE2EEnv(%v) = %v, want [%s]", in, out, in[0])
-	}
-}
-
-// waitForVictim waits for the crash-victim subprocess to exit, bounded by
-// timeout. Without this bound, a victim that hangs during startup (before
-// ever reaching Start or the deliberate crash) would block here indefinitely,
-// so a test's own "wait for the report" timeout below would never even begin:
-// the two waits are sequential, not one deadline covering both. On timeout
-// the victim is killed and reaped so the failure is reported promptly rather
-// than surfacing later as an outer go test -timeout or CI job timeout.
-func waitForVictim(t *testing.T, cmd *exec.Cmd, timeout time.Duration) error {
-	t.Helper()
-	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
-	select {
-	case err := <-done:
-		return err
-	case <-time.After(timeout):
-		_ = cmd.Process.Kill()
-		<-done // reap
-		t.Fatalf("timeout waiting for crash victim (pid %d) to exit", cmd.Process.Pid)
-	}
-	return nil
-}
+var startVictim = crashtracker.StartTestProcess
+var waitForVictim = crashtracker.WaitTestProcess

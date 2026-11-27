@@ -72,11 +72,9 @@ func TestSupervisorTeardownInvariant(t *testing.T) {
 	}
 	defer null.Close()
 	cmd.Stdout, cmd.Stderr = null, null
-	detachSupervisor(cmd)
-	if err := cmd.Start(); err != nil {
+	if err := startVictim(t, cmd); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = cmd.Process.Kill() })
 	waitForFile(t, filepath.Join(dir, "ready"))
 	// Record every descendant before the crash so teardown does not depend
 	// on reparenting or on which process group each descendant uses.

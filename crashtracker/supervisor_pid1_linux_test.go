@@ -6,6 +6,7 @@
 package crashtracker_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -43,13 +44,18 @@ func TestSupervisorReapsOrphans(t *testing.T) {
 		}
 		cmd := pid1HelperCommand(t.Context(), "parent")
 		cmd.Stderr = os.Stderr
-		output, err := cmd.Output()
+		var output bytes.Buffer
+		cmd.Stdout = &output
+		if err := startVictim(t, cmd); err != nil {
+			t.Fatal(err)
+		}
+		err := waitForVictim(t, cmd, 5*time.Second)
 		if err != nil {
 			t.Fatal(err)
 		}
-		pid, err := strconv.Atoi(strings.TrimSpace(string(output)))
+		pid, err := strconv.Atoi(strings.TrimSpace(output.String()))
 		if err != nil || pid <= 1 {
-			t.Fatalf("invalid orphan PID %q: %v", output, err)
+			t.Fatalf("invalid orphan PID %q: %v", output.String(), err)
 		}
 		deadline := time.Now().Add(3 * time.Second)
 		for time.Now().Before(deadline) {
@@ -66,7 +72,7 @@ func TestSupervisorReapsOrphans(t *testing.T) {
 	case "parent":
 		cmd := pid1HelperCommand(t.Context(), "orphan")
 		cmd.Stderr = os.Stderr
-		if err := cmd.Start(); err != nil {
+		if err := startVictim(t, cmd); err != nil {
 			t.Fatal(err)
 		}
 		fmt.Println(cmd.Process.Pid)
@@ -84,23 +90,32 @@ func TestSupervisorReapsOrphans(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 		defer cancel()
 		cmd := pid1HelperCommand(ctx, "supervisor")
-		cmd.SysProcAttr = &syscall.SysProcAttr{Cloneflags: unix.CLONE_NEWPID}
-		output, err := cmd.CombinedOutput()
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Cloneflags: unix.CLONE_NEWPID}
+		var output bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &output, &output
+		err := startVictim(t, cmd)
 		if errors.Is(err, unix.EPERM) {
-			cmd := pid1HelperCommand(ctx, "supervisor")
+			cmd = pid1HelperCommand(ctx, "supervisor")
 			cmd.SysProcAttr = &syscall.SysProcAttr{
+				Setsid:                     true,
 				Cloneflags:                 unix.CLONE_NEWUSER | unix.CLONE_NEWPID,
 				UidMappings:                []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getuid(), Size: 1}},
 				GidMappings:                []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getgid(), Size: 1}},
 				GidMappingsEnableSetgroups: false,
 			}
-			output, err = cmd.CombinedOutput()
+			output.Reset()
+			cmd.Stdout, cmd.Stderr = &output, &output
+			err = startVictim(t, cmd)
 			if errors.Is(err, unix.EPERM) || errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ENOSPC) {
 				t.Skipf("cannot create a PID namespace: %v. Run the test binary as container PID 1 with %s=supervisor", err, pid1HelperEnv)
 			}
 		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = waitForVictim(t, cmd, 15*time.Second)
 		if exit, ok := errors.AsType[*exec.ExitError](err); !ok || exit.ExitCode() != pid1ChildExit {
-			t.Fatalf("supervisor exit = %v, want exit status %d\n%s", err, pid1ChildExit, output)
+			t.Fatalf("supervisor exit = %v, want exit status %d\n%s", err, pid1ChildExit, output.String())
 		}
 	default:
 		t.Fatalf("unknown helper mode %q", os.Getenv(pid1HelperEnv))

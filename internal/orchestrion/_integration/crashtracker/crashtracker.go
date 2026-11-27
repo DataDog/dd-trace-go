@@ -10,7 +10,6 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -71,21 +70,22 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	t.Cleanup(tc.mockSrv.Close)
 }
 
-func (tc *TestCase) Run(_ context.Context, t *testing.T) {
+func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	var out bytes.Buffer
-	cmd := spawnSubprocess(t, crashRoleOrch, tc.mockSrv.URL, &out)
+	cmd := spawnSubprocess(ctx, t, crashRoleOrch, tc.mockSrv.URL, &out)
 
-	err := cmd.Wait()
-	if execErr, ok := errors.AsType[*exec.Error](err); ok {
-		t.Fatalf("subprocess failed to start: %v", execErr)
+	if err := cmd.Wait(); ctx.Err() != nil {
+		t.Fatalf("wait for crash victim: %v: %v\n%s", ctx.Err(), err, &out)
 	}
-	// Any other non-zero exit is expected: the subprocess panics.
+	// A panic gives a non-zero exit status.
 
 	select {
 	case body := <-tc.received:
 		assertOrchCrashReport(t, body)
-	case <-time.After(15 * time.Second):
-		t.Fatalf("timed out waiting for crash report from explicit crashtracker.Start() subprocess\nsubprocess output:\n%s", out.String())
+	default:
+		t.Fatalf("no crash report from explicit crashtracker.Start() subprocess\nsubprocess output:\n%s", out.String())
 	}
 }
 
@@ -98,24 +98,33 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 // orchestrion. Combined stdout+stderr is written to out: a panicking
 // subprocess's own crash dump is the most direct evidence available when a
 // report doesn't arrive as expected.
-func spawnSubprocess(t *testing.T, role, agentURL string, out io.Writer) *exec.Cmd {
+func spawnSubprocess(ctx context.Context, t *testing.T, role, agentURL string, out io.Writer) *exec.Cmd {
 	t.Helper()
 	if !built.WithOrchestrion {
 		t.Skip("subprocess e2e requires orchestrion-built binary; run via orchestrion go test")
 	}
 
-	cmd := exec.Command(os.Args[0], "-test.run=^$", "-test.v=false") //nolint:gosec
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^$", "-test.v=false") //nolint:gosec
 	cmd.Env = append(filterOrchEnv(os.Environ()),
 		e2eRoleEnv+"="+role,
 		"DD_TRACE_AGENT_URL="+agentURL,
 		"DD_CRASHTRACKING_ENABLED=true",
 	)
+	prepareCrashtrackerCommand(cmd)
 	cmd.Stdout = out
 	cmd.Stderr = out
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("spawn subprocess: %v", err)
 	}
 	return cmd
+}
+
+// The integration tests set the platform-specific cleanup for commands.
+var configureCrashtrackerCommand = func(*exec.Cmd) {}
+
+func prepareCrashtrackerCommand(cmd *exec.Cmd) {
+	cmd.WaitDelay = time.Second
+	configureCrashtrackerCommand(cmd)
 }
 
 // filterOrchEnv strips variables that must not pollute the subprocess

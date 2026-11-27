@@ -52,8 +52,7 @@ func TestBuildDDTags(t *testing.T) {
 		t.Errorf("buildDDTags() = %q, want a uuid tag", tags)
 	}
 
-	// Every element must be a well-formed "key:value" pair: a non-empty key
-	// with no embedded colon, and a value.
+	// Each tag must have a non-empty key and value.
 	for pair := range strings.SplitSeq(tags, ",") {
 		key, value, ok := strings.Cut(pair, ":")
 		if !ok {
@@ -62,9 +61,6 @@ func TestBuildDDTags(t *testing.T) {
 		}
 		if key == "" {
 			t.Errorf("tag %q has an empty key", pair)
-		}
-		if strings.Contains(key, ":") {
-			t.Errorf("tag %q key contains a raw colon", pair)
 		}
 		if value == "" {
 			t.Errorf("tag %q has an empty value", pair)

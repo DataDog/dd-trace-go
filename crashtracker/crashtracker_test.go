@@ -6,48 +6,52 @@
 package crashtracker_test
 
 import (
+	"bytes"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/crashtracker"
 )
 
-// Start uses a package-level sync.Once, so it fires at most once per process
-// and cannot be reset from an external test package. A Start call that actually
-// starts the child would re-exec the test binary, which is not hermetic.
-//
-// Every Start call below therefore passes WithEnabled(false): the enabled gate
-// short-circuits before supervision, so no child is ever launched no
-// matter which test happens to win the Once. The remaining behaviour under test
-// is the option plumbing, the enabled gate, and idempotency.
-
-func TestStartRespectsDisabled(t *testing.T) {
-	// A disabled crashtracker must return nil without starting a child.
-	if err := crashtracker.Start(crashtracker.WithEnabled(false)); err != nil {
-		t.Fatalf("Start(WithEnabled(false)) = %v, want nil", err)
-	}
-}
-
 func TestStartIdempotent(t *testing.T) {
-	// The first winning call runs start; every later call is a no-op returning
-	// the same (nil) result. Calling twice must not error or panic.
-	if err := crashtracker.Start(crashtracker.WithEnabled(false)); err != nil {
-		t.Fatalf("Start (first call) = %v, want nil", err)
+	const outcomeEnv = "_CRASHTRACKER_START_OUTCOME"
+	switch os.Getenv(outcomeEnv) {
+	case "disabled":
+		if err := crashtracker.Start(crashtracker.WithEnabled(false), crashtracker.WithService("test")); err != nil {
+			t.Fatalf("disabled Start = %v, want nil", err)
+		}
+		t.Setenv("_DD_CRASHTRACKING_SUPERVISED_FD", fmt.Sprintf("%d:-1", os.Getppid()))
+		if err := crashtracker.Start(crashtracker.WithEnabled(false)); err != nil {
+			t.Fatalf("later Start = %v, want nil", err)
+		}
+		return
+	case "error":
+		t.Setenv("_DD_CRASHTRACKING_SUPERVISED_FD", fmt.Sprintf("%d:-1", os.Getppid()))
+		first := crashtracker.Start()
+		if first == nil || !strings.Contains(first.Error(), "crash") {
+			t.Fatalf("Start with an invalid inherited descriptor = %v, want an error", first)
+		}
+		if later := crashtracker.Start(crashtracker.WithEnabled(false)); later != first {
+			t.Fatalf("later Start = %v, want the first error %v", later, first)
+		}
+		return
 	}
-	if err := crashtracker.Start(crashtracker.WithEnabled(false)); err != nil {
-		t.Fatalf("Start (second call) = %v, want nil", err)
-	}
-}
-
-func TestStartWithOptions(t *testing.T) {
-	// Options must be accepted and applied without error. WithEnabled(false)
-	// keeps the call from starting a child.
-	err := crashtracker.Start(
-		crashtracker.WithService("mysvc"),
-		crashtracker.WithEnv("prod"),
-		crashtracker.WithVersion("1.2.3"),
-		crashtracker.WithEnabled(false),
-	)
-	if err != nil {
-		t.Fatalf("Start(WithService, WithEnv, WithVersion, WithEnabled(false)) = %v, want nil", err)
+	for _, outcome := range []string{"disabled", "error"} {
+		t.Run(outcome, func(t *testing.T) {
+			cmd := exec.Command(os.Args[0], "-test.run=^TestStartIdempotent$")
+			cmd.Env = append(filterE2EEnv(os.Environ()), outcomeEnv+"="+outcome, "GORACE=atexit_sleep_ms=0")
+			var output bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &output, &output
+			if err := startVictim(t, cmd); err != nil {
+				t.Fatal(err)
+			}
+			if err := waitForVictim(t, cmd, 5*time.Second); err != nil {
+				t.Fatalf("Start helper: %v: %s", err, &output)
+			}
+		})
 	}
 }

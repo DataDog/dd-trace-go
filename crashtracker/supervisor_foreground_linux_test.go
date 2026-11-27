@@ -7,11 +7,13 @@ package crashtracker
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"testing"
 	"time"
@@ -26,23 +28,42 @@ const foregroundRoleEnv = "_CRASHTRACKER_FOREGROUND_ROLE"
 func TestDetachedChildForegroundHelper(t *testing.T) {
 	dir := os.Getenv("_CRASHTRACKER_FOREGROUND_DIR")
 	switch os.Getenv(foregroundRoleEnv) {
-	case "supervisor":
-		_, w, err := os.Pipe()
+	case "background-shell":
+		cmd := exec.Command(os.Args[0], "-test.run=^TestDetachedChildForegroundHelper$")
+		cmd.Env = append(os.Environ(), foregroundRoleEnv+"=background-supervisor")
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		if err := StartTestProcess(t, cmd); err != nil {
+			t.Fatal(err)
+		}
+		if err := WaitTestProcess(t, cmd, 5*time.Second); err != nil {
+			t.Fatal(err)
+		}
+	case "supervisor", "background-supervisor":
+		r, w, err := os.Pipe()
 		if err != nil {
 			t.Fatal(err)
 		}
 		cmd := exec.Command(os.Args[0], "-test.run=^TestDetachedChildForegroundHelper$")
-		cmd.Env = append(os.Environ(), foregroundRoleEnv+"=application")
+		defer r.Close()
+		defer w.Close()
+		role := "application"
+		if os.Getenv(foregroundRoleEnv) == "background-supervisor" {
+			role = "background-application"
+		}
+		cmd.Env = append(os.Environ(), foregroundRoleEnv+"="+role)
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 		// Detached mode, as with docker run -t, where no job-control shell runs.
 		if _, err := configureChild(cmd, w, false); err != nil {
 			t.Fatal(err)
 		}
-		if err := cmd.Start(); err != nil {
+		if err := StartTestProcess(t, cmd); err != nil {
 			t.Fatal(err)
 		}
 		closeInheritedDescriptors(cmd, w)
-		_ = cmd.Wait()
+		if err := WaitTestProcess(t, cmd, 5*time.Second); err != nil {
+			t.Fatal(err)
+		}
 	case "supervisor-exec-fails":
 		// The child's exec fails after Go moved the terminal foreground to it.
 		// The supervisor then returns to the caller, which reads the terminal.
@@ -50,10 +71,12 @@ func TestDetachedChildForegroundHelper(t *testing.T) {
 		if err := os.WriteFile(notExecutable, []byte("not a program"), 0600); err != nil {
 			t.Fatal(err)
 		}
-		_, w, err := os.Pipe()
+		r, w, err := os.Pipe()
 		if err != nil {
 			t.Fatal(err)
 		}
+		defer r.Close()
+		defer w.Close()
 		cmd := exec.Command(notExecutable)
 		if _, err := configureChild(cmd, w, false); err != nil {
 			t.Fatal(err)
@@ -64,12 +87,23 @@ func TestDetachedChildForegroundHelper(t *testing.T) {
 		recordTerminalLine(t, dir)
 	case "application":
 		recordTerminalLine(t, dir)
+	case "background-application":
+		foreground, err := unix.IoctlGetInt(0, unix.TIOCGPGRP)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "foreground"), []byte(strconv.Itoa(foreground)), 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
 // recordTerminalLine reads one line from stdin and stores it in dir.
 func recordTerminalLine(t *testing.T, dir string) {
 	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "ready"), []byte("ready"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil {
 		t.Fatal(err)
@@ -92,16 +126,79 @@ func TestDetachedChildExecFailureRestoresForeground(t *testing.T) {
 	runOnTerminal(t, "supervisor-exec-fails", "the supervisor did not read from the terminal: the failed start left the foreground with the dead child group")
 }
 
-// runOnTerminal runs the helper in the given role as a session leader on a pty
-// and expects it, or its child, to read a line that the test types.
-func runOnTerminal(t *testing.T, role, timeoutMessage string) {
-	t.Helper()
-	masterFD, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
+func TestDetachedChildDoesNotTakeForegroundFromShell(t *testing.T) {
+	cmd, _, dir, output := startForegroundHelper(t, "background-shell")
+	if err := WaitTestProcess(t, cmd, 10*time.Second); err != nil {
+		t.Fatalf("background supervisor: %v: %s", err, output())
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "foreground"))
 	if err != nil {
-		t.Skipf("no pty: %v", err)
+		t.Fatal(err)
+	}
+	if want := strconv.Itoa(cmd.Process.Pid); string(data) != want {
+		t.Fatalf("terminal foreground group = %s, want the shell group %s", data, want)
+	}
+}
+
+func runOnTerminal(t *testing.T, role, failure string) {
+	t.Helper()
+	cmd, master, dir, output := startForegroundHelper(t, role)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "ready")); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("terminal helper did not become ready")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if _, err := master.Write([]byte("hello\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := WaitTestProcess(t, cmd, 10*time.Second); err != nil {
+		t.Fatalf("%s: %v: %s", failure, err, output())
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "line"))
+	if err != nil || string(data) != "hello\n" {
+		t.Fatalf("terminal read = %q, %v, want hello", data, err)
+	}
+}
+
+func startForegroundHelper(t *testing.T, role string) (*exec.Cmd, *os.File, string, func() string) {
+	t.Helper()
+	master, slave := OpenTestPTY(t)
+	dir := t.TempDir()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestDetachedChildForegroundHelper$")
+	cmd.Env = append(os.Environ(), foregroundRoleEnv+"="+role, "_CRASHTRACKER_FOREGROUND_DIR="+dir, "GORACE=atexit_sleep_ms=0")
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = slave, slave, slave
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
+	if err := StartTestProcess(t, cmd); err != nil {
+		t.Fatal(err)
+	}
+	_ = slave.Close()
+	var output bytes.Buffer
+	drained := make(chan struct{})
+	go func() {
+		defer close(drained)
+		_, _ = io.Copy(&output, master)
+	}()
+	return cmd, master, dir, func() string {
+		_ = master.Close()
+		<-drained
+		return output.String()
+	}
+}
+
+// OpenTestPTY opens a PTY or skips when the host does not provide one.
+func OpenTestPTY(t *testing.T) (*os.File, *os.File) {
+	t.Helper()
+	masterFD, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC|unix.O_NONBLOCK, 0)
+	if err != nil {
+		t.Skipf("cannot open PTY master: %v", err)
 	}
 	master := os.NewFile(uintptr(masterFD), "pty-master")
-	defer master.Close()
+	t.Cleanup(func() { _ = master.Close() })
 	if err := unix.IoctlSetPointerInt(masterFD, unix.TIOCSPTLCK, 0); err != nil {
 		t.Fatal(err)
 	}
@@ -111,39 +208,8 @@ func runOnTerminal(t *testing.T, role, timeoutMessage string) {
 	}
 	slave, err := os.OpenFile(fmt.Sprintf("/dev/pts/%d", number), os.O_RDWR|syscall.O_NOCTTY, 0)
 	if err != nil {
-		t.Fatal(err)
+		t.Skipf("cannot open PTY slave: %v", err)
 	}
-	defer slave.Close()
-	dir := t.TempDir()
-	cmd := exec.Command(os.Args[0], "-test.run=^TestDetachedChildForegroundHelper$")
-	cmd.Env = append(os.Environ(), foregroundRoleEnv+"="+role, "_CRASHTRACKER_FOREGROUND_DIR="+dir)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = slave, slave, slave
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-	})
-	go func() { _, _ = io.Copy(io.Discard, master) }()
-	// Give the application time to start its read before the input arrives.
-	time.Sleep(500 * time.Millisecond)
-	if _, err := master.Write([]byte("hello\n")); err != nil {
-		t.Fatal(err)
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if data, err := os.ReadFile(filepath.Join(dir, "line")); err == nil {
-			if string(data) != "hello\n" {
-				t.Fatalf("application read %q, want %q", data, "hello\n")
-			}
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal(timeoutMessage)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	t.Cleanup(func() { _ = slave.Close() })
+	return master, slave
 }

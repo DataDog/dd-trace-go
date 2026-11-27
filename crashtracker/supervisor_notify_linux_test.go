@@ -56,18 +56,11 @@ func TestSupervisorNotifyRelay(t *testing.T) {
 				t.Fatal(err)
 			}
 			cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestSupervisorNotifyRelay$")
-			detachSupervisor(cmd)
 			cmd.Env = append(filterE2EEnv(os.Environ()), notifyRelayHelperEnv+"=1", "DD_CRASHTRACKING_ENABLED=true", "GORACE=atexit_sleep_ms=0", "NOTIFY_SOCKET="+addr)
 			cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
-			if err := cmd.Start(); err != nil {
+			if err := startVictim(t, cmd); err != nil {
 				t.Fatal(err)
 			}
-			t.Cleanup(func() {
-				if cmd.ProcessState == nil {
-					_ = cmd.Process.Kill()
-					_ = cmd.Wait()
-				}
-			})
 			for _, want := range []string{"READY=1\nSTATUS= ready \nWATCHDOG=1\n", "BARRIER=1", "STOPPING=1"} {
 				var payload [256]byte
 				control := make([]byte, unix.CmsgSpace(unix.SizeofUcred)+unix.CmsgSpace(4))
@@ -124,7 +117,7 @@ func TestSupervisorNotifyRelay(t *testing.T) {
 					t.Fatalf("received %d unexpected file descriptors", len(fds))
 				}
 			}
-			if err := cmd.Wait(); err != nil {
+			if err := waitForVictim(t, cmd, 10*time.Second); err != nil {
 				t.Fatal(err)
 			}
 		})

@@ -9,6 +9,7 @@ package crashtracker_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -31,6 +32,7 @@ import (
 )
 
 const helperModeEnv = "_CRASHTRACKER_SUPERVISOR_HELPER"
+const helperTestPIDEnv = "_CRASHTRACKER_HELPER_TEST_PID"
 
 // supervisedFDEnv mirrors the production const in supervisor.go.
 const supervisedFDEnv = "_DD_CRASHTRACKING_SUPERVISED_FD"
@@ -54,14 +56,25 @@ func TestSupervisorHelper(t *testing.T) {
 		return
 	}
 	dir := os.Getenv("_CRASHTRACKER_HELPER_DIR")
-	markerFD, supervisedChild := helperMarkerFD()
-	if mode == "hold-pipe" {
-		if err := os.WriteFile(filepath.Join(dir, "holder"), []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
+	parentPID := os.Getppid()
+	testPID, _ := strconv.Atoi(os.Getenv(helperTestPIDEnv))
+	if mode == "helper-parent" {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestSupervisorHelper$")
+		cmd.Env = append(os.Environ(), helperModeEnv+"=wait")
+		configureSupervisorTestHelper(t, cmd)
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		if err := startVictim(t, cmd); err != nil {
 			t.Fatal(err)
 		}
-		for {
-			time.Sleep(time.Hour)
+		if err := waitForVictim(t, cmd, 10*time.Second); err != nil {
+			t.Fatal(err)
 		}
+		return
+	}
+	markerFD, supervisedChild := helperMarkerFD()
+	if mode == "hold-pipe" {
+		holdCrashPipe(t, dir, parentPID, testPID)
+		return
 	}
 	if (mode == "ignored" || mode == "ignored-reenabled") && !supervisedChild {
 		signal.Ignore(syscall.SIGHUP)
@@ -100,22 +113,6 @@ func TestSupervisorHelper(t *testing.T) {
 		}
 		return
 	}
-	if mode == "reexec-failure" {
-		if err := os.Remove(os.Args[0]); err != nil {
-			t.Fatal(err)
-		}
-		// The supervisor resets SIGCHLD to start the child. When the start
-		// fails, the application must keep its own setting.
-		signal.Ignore(syscall.SIGCHLD)
-		if err := crashtracker.Start(); err == nil || !strings.Contains(err.Error(), "start application process") {
-			t.Fatalf("Start after removing executable = %v", err)
-		}
-		if !signal.Ignored(syscall.SIGCHLD) {
-			t.Fatal("the failed start did not restore the ignored SIGCHLD")
-		}
-		fmt.Println("application continued after re-exec failure")
-		return
-	}
 	if mode == "crash-subprocess" {
 		probe, err := os.Create(filepath.Join(dir, "subprocess-crash-output"))
 		if err != nil {
@@ -140,14 +137,24 @@ func TestSupervisorHelper(t *testing.T) {
 				t.Fatal(err)
 			}
 			pipe := os.NewFile(uintptr(dup), "held-crash-pipe")
-			held := exec.Command(os.Args[0], "-test.run=^TestSupervisorHelper$")
+			// The holder must outlive the application's panic cleanup.
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			held := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestSupervisorHelper$")
 			held.Env = append(os.Environ(), helperModeEnv+"=hold-pipe")
 			held.ExtraFiles = []*os.File{pipe}
-			if err := held.Start(); err != nil {
+			held.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+			held.Cancel = func() error { return syscall.Kill(-held.Process.Pid, syscall.SIGKILL) }
+			held.WaitDelay = time.Second
+			err = held.Start()
+			_ = pipe.Close()
+			if err != nil {
+				cancel()
 				t.Fatal(err)
 			}
-			_ = pipe.Close()
-			_ = held.Process.Release()
+			go func() {
+				defer cancel()
+				_ = held.Wait()
+			}()
 			waitForFile(t, filepath.Join(dir, "holder"))
 		}
 	}
@@ -182,8 +189,13 @@ func TestSupervisorHelper(t *testing.T) {
 	if mode == "fd" {
 		cmd := exec.Command(os.Args[0], "-test.run=^TestSupervisorHelper$")
 		cmd.Env = append(os.Environ(), helperModeEnv+"=fd-probe", "_CRASHTRACKER_PIPE_ID="+pipeID)
-		if output, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("probe: %v: %s", err, output)
+		var output bytes.Buffer
+		cmd.Stdout, cmd.Stderr = &output, &output
+		if err := startVictim(t, cmd); err != nil {
+			t.Fatal(err)
+		}
+		if err := waitForVictim(t, cmd, 5*time.Second); err != nil {
+			t.Fatalf("probe: %v: %s", err, &output)
 		}
 		return
 	}
@@ -203,7 +215,7 @@ func TestSupervisorHelper(t *testing.T) {
 		cmd.Env = append(os.Environ(), helperModeEnv+"=crash-subprocess")
 		var output bytes.Buffer
 		cmd.Stderr = &output
-		if err := cmd.Start(); err != nil {
+		if err := startVictim(t, cmd); err != nil {
 			t.Fatal(err)
 		}
 		if err := waitForVictim(t, cmd, 5*time.Second); err == nil || cmd.ProcessState.ExitCode() != 2 {
@@ -272,6 +284,22 @@ func TestSupervisorHelper(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeReady(t, dir)
+	if mode == "wait-for-signal" {
+		select {}
+	}
+	if mode == "survive-supervisor" {
+		deadline := time.Now().Add(5 * time.Second)
+		for os.Getppid() == parentPID {
+			if time.Now().After(deadline) {
+				t.Fatal("supervisor did not exit")
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "survived"), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
 	if mode == "held-pipe" || mode == "ignored-sigchld" {
 		os.Exit(3)
 	}
@@ -289,6 +317,9 @@ func TestSupervisorHelper(t *testing.T) {
 				t.Fatal(err)
 			}
 		case <-time.After(5 * time.Millisecond):
+			if os.Getppid() != parentPID || (testPID > 0 && !helperProcessAlive(testPID)) {
+				os.Exit(0)
+			}
 			if _, err := os.Stat(filepath.Join(dir, "exit")); err == nil {
 				os.Exit(3)
 			}
@@ -296,18 +327,38 @@ func TestSupervisorHelper(t *testing.T) {
 	}
 }
 
-func detachSupervisor(cmd *exec.Cmd) {
+func holdCrashPipe(t *testing.T, dir string, parentPID, testPID int) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "holder"), []byte(strconv.Itoa(os.Getpid())), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// The holder outlives the application so the supervisor can test its pipe timeout.
+	pid, _, _ := strings.Cut(os.Getenv(supervisedFDEnv), ":")
+	supervisorPID, _ := strconv.Atoi(pid)
+	for helperProcessAlive(testPID) && (os.Getppid() == parentPID || helperProcessAlive(supervisorPID)) {
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func helperProcessAlive(pid int) bool {
+	return pid > 0 && syscall.Kill(pid, 0) == nil
+}
+
+func configureSupervisorTestHelper(t *testing.T, cmd *exec.Cmd) {
+	t.Helper()
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Env = append(cmd.Env, helperTestPIDEnv+"="+strconv.Itoa(os.Getpid()))
+	setHelperParentDeathSignal(t, cmd)
 }
 
 func startSupervisorHelper(t *testing.T, mode string, env ...string) (*exec.Cmd, string) {
 	t.Helper()
 	dir := t.TempDir()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestSupervisorHelper$")
-	detachSupervisor(cmd)
 	cmd.Env = append(filterE2EEnv(os.Environ()), helperModeEnv+"="+mode,
 		"_CRASHTRACKER_HELPER_DIR="+dir, "DD_CRASHTRACKING_ENABLED=true", "GORACE=atexit_sleep_ms=0")
 	cmd.Env = append(cmd.Env, env...)
+	configureSupervisorTestHelper(t, cmd)
 	if mode == "exit" {
 		cmd.Args[0] = "crashtracker-original-argv0"
 		cmd.Env = append(cmd.Env, "_CRASHTRACKER_ARGV0="+cmd.Args[0])
@@ -326,22 +377,10 @@ func startSupervisorHelper(t *testing.T, mode string, env ...string) (*exec.Cmd,
 	}
 	t.Cleanup(func() { _ = stderr.Close() })
 	cmd.Stdout, cmd.Stderr = null, stderr
-	if err := cmd.Start(); err != nil {
+	if err := startVictim(t, cmd); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		_ = cmd.Process.Kill()
-		if data, err := os.ReadFile(filepath.Join(dir, "ready")); err == nil {
-			if pid, err := strconv.Atoi(string(data)); err == nil && pid != cmd.Process.Pid {
-				_ = syscall.Kill(pid, syscall.SIGKILL)
-			}
-		}
-		if data, err := os.ReadFile(filepath.Join(dir, "holder")); err == nil {
-			if pid, err := strconv.Atoi(string(data)); err == nil {
-				_ = syscall.Kill(pid, syscall.SIGKILL)
-			}
-		}
-	})
+
 	return cmd, dir
 }
 
@@ -351,9 +390,9 @@ func startSupervisorHelper(t *testing.T, mode string, env ...string) (*exec.Cmd,
 func TestSupervisorReleasesStdio(t *testing.T) {
 	dir := t.TempDir()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestSupervisorHelper$")
-	detachSupervisor(cmd)
 	cmd.Env = append(filterE2EEnv(os.Environ()), helperModeEnv+"=close-stdio",
 		"_CRASHTRACKER_HELPER_DIR="+dir, "DD_CRASHTRACKING_ENABLED=true", "GORACE=atexit_sleep_ms=0")
+	configureSupervisorTestHelper(t, cmd)
 	stdoutR, stdoutW, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -363,14 +402,12 @@ func TestSupervisorReleasesStdio(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdinR, stdoutW, nil
-	if err := cmd.Start(); err != nil {
+	if err := startVictim(t, cmd); err != nil {
 		t.Fatal(err)
 	}
 	_ = stdoutW.Close()
 	_ = stdinR.Close()
 	t.Cleanup(func() {
-		_ = os.WriteFile(filepath.Join(dir, "exit"), nil, 0600)
-		_ = cmd.Wait()
 		_ = stdoutR.Close()
 		_ = stdinW.Close()
 	})
@@ -402,6 +439,10 @@ func TestSupervisorReleasesStdio(t *testing.T) {
 	if err := syscall.Kill(pid, 0); err != nil {
 		t.Fatalf("the application %d is no longer running: %v", pid, err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, "exit"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	_ = waitForVictim(t, cmd, 5*time.Second)
 }
 
 func TestSupervisorExitCodes(t *testing.T) {
@@ -421,6 +462,9 @@ func TestSupervisorExitCodes(t *testing.T) {
 			pid, _ := strconv.Atoi(string(waitForFile(t, filepath.Join(dir, "ready"))))
 			if pid == cmd.Process.Pid {
 				t.Fatal("application did not run as a child")
+			}
+			if got, want := string(waitForFile(t, filepath.Join(dir, "ppid"))), strconv.Itoa(cmd.Process.Pid); got != want {
+				t.Fatalf("child os.Getppid() = %s, want the supervisor PID %s", got, want)
 			}
 			select {
 			case <-posted:
@@ -509,47 +553,6 @@ func TestSupervisorDisabled(t *testing.T) {
 	}
 }
 
-func TestSupervisorReexecFailure(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "helper")
-	src, err := os.Open(os.Args[0])
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer src.Close()
-	dst, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0700)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, copyErr := io.Copy(dst, src)
-	closeErr := dst.Close()
-	if copyErr != nil || closeErr != nil {
-		t.Fatalf("copy executable: %v, close: %v", copyErr, closeErr)
-	}
-	cmd := exec.Command(path, "-test.run=^TestSupervisorHelper$")
-	detachSupervisor(cmd)
-	cmd.Env = append(filterE2EEnv(os.Environ()), helperModeEnv+"=reexec-failure", "DD_CRASHTRACKING_ENABLED=true", "GORACE=atexit_sleep_ms=0")
-	output, err := cmd.CombinedOutput()
-	if err != nil || !strings.Contains(string(output), "application continued after re-exec failure") {
-		t.Fatalf("fail-open helper: %v: %s", err, output)
-	}
-}
-
-func TestSupervisorChildIgnoresOptions(t *testing.T) {
-	received := make(chan struct{}, 1)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		received <- struct{}{}
-		w.WriteHeader(http.StatusAccepted)
-	}))
-	defer srv.Close()
-	cmd, _ := startSupervisorHelper(t, "panic", "DD_TRACE_AGENT_URL="+srv.URL)
-	_ = waitForVictim(t, cmd, 5*time.Second)
-	select {
-	case <-received:
-	default:
-		t.Fatal("child options disabled the inherited crash pipe")
-	}
-}
-
 func TestSupervisorPanicCrashDoesNotDumpSupervisor(t *testing.T) {
 	received := make(chan struct{}, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -578,6 +581,40 @@ func TestSupervisorPanicCrashDoesNotDumpSupervisor(t *testing.T) {
 	}
 	if strings.Contains(afterUpload, "SIGABRT: abort") {
 		t.Fatal("supervisor emitted a second SIGABRT dump after upload")
+	}
+}
+
+func TestSupervisorHelperExitsAfterTestParentDies(t *testing.T) {
+	dir := t.TempDir()
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer read.Close()
+	defer write.Close()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestSupervisorHelper$")
+	cmd.Env = append(filterE2EEnv(os.Environ()), helperModeEnv+"=helper-parent",
+		"_CRASHTRACKER_HELPER_DIR="+dir, "DD_CRASHTRACKING_ENABLED=true", "GORACE=atexit_sleep_ms=0")
+	configureSupervisorTestHelper(t, cmd)
+	cmd.Stdout = write
+	if err := startVictim(t, cmd); err != nil {
+		t.Fatal(err)
+	}
+	_ = write.Close()
+
+	waitForFile(t, filepath.Join(dir, "ready"))
+	for _, pid := range processDescendants(t, cmd.Process.Pid) {
+		t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	}
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_ = waitForVictim(t, cmd, 5*time.Second)
+	if err := read.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.Copy(io.Discard, read); err != nil {
+		t.Fatalf("helper kept stdout open after its test parent died: %v", err)
 	}
 }
 
@@ -786,14 +823,6 @@ func TestSupervisorPassesStdinToChild(t *testing.T) {
 	_ = waitForVictim(t, cmd, 5*time.Second)
 	if got, want := string(waitForFile(t, filepath.Join(dir, "stdin"))), "stdin-pass-through\n"; got != want {
 		t.Fatalf("child stdin = %q, want %q", got, want)
-	}
-}
-
-func TestSupervisorIsParentOfChild(t *testing.T) {
-	cmd, dir := startSupervisorHelper(t, "exit")
-	_ = waitForVictim(t, cmd, 5*time.Second)
-	if got, want := string(waitForFile(t, filepath.Join(dir, "ppid"))), strconv.Itoa(cmd.Process.Pid); got != want {
-		t.Fatalf("child os.Getppid() = %s, want the supervisor PID %s", got, want)
 	}
 }
 

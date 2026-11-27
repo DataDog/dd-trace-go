@@ -26,7 +26,6 @@ import (
 func startStderrVictim(t *testing.T, role, agentURL string, stderr *os.File, env ...string) *exec.Cmd {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], "-test.run=^$", "-test.v=false")
-	detachSupervisor(cmd)
 	cmd.Env = append(filterE2EEnv(os.Environ()),
 		e2eRoleEnv+"="+role,
 		"DD_TRACE_AGENT_URL="+agentURL,
@@ -34,7 +33,7 @@ func startStderrVictim(t *testing.T, role, agentURL string, stderr *os.File, env
 	)
 	cmd.Env = append(cmd.Env, env...)
 	cmd.Stdout, cmd.Stderr = nil, stderr
-	if err := cmd.Start(); err != nil {
+	if err := startVictim(t, cmd); err != nil {
 		t.Fatalf("spawn %s: %v", role, err)
 	}
 	return cmd

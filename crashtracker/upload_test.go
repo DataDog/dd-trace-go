@@ -17,8 +17,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -68,37 +68,60 @@ func newTestReport() *Report {
 	return r
 }
 
+type testUploadTransport func(*http.Request) (*http.Response, error)
+
+func (f testUploadTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	defer r.Body.Close()
+	return f(r)
+}
+
 func TestUploadReportContextStopsRetryBackoff(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
-	requests := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		requests++
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		arrived, reply := make(chan struct{}), make(chan struct{})
+		requests := 0
+		client := &http.Client{Transport: testUploadTransport(func(*http.Request) (*http.Response, error) {
+			requests++
+			if requests == 1 {
+				close(arrived)
+				<-reply
+			}
+			return &http.Response{StatusCode: http.StatusServiceUnavailable}, nil
+		})}
+		done := make(chan error, 1)
+		go func() {
+			done <- uploadReport(ctx, &config{agentURL: "http://intake.test", httpClient: client}, newTestReport())
+		}()
+		<-arrived
+		close(reply)
+		synctest.Wait()
+		started := time.Now()
 		cancel()
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	defer srv.Close()
-	started := time.Now()
-	err := uploadReport(ctx, &config{agentURL: srv.URL}, newTestReport())
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("uploadReport = %v, want context.Canceled", err)
-	}
-	if requests != 1 || time.Since(started) >= uploadRetryBackoff {
-		t.Fatalf("canceled upload made %d requests in %s", requests, time.Since(started))
-	}
+		if err := <-done; !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "intake returned 503") {
+			t.Fatalf("uploadReport = %v, want cancellation after a 503", err)
+		}
+		if requests != 1 || time.Since(started) != 0 {
+			t.Fatalf("canceled upload made %d requests and took %s", requests, time.Since(started))
+		}
+	})
 }
 
 func TestUploadReportContextDeadlineInterruptsRequest(t *testing.T) {
-	release := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) { <-release }))
-	defer srv.Close()
-	defer close(release)
-	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
-	defer cancel()
-	err := uploadReport(ctx, &config{agentURL: srv.URL}, newTestReport())
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("uploadReport = %v, want context.DeadlineExceeded", err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+		defer cancel()
+		var requestErr error
+		client := &http.Client{Transport: testUploadTransport(func(r *http.Request) (*http.Response, error) {
+			<-r.Context().Done()
+			requestErr = r.Context().Err()
+			return nil, requestErr
+		})}
+		err := uploadReport(ctx, &config{agentURL: "http://intake.test", httpClient: client}, newTestReport())
+		if !errors.Is(err, context.DeadlineExceeded) || requestErr != context.DeadlineExceeded {
+			t.Fatalf("upload error = %v, transport error = %v, want deadline exceeded", err, requestErr)
+		}
+	})
 }
 
 func TestUploadTargetNewClientTimeout(t *testing.T) {
@@ -136,67 +159,44 @@ func TestUploadTargetNewClientTimeout(t *testing.T) {
 func TestUploadReportRetriesHungFirstAttempt(t *testing.T) {
 	t.Parallel()
 
-	var requests atomic.Int32
-	delivered := make(chan []byte, uploadAttempts)
-	release := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Errorf("read body: %v", err)
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		if requests.Add(1) == 1 {
-			select {
-			case <-release:
-			case <-r.Context().Done():
+	synctest.Test(t, func(t *testing.T) {
+		var attempts int
+		var delivered []byte
+		client := (uploadTarget{}).newClient(&config{})
+		client.Transport = testUploadTransport(func(r *http.Request) (*http.Response, error) {
+			attempts++
+			if attempts == 1 {
+				<-r.Context().Done()
+				return nil, r.Context().Err()
 			}
-			return
+			var err error
+			delivered, err = io.ReadAll(r.Body)
+			return &http.Response{StatusCode: http.StatusAccepted}, err
+		})
+		ctx, cancel := context.WithTimeout(t.Context(), uploadDeadline)
+		defer cancel()
+		if err := uploadReport(ctx, &config{agentURL: "http://intake.test", httpClient: client}, newTestReport()); err != nil {
+			t.Fatal(err)
 		}
-		delivered <- body
-		w.WriteHeader(http.StatusAccepted)
-	}))
-	defer srv.Close()
-	defer close(release)
-
-	ctx, cancel := context.WithTimeout(t.Context(), uploadDeadline)
-	defer cancel()
-	started := time.Now()
-	err := uploadReport(ctx, &config{agentURL: srv.URL}, newTestReport())
-	elapsed := time.Since(started)
-	if err != nil {
-		t.Errorf("uploadReport = %v, want success", err)
-	}
-	if got := requests.Load(); got != 2 {
-		t.Errorf("upload attempts = %d, want 2", got)
-	}
-	if elapsed >= uploadDeadline {
-		t.Errorf("upload took %s, want less than %s", elapsed, uploadDeadline)
-	}
-	select {
-	case body := <-delivered:
-		assertRFC0013Body(t, decompressBody(t, body))
-	default:
-		t.Error("intake did not receive the report on a retry")
-	}
-	t.Logf("upload finished after %s with %d attempts", elapsed, requests.Load())
+		if attempts != 2 {
+			t.Fatalf("upload attempts = %d, want 2", attempts)
+		}
+		assertRFC0013Body(t, decompressBody(t, delivered))
+	})
 }
 
 func TestUploadReportDeadlineErrorIncludesLastError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-	defer srv.Close()
-	// The deadline expires during the first retry backoff, after one 503.
-	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
-	defer cancel()
-	err := uploadReport(ctx, &config{agentURL: srv.URL}, newTestReport())
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("uploadReport = %v, want context.DeadlineExceeded", err)
-	}
-	if !strings.Contains(err.Error(), "intake returned 503") {
-		t.Fatalf("uploadReport = %q, want the last attempt's error", err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+		defer cancel()
+		client := &http.Client{Transport: testUploadTransport(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusServiceUnavailable}, nil
+		})}
+		err := uploadReport(ctx, &config{agentURL: "http://intake.test", httpClient: client}, newTestReport())
+		if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "intake returned 503") {
+			t.Fatalf("uploadReport = %v, want deadline exceeded after a 503", err)
+		}
+	})
 }
 
 func TestUploadReportAgentPath(t *testing.T) {
