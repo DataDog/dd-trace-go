@@ -90,6 +90,7 @@ func CreateTestSession(options ...TestSessionStartOption) TestSession {
 	}), sessionTags...)
 
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
+	setRuntimeTagsOverrides(span)
 	sessionID := span.Context().SpanID()
 	setCIVisibilitySpanTag(span, constants.TestSessionIDTag, strconv.FormatUint(sessionID, 10))
 

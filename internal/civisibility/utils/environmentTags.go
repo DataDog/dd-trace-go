@@ -6,6 +6,7 @@
 package utils
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
@@ -23,10 +24,11 @@ import (
 
 var (
 	// ciTags holds the CI/CD environment variable information.
-	currentCiTags  map[string]string // currentCiTags holds the CI/CD tags after originalCiTags + addedTags
-	originalCiTags map[string]string // originalCiTags holds the original CI/CD tags after all the CMDs
-	addedTags      map[string]string // addedTags holds the tags added by the user
-	ciTagsMutex    sync.Mutex
+	currentCiTags        map[string]string // currentCiTags holds the CI/CD tags after originalCiTags + addedTags
+	originalCiTags       map[string]string // originalCiTags holds the original CI/CD tags after all the CMDs
+	addedTags            map[string]string // addedTags holds the tags added by the user
+	runtimeTagsOverrides map[string]string // runtimeTagsOverrides holds the OS and runtime tags set in DD_TEST_OPTIMIZATION_RUNTIME_TAGS
+	ciTagsMutex          sync.Mutex
 
 	// ciMetrics holds the CI/CD environment numeric variable information
 	currentCiMetrics  map[string]float64 // currentCiMetrics holds the CI/CD metrics after originalCiMetrics + addedMetrics
@@ -113,6 +115,7 @@ func ResetCITags() {
 	originalCiTags = nil
 	currentCiTags = nil
 	addedTags = nil
+	runtimeTagsOverrides = nil
 }
 
 // GetCIMetrics retrieves and caches the CI/CD metrics from environment variables.
@@ -211,6 +214,40 @@ func GetRelativePathFromCITagsSourceRoot(path string) string {
 	return path
 }
 
+// GetRuntimeTagsOverrides returns the OS and runtime tag values set in DD_TEST_OPTIMIZATION_RUNTIME_TAGS, keyed by tag name.
+func GetRuntimeTagsOverrides() map[string]string {
+	GetCITags()
+	ciTagsMutex.Lock()
+	defer ciTagsMutex.Unlock()
+	return runtimeTagsOverrides
+}
+
+// parseRuntimeTagsOverrides reads DD_TEST_OPTIMIZATION_RUNTIME_TAGS. Unsupported keys, non-string values and blank
+// values are ignored.
+func parseRuntimeTagsOverrides() map[string]string {
+	value := strings.TrimSpace(env.Get(constants.CIVisibilityRuntimeTagsEnvironmentVariable))
+	if value == "" {
+		return nil
+	}
+
+	var overrides map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(value), &overrides); err != nil || overrides == nil {
+		log.Warn("civisibility: ignoring %s=%q, expected a JSON object", constants.CIVisibilityRuntimeTagsEnvironmentVariable, value) //errtrack:ignore invalid user configuration
+		return nil
+	}
+
+	tags := map[string]string{}
+	for _, tag := range []string{constants.OSPlatform, constants.OSVersion, constants.OSArchitecture, constants.RuntimeName, constants.RuntimeVersion} {
+		var override string
+		if json.Unmarshal(overrides[tag], &override) == nil {
+			if override = strings.TrimSpace(override); override != "" {
+				tags[tag] = override
+			}
+		}
+	}
+	return tags
+}
+
 // createCITagsMap creates a map of CI/CD tags by extracting information from environment variables and the local Git repository.
 // It also adds OS and runtime information to the tags.
 //
@@ -226,9 +263,11 @@ func createCITagsMap() map[string]string {
 	localTags[constants.OSArchitecture] = runtime.GOARCH
 	localTags[constants.RuntimeName] = runtime.Compiler
 	localTags[constants.RuntimeVersion] = runtime.Version()
-	log.Debug("civisibility: os platform: %s", runtime.GOOS)
-	log.Debug("civisibility: os architecture: %s", runtime.GOARCH)
-	log.Debug("civisibility: runtime version: %s", runtime.Version())
+	runtimeTagsOverrides = parseRuntimeTagsOverrides()
+	maps.Copy(localTags, runtimeTagsOverrides)
+	log.Debug("civisibility: os platform: %s", localTags[constants.OSPlatform])
+	log.Debug("civisibility: os architecture: %s", localTags[constants.OSArchitecture])
+	log.Debug("civisibility: runtime version: %s", localTags[constants.RuntimeVersion])
 
 	// Get command line test command, without the flags that change between runs.
 	cmd := testCommand(os.Args)

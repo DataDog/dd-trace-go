@@ -8,6 +8,7 @@ package utils
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/bazel"
@@ -421,4 +422,55 @@ func TestGetCITagsDoesNotAddBazelProviderOutsideBazelMode(t *testing.T) {
 
 	tags := GetCITags()
 	assert.NotContains(t, tags, constants.CIProviderName)
+}
+
+func TestParseRuntimeTagsOverrides(t *testing.T) {
+	t.Run("reads every supported tag", func(t *testing.T) {
+		t.Setenv(constants.CIVisibilityRuntimeTagsEnvironmentVariable, `{"os.platform":"linux","os.version":"6.12.0","os.architecture":"amd64","runtime.name":"gccgo","runtime.version":"go1.24.0"}`)
+		assert.Equal(t, map[string]string{
+			constants.OSPlatform:     "linux",
+			constants.OSVersion:      "6.12.0",
+			constants.OSArchitecture: "amd64",
+			constants.RuntimeName:    "gccgo",
+			constants.RuntimeVersion: "go1.24.0",
+		}, parseRuntimeTagsOverrides())
+	})
+
+	t.Run("trims values and ignores unsupported keys and unusable values", func(t *testing.T) {
+		t.Setenv(constants.CIVisibilityRuntimeTagsEnvironmentVariable, `{"os.version":" 6.12.0 ","runtime.version":"  ","os.platform":null,"os.architecture":64,"runtime.vendor":"ignored","custom.tag":1e400}`)
+		assert.Equal(t, map[string]string{constants.OSVersion: "6.12.0"}, parseRuntimeTagsOverrides())
+	})
+
+	for _, value := range []string{"", "  ", "{invalid json}", `["os.version"]`, `"6.12.0"`, "null"} {
+		t.Run("sets no override for "+value, func(t *testing.T) {
+			t.Setenv(constants.CIVisibilityRuntimeTagsEnvironmentVariable, value)
+			assert.Empty(t, parseRuntimeTagsOverrides())
+		})
+	}
+}
+
+func TestGetCITagsAppliesRuntimeTagsOverrides(t *testing.T) {
+	ResetCITags()
+	t.Cleanup(ResetCITags)
+
+	originalGetProviderTagsFunc := getProviderTagsFunc
+	originalGetLocalGitDataFunc := getLocalGitDataFunc
+	originalApplyEnvironmentalDataIfRequiredFunc := applyEnvironmentalDataIfRequiredFunc
+	t.Cleanup(func() {
+		getProviderTagsFunc = originalGetProviderTagsFunc
+		getLocalGitDataFunc = originalGetLocalGitDataFunc
+		applyEnvironmentalDataIfRequiredFunc = originalApplyEnvironmentalDataIfRequiredFunc
+	})
+	getProviderTagsFunc = func() map[string]string { return map[string]string{} }
+	getLocalGitDataFunc = func() (localGitData, error) { return localGitData{}, nil }
+	applyEnvironmentalDataIfRequiredFunc = func(map[string]string) {}
+
+	t.Setenv(constants.CIVisibilityRuntimeTagsEnvironmentVariable, `{"os.version":"6.12.0","runtime.version":"go1.24.0"}`)
+
+	tags := GetCITags()
+
+	assert.Equal(t, "6.12.0", tags[constants.OSVersion])
+	assert.Equal(t, "go1.24.0", tags[constants.RuntimeVersion])
+	assert.Equal(t, runtime.GOOS, tags[constants.OSPlatform])
+	assert.Equal(t, map[string]string{constants.OSVersion: "6.12.0", constants.RuntimeVersion: "go1.24.0"}, GetRuntimeTagsOverrides())
 }

@@ -146,6 +146,17 @@ func fillCommonTags(opts []tracer.StartSpanOption) []tracer.StartSpanOption {
 	return opts
 }
 
+// setRuntimeTagsOverrides sets the runtime tag overrides again once the span has started, because the tracer applies
+// DD_TAGS after the span options.
+func setRuntimeTagsOverrides(span *tracer.Span) {
+	if bazel.IsPayloadFilesModeEnabled() {
+		return
+	}
+	for k, v := range utils.GetRuntimeTagsOverrides() {
+		setCIVisibilitySpanTag(span, k, v)
+	}
+}
+
 func (c *ciVisibilityCommon) getContextValue(key any) any {
 	c.ctxMutex.Lock()
 	defer c.ctxMutex.Unlock()

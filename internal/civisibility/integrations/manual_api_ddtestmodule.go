@@ -66,6 +66,7 @@ func createTestModule(session *tslvTestSession, name string, framework string, f
 	}), moduleTags...)
 
 	span, ctx := tracer.StartSpanFromContext(context.Background(), operationName, testOpts...)
+	setRuntimeTagsOverrides(span)
 	moduleID := span.Context().SpanID()
 	if session != nil {
 		setCIVisibilitySpanTag(span, constants.TestSessionIDTag, strconv.FormatUint(session.sessionID, 10))

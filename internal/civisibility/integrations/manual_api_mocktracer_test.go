@@ -125,6 +125,26 @@ func TestPayloadFilesModeSkipsCIGitOSRuntimeTags(t *testing.T) {
 	assert.Contains(spanTags, constants.Origin)
 }
 
+func TestRuntimeTagsOverridesAreSetOnEveryLevel(t *testing.T) {
+	mockTracer.Reset()
+
+	t.Setenv(constants.CIVisibilityRuntimeTagsEnvironmentVariable, `{"os.version":"6.12.0"}`)
+	utils.ResetCITags()
+	t.Cleanup(utils.ResetCITags)
+
+	session, module, suite, test := createDDTest(time.Now())
+	test.Close(ResultStatusPass)
+	suite.Close()
+	module.Close()
+	session.Close(0)
+
+	finishedSpans := mockTracer.FinishedSpans()
+	require.Len(t, finishedSpans, 4)
+	for _, span := range finishedSpans {
+		assert.Equal(t, "6.12.0", span.Tag(constants.OSVersion), span.OperationName())
+	}
+}
+
 func TestPayloadFilesModeUsesAvailableWorkspaceMetadataForWorkingDirectory(t *testing.T) {
 	mockTracer.Reset()
 	assert := assert.New(t)
