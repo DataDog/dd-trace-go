@@ -12,7 +12,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
@@ -96,4 +99,79 @@ func TestClusterIDConcurrency(t *testing.T) {
 	wg.Wait()
 
 	assert.NotEmpty(t, tr.ClusterID())
+}
+
+// TestClusterIDTagWithoutDataStreams checks that the cluster ID is a span tag
+// whether or not data streams monitoring is enabled.
+func TestClusterIDTagWithoutDataStreams(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		clusterID string
+	}{
+		{name: "cluster ID set", clusterID: "test-cluster-id"},
+		{name: "cluster ID not fetched yet"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			tr := NewKafkaTracer(testInstr, CKGoVersion1, 0)
+			require.False(t, tr.DSMEnabled())
+			tr.SetClusterID(tt.clusterID)
+
+			msg := &simpleMessage{tp: simpleTopicPartition{topic: "test-topic"}}
+			tr.StartProduceSpan(msg).Finish()
+			tr.StartConsumeSpan(msg).Finish()
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 2)
+			for _, s := range spans {
+				if tt.clusterID == "" {
+					assert.Nil(t, s.Tag(ext.MessagingKafkaClusterID))
+				} else {
+					assert.Equal(t, tt.clusterID, s.Tag(ext.MessagingKafkaClusterID))
+				}
+			}
+		})
+	}
+}
+
+type testConfigMap map[string]any
+
+func (m testConfigMap) Get(key string, defVal any) (any, error) {
+	v, ok := m[key]
+	if !ok {
+		return defVal, nil
+	}
+	if _, isString := v.(string); !isString {
+		return nil, fmt.Errorf("%s is not a string", key)
+	}
+	return v, nil
+}
+
+func TestSnapshotConfig(t *testing.T) {
+	t.Run("ignoresLaterChanges", func(t *testing.T) {
+		cfg := testConfigMap{"bootstrap.servers": "kafka-a:9092", "group.id": "group-a"}
+		snapshot := SnapshotConfig(cfg)
+		cfg["bootstrap.servers"] = "kafka-b:9092"
+		cfg["group.id"] = "group-b"
+
+		tr := NewKafkaTracer(testInstr, 0, 0, WithConfig(snapshot))
+		assert.Equal(t, "kafka-a", tr.bootstrapServers)
+		assert.Equal(t, "group-a", tr.groupID)
+	})
+	t.Run("missingEntries", func(t *testing.T) {
+		snapshot := SnapshotConfig(testConfigMap{})
+
+		tr := NewKafkaTracer(testInstr, 0, 0, WithConfig(snapshot))
+		assert.Empty(t, tr.bootstrapServers)
+		assert.Empty(t, tr.groupID)
+	})
+	t.Run("nonStringEntries", func(t *testing.T) {
+		snapshot := SnapshotConfig(testConfigMap{"bootstrap.servers": 42, "group.id": true})
+
+		tr := NewKafkaTracer(testInstr, 0, 0, WithConfig(snapshot))
+		assert.Empty(t, tr.bootstrapServers)
+		assert.Empty(t, tr.groupID)
+	})
 }

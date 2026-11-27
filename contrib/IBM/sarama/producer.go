@@ -8,6 +8,7 @@ package sarama
 import (
 	"context"
 	"math"
+	"strings"
 
 	"github.com/IBM/sarama"
 
@@ -23,13 +24,14 @@ type syncProducer struct {
 	sarama.SyncProducer
 	version    sarama.KafkaVersion
 	cfg        *config
-	closeAsync []func() // async jobs to cancel and wait for on Close
+	closeAsync []func() // async jobs to cancel on Close
 	// spanCfg holds the tags that are constant for every message produced
 	// through this producer (component, span kind, messaging system, service
-	// name, and any static analytics rate). It is built once when the
-	// producer is wrapped (see newProducerSpanConfig) and merged into each
-	// message span via WithStartSpanConfig, instead of rebuilding a Tag()
-	// closure per tag on every message.
+	// name, any static analytics rate, and the bootstrap servers set with
+	// WithBrokers). It is built once when the producer is wrapped (see
+	// newProducerSpanConfig) and merged into each message span via
+	// WithStartSpanConfig, instead of rebuilding a Tag() closure per tag on
+	// every message.
 	spanCfg *tracer.StartSpanConfig
 }
 
@@ -105,7 +107,10 @@ type asyncProducer struct {
 	input      chan *sarama.ProducerMessage
 	successes  chan *sarama.ProducerMessage
 	errors     chan *sarama.ProducerError
-	closeAsync []func() // async jobs to cancel and wait for on Close
+	closeAsync []func() // async jobs to cancel on Close
+	// cancelAsync cancels the async jobs without waiting for them, for
+	// AsyncClose.
+	cancelAsync []func()
 }
 
 // Input returns the input channel.
@@ -131,10 +136,13 @@ func (p *asyncProducer) Close() error {
 	return p.AsyncProducer.Close()
 }
 
-// AsyncClose triggers a shutdown of the producer and cancels any in-flight async jobs.
+// AsyncClose triggers a shutdown of the producer and cancels any in-flight
+// async jobs. It does not wait for them, so it returns at once, as sarama's
+// AsyncClose does: the cluster ID fetch uses a connection of its own, so it
+// can finish later.
 func (p *asyncProducer) AsyncClose() {
-	for _, stop := range p.closeAsync {
-		stop()
+	for _, cancel := range p.cancelAsync {
+		cancel()
 	}
 	p.AsyncProducer.AsyncClose()
 }
@@ -246,7 +254,9 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 		}
 	}()
 	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
-		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
+		cancel := startClusterIDFetch(cfg)
+		wrapped.cancelAsync = append(wrapped.cancelAsync, cancel)
+		wrapped.closeAsync = append(wrapped.closeAsync, cancel)
 	}
 	return wrapped
 }
@@ -264,6 +274,9 @@ func newProducerSpanConfig(cfg *config) *tracer.StartSpanConfig {
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	}
+	if len(cfg.brokerAddrs) > 0 {
+		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, strings.Join(cfg.brokerAddrs, ",")))
 	}
 	return tracer.NewStartSpanConfig(opts...)
 }

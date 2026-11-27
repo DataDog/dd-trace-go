@@ -7,6 +7,7 @@ package sarama
 
 import (
 	"math"
+	"strings"
 
 	"github.com/IBM/sarama"
 
@@ -26,10 +27,11 @@ type wrappedDispatcher struct {
 	cfg *config
 	// spanCfg holds the tags that are constant for every message consumed
 	// through this dispatcher (component, span kind, messaging system,
-	// service name, measured, and any static analytics rate). It is built
-	// once when the dispatcher is created (see newConsumerSpanConfig) and
-	// merged into each message span via WithStartSpanConfig, instead of
-	// rebuilding a Tag() closure per tag on every message.
+	// service name, measured, any static analytics rate, and the bootstrap
+	// servers set with WithBrokers). It is built once when the dispatcher is
+	// created (see newConsumerSpanConfig) and merged into each message span
+	// via WithStartSpanConfig, instead of rebuilding a Tag() closure per tag
+	// on every message.
 	spanCfg *tracer.StartSpanConfig
 }
 
@@ -56,6 +58,9 @@ func newConsumerSpanConfig(cfg *config) *tracer.StartSpanConfig {
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	}
+	if len(cfg.brokerAddrs) > 0 {
+		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, strings.Join(cfg.brokerAddrs, ",")))
 	}
 	return tracer.NewStartSpanConfig(opts...)
 }

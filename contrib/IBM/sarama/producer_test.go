@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/IBM/sarama"
+	"github.com/IBM/sarama/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -564,4 +565,80 @@ func TestStartProducerSpanCustomTagPrecedence(t *testing.T) {
 	spans := mt.FinishedSpans()
 	require.Len(t, spans, 1)
 	assert.Equal(t, "custom-component", spans[0].Tag(ext.Component))
+}
+
+func TestSyncProducerBootstrapServers(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		opts     []Option
+		expected any
+	}{
+		{name: "without brokers", expected: nil},
+		{name: "with brokers", opts: []Option{WithBrokers([]string{"broker-1:9092", "broker-2:9092"})}, expected: "broker-1:9092,broker-2:9092"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			mp := mocks.NewSyncProducer(t, nil)
+			mp.ExpectSendMessageAndSucceed()
+			// Data streams is disabled, so no cluster ID fetch is started.
+			p := WrapSyncProducer(nil, mp, tt.opts...)
+			assert.Empty(t, p.(*syncProducer).closeAsync)
+
+			_, _, err := p.SendMessage(&sarama.ProducerMessage{Topic: "test-topic", Value: sarama.StringEncoder("test")})
+			require.NoError(t, err)
+			require.NoError(t, p.Close())
+
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			assert.Equal(t, tt.expected, spans[0].Tag(ext.KafkaBootstrapServers))
+		})
+	}
+}
+
+// TestAsyncProducerAsyncCloseDoesNotWaitForClusterIDFetch checks that
+// AsyncClose returns at once while the cluster ID fetch waits for a stalled
+// broker.
+func TestAsyncProducerAsyncCloseDoesNotWaitForClusterIDFetch(t *testing.T) {
+	addr, waitForFetch := newStalledBroker(t)
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0
+	p := WrapAsyncProducer(cfg, mocks.NewAsyncProducer(t, cfg), WithDataStreams(), WithBrokers([]string{addr}))
+	waitForFetch()
+
+	start := time.Now()
+	p.AsyncClose()
+	assert.Less(t, time.Since(start), 5*time.Second, "AsyncClose must not wait for the broker's network timeout")
+	for range p.Errors() {
+	}
+}
+
+// TestCloseDoesNotWaitForClusterIDFetch checks that the synchronous Close of
+// the producers and the consumer returns at once while the cluster ID fetch
+// waits for a stalled broker.
+func TestCloseDoesNotWaitForClusterIDFetch(t *testing.T) {
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0
+	for name, newClient := range map[string]func(t *testing.T, addr string) interface{ Close() error }{
+		"sync producer": func(t *testing.T, addr string) interface{ Close() error } {
+			return WrapSyncProducer(cfg, mocks.NewSyncProducer(t, cfg), WithDataStreams(), WithBrokers([]string{addr}))
+		},
+		"async producer": func(t *testing.T, addr string) interface{ Close() error } {
+			return WrapAsyncProducer(cfg, mocks.NewAsyncProducer(t, cfg), WithDataStreams(), WithBrokers([]string{addr}))
+		},
+		"consumer": func(t *testing.T, addr string) interface{ Close() error } {
+			return WrapConsumer(mocks.NewConsumer(t, cfg), WithDataStreams(), WithBrokers([]string{addr}))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			addr, waitForFetch := newStalledBroker(t)
+			c := newClient(t, addr)
+			waitForFetch()
+
+			start := time.Now()
+			assert.NoError(t, c.Close())
+			assert.Less(t, time.Since(start), 5*time.Second, "Close must not wait for the broker's network timeout")
+		})
+	}
 }

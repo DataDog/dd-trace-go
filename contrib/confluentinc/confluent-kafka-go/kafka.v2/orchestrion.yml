@@ -22,10 +22,17 @@ aspects:
       - add-struct-field:
           name: __dd_confmap
           type: "*ConfigMap"
+      - add-struct-field:
+          name: __dd_clusterID
+          type: "*__dd_clusterIDFetch"
+      - add-struct-field:
+          name: __dd_initOnce
+          type: "__dd_once"
       - inject-declarations:
           imports:
             kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
             instrumentation: github.com/DataDog/dd-trace-go/v2/instrumentation
+            sync: sync
           lang: go1.18
           template: |-
             const __dd_ckgoVersion = kafkatrace.CKGoVersion2
@@ -191,35 +198,83 @@ aspects:
               return kafkatrace.NewKafkaTracer(__dd_instr, __dd_ckgoVersion, v, opts...)
             }
 
+            // __dd_initConsumer creates the tracer and the cluster ID lookup once,
+            // even when the first calls come from several goroutines at once.
             func __dd_initConsumer(c *Consumer) {
-              if c.__dd_tracer != nil {
-                return
-              }
+              c.__dd_initOnce.Do(func() { __dd_doInitConsumer(c) })
+            }
+
+            func __dd_doInitConsumer(c *Consumer) {
               var opts []kafkatrace.Option
               if c.__dd_confmap != nil {
                 opts = append(opts, kafkatrace.WithConfig(__dd_wrapConfigMap(c.__dd_confmap)))
               }
               c.__dd_tracer = __dd_newKafkaTracer(opts...)
+              // The cluster ID is fetched with an admin client created from the
+              // consumer handle, so it reuses the consumer's connections and
+              // configuration. Without data streams monitoring, the lookup starts
+              // on the first consumed message.
+              c.__dd_clusterID = kafkatrace.NewClusterIDFetch(c.__dd_tracer, func() (kafkatrace.ClusterIDClient, error) {
+                admin, err := NewAdminClientFromConsumer(c)
+                if err != nil {
+                  return nil, err
+                }
+                return admin, nil
+              })
               // TODO: accessing c.events here might break if the library renames this variable...
-              c.__dd_events = kafkatrace.WrapConsumeEventsChannel(c.__dd_tracer, c.events, c, __dd_wrapEvent)
+              c.__dd_events = kafkatrace.WrapConsumeEventsChannel(c.__dd_tracer, c.events, c, func(evt Event) kafkatrace.Event {
+                if _, ok := evt.(*Message); ok {
+                  c.__dd_clusterID.Start()
+                }
+                return __dd_wrapEvent(evt)
+              })
+              if c.__dd_tracer.DSMEnabled() {
+                c.__dd_clusterID.Start()
+              }
             }
 
+            // __dd_initProducer creates the tracer and the cluster ID lookup once,
+            // even when the first calls come from several goroutines at once.
             func __dd_initProducer(p *Producer) {
-              if p.__dd_tracer != nil {
-                return
+              p.__dd_initOnce.Do(func() { __dd_doInitProducer(p) })
+            }
+
+            func __dd_doInitProducer(p *Producer) {
+              var opts []kafkatrace.Option
+              if p.__dd_config != nil {
+                opts = append(opts, kafkatrace.WithConfig(p.__dd_config))
               }
-              p.__dd_tracer = __dd_newKafkaTracer()
+              p.__dd_tracer = __dd_newKafkaTracer(opts...)
+              // The cluster ID is fetched with an admin client created from the
+              // producer handle, so it reuses the producer's connections and
+              // configuration. Without data streams monitoring, the lookup starts
+              // on the first produced message.
+              p.__dd_clusterID = kafkatrace.NewClusterIDFetch(p.__dd_tracer, func() (kafkatrace.ClusterIDClient, error) {
+                admin, err := NewAdminClientFromProducer(p)
+                if err != nil {
+                  return nil, err
+                }
+                return admin, nil
+              })
               // TODO: accessing p.events and p.produceChannel here might break if the library renames this variable...
               p.__dd_events = p.events
-              p.__dd_produceChannel = kafkatrace.WrapProduceChannel(p.__dd_tracer, p.produceChannel, __dd_wrapMessage)
+              p.__dd_produceChannel, p.__dd_produceDone = kafkatrace.WrapProduceChannelWithDone(p.__dd_tracer, p.produceChannel, func(msg *Message) kafkatrace.Message {
+                p.__dd_clusterID.Start()
+                return __dd_wrapMessage(msg)
+              })
               if p.__dd_tracer.DSMEnabled() {
                 p.__dd_events = kafkatrace.WrapProduceEventsChannel(p.__dd_tracer, p.events, __dd_wrapEvent)
+                p.__dd_clusterID.Start()
               }
             }
 
             type __dd_eventChan = chan Event
             type __dd_messageChan = chan *Message
             type __dd_kafkaTracer = kafkatrace.Tracer
+            type __dd_clusterIDFetch = kafkatrace.ClusterIDFetch
+            type __dd_configMap = kafkatrace.ConfigMap
+            type __dd_once = sync.Once
+            type __dd_doneChan = <-chan struct{}
 
   ## Trace Consumer ##
   - id: NewConsumer
@@ -257,6 +312,8 @@ aspects:
           template: |-
             {{- $c := .Function.Receiver -}}
             __dd_initConsumer({{ $c }})
+            // Stop the cluster ID lookup before the consumer handle is closed.
+            {{ $c }}.__dd_clusterID.Close()
             defer func() {
               if {{ $c }}.__dd_events == nil && {{ $c }}.__dd_tracer.PrevSpan != nil {
                 {{ $c }}.__dd_tracer.PrevSpan.Finish()
@@ -303,6 +360,7 @@ aspects:
             }
             defer func() {
                 if msg, ok := {{ $event }}.(*Message); ok {
+                  {{ $c }}.__dd_clusterID.Start()
                   tMsg := __dd_wrapMessage(msg)
                   {{ $c }}.__dd_tracer.SetConsumeCheckpoint(tMsg)
                   {{ $c }}.__dd_tracer.PrevSpan = {{ $c }}.__dd_tracer.StartConsumeSpan(tMsg)
@@ -391,6 +449,46 @@ aspects:
       - add-struct-field:
           name: __dd_produceChannel
           type: "__dd_messageChan"
+      - add-struct-field:
+          name: __dd_produceDone
+          type: "__dd_doneChan"
+      - add-struct-field:
+          name: __dd_config
+          type: "__dd_configMap"
+      - add-struct-field:
+          name: __dd_clusterID
+          type: "*__dd_clusterIDFetch"
+      - add-struct-field:
+          name: __dd_initOnce
+          type: "__dd_once"
+
+  - id: NewProducer
+    join-point:
+      all-of:
+        - import-path: github.com/confluentinc/confluent-kafka-go/v2/kafka
+        - function-body:
+            function:
+              - name: NewProducer
+    advice:
+      - prepend-statements:
+          imports:
+            kafkatrace: github.com/DataDog/dd-trace-go/v2/contrib/confluentinc/confluent-kafka-go/kafkatrace
+          template: |-
+            {{- $conf := .Function.Argument 0 -}}
+            {{- $p := .Function.Result 0 -}}
+            defer func() {
+              if {{ $p }} == nil {
+                return
+              }
+              // Keep the configuration for the tracer, which is created lazily on
+              // first use: a producer created in a package initializer exists
+              // before the injected tracer.Start, and the tracer reads the
+              // naming settings once. The producer copies the configuration
+              // here, so take a snapshot now rather than read the map later.
+              if {{ $conf }} != nil {
+                {{ $p }}.__dd_config = kafkatrace.SnapshotConfig(__dd_wrapConfigMap({{ $conf }}))
+              }
+            }()
 
   - id: Producer.Events
     join-point:
@@ -435,7 +533,13 @@ aspects:
           template: |-
             {{- $p := .Function.Receiver -}}
             __dd_initProducer({{ $p }})
+            // Wait until the messages already sent on the produce channel are
+            // forwarded, so Close does not close the producer's own produce
+            // channel while they are still being sent on it.
             close({{ $p }}.__dd_produceChannel)
+            <-{{ $p }}.__dd_produceDone
+            // Stop the cluster ID lookup before the producer handle is closed.
+            {{ $p }}.__dd_clusterID.Close()
 
   - id: Producer.Produce
     join-point:
@@ -454,6 +558,7 @@ aspects:
             {{- $deliveryChan := .Function.Argument 1 -}}
             {{- $err := .Function.Result 0 -}}
             __dd_initProducer({{ $p }})
+            {{ $p }}.__dd_clusterID.Start()
             tMsg := __dd_wrapMessage({{ $msg }})
             span := p.__dd_tracer.StartProduceSpan(tMsg)
 

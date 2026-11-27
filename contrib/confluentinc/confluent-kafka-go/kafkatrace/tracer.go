@@ -69,6 +69,7 @@ func (c *dsmEdgeTagCache) getOrStore(key uint64, tags []string) []string {
 
 type Tracer struct {
 	PrevSpan            *tracer.Span
+	instr               *instrumentation.Instrumentation
 	ctx                 context.Context
 	consumerServiceName string
 	producerServiceName string
@@ -123,8 +124,20 @@ func (fn OptionFn) apply(cfg *Tracer) {
 	fn(cfg)
 }
 
+// tracersCreated counts the Tracers NewKafkaTracer has created.
+var tracersCreated atomic.Int64
+
+// TracersCreated returns how many Tracers NewKafkaTracer has created in this
+// process. It is meant for tests, which can check that a client sets up its
+// tracer once.
+func TracersCreated() int64 {
+	return tracersCreated.Load()
+}
+
 func NewKafkaTracer(instr *instrumentation.Instrumentation, ckgoVersion CKGoVersion, librdKafkaVersion int, opts ...Option) *Tracer {
+	tracersCreated.Add(1)
 	tr := &Tracer{
+		instr:             instr,
 		ctx:               context.Background(),
 		analyticsRate:     instr.AnalyticsRate(false),
 		ckgoVersion:       ckgoVersion,
@@ -209,13 +222,44 @@ func WithCustomTag(tag string, tagFn func(msg Message) any) OptionFn {
 	}
 }
 
+// The ConfigMap entries WithConfig reads, and SnapshotConfig copies.
+const (
+	configGroupID          = "group.id"
+	configBootstrapServers = "bootstrap.servers"
+)
+
+var configKeys = [...]string{configGroupID, configBootstrapServers}
+
+// configSnapshot is a ConfigMap holding a copy of the entries WithConfig reads.
+type configSnapshot map[string]any
+
+func (s configSnapshot) Get(key string, defVal any) (any, error) {
+	if v, ok := s[key]; ok {
+		return v, nil
+	}
+	return defVal, nil
+}
+
+// SnapshotConfig copies the entries WithConfig reads from cg. Passing the
+// snapshot to WithConfig later tags the configuration as it was when
+// SnapshotConfig was called, even if cg has been changed in the meantime.
+func SnapshotConfig(cg ConfigMap) ConfigMap {
+	s := configSnapshot{}
+	for _, key := range configKeys {
+		if v, err := cg.Get(key, ""); err == nil {
+			s[key] = v
+		}
+	}
+	return s
+}
+
 // WithConfig extracts the config information for the client to be tagged
 func WithConfig(cg ConfigMap) OptionFn {
 	return func(tr *Tracer) {
-		if groupID, err := cg.Get("group.id", ""); err == nil {
+		if groupID, err := cg.Get(configGroupID, ""); err == nil {
 			tr.groupID = groupID.(string)
 		}
-		if bs, err := cg.Get("bootstrap.servers", ""); err == nil && bs != "" {
+		if bs, err := cg.Get(configBootstrapServers, ""); err == nil && bs != "" {
 			for addr := range strings.SplitSeq(bs.(string), ",") {
 				host, _, err := net.SplitHostPort(addr)
 				if err == nil {

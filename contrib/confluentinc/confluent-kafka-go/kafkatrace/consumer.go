@@ -78,7 +78,7 @@ func newConsumerSpanConfig(tr *Tracer) *tracer.StartSpanConfig {
 func (tr *Tracer) StartConsumeSpan(msg Message) *tracer.Span {
 	// Partition, offset, topic, and the Kafka cluster ID (fetched
 	// asynchronously in the background after the Tracer is created, see
-	// startClusterIDFetch in the calling kafka package) are genuinely
+	// ClusterIDFetch) are genuinely
 	// per-message/mutable, so they stay dynamic instead of moving into the
 	// static consumerSpanCfg base. tagFns are user-supplied per-message
 	// callbacks and are dynamic by nature.
@@ -88,8 +88,8 @@ func (tr *Tracer) StartConsumeSpan(msg Message) *tracer.Span {
 		"offset":                     msg.GetTopicPartition().GetOffset(),
 		ext.MessagingDestinationName: msg.GetTopicPartition().GetTopic(),
 	}
-	if tr.ClusterID() != "" {
-		tags[ext.MessagingKafkaClusterID] = tr.ClusterID()
+	if clusterID := tr.ClusterID(); clusterID != "" {
+		tags[ext.MessagingKafkaClusterID] = clusterID
 	}
 	opts := []tracer.StartSpanOption{
 		tracer.WithTags(tags),

@@ -14,11 +14,23 @@ import (
 )
 
 func WrapProduceChannel[M any, TM Message](tr *Tracer, out chan M, translateFn func(M) TM) chan M {
+	in, _ := WrapProduceChannelWithDone(tr, out, translateFn)
+	return in
+}
+
+// WrapProduceChannelWithDone is like WrapProduceChannel, and also returns a
+// channel that is closed when the goroutine forwarding the messages to out
+// exits: after the returned channel is closed and the messages on it were sent
+// to out. Waiting for it before closing out avoids a send on a closed channel.
+func WrapProduceChannelWithDone[M any, TM Message](tr *Tracer, out chan M, translateFn func(M) TM) (chan M, <-chan struct{}) {
+	done := make(chan struct{})
 	if out == nil {
-		return out
+		close(done)
+		return out, done
 	}
 	in := make(chan M, 1)
 	go func() {
+		defer close(done)
 		for msg := range in {
 			tMsg := translateFn(msg)
 			span := tr.StartProduceSpan(tMsg)
@@ -27,7 +39,7 @@ func WrapProduceChannel[M any, TM Message](tr *Tracer, out chan M, translateFn f
 			span.Finish()
 		}
 	}()
-	return in
+	return in, done
 }
 
 func WrapProduceEventsChannel[E any, TE Event](tr *Tracer, in chan E, translateFn func(E) TE) chan E {
@@ -70,16 +82,16 @@ func newProducerSpanConfig(tr *Tracer) *tracer.StartSpanConfig {
 
 func (tr *Tracer) StartProduceSpan(msg Message) *tracer.Span {
 	// Partition, topic, and the Kafka cluster ID (fetched asynchronously in
-	// the background after the Tracer is created, see startClusterIDFetch in
-	// the calling kafka package) are genuinely per-message/mutable, so they
-	// stay dynamic instead of moving into the static producerSpanCfg base.
+	// the background after the Tracer is created, see ClusterIDFetch) are
+	// genuinely per-message/mutable, so they stay dynamic instead of moving
+	// into the static producerSpanCfg base.
 	tags := map[string]any{
 		ext.ResourceName:             "Produce Topic " + msg.GetTopicPartition().GetTopic(),
 		ext.MessagingKafkaPartition:  msg.GetTopicPartition().GetPartition(),
 		ext.MessagingDestinationName: msg.GetTopicPartition().GetTopic(),
 	}
-	if tr.ClusterID() != "" {
-		tags[ext.MessagingKafkaClusterID] = tr.ClusterID()
+	if clusterID := tr.ClusterID(); clusterID != "" {
+		tags[ext.MessagingKafkaClusterID] = clusterID
 	}
 	opts := []tracer.StartSpanOption{
 		tracer.WithTags(tags),

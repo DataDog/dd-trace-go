@@ -12,6 +12,7 @@ package sarama // import "github.com/DataDog/dd-trace-go/contrib/Shopify/sarama/
 import (
 	"context"
 	"math"
+	"strings"
 
 	"github.com/DataDog/dd-trace-go/v2/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/datastreams/options"
@@ -64,6 +65,9 @@ func newConsumerSpanConfig(cfg *config) *tracer.StartSpanConfig {
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
 	}
+	if len(cfg.brokerAddrs) > 0 {
+		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, strings.Join(cfg.brokerAddrs, ",")))
+	}
 	return tracer.NewStartSpanConfig(opts...)
 }
 
@@ -76,6 +80,18 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 	for _, opt := range opts {
 		opt.apply(cfg)
 	}
+	wrapped := wrapPartitionConsumer(pc, cfg)
+	// Each call starts a fetch of its own, so wrapping N partition consumers
+	// starts N fetches. Wrap the consumer instead to share one fetch.
+	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
+		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
+	}
+	return wrapped
+}
+
+// wrapPartitionConsumer wraps pc with the given config. It does not start a
+// cluster ID fetch: the owner of cfg is responsible for it.
+func wrapPartitionConsumer(pc sarama.PartitionConsumer, cfg *config) *partitionConsumer {
 	instr.Logger().Debug("contrib/Shopify/sarama: Wrapping Partition Consumer: %#v", cfg)
 	wrapped := &partitionConsumer{
 		PartitionConsumer: pc,
@@ -131,27 +147,24 @@ func WrapPartitionConsumer(pc sarama.PartitionConsumer, opts ...Option) sarama.P
 		}
 		close(wrapped.messages)
 	}()
-	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
-		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
-	}
 	return wrapped
 }
 
 type consumer struct {
 	sarama.Consumer
-	opts       []Option
 	cfg        *config
 	closeAsync []func()
 }
 
 // ConsumePartition invokes Consumer.ConsumePartition and wraps the resulting
-// PartitionConsumer.
+// PartitionConsumer. The PartitionConsumer shares the consumer's config, so it
+// reports the cluster ID fetched by the consumer without fetching it again.
 func (c *consumer) ConsumePartition(topic string, partition int32, offset int64) (sarama.PartitionConsumer, error) {
 	pc, err := c.Consumer.ConsumePartition(topic, partition, offset)
 	if err != nil {
 		return pc, err
 	}
-	return WrapPartitionConsumer(pc, c.opts...), nil
+	return wrapPartitionConsumer(pc, c.cfg), nil
 }
 
 // Close shuts down the consumer and cancels any in-flight async jobs.
@@ -173,7 +186,6 @@ func WrapConsumer(c sarama.Consumer, opts ...Option) sarama.Consumer {
 	}
 	wrapped := &consumer{
 		Consumer: c,
-		opts:     opts,
 		cfg:      cfg,
 	}
 	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
@@ -189,10 +201,11 @@ type syncProducer struct {
 	closeAsync []func() // async jobs to cancel and wait for on Close
 	// spanCfg holds the tags that are constant for every message produced
 	// through this producer (component, span kind, messaging system, service
-	// name, and any static analytics rate). It is built once when the
-	// producer is wrapped (see newProducerSpanConfig) and merged into each
-	// message span via WithStartSpanConfig, instead of rebuilding a Tag()
-	// closure per tag on every message.
+	// name, any static analytics rate, and the bootstrap servers set with
+	// WithBrokers). It is built once when the producer is wrapped (see
+	// newProducerSpanConfig) and merged into each message span via
+	// WithStartSpanConfig, instead of rebuilding a Tag() closure per tag on
+	// every message.
 	spanCfg *tracer.StartSpanConfig
 }
 
@@ -429,6 +442,9 @@ func newProducerSpanConfig(cfg *config) *tracer.StartSpanConfig {
 	}
 	if !math.IsNaN(cfg.analyticsRate) {
 		opts = append(opts, tracer.Tag(ext.EventSampleRate, cfg.analyticsRate))
+	}
+	if len(cfg.brokerAddrs) > 0 {
+		opts = append(opts, tracer.Tag(ext.KafkaBootstrapServers, strings.Join(cfg.brokerAddrs, ",")))
 	}
 	return tracer.NewStartSpanConfig(opts...)
 }

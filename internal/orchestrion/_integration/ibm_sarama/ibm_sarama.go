@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,11 +23,13 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/kafka"
 
 	"github.com/DataDog/dd-trace-go/v2/internal/orchestrion/_integration/internal/trace"
+	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
 )
 
 const (
-	topic     = "ibm_sarama_default_test"
-	partition = int32(0)
+	topic      = "ibm_sarama_default_test"
+	asyncTopic = "ibm_sarama_async_test"
+	partition  = int32(0)
 )
 
 type TestCase struct {
@@ -42,7 +45,7 @@ func (tc *TestCase) Setup(_ context.Context, t *testing.T) {
 	tc.cfg.Version = sarama.V0_11_0_0
 	tc.cfg.Producer.Return.Successes = true
 
-	container, addr := containers.StartKafkaTestContainer(t, []string{topic})
+	container, addr := containers.StartKafkaTestContainer(t, []string{topic, asyncTopic})
 	tc.server = container
 	tc.addrs = []string{addr}
 }
@@ -106,13 +109,59 @@ func consumeMessage(t *testing.T, addrs []string, cfg *sarama.Config) {
 	}
 }
 
+func produceMessageAsync(t *testing.T, addrs []string, cfg *sarama.Config) {
+	t.Helper()
+
+	producer, err := sarama.NewAsyncProducer(addrs, cfg)
+	require.NoError(t, err, "failed to create async producer")
+	defer func() { assert.NoError(t, producer.Close(), "failed to close async producer") }()
+
+	producer.Input() <- &sarama.ProducerMessage{
+		Topic:     asyncTopic,
+		Partition: partition,
+		Value:     sarama.StringEncoder("Hello, async World!"),
+	}
+	select {
+	case <-producer.Successes():
+	case err := <-producer.Errors():
+		require.NoError(t, err, "failed to send message")
+	case <-time.After(15 * time.Second):
+		t.Fatal("timed out waiting for the message to be sent")
+	}
+}
+
 func (tc *TestCase) Run(ctx context.Context, t *testing.T) {
 	produceMessage(ctx, t, tc.addrs, tc.cfg)
 	consumeMessage(t, tc.addrs, tc.cfg)
+	produceMessageAsync(t, tc.addrs, tc.cfg)
 }
 
-func (*TestCase) ExpectedTraces() trace.Traces {
+func (tc *TestCase) ExpectedTraces() trace.Traces {
+	// The broker addresses passed to NewSyncProducer and NewConsumer are
+	// tagged as the bootstrap servers. The otelc consumer rule does not pass
+	// them, see contrib/IBM/sarama/otelc/otelc.yaml.
+	bootstrapServers := strings.Join(tc.addrs, ",")
+	consumerMeta := map[string]string{
+		"span.kind": "consumer",
+		"component": "IBM/sarama",
+	}
+	if !otelc.Enabled() {
+		consumerMeta["messaging.kafka.bootstrap.servers"] = bootstrapServers
+	}
 	return trace.Traces{
+		{
+			Tags: map[string]any{
+				"name":     "kafka.produce",
+				"type":     "queue",
+				"service":  "kafka",
+				"resource": "Produce Topic " + asyncTopic,
+			},
+			Meta: map[string]string{
+				"span.kind":                         "producer",
+				"component":                         "IBM/sarama",
+				"messaging.kafka.bootstrap.servers": bootstrapServers,
+			},
+		},
 		{
 			Tags: map[string]any{
 				"name":    "kafka.produce",
@@ -120,8 +169,9 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 				"service": "kafka",
 			},
 			Meta: map[string]string{
-				"span.kind": "producer",
-				"component": "IBM/sarama",
+				"span.kind":                         "producer",
+				"component":                         "IBM/sarama",
+				"messaging.kafka.bootstrap.servers": bootstrapServers,
 			},
 			Children: trace.Traces{
 				{
@@ -130,10 +180,7 @@ func (*TestCase) ExpectedTraces() trace.Traces {
 						"type":    "queue",
 						"service": "kafka",
 					},
-					Meta: map[string]string{
-						"span.kind": "consumer",
-						"component": "IBM/sarama",
-					},
+					Meta: consumerMeta,
 				},
 			},
 		},

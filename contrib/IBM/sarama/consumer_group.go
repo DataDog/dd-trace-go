@@ -11,8 +11,9 @@ import (
 
 type consumerGroupHandler struct {
 	sarama.ConsumerGroupHandler
-	cfg        *config
-	closeAsync []func()
+	cfg *config
+	// cancelFetch cancels the cluster ID fetch, if one was started.
+	cancelFetch func()
 }
 
 func (h *consumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
@@ -25,6 +26,19 @@ func (h *consumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession,
 	}
 
 	return h.ConsumerGroupHandler.ConsumeClaim(session, claim)
+}
+
+// Cleanup cancels the cluster ID fetch if it is still running, and calls the
+// wrapped handler's Cleanup. sarama calls Cleanup at the end of every session,
+// so the fetch is cancelled at the end of the first one at the latest. Cleanup
+// does not wait for the fetch: sarama commits the session's offsets after
+// Cleanup, and a broker request in progress can take until its network timeout.
+// The fetch uses a connection of its own, so it can finish later.
+func (h *consumerGroupHandler) Cleanup(session sarama.ConsumerGroupSession) error {
+	if h.cancelFetch != nil {
+		h.cancelFetch()
+	}
+	return h.ConsumerGroupHandler.Cleanup(session)
 }
 
 // WrapConsumerGroupHandler wraps a sarama.ConsumerGroupHandler causing each received
@@ -42,7 +56,7 @@ func WrapConsumerGroupHandler(handler sarama.ConsumerGroupHandler, opts ...Optio
 		cfg:                  cfg,
 	}
 	if cfg.dataStreamsEnabled && len(cfg.brokerAddrs) > 0 {
-		wrapped.closeAsync = append(wrapped.closeAsync, startClusterIDFetch(cfg))
+		wrapped.cancelFetch, _ = launchClusterIDFetch(cfg)
 	}
 	return wrapped
 }

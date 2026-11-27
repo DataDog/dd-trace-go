@@ -8,6 +8,7 @@ package sarama
 import (
 	"context"
 	"log"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -159,5 +160,89 @@ func (t *testConsumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSess
 		case <-session.Context().Done():
 			return nil
 		}
+	}
+}
+
+type cleanupRecorder struct {
+	sarama.ConsumerGroupHandler
+	cleanups int
+}
+
+func (h *cleanupRecorder) Cleanup(sarama.ConsumerGroupSession) error {
+	h.cleanups++
+	return nil
+}
+
+// TestConsumerGroupHandlerCleanupCancelsClusterIDFetch checks that Cleanup
+// cancels the cluster ID fetch the handler started, without waiting for it,
+// and calls the wrapped handler's Cleanup.
+func TestConsumerGroupHandlerCleanupCancelsClusterIDFetch(t *testing.T) {
+	t.Run("cancels the fetch", func(t *testing.T) {
+		inner := &cleanupRecorder{}
+		h := WrapConsumerGroupHandler(inner).(*consumerGroupHandler)
+		cancels := 0
+		h.cancelFetch = func() { cancels++ }
+
+		require.NoError(t, h.Cleanup(nil))
+		assert.Equal(t, 1, cancels)
+		assert.Equal(t, 1, inner.cleanups)
+	})
+	t.Run("does not wait for a stalled broker", func(t *testing.T) {
+		addr, waitForFetch := newStalledBroker(t)
+		inner := &cleanupRecorder{}
+		h := WrapConsumerGroupHandler(inner, WithDataStreams(), WithBrokers([]string{addr}))
+		waitForFetch()
+		start := time.Now()
+		require.NoError(t, h.Cleanup(nil))
+		assert.Less(t, time.Since(start), 5*time.Second, "Cleanup must not wait for the broker's network timeout")
+		assert.Equal(t, 1, inner.cleanups)
+	})
+}
+
+// newStalledBroker starts a listener that accepts connections and never
+// answers, like a stalled broker. It returns its address, and a function that
+// waits until a cluster ID fetch has connected and sent its request.
+func newStalledBroker(t *testing.T) (string, func()) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	accepted := make(chan struct{}, 1)
+	var (
+		mu    sync.Mutex
+		conns []net.Conn
+	)
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			conns = append(conns, c)
+			mu.Unlock()
+			select {
+			case accepted <- struct{}{}:
+			default:
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		// Closing the connections ends the fetch.
+		ln.Close()
+		mu.Lock()
+		defer mu.Unlock()
+		for _, c := range conns {
+			c.Close()
+		}
+	})
+	return ln.Addr().String(), func() {
+		t.Helper()
+		select {
+		case <-accepted:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the cluster ID fetch did not connect to the broker")
+		}
+		// Let the fetch send its metadata request and wait for the answer.
+		time.Sleep(100 * time.Millisecond)
 	}
 }
