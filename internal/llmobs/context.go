@@ -19,8 +19,13 @@ type (
 type PropagatedLLMSpan struct {
 	// MLApp is the ML application name.
 	MLApp string
-	// TraceID is the LLMObs trace ID.
+	// TraceID is the LLMObs trace ID, in canonical form.
 	TraceID string
+	// WireTraceID is the trace ID for the _dd.p.llmobs_trace_id tag: the form the
+	// inbound tag carried, or decimal when no tag carried it. The tag is sent on in
+	// this form: dd-trace-py writes it in decimal, and dd-trace-py before 4.9
+	// cannot parse hex there.
+	WireTraceID string
 	// SpanID is the span ID.
 	SpanID string
 	// SessionID is the session ID.
@@ -31,11 +36,20 @@ type PropagatedLLMSpan struct {
 	// ParentAgentSpanID is the span ID of the nearest agent ancestor, propagated
 	// across process boundaries. Empty when there is no agent ancestor.
 	ParentAgentSpanID string
+	// SampleRate and SamplingDecision are the trace's LLMObs sampling values. Only
+	// dd-trace-py decides them; this tracer forwards them unchanged.
+	SampleRate       string
+	SamplingDecision string
 }
 
 // PropagatedLLMSpanFromContext retrieves a PropagatedLLMSpan from the context.
 // Returns the span and true if found, nil and false otherwise.
 func PropagatedLLMSpanFromContext(ctx context.Context) (*PropagatedLLMSpan, bool) {
+	// The tracer calls this at every span start, so skip the context.Value walk
+	// until a propagated span is stored for the first time.
+	if !propagatedLLMSpanUsed.Load() {
+		return nil, false
+	}
 	if val, ok := ctx.Value(ctxKeyPropagatedLLMSpan{}).(*PropagatedLLMSpan); ok {
 		return val, true
 	}
@@ -44,6 +58,7 @@ func PropagatedLLMSpanFromContext(ctx context.Context) (*PropagatedLLMSpan, bool
 
 // ContextWithPropagatedLLMSpan returns a new context with the given PropagatedLLMSpan attached.
 func ContextWithPropagatedLLMSpan(ctx context.Context, span *PropagatedLLMSpan) context.Context {
+	propagatedLLMSpanUsed.Store(true)
 	return context.WithValue(ctx, ctxKeyPropagatedLLMSpan{}, span)
 }
 
@@ -61,8 +76,17 @@ func ActiveLLMSpanFromContext(ctx context.Context) (*Span, bool) {
 	return nil, false
 }
 
+// propagatedLLMSpanUsed reports whether ContextWithPropagatedLLMSpan was ever called.
+var propagatedLLMSpanUsed atomic.Bool
+
 // activeLLMSpanUsed reports whether contextWithActiveLLMSpan was ever called.
 var activeLLMSpanUsed atomic.Bool
+
+// ContextWithActiveLLMSpan returns ctx with span as the active LLMObs span, so
+// LLMObs spans started from it become its children.
+func ContextWithActiveLLMSpan(ctx context.Context, span *Span) context.Context {
+	return contextWithActiveLLMSpan(ctx, span)
+}
 
 func contextWithActiveLLMSpan(ctx context.Context, span *Span) context.Context {
 	activeLLMSpanUsed.Store(true)

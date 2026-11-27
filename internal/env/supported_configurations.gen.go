@@ -207,7 +207,6 @@ var SupportedConfigurations = map[string]struct{}{
 	"DD_TRACE_CONSUL_ANALYTICS_ENABLED":                                       {},
 	"DD_TRACE_DEBUG":                                                          {},
 	"DD_TRACE_DEBUG_ABANDONED_SPANS":                                          {},
-	"DD_TRACE_DEBUG_SEELOG_WORKAROUND":                                        {},
 	"DD_TRACE_DEBUG_STACK":                                                    {},
 	"DD_TRACE_ECHO_ANALYTICS_ENABLED":                                         {},
 	"DD_TRACE_ECHO_IGNORED_ROUTES":                                            {},

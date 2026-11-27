@@ -18,13 +18,13 @@ gin_new:
   do:
     - wrap_call:
         replace: |-
-          (func(e *gin.Engine) *gin.Engine {
-            e.Use(gintrace.Middleware(""))
+          (func(e *__dd_gin.Engine) *__dd_gin.Engine {
+            e.Use(__dd_gintrace.Middleware(""))
             return e
           })({{ . }})
   imports:
-    gin: github.com/gin-gonic/gin
-    gintrace: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2
+    __dd_gin: github.com/gin-gonic/gin
+    __dd_gintrace: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2
 
 gin_default:
   target:
@@ -36,13 +36,13 @@ gin_default:
   do:
     - wrap_call:
         replace: |-
-          (func(e *gin.Engine) *gin.Engine {
-            e.Use(gintrace.Middleware(""))
+          (func(e *__dd_gin.Engine) *__dd_gin.Engine {
+            e.Use(__dd_gintrace.Middleware(""))
             return e
           })({{ . }})
   imports:
-    gin: github.com/gin-gonic/gin
-    gintrace: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2
+    __dd_gin: github.com/gin-gonic/gin
+    __dd_gintrace: github.com/DataDog/dd-trace-go/contrib/gin-gonic/gin/v2
 
 # The bind rules run AppSec on the value a successful *gin.Context bind call
 # filled in, one rule per method, since a point selector cannot be alternated.

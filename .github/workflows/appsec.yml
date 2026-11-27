@@ -90,7 +90,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27"
+          go-version: stable
           cache: false
 
       - name: Cache Go modules
@@ -114,11 +114,15 @@ jobs:
   macos:
     name: ${{ matrix.runs-on }} go${{ matrix.go-version }}
     runs-on: ${{ matrix.runs-on }}
-    needs: 
-      - go-mod-caching
+    # No needs: this job no longer consumes the go-mod-caching outputs
+    # (the isolated caches replace that restore), so a module-prep
+    # failure must not skip it and it starts in parallel.
     strategy:
       matrix:
         runs-on: [ macos-15, macos-latest ] # oldest and newest macos runners available
+        # Numeric minors keep the go.mod floor tested on the oldest
+        # supported version (no golang: image on this job; the Docker
+        # comment below belongs to the linux-matrix job).
         go-version: [ "1.27", "1.26" ]
       fail-fast: true # saving some CI time - macos runners are too long to get
     steps:
@@ -127,21 +131,30 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.ref || github.ref }}
 
-      - name: Restore Go modules cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ${{ needs.go-mod-caching.outputs.path }}
-          key: ${{ needs.go-mod-caching.outputs.key }}
-          restore-keys: go-pkg-mod-
-          enableCrossOsArchive: true
-          # Transient cache-service miss/timeout: fall back to a cold rebuild
-          # (modules re-fetched per go.sum) instead of hard-failing the job.
-          fail-on-cache-miss: false
-
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      # The isolated Go caches replace this job's module-only restore: the
+      # job recompiles the same packages in every loop iteration, so a warm
+      # build cache is what shortens its runtime (APMLP-2249 holds the
+      # measurements). The other jobs keep the shared go-mod-caching
+      # restore below.
+      - name: Setup Go
+        uses: ./.github/actions/setup-go
         with:
           go-version: ${{ matrix.go-version }}
-          cache: false # we manage the caching ourselves
+          workload: appsec-macos
+          variant: |-
+            {"runner":"${{ matrix.runs-on }}",
+             "coverage":"atomic"}
+          # Default-branch seed set: the nightly schedule and a
+          # workflow_dispatch on the default branch save every stratum of
+          # this matrix; every pull request run restores only.
+          seed: "true"
+
+      # A restored GOCACHE also restores Go's cached test results (Go
+      # caches -v output and coverage profiles there), so a package
+      # unchanged since the nightly seed could pass without executing
+      # on this runner. Drop only the test-result entries — the compiled
+      # packages stay — so every package runs its tests.
+      - run: go clean -testcache
 
       - name: Setup testing environment
         run: |-
@@ -154,8 +167,6 @@ jobs:
       # reruns under different settings.
       - name: go test
         shell: bash
-        env:
-          GOMODCACHE: ${{ github.workspace }}/${{ needs.go-mod-caching.outputs.path }}
         run: |
           set -euxo pipefail
           # Go experiments to test with. Add/remove entries here when experiments change.
@@ -253,6 +264,14 @@ jobs:
         with:
           policy: dd-trace-go
 
+      # Move only GOCACHE to the Dev Drive.
+      # This job restores GOMODCACHE into the workspace below.
+      - name: Provision Windows Dev Drive
+        if: runner.os == 'Windows'
+        uses: ./.github/actions/windows-dev-drive
+        with:
+          redirect: gocache
+
       - name: Restore Go modules cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -266,7 +285,7 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: "1.27"
+          go-version: stable
           cache: false # we manage the caching ourselves
 
       - run: go env -w GOMODCACHE="${{ github.workspace }}\${{ needs.go-mod-caching.outputs.path }}"
@@ -337,6 +356,8 @@ jobs:
       - go-mod-caching
     strategy:
       matrix:
+        # Numeric minors, not aliases: the golang: image tag below
+        # interpolates matrix.go-version, and Docker Hub resolves no aliases.
         go-version: [ "1.27", "1.26" ]
         distribution: [ trixie, bookworm, alpine ]
         platform: [ linux/amd64, linux/arm64 ]

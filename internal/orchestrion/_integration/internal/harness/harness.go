@@ -171,6 +171,12 @@ func traceToMatcher(tr *trace.Trace) *agenttest.SpanMatch {
 	for k, v := range tr.Meta {
 		m = m.Tag(k, v)
 	}
+	for _, k := range tr.MetaAbsent {
+		m = m.Condition(fmt.Sprintf("no Tags[%q]", k), func(s *agenttest.Span) bool {
+			_, ok := s.Tags[k]
+			return !ok
+		})
+	}
 	for k, v := range tr.Metrics {
 		m = m.Tag(k, v)
 	}

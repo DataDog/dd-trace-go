@@ -478,16 +478,16 @@ func (s *Span) SetTag(key string, value any) {
 }
 
 // SetMetaStruct adds a tag with the given key and value to the `meta_struct`
-// field of the span if the agent supports it and returns true. If the
-// `meta_struct` feature is not supported by the agent or the receiver is nil,
-// nothing is stored in the span and false is returned.
+// field of the span if meta_struct export is available and returns true. If
+// meta_struct is unavailable (unsupported by the agent or in OTLP export mode)
+// or the receiver is nil, nothing is stored in the span and false is returned.
 func (s *Span) SetMetaStruct(key string, value msgp.Marshaler) bool {
 	if s == nil {
 		return false
 	}
 
 	tracer, hasTracer := concreteTracerForSpan(getGlobalTracer(), s).(*tracer)
-	if !hasTracer || !tracer.config.agent.load().metaStructAvailable {
+	if !hasTracer || !tracer.metaStructAvailable() {
 		return false
 	}
 
@@ -1420,21 +1420,15 @@ func (s *Span) AddEvent(name string, opts ...SpanEventOption) {
 }
 
 func setLLMObsPropagatingTags(ctx context.Context, spanCtx *SpanContext) {
-	llmSpan, ok := illmobs.ActiveLLMSpanFromContext(ctx)
-	if !ok {
-		return
+	// Only record which LLMObs context requests injected from spanCtx carry. The
+	// _dd.p.llmobs_* tags are written at injection (setLLMObsTagsForInjection):
+	// trace-wide tags written here would let a finished or concurrent LLMObs span
+	// leave its parent behind for other requests of the trace.
+	if llmSpan, ok := illmobs.ActiveLLMSpanFromContext(ctx); ok {
+		spanCtx.setLLMObsSpan(llmSpan)
+	} else if p, ok := illmobs.PropagatedLLMSpanFromContext(ctx); ok {
+		spanCtx.setLLMObsPropagated(p, false)
 	}
-	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentID, llmSpan.SpanID())
-	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsTraceID, llmSpan.TraceID())
-	spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsMLAPP, llmSpan.MLApp())
-	// session_id is optional. Propagating tags are trace-scoped, so unset the key when the active
-	// span has no session; otherwise a predecessor's value lingers and propagates downstream.
-	if sessionID := llmSpan.SessionID(); sessionID != "" {
-		spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsSessionID, sessionID)
-	} else {
-		spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsSessionID)
-	}
-	setPropagatingParentAgentTags(spanCtx, llmSpan.PropagatedParentAgentSpanID(), llmSpan.PropagatedParentAgentName())
 }
 
 // setPropagatingParentAgentTags writes the parent-agent attribution tags onto the trace's
@@ -1452,28 +1446,35 @@ func setPropagatingParentAgentTags(spanCtx *SpanContext, parentAgentSpanID, name
 			return
 		}
 		// Only propagate the name when it fits within the x-datadog-tags and W3C tracestate budgets.
-		used, tsUsed := spanCtx.trace.propagatingTagsByteLens()
-		// _dd.p.tid is stamped during Inject, not here — reserve its space on 128-bit traces.
-		if spanCtx.traceID.HasUpper() && spanCtx.trace.propagatingTag(keyTraceID128) == "" {
-			used += 27
-			tsUsed += 23
-		}
-		var nameXTagsLen int
-		if prior := spanCtx.trace.propagatingTag(keyPropagatedLLMObsParentAgentName); prior != "" {
-			nameXTagsLen = used - len(prior) + len(name)
-			tsUsed -= len(keyPropagatedLLMObsParentAgentName) - len("_dd.p.") + len(prior) + 4
-		} else {
-			nameXTagsLen = used + len(keyPropagatedLLMObsParentAgentName) + len(name) + 2
-		}
-		nameTracestateLen := len(keyPropagatedLLMObsParentAgentName) - len("_dd.p.") + len(name) + 4
-		if nameXTagsLen <= internalconfig.Get().MaxTagsHeaderLen() &&
-			tsUsed+nameTracestateLen+tracestateHeaderReserve <= tracestateDDMaxSize {
+		if fitsPropagatingTagBudget(spanCtx, keyPropagatedLLMObsParentAgentName, name) {
 			spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentAgentName, name)
 		} else {
 			spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
 			log.Debug("LLMObs: parent agent name dropped from propagation — x-datadog-tags budget exceeded (name=%q)", name)
 		}
 	}
+}
+
+// fitsPropagatingTagBudget reports whether setting key to value keeps the
+// propagating tags within the x-datadog-tags and W3C tracestate budgets. Over
+// either budget, the encoder drops every propagating tag, not only this one.
+func fitsPropagatingTagBudget(spanCtx *SpanContext, key, value string) bool {
+	used, tsUsed := spanCtx.trace.propagatingTagsByteLens()
+	// _dd.p.tid is stamped during Inject, after this check — reserve its space on 128-bit traces.
+	if spanCtx.traceID.HasUpper() && spanCtx.trace.propagatingTag(keyTraceID128) == "" {
+		used += 27
+		tsUsed += 23
+	}
+	var xTagsLen int
+	if prior := spanCtx.trace.propagatingTag(key); prior != "" {
+		xTagsLen = used - len(prior) + len(value)
+		tsUsed -= len(key) - len("_dd.p.") + len(prior) + 4
+	} else {
+		xTagsLen = used + len(key) + len(value) + 2
+	}
+	tracestateLen := len(key) - len("_dd.p.") + len(value) + 4
+	return xTagsLen <= internalconfig.Get().MaxTagsHeaderLen() &&
+		tsUsed+tracestateLen+tracestateHeaderReserve <= tracestateDDMaxSize
 }
 
 // used in internal/civisibility/integrations/manual_api_common.go using linkname
@@ -1552,6 +1553,10 @@ const (
 	keyPropagatedLLMObsParentAgentSpanID = "_dd.p.llmobs_pagent_span_id"
 	// keyPropagatedLLMObsParentAgentName contains the propagated parent-agent name.
 	keyPropagatedLLMObsParentAgentName = "_dd.p.llmobs_pagent_name"
+	// keyPropagatedLLMObsSampleRate and keyPropagatedLLMObsSamplingDecision carry the
+	// LLMObs sampling values that dd-trace-py decides. This tracer only forwards them.
+	keyPropagatedLLMObsSampleRate       = "_dd.p.llmobs_sr"
+	keyPropagatedLLMObsSamplingDecision = "_dd.p.llmobs_sd"
 
 	// serviceSourceManual is the service source value used when the service name is set manually via SetTag.
 	serviceSourceManual = "m"

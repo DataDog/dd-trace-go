@@ -8,8 +8,10 @@ package crashtracker
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -27,11 +29,9 @@ const (
 	agentlessURLTemplate = "https://error-tracking-intake.%s/api/v2/errorsintake"
 	defaultSite          = "datadoghq.com"
 
-	uploadTimeout = 10 * time.Second
-
 	// uploadAttempts bounds how many times uploadReport tries to deliver a
 	// report before giving up. A crash report is a strictly one-shot payload:
-	// the monitor calls os.Exit(0) immediately after, with no later flush and
+	// the supervisor exits immediately after, with no later flush and
 	// no buffer to fall back on, so a single transient failure (the Agent
 	// restarting, a 503, a reset connection) would otherwise lose the report
 	// permanently.
@@ -40,11 +40,16 @@ const (
 	// uploadRetryBackoff is the base delay between upload attempts, scaled
 	// linearly by attempt number (500ms, 1s).
 	uploadRetryBackoff = 500 * time.Millisecond
+
+	// maxDrainedResponseBytes bounds how much of a response body attemptUpload
+	// reads before it closes the body. Reading the body to EOF lets the
+	// transport reuse the connection for the next attempt.
+	maxDrainedResponseBytes = 64 * 1024
 )
 
 // uploadReport sends a crash report to the Error Tracking intake, retrying
 // transient failures.
-func uploadReport(cfg *config, r *Report) error {
+func uploadReport(ctx context.Context, cfg *config, r *Report) error {
 	body, err := json.Marshal(r)
 	if err != nil {
 		return fmt.Errorf("crashtracker: marshal report: %w", err)
@@ -58,12 +63,25 @@ func uploadReport(cfg *config, r *Report) error {
 		return fmt.Errorf("crashtracker: compress report: %w", err)
 	}
 
+	// Build the client once: every attempt reuses its transport and connection.
+	target := resolveUploadTarget(cfg)
+	client := target.newClient(cfg)
+
 	var lastErr error
 	for attempt := range uploadAttempts {
 		if attempt > 0 {
-			time.Sleep(uploadRetryBackoff * time.Duration(attempt))
+			timer := time.NewTimer(uploadRetryBackoff * time.Duration(attempt))
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				if lastErr != nil {
+					return fmt.Errorf("crashtracker: upload deadline: %w (last error: %v)", ctx.Err(), lastErr)
+				}
+				return fmt.Errorf("crashtracker: upload deadline: %w", ctx.Err())
+			case <-timer.C:
+			}
 		}
-		retryable, err := attemptUpload(cfg, compressed)
+		retryable, err := attemptUpload(ctx, client, target, cfg, compressed)
 		if err == nil {
 			return nil
 		}
@@ -76,23 +94,27 @@ func uploadReport(cfg *config, r *Report) error {
 }
 
 // attemptUpload makes one upload attempt and reports whether a failure is
-// worth retrying. buildRequestAndClient is called fresh on every attempt
-// (rather than reusing one *http.Request) specifically so the request body
-// is rebuilt each time: an http.Request's body reader is consumed after use
-// and cannot simply be replayed on a retry.
-func attemptUpload(cfg *config, compressed []byte) (retryable bool, err error) {
-	req, client, err := buildRequestAndClient(cfg, compressed)
+// worth retrying. The request is built fresh on every attempt (rather than
+// reusing one *http.Request) specifically so the request body is rebuilt each
+// time: an http.Request's body reader is consumed after use and cannot simply
+// be replayed on a retry. The client is shared across attempts.
+func attemptUpload(ctx context.Context, client *http.Client, target uploadTarget, cfg *config, compressed []byte) (retryable bool, err error) {
+	req, err := target.newRequest(cfg, compressed)
 	if err != nil {
 		return false, fmt.Errorf("crashtracker: build request: %w", err)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req.WithContext(ctx))
 	if err != nil {
 		// A transport-level failure (connection reset, DNS hiccup, the Agent
 		// mid-restart) might succeed on a later attempt.
 		return true, fmt.Errorf("crashtracker: send report: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		// Drain a bounded amount so the connection returns to the pool.
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, maxDrainedResponseBytes))
+		_ = resp.Body.Close()
+	}()
 
 	// Anything outside 2xx is a failed upload, not just 4xx/5xx: a 3xx that
 	// client.Do did not (or could not) follow means the report was never
@@ -111,16 +133,18 @@ func attemptUpload(cfg *config, compressed []byte) (retryable bool, err error) {
 	return false, nil
 }
 
-// buildRequestAndClient builds an HTTP request and the matching client.
-// For Unix socket agent URLs it returns a UDS-aware client and rewrites the
-// request URL to http://localhost so net/http can POST through the socket.
-func buildRequestAndClient(cfg *config, body []byte) (*http.Request, *http.Client, error) {
-	var (
-		targetURL  string
-		useKey     bool
-		socketPath string
-	)
+// uploadTarget is the resolved destination of an upload.
+type uploadTarget struct {
+	url        string
+	useKey     bool   // authenticate with the API key (agentless) instead of the EVP subdomain header
+	socketPath string // non-empty for a Unix socket agent URL
+}
 
+// resolveUploadTarget resolves where cfg sends the report. For Unix socket
+// agent URLs it rewrites the request URL to http://localhost so net/http can
+// POST through the socket.
+func resolveUploadTarget(cfg *config) uploadTarget {
+	var t uploadTarget
 	if cfg.apiKey != "" {
 		// Agentless path. cfg.agentlessURL is a test-only override (no public
 		// Option); WithAgentURL always means the agent path below, so setting
@@ -138,49 +162,60 @@ func buildRequestAndClient(cfg *config, body []byte) (*http.Request, *http.Clien
 			site = strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(site, "https://"), "http://"), "/")
 			base = fmt.Sprintf(agentlessURLTemplate, site)
 		}
-		targetURL = base
-		useKey = true
-	} else {
-		// Agent EVP proxy path.
-		base := cfg.agentURL
-		if base == "" {
-			base = internal.AgentURLFromEnv().String()
-		}
-		// Detect Unix socket agent URLs: use http://localhost for the request
-		// and dial the socket directly via UDSClient.
-		if u, err := url.Parse(base); err == nil && u.Scheme == "unix" {
-			socketPath = u.Path
-			targetURL = "http://localhost" + agentEVPPath
-		} else {
-			// Trim any trailing slash to avoid double-slash in the path.
-			targetURL = strings.TrimRight(base, "/") + agentEVPPath
-		}
+		t.url = base
+		t.useKey = true
+		return t
 	}
 
-	req, err := http.NewRequest(http.MethodPost, targetURL, bytes.NewReader(body))
+	// Agent EVP proxy path.
+	base := cfg.agentURL
+	if base == "" {
+		base = internal.AgentURLFromEnv().String()
+	}
+	// Detect Unix socket agent URLs: use http://localhost for the request
+	// and dial the socket directly via UDSClient.
+	if u, err := url.Parse(base); err == nil && u.Scheme == "unix" {
+		t.socketPath = u.Path
+		t.url = "http://localhost" + agentEVPPath
+	} else {
+		// Trim any trailing slash to avoid double-slash in the path.
+		t.url = strings.TrimRight(base, "/") + agentEVPPath
+	}
+	return t
+}
+
+// newRequest builds an HTTP request that carries body.
+func (t uploadTarget) newRequest(cfg *config, body []byte) (*http.Request, error) {
+	req, err := http.NewRequest(http.MethodPost, t.url, bytes.NewReader(body))
 	if err != nil {
-		return nil, nil, fmt.Errorf("build HTTP request: %w", err)
+		return nil, fmt.Errorf("build HTTP request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Encoding", "gzip")
-	if useKey {
+	if t.useKey {
 		req.Header.Set("DD-API-KEY", cfg.apiKey)
 	} else {
 		req.Header.Set("X-Datadog-EVP-Subdomain", agentEVPSubdomain)
 	}
+	return req, nil
+}
 
-	var client *http.Client
+// newClient returns the client for the upload: the caller-supplied client from
+// WithHTTPClient, a UDS-aware client for a Unix socket agent URL, or the default
+// client.
+func (t uploadTarget) newClient(cfg *config) *http.Client {
 	switch {
 	case cfg.httpClient != nil:
-		client = cfg.httpClient
-	case socketPath != "":
-		client = internal.UDSClient(socketPath, uploadTimeout)
+		return cfg.httpClient
+	case t.socketPath != "":
+		client := internal.UDSClient(t.socketPath, attemptTimeout)
 		client.CheckRedirect = rejectRedirects
+		return client
 	default:
-		client = internal.DefaultHTTPClient(uploadTimeout, false)
+		client := internal.DefaultHTTPClient(attemptTimeout, false)
 		client.CheckRedirect = rejectRedirects
+		return client
 	}
-	return req, client, nil
 }
 
 // rejectRedirects stops net/http from following a 3xx response. The intake

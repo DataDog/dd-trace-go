@@ -283,6 +283,7 @@ func TestAppendMiddlewareSqsReceiveMessage(t *testing.T) {
 }
 
 func TestAppendMiddlewareSqsSendMessage(t *testing.T) {
+	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
 	mt := mocktracer.Start()
 	defer mt.Stop()
 

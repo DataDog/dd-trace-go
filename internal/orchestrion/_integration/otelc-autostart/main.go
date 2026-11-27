@@ -11,9 +11,9 @@
 //     This command never calls tracer.Start, so its spans only reach an agent
 //     if the build injected the start.
 //
-//   - //dd:span in the file that holds main. That file does not import the
-//     tracer, so both rules add that import to it, and otelc fails the build
-//     if they use different aliases.
+//   - //dd:span in the file that holds main. That file imports the tracer, and
+//     main declares a `tracer` local, so both rules must use their own import
+//     of the tracer.
 //
 //   - //dd:span on main itself. The tracer has to start before that span and
 //     stop after it finishes, or the span is lost.
@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
 )
 
@@ -50,7 +51,10 @@ func main() {
 	// at the tracer-start rule alone.
 	fmt.Printf("otelc.Enabled=%t\n", otelc.Enabled())
 
-	startSpan()
+	// A local named like a package that a rule imports must not break the
+	// build. Both rules inject code into this function.
+	tracer := tracer.StartSpan(spanName)
+	tracer.Finish()
 	annotated()
 
 	// The injected `defer tracer.Stop()` is what flushes the spans, so main has
