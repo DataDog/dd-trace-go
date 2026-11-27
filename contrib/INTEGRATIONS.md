@@ -423,8 +423,10 @@ Run these in order and commit every change they produce. CI fails on a non-clean
 
    Use the otelc CLI at `OTELC_VERSION` from `.github/workflows/otelc.yml`.
 
-6. Register the integration with the otelc lane. Name the module in `OTELC_MODULES` and
-   `OTELC_TEST_PACKAGES` in `.github/workflows/otelc.yml`, add the parent subtree to the
-   `otelc-integrations` component in `.github/ci-components.yml`, and add the module's entry to the
-   same file's `integration-suites.modules` mapping. The CI selector derives the suite coverage from
-   those entries, and `make lint/misc` fails until the mapping covers every module.
+6. Register the integration with the otelc lane. Add the parent subtree to the `otelc-integrations`
+   component in `.github/ci-components.yml`, and add the module and its `contrib/<name>/otelc`
+   entry to the same file's `integration-suites.modules` mapping (non-empty for `contrib/<name>/otelc`).
+   For a suite covering code outside `contrib/` (without a `*/otelc` module entry), add the suite
+   to `integration-suites.otelc-extra-suites`. CI discovers `**/otelc` modules and their suites
+   automatically via `scripts/ciselect`, so `.github/workflows/otelc.yml` needs no edit, and
+   `make lint/misc` fails until the mapping covers every module.

@@ -71,9 +71,19 @@ groups:
 # suite directory whose import closure stays outside the otelc set, which
 # turns that lane off for the path. `selectSuites` also rewrites both lanes'
 # gates: on when a lane has a selection, off when every gate-on path was
-# suppressed. The otelc set itself lives in OTELC_TEST_PACKAGES in
-# .github/workflows/otelc.yml; the selector reads it from there at runtime.
+# suppressed. The otelc suite set is derived from otelc-extra-suites below
+# plus every suite listed in modules whose key ends with /otelc.
 integration-suites:
+  # Suites under internal/orchestrion/_integration that run with otelc but are
+  # not mapped by a */otelc entry in modules below (core suites and suites for
+  # code outside contrib/, such as gls).
+  otelc-extra-suites:
+    - otelc
+    - gls
+    - gls-leak
+    - gls-unfinished
+    - otelc-autostart
+    - dd-span
   # Modules so cross-cutting that a change affects suites which never import
   # them: the weavers inject `net/http` spans into more than 20 suites, and
   # the `slog` aspect links `WrapHandler` into every `slog.New` caller (the
@@ -94,6 +104,8 @@ integration-suites:
   modules:
     contrib/99designs/gqlgen: [ 99designs.gqlgen ]
     contrib/99designs/gqlgen/otelc: [ 99designs.gqlgen ]
+    contrib/IBM/sarama/otelc: [ ibm_sarama ]
+    contrib/Shopify/sarama/otelc: [ shopify_sarama ]
     contrib/aerospike/aerospike-client-go.v7: [ aerospike.v7 ]
     contrib/aws/aws-sdk-go: [ aws.v1 ]
     contrib/aws/aws-sdk-go-v2: [ aws.v2 ]
@@ -118,6 +130,7 @@ integration-suites:
     contrib/database/sql/otelc: [ sql ]
     contrib/dimfeld/httptreemux.v5: []
     contrib/elastic/go-elasticsearch.v6: [ go-elasticsearch ]
+    contrib/elastic/go-elasticsearch.v6/otelc: [ go-elasticsearch ]
     contrib/emicklei/go-restful.v3: []
     contrib/envoyproxy/go-control-plane: []
     contrib/gin-gonic/gin: [ gin ]
@@ -140,6 +153,7 @@ integration-suites:
     contrib/go.mongodb.org/mongo-driver/otelc: [ mongo ]
     contrib/go.uber.org/zap: [ zap ]
     contrib/gocql/gocql: [ gocql ]
+    contrib/gocql/gocql/otelc: [ gocql ]
     contrib/gofiber/fiber.v2: [ fiber.v2 ]
     contrib/gofiber/fiber.v2/otelc: [ fiber.v2 ]
     contrib/gomodule/redigo: [ redigo ]
@@ -496,6 +510,8 @@ components:
       contrib entry claims them without the gate.
     paths:
       - contrib/99designs/gqlgen/**
+      - contrib/IBM/sarama/**
+      - contrib/Shopify/sarama/**
       - contrib/aws/aws-sdk-go-v2/**
       - contrib/aws/aws-sdk-go/**
       - contrib/cloud.google.com/go/pubsub.v1/**
@@ -503,6 +519,7 @@ components:
       - contrib/confluentinc/confluent-kafka-go/kafka/**
       - contrib/confluentinc/confluent-kafka-go/kafka.v2/**
       - contrib/database/sql/**
+      - contrib/elastic/go-elasticsearch.v6/**
       - contrib/gin-gonic/gin/**
       - contrib/go-chi/chi/**
       - contrib/go-chi/chi.v5/**
@@ -512,6 +529,7 @@ components:
       - contrib/gofiber/fiber.v2/**
       - contrib/go.mongodb.org/mongo-driver/**
       - contrib/go.mongodb.org/mongo-driver.v2/**
+      - contrib/gocql/gocql/**
       - contrib/gomodule/redigo/**
       - contrib/google.golang.org/grpc/**
       - contrib/gorilla/mux/**
@@ -522,6 +540,7 @@ components:
       - contrib/labstack/echo.v4/**
       - contrib/labstack/echo.v5/**
       - contrib/net/http/**
+      - contrib/os/otelc/**
       - contrib/segmentio/kafka-go/**
       - contrib/rs/zerolog/**
       - contrib/redis/go-redis.v9/**

@@ -190,6 +190,9 @@ span_gls_clear:
 # `target: main` plus `where.func` does not match a test-main compile unit, so the
 # rule below never fires under `otelc go test`.
 # internal/orchestrion/_integration/otelc-autostart guards that.
+#
+# `order: 50` applies this rule after dd_span, so on a `//dd:span func main()`
+# the tracer starts before the span and stops after it finishes.
 
 create_tracer:
   target: main
@@ -197,8 +200,81 @@ create_tracer:
     func: main
   do:
     - inject_code:
+        order: 50
         raw: |
           _ = __dd_tracer.Start()
           defer __dd_tracer.Stop()
   imports:
+    __dd_tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
+
+# ---------------------------------------------------------------------------
+# Custom spans
+# ---------------------------------------------------------------------------
+
+# A directive on a function literal is expanded too. A literal has no name, so
+# its span is named after the first directive argument.
+#
+# An argument whose type only implements context.Context is converted, and a
+# nil pointer is replaced with context.TODO(). The check uses reflect because
+# `!= nil` does not compile for a value type.
+#
+# dd-trace-go's packages are not excluded, so the integration suites are
+# reached. A //dd:span in a package the tracer imports would make an import
+# cycle.
+#
+# The imports use private aliases, the same as create_tracer, so a `tracer` or
+# `context` declared by the application does not hide them, also in a file that
+# already imports these packages. internal/orchestrion/_integration/dd-span and
+# otelc-autostart cover both.
+dd_span:
+  target: "**"
+  where:
+    directive: dd:span
+  do:
+    - expand_directive:
+        template: |-
+          {{- $ctx := .FuncArgumentOfType "context.Context" -}}
+          {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
+          {{- if not $ctx -}}
+            {{- $impl := .FuncArgumentThatImplements "context.Context" -}}
+            {{- $ctx = "__dd_span_ctx" -}}
+            {{- if $impl }}
+          var __dd_span_ctx __dd_context.Context = {{ $impl }}
+          if __dd_v := __dd_reflect.ValueOf(__dd_span_ctx); !__dd_v.IsValid() || __dd_v.Kind() == __dd_reflect.Pointer && __dd_v.IsNil() {
+            __dd_span_ctx = __dd_context.TODO()
+          }
+            {{- else if $req }}
+          __dd_span_ctx := {{ $req }}.Context()
+            {{- else }}
+          __dd_span_ctx := __dd_context.TODO()
+            {{- end }}
+          {{- end }}
+          {{- $name := .FuncName -}}
+          {{- $op := $name -}}
+          {{- range .DirectiveArgs -}}
+            {{- if not $op -}}{{- $op = .Value -}}{{- end -}}
+            {{- if eq .Key "span.name" -}}{{- $op = .Value -}}{{- break -}}{{- end -}}
+          {{- end }}
+          var __dd_span *__dd_tracer.Span
+          __dd_span, {{ $ctx }} = __dd_tracer.StartSpanFromContext({{ $ctx }}, {{ printf "%q" $op }},
+          {{- with $name }}
+            __dd_tracer.Tag("function-name", {{ printf "%q" . }}),
+          {{- end }}
+          {{- range .DirectiveArgs }}
+            {{- if ne .Key "span.name" }}
+            __dd_tracer.Tag({{ printf "%q" .Key }}, {{ printf "%q" .Value }}),
+            {{- end }}
+          {{- end }}
+          )
+          {{- with $req }}
+          {{ . }} = {{ . }}.WithContext({{ $ctx }})
+          {{- end }}
+          {{- with .FuncReturnOfType "error" }}
+          defer func() { __dd_span.Finish(__dd_tracer.WithError({{ . }})) }()
+          {{- else }}
+          defer __dd_span.Finish()
+          {{- end }}
+  imports:
+    __dd_context: context
+    __dd_reflect: reflect
     __dd_tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
