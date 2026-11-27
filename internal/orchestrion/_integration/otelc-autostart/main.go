@@ -11,9 +11,9 @@
 //     This command never calls tracer.Start, so its spans only reach an agent
 //     if the build injected the start.
 //
-//   - //dd:span in the file that holds main. That file imports the tracer as
-//     ddtracer, and main declares a `tracer` local, so both rules must use their
-//     own import of the tracer.
+//   - //dd:span in the file that holds main. That file imports the tracer, and
+//     main declares a `tracer` local, so both rules must use their own import
+//     of the tracer.
 //
 //   - //dd:span on main itself. The tracer has to start before that span and
 //     stop after it finishes, or the span is lost.
@@ -33,7 +33,7 @@ import (
 	"fmt"
 	"os"
 
-	ddtracer "github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/internal/otelc"
 )
 
@@ -53,7 +53,7 @@ func main() {
 
 	// A local named like a package that a rule imports must not break the
 	// build. Both rules inject code into this function.
-	tracer := ddtracer.StartSpan(spanName)
+	tracer := tracer.StartSpan(spanName)
 	tracer.Finish()
 	annotated()
 

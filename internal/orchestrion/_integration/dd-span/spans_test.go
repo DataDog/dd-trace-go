@@ -112,9 +112,8 @@ func TestNilContextArgument(t *testing.T) {
 	assert.Equal(t, map[string]string{"function-name": "spanWithNilContext", "arg": "nil"}, userMeta(nilCtx))
 }
 
-// otelc matches argument types by name, so it does not take the parent from an
-// argument that only implements context.Context. The parent then comes from
-// the active span.
+// An argument that only implements context.Context gives the parent, not the
+// active span.
 func TestImplementingContextArgument(t *testing.T) {
 	spans := traced(t, func(ctx context.Context) {
 		other := startOnGoroutine("test.other")
@@ -123,11 +122,7 @@ func TestImplementingContextArgument(t *testing.T) {
 	})
 
 	requireOperations(t, spans, "test.root", "test.other", "spanWithImplementingContext")
-	if otelc.Enabled() {
-		requireParent(t, spans, "spanWithImplementingContext", "test.other")
-	} else {
-		requireParent(t, spans, "spanWithImplementingContext", "test.root")
-	}
+	requireParent(t, spans, "spanWithImplementingContext", "test.root")
 	assert.Equal(t, map[string]string{"function-name": "spanWithImplementingContext", "arg": "implements"},
 		userMeta(spans["spanWithImplementingContext"]))
 }
@@ -231,6 +226,17 @@ func TestShadowingNames(t *testing.T) {
 	requireOperations(t, spans, "test.root", "spanWithShadowingParams", "spanWithShadowingReceiver")
 	requireParent(t, spans, "spanWithShadowingParams", "test.root")
 	requireParent(t, spans, "spanWithShadowingReceiver", "test.root")
+}
+
+func TestShadowedImports(t *testing.T) {
+	spans := traced(t, func(context.Context) {
+		_ = spanWithShadowedImportParam("a")
+		_ = spanWithShadowedImportLocal()
+	})
+
+	requireOperations(t, spans, "test.root", "spanWithShadowedImportParam", "spanWithShadowedImportLocal")
+	requireParent(t, spans, "spanWithShadowedImportParam", "test.root")
+	requireParent(t, spans, "spanWithShadowedImportLocal", "test.root")
 }
 
 func TestFunctionLiteral(t *testing.T) {

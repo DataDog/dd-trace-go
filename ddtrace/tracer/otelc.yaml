@@ -214,19 +214,18 @@ create_tracer:
 # A directive on a function literal is expanded too. A literal has no name, so
 # its span is named after the first directive argument.
 #
-# otelc matches argument types by name, so an argument whose type only
-# implements context.Context does not give the parent. The parent then comes
-# from goroutine-local storage.
+# An argument whose type only implements context.Context is converted, and a
+# nil pointer is replaced with context.TODO(). The check uses reflect because
+# `!= nil` does not compile for a value type.
 #
 # dd-trace-go's packages are not excluded, so the integration suites are
 # reached. A //dd:span in a package the tracer imports would make an import
 # cycle.
 #
 # The imports use private aliases, the same as create_tracer, so a `tracer` or
-# `context` declared by the application does not hide them. In a file that
-# already imports a package, otelc uses the file's alias instead, and fails the
-# build if the annotated function declares a local with that name.
-# internal/orchestrion/_integration/dd-span and otelc-autostart cover both.
+# `context` declared by the application does not hide them, also in a file that
+# already imports these packages. internal/orchestrion/_integration/dd-span and
+# otelc-autostart cover both.
 dd_span:
   target: "**"
   where:
@@ -237,8 +236,14 @@ dd_span:
           {{- $ctx := .FuncArgumentOfType "context.Context" -}}
           {{- $req := .FuncArgumentOfType "*net/http.Request" -}}
           {{- if not $ctx -}}
+            {{- $impl := .FuncArgumentThatImplements "context.Context" -}}
             {{- $ctx = "__dd_span_ctx" -}}
-            {{- if $req }}
+            {{- if $impl }}
+          var __dd_span_ctx __dd_context.Context = {{ $impl }}
+          if __dd_v := __dd_reflect.ValueOf(__dd_span_ctx); !__dd_v.IsValid() || __dd_v.Kind() == __dd_reflect.Pointer && __dd_v.IsNil() {
+            __dd_span_ctx = __dd_context.TODO()
+          }
+            {{- else if $req }}
           __dd_span_ctx := {{ $req }}.Context()
             {{- else }}
           __dd_span_ctx := __dd_context.TODO()
@@ -271,4 +276,5 @@ dd_span:
           {{- end }}
   imports:
     __dd_context: context
+    __dd_reflect: reflect
     __dd_tracer: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
