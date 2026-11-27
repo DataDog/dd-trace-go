@@ -11,6 +11,12 @@ set -euo pipefail
 # failure, and can panic the binary after the test has completed. The handler
 # should record values, and the test goroutine should assert on them.
 #
+# Known limit: go-require only inspects testify require and assert calls. A
+# t.Fatal or t.FailNow call off the test goroutine is not flagged, so the same
+# review feedback still applies to it by hand. go vet's testinggoroutine
+# checker covers the `go func()`-body case; the blind spot is handlers and
+# other service goroutines.
+#
 # The check is diff-scoped (--new-from-rev) and testifylint is not in
 # `linters.enable` of .golangci.yml, because the full-repo golangci-lint steps
 # would then fail on the findings that predate it. This script turns it on with
