@@ -901,7 +901,7 @@ func TestJoinJobsRejectDependencyInducedSkips(t *testing.T) {
 				"needs.integration-test.result != 'success'",
 				"needs.external-app.result != 'success'",
 			},
-			deps: []string{"changes", "go-versions-matrix", "integration-test", "external-app"},
+			deps: []string{"changes", "go-versions-matrix", "service-containers", "integration-test", "external-app"},
 		},
 		{
 			workflow: "benchmark-apps.yml",
@@ -1057,6 +1057,37 @@ func TestOTelcGatedJobsKeepTheClassifierCondition(t *testing.T) {
 		cond, _ := j["if"].(string)
 		if !strings.Contains(cond, "needs.changes.outputs.otelc == 'true'") {
 			t.Errorf("%s lost the classifier condition", job)
+		}
+	}
+}
+
+// TestOTelcWorkflowUsesCiselectDiscoveryFlags verifies that otelc.yml invokes
+// ciselect with -list-otelc-modules in both integration-test and external-app,
+// and with -list-otelc-suites in integration-test, and that running ciselect
+// with both flags succeeds.
+func TestOTelcWorkflowUsesCiselectDiscoveryFlags(t *testing.T) {
+	_, _, root := testTable(t)
+	body := readText(t, root, workflowDir+"/otelc.yml")
+
+	// -list-otelc-modules must appear in both integration-test and external-app.
+	if count := strings.Count(body, "-list-otelc-modules"); count < 2 {
+		t.Errorf("otelc.yml contains -list-otelc-modules %d time(s), want at least 2 "+
+			"(one in integration-test, one in external-app)", count)
+	}
+	// -list-otelc-suites must appear in integration-test.
+	if !strings.Contains(body, "-list-otelc-suites") {
+		t.Error("otelc.yml does not contain -list-otelc-suites")
+	}
+
+	// Both flags must succeed when ciselect is invoked directly.
+	for _, flag := range []string{"-list-otelc-modules", "-list-otelc-suites"} {
+		var stdout strings.Builder
+		if err := run([]string{flag}, strings.NewReader(""), &stdout); err != nil {
+			t.Errorf("run(%s) failed: %v", flag, err)
+			continue
+		}
+		if stdout.Len() == 0 {
+			t.Errorf("run(%s) produced no output", flag)
 		}
 	}
 }

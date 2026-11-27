@@ -7,19 +7,21 @@ package tracer
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/tinylib/msgp/msgp"
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
 	otlpresource "go.opentelemetry.io/proto/otlp/resource/v1"
 	otlptrace "go.opentelemetry.io/proto/otlp/trace/v1"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
@@ -297,6 +299,14 @@ var ddOnlyAttributeKeys = map[string]struct{}{
 	ext.SpanKind:           {},
 }
 
+// prioritySpanAttributes are security attributes that should not be evicted by
+// ordinary span tags when a span exceeds the 128-attribute OTLP cap.
+var prioritySpanAttributes = [...]string{
+	"_dd.appsec.json",
+	"_dd.iast.json",
+	"_dd.stack",
+}
+
 // +checklocksignore — Post-finish: reads finished span fields during payload encoding.
 func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics bool, resourceAttrs map[string]string) []*otlpcommon.KeyValue {
 	n := s.meta.Count() + len(s.metrics) + len(s.metaStruct) + 3
@@ -321,6 +331,66 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 			return attrs
 		}
 	}
+	metaStruct := s.metaStruct
+	var encodedMetaStruct map[string]bool
+	encodeMetaStruct := func(key string, structured any) *otlpcommon.AnyValue {
+		av := otlpMetaStructValue(key, structured)
+		if encodedMetaStruct == nil {
+			encodedMetaStruct = make(map[string]bool)
+		}
+		encodedMetaStruct[key] = av != nil
+		return av
+	}
+
+	var emittedPriority [len(prioritySpanAttributes)]bool
+	hasEmittedPriority := false
+	for i, key := range prioritySpanAttributes {
+		if structured, ok := metaStruct[key]; ok {
+			if av := encodeMetaStruct(key, structured); av != nil {
+				emittedPriority[i] = true
+				hasEmittedPriority = true
+				if !addAttribute(&attrs, key, av) {
+					return attrs
+				}
+				continue
+			}
+		}
+		value, ok := s.meta.Get(key)
+		if !ok {
+			continue
+		}
+		if v, ok := resourceAttrs[key]; ok && v == value {
+			continue // already carried by the resource
+		}
+		emittedPriority[i] = true
+		hasEmittedPriority = true
+		if !addAttribute(&attrs, key, otlpStringValue(value)) {
+			return attrs
+		}
+	}
+
+	// When a key exists in both forms, use its structured value in the
+	// ordinary attribute's slot instead of spending an extra slot.
+	addSpanAttribute := func(key string, value *otlpcommon.AnyValue) bool {
+		if hasEmittedPriority {
+			for i, pk := range prioritySpanAttributes {
+				if emittedPriority[i] && key == pk {
+					return true
+				}
+			}
+		}
+		if structured, ok := metaStruct[key]; ok {
+			if encoded, attempted := encodedMetaStruct[key]; attempted {
+				if encoded {
+					return true // already emitted under this key
+				}
+			} else if av := encodeMetaStruct(key, structured); av != nil {
+				value = av
+			}
+		}
+		return addAttribute(&attrs, key, value)
+	}
+
 	for key, value := range s.meta.All() {
 		if v, ok := resourceAttrs[key]; ok && v == value {
 			continue // already carried by the resource
@@ -338,7 +408,7 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 				}
 			}
 		}
-		if !addAttribute(&attrs, key, av) {
+		if !addSpanAttribute(key, av) {
 			return attrs
 		}
 	}
@@ -357,16 +427,49 @@ func convertSpanAttributes(s *Span, defaultServiceName string, otelSemantics boo
 		} else {
 			av = otlpDoubleValue(value)
 		}
-		if !addAttribute(&attrs, key, av) {
+		if !addSpanAttribute(key, av) {
 			return attrs
 		}
 	}
-	for key, value := range s.metaStruct {
-		if !addAttribute(&attrs, key, anyToOTLPValue(value)) {
+	// Non-priority structured metadata uses whatever space the ordinary attributes left.
+	for key, value := range metaStruct {
+		if _, attempted := encodedMetaStruct[key]; attempted {
+			continue
+		}
+		if av := otlpMetaStructValue(key, value); av != nil && !addAttribute(&attrs, key, av) {
 			return attrs
 		}
 	}
 	return attrs
+}
+
+// otlpMetaStructValue encodes a single meta_struct entry to OTLP bytesValue,
+// logging a warning and returning nil if encoding fails.
+func otlpMetaStructValue(key string, value any) *otlpcommon.AnyValue {
+	// Carry the same per-entry MessagePack bytes as the native span encoder.
+	data, err := marshalMetaStructValue(value)
+	if err != nil {
+		log.Warn("failed to serialize meta_struct value for key %s: %s", key, err.Error()) //errtrack:ignore per-span payload encoding; report only an aggregate at a non-hot boundary
+		return nil
+	}
+	return otlpBytesValue(data)
+}
+
+// marshalMetaStructValue encodes a single meta_struct value using MessagePack,
+// normalizing top-level typed-nil pointers to MessagePack nil and recovering
+// panics (such as nested typed-nil Marshaler/Extension pointers inside maps or
+// slices) per entry so a malformed value cannot crash OTLP export.
+func marshalMetaStructValue(value any) (data []byte, err error) {
+	if rv := reflect.ValueOf(value); rv.Kind() == reflect.Pointer && rv.IsNil() {
+		return msgp.AppendNil(nil), nil
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			data = nil
+			err = fmt.Errorf("panic marshaling meta_struct value: %v", r)
+		}
+	}()
+	return msgp.AppendIntf(nil, value)
 }
 
 func convertMapToOTLPAttributesString(ddAttributes map[string]string) []*otlpcommon.KeyValue {
@@ -435,6 +538,10 @@ func otlpIntValue(i int64) *otlpcommon.AnyValue {
 	return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_IntValue{IntValue: i}}
 }
 
+func otlpBytesValue(b []byte) *otlpcommon.AnyValue {
+	return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_BytesValue{BytesValue: b}}
+}
+
 func otlpArrayValue(arr *spanEventArrayAttribute) *otlpcommon.AnyValue {
 	if arr == nil {
 		return nil
@@ -446,62 +553,6 @@ func otlpArrayValue(arr *spanEventArrayAttribute) *otlpcommon.AnyValue {
 		}
 	}
 	return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_ArrayValue{ArrayValue: &otlpcommon.ArrayValue{Values: values}}}
-}
-
-// anyToOTLPValue converts an arbitrary Go value to an OTLP AnyValue.
-// Handles primitives, maps, and slices recursively. For types that don't map
-// directly to OTLP, falls back to JSON-encoding as a string.
-func anyToOTLPValue(v any) *otlpcommon.AnyValue {
-	switch val := v.(type) {
-	case string:
-		return otlpStringValue(val)
-	case bool:
-		return otlpBoolValue(val)
-	case int64:
-		return otlpIntValue(val)
-	case uint64:
-		return otlpIntValue(int64(val))
-	case float32:
-		return otlpDoubleValue(float64(val))
-	case float64:
-		return otlpDoubleValue(val)
-	case []any:
-		values := make([]*otlpcommon.AnyValue, 0, len(val))
-		for _, elem := range val {
-			if av := anyToOTLPValue(elem); av != nil {
-				values = append(values, av)
-			}
-		}
-		return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_ArrayValue{
-			ArrayValue: &otlpcommon.ArrayValue{Values: values},
-		}}
-	case map[string]any:
-		kvs := make([]*otlpcommon.KeyValue, 0, len(val))
-		for k, elem := range val {
-			if av := anyToOTLPValue(elem); av != nil {
-				kvs = append(kvs, otlpKeyValue(k, av))
-			}
-		}
-		return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_KvlistValue{
-			KvlistValue: &otlpcommon.KeyValueList{Values: kvs},
-		}}
-	case map[string]string:
-		kvs := make([]*otlpcommon.KeyValue, 0, len(val))
-		for k, elem := range val {
-			kvs = append(kvs, otlpKeyValue(k, otlpStringValue(elem)))
-		}
-		return &otlpcommon.AnyValue{Value: &otlpcommon.AnyValue_KvlistValue{
-			KvlistValue: &otlpcommon.KeyValueList{Values: kvs},
-		}}
-	default:
-		// Types without a natural OTLP mapping (e.g. custom structs) are
-		// JSON-encoded into a string as a best-effort fallback.
-		b, err := json.Marshal(val)
-		if err != nil {
-			return otlpStringValue(fmt.Sprintf("%v", val))
-		}
-		return otlpStringValue(string(b))
-	}
 }
 
 func spanEventArrayAttributeValueToAnyValue(v *spanEventArrayAttributeValue) *otlpcommon.AnyValue {

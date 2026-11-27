@@ -339,7 +339,7 @@ func TestPropagation(t *testing.T) {
 }
 
 func TestAnalyticsSettings(t *testing.T) {
-	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate interface{}, opts ...Option) {
+	assertRate := func(t *testing.T, mt mocktracer.Tracer, rate any, opts ...Option) {
 		router := chi.NewRouter()
 		router.Use(Middleware(opts...))
 		router.Get("/user/{id}", func(_ http.ResponseWriter, r *http.Request) {
@@ -588,12 +588,12 @@ func TestConcurrency(t *testing.T) {
 	startBarrier.Add(1)
 	finishBarrier.Add(nbReqGoroutines)
 
-	for n := 0; n < nbReqGoroutines; n++ {
+	for range nbReqGoroutines {
 		go func() {
 			startBarrier.Wait()
 			defer finishBarrier.Done()
 
-			for i := 0; i < 100; i++ {
+			for range 100 {
 				r := httptest.NewRequest("GET", "/user/123", nil)
 				w := httptest.NewRecorder()
 				router.ServeHTTP(w, r)

@@ -133,8 +133,8 @@ jobs:
 
       # The isolated Go caches replace this job's module-only restore: the
       # job recompiles the same packages in every loop iteration, so a warm
-      # build cache is what cuts its 13-16m runtime on a 3 vCPU runner
-      # (APMLP-2249). The other jobs keep the shared go-mod-caching
+      # build cache is what shortens its runtime (APMLP-2249 holds the
+      # measurements). The other jobs keep the shared go-mod-caching
       # restore below.
       - name: Setup Go
         uses: ./.github/actions/setup-go
@@ -145,17 +145,15 @@ jobs:
             {"runner":"${{ matrix.runs-on }}",
              "coverage":"atomic"}
           # Default-branch seed set: the nightly schedule and a
-          # workflow_dispatch on the default branch save these four
-          # strata (both Go versions on macos-15 and macos-latest); every
-          # pull request run restores only.
+          # workflow_dispatch on the default branch save every stratum of
+          # this matrix; every pull request run restores only.
           seed: "true"
 
       # A restored GOCACHE also restores Go's cached test results (Go
       # caches -v output and coverage profiles there), so a package
       # unchanged since the nightly seed could pass without executing
       # on this runner. Drop only the test-result entries — the compiled
-      # packages stay — so every package runs its tests, like the
-      # module-only cache this job used before.
+      # packages stay — so every package runs its tests.
       - run: go clean -testcache
 
       - name: Setup testing environment

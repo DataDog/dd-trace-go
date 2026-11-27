@@ -30,6 +30,9 @@ cd "${APP_DIR}"
 # otelc leaves its build tree behind; a stale one makes the build plan wrong.
 rm -rf .otelc-build
 
+echo "==> go test"
+go test -count=1 .
+
 echo "==> otelc go build"
 if ! otelc go build -o /dev/null .; then
   cat >&2 << 'EOF'
