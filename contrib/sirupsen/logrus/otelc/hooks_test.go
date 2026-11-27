@@ -44,6 +44,17 @@ func TestBeforeLevelHooksAdd(t *testing.T) {
 	}
 }
 
+// A hook map with the hook at some levels only gets it at the other levels.
+func TestBeforeLevelHooksAddPartialLevels(t *testing.T) {
+	hooks := logrus.LevelHooks{logrus.ErrorLevel: {&logrustrace.DDContextLogHook{}}}
+	add(hooks, &logrustrace.DDContextLogHook{})
+
+	for _, level := range logrus.AllLevels {
+		assert.Len(t, hooks[level], 1, "level %s", level)
+		assert.IsType(t, &logrustrace.DDContextLogHook{}, hooks[level][0])
+	}
+}
+
 func TestAfterNew(t *testing.T) {
 	logger := &logrus.Logger{Hooks: make(logrus.LevelHooks)}
 	AfterNew(hooktest.NewMockHookContext(), logger)

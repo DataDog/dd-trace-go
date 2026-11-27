@@ -26,23 +26,24 @@ func AfterNew(_ hook.HookContext, logger *logrus.Logger) {
 	logger.AddHook(&logrustrace.DDContextLogHook{})
 }
 
-// BeforeLevelHooksAdd skips the call when it would add a second
-// DDContextLogHook to hooks.
+// BeforeLevelHooksAdd adds a DDContextLogHook only to the levels that do not
+// have one yet, and skips the original call.
 func BeforeLevelHooksAdd(ictx hook.HookContext, hooks logrus.LevelHooks, h logrus.Hook) {
 	if _, ok := h.(*logrustrace.DDContextLogHook); !ok {
 		return
 	}
-	if hasContextLogHook(hooks) {
-		ictx.SetSkipCall(true)
+	ictx.SetSkipCall(true)
+	for _, level := range h.Levels() {
+		if !hasContextLogHook(hooks[level]) {
+			hooks[level] = append(hooks[level], h)
+		}
 	}
 }
 
-func hasContextLogHook(hooks logrus.LevelHooks) bool {
-	for _, levelHooks := range hooks {
-		for _, h := range levelHooks {
-			if _, ok := h.(*logrustrace.DDContextLogHook); ok {
-				return true
-			}
+func hasContextLogHook(hooks []logrus.Hook) bool {
+	for _, h := range hooks {
+		if _, ok := h.(*logrustrace.DDContextLogHook); ok {
+			return true
 		}
 	}
 	return false
