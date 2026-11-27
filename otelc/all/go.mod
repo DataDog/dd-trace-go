@@ -35,6 +35,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/otelc/v2 v2.14.0-dev
+	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 v2.14.0-dev
@@ -92,6 +93,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.14.0-dev // indirect
@@ -210,6 +212,7 @@ require (
 	github.com/puzpuzpuz/xsync/v4 v4.5.0 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/redis/go-redis/v9 v9.7.3 // indirect
+	github.com/redis/rueidis v1.0.74 // indirect
 	github.com/rs/zerolog v1.34.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.11.1 // indirect
 	github.com/segmentio/kafka-go v0.4.42 // indirect
@@ -281,7 +284,7 @@ require (
 require (
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.14.0-dev // indirect
-	github.com/sirupsen/logrus v1.9.3 // indirect
+	github.com/sirupsen/logrus v1.9.4 // indirect
 )
 
 replace (
@@ -351,6 +354,8 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../contrib/net/http
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/otelc/v2 => ../../contrib/redis/go-redis.v9/otelc
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 => ../../contrib/redis/go-redis.v9
+	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/otelc/v2 => ../../contrib/redis/rueidis/otelc
+	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 => ../../contrib/redis/rueidis
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 => ../../contrib/rs/zerolog/otelc
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 => ../../contrib/rs/zerolog
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 => ../../contrib/segmentio/kafka-go/otelc
@@ -359,6 +364,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 => ../../contrib/sirupsen/logrus
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 => ../../contrib/valyala/fasthttp/otelc
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 => ../../contrib/valyala/fasthttp
+	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 => ../../instrumentation/testutils/containers
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2 => ../../instrumentation/testutils/grpc
 	github.com/DataDog/dd-trace-go/v2 => ../..
 )

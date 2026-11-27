@@ -53,6 +53,7 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/log/slog/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/otelc/v2"
+	_ "github.com/DataDog/dd-trace-go/contrib/redis/rueidis/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/otelc/v2"

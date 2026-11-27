@@ -96,6 +96,7 @@ use (
 	./contrib/redis/go-redis.v9/otelc
 	./contrib/opensearch-project/opensearch-go.v4
 	./contrib/redis/rueidis
+	./contrib/redis/rueidis/otelc
 	./contrib/rs/zerolog
 	./contrib/rs/zerolog/otelc
 	./contrib/segmentio/kafka-go

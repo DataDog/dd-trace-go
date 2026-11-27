@@ -28,6 +28,7 @@ require (
 	example.com/mongodep v0.0.0-00010101000000-000000000000
 	example.com/pgxdep v0.0.0-00010101000000-000000000000
 	example.com/pubsubdep v0.0.0-00010101000000-000000000000
+	example.com/rueidisdep v0.0.0-00010101000000-000000000000
 	example.com/saramadep v0.0.0-00010101000000-000000000000
 	example.com/zerologdep v0.0.0-00010101000000-000000000000
 	github.com/99designs/gqlgen v0.17.97
@@ -55,6 +56,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.14.0-dev
+	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.14.0-dev
@@ -104,7 +106,9 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.22
 	github.com/opensearch-project/opensearch-go/v4 v4.7.3
 	github.com/redis/go-redis/v9 v9.7.3
-	github.com/redis/rueidis v1.0.74
+	github.com/redis/rueidis v1.0.80
+	github.com/redis/rueidis/rueidisaside v1.0.80
+	github.com/redis/rueidis/rueidisotel v1.0.80
 	github.com/rs/zerolog v1.35.1
 	github.com/segmentio/kafka-go v0.4.42
 	github.com/sirupsen/logrus v1.9.4
@@ -127,6 +131,7 @@ require (
 	go.mongodb.org/mongo-driver v1.17.7
 	go.mongodb.org/mongo-driver/v2 v2.4.2
 	go.opentelemetry.io/otel v1.47.0
+	go.opentelemetry.io/otel/metric v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
 	go.uber.org/zap v1.28.0
 	google.golang.org/api v0.273.1
@@ -208,7 +213,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/otelc/v2 v2.14.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.14.0-dev // indirect
@@ -427,7 +432,6 @@ require (
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.63.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0 // indirect
 	go.opentelemetry.io/otel/log v1.47.0 // indirect
-	go.opentelemetry.io/otel/metric v1.47.0 // indirect
 	go.opentelemetry.io/otel/sdk v1.47.0 // indirect
 	go.opentelemetry.io/otelc/pkg v0.1.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
@@ -435,17 +439,17 @@ require (
 	go.uber.org/mock v0.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
-	go.yaml.in/yaml/v3 v3.0.5 // indirect
+	go.yaml.in/yaml/v3 v3.0.6 // indirect
 	golang.org/x/arch v0.8.0 // indirect
 	golang.org/x/crypto v0.58.1-0.20261009181718-2f1f834330b2 // indirect
 	golang.org/x/exp v0.0.0-20260813180055-c1d0aacb2297 // indirect
 	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
-	golang.org/x/sync v0.24.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/term v0.47.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
@@ -500,6 +504,7 @@ replace (
 	example.com/mongodep => ./internal/mongodep
 	example.com/pgxdep => ./internal/pgxdep
 	example.com/pubsubdep => ./internal/pubsubdep
+	example.com/rueidisdep => ./internal/rueidisdep
 	example.com/saramadep => ./internal/saramadep
 	example.com/slogdep => ./internal/slogdep
 	example.com/zerologdep => ./internal/zerologdep
@@ -578,6 +583,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 => ../../../contrib/opensearch-project/opensearch-go.v4
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/otelc/v2 => ../../../contrib/redis/go-redis.v9/otelc
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 => ../../../contrib/redis/go-redis.v9
+	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/otelc/v2 => ../../../contrib/redis/rueidis/otelc
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 => ../../../contrib/redis/rueidis
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 => ../../../contrib/rs/zerolog/otelc
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 => ../../../contrib/rs/zerolog
