@@ -1381,6 +1381,28 @@ func setPeerServiceFromSource(s *Span) string {
 
 const hexEncodingDigits = "0123456789abcdef"
 
+// hexEncodePadded writes u as lowercase hex, left-padded with '0' up to padding
+// digits, ending at the last byte of buf, and returns the index of the first
+// digit. buf must be large enough to hold both the digits of u and the padding.
+func hexEncodePadded(buf []byte, u uint64, padding int) int {
+	// Because printing is easier right-to-left: format u into buf, ending at buf[i].
+	i := len(buf)
+	// Always write at least one digit, so that u == 0 is encoded as "0".
+	for {
+		i--
+		buf[i] = hexEncodingDigits[u&0xF]
+		u >>= 4
+		if u == 0 {
+			break
+		}
+	}
+	for i > 0 && padding > len(buf)-i {
+		i--
+		buf[i] = '0'
+	}
+	return i
+}
+
 // spanIDHexEncoded returns the hex encoded string of the given span ID `u`
 // with the given padding.
 //
@@ -1393,18 +1415,5 @@ func spanIDHexEncoded(u uint64, padding int) string {
 	if padding > 68 {
 		buf = make([]byte, padding)
 	}
-	// Because printing is easier right-to-left: format u into buf, ending at buf[i].
-	i := len(buf)
-	for u >= 16 {
-		i--
-		buf[i] = hexEncodingDigits[u&0xF]
-		u >>= 4
-	}
-	i--
-	buf[i] = hexEncodingDigits[u]
-	for i > 0 && padding > len(buf)-i {
-		i--
-		buf[i] = '0'
-	}
-	return string(buf[i:])
+	return string(buf[hexEncodePadded(buf, u, padding):])
 }
