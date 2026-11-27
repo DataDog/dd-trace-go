@@ -83,6 +83,7 @@ integration-suites:
     - gls-leak
     - gls-unfinished
     - otelc-autostart
+    - dd-span
   # Modules so cross-cutting that a change affects suites which never import
   # them: the weavers inject `net/http` spans into more than 20 suites, and
   # the `slog` aspect links `WrapHandler` into every `slog.New` caller (the

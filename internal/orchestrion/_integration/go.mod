@@ -10,6 +10,7 @@ require (
 	example.com/awsv2dep v0.0.0-00010101000000-000000000000
 	example.com/chidep v0.0.0-00010101000000-000000000000
 	example.com/confluentkafkadep v0.0.0-00010101000000-000000000000
+	example.com/ddspandep v0.0.0-00010101000000-000000000000
 	example.com/echodep v0.0.0-00010101000000-000000000000
 	example.com/elasticsearchdep v0.0.0-00010101000000-000000000000
 	example.com/fasthttpdep v0.0.0-00010101000000-000000000000
@@ -470,6 +471,7 @@ replace (
 	example.com/awsv2dep => ./internal/awsv2dep
 	example.com/chidep => ./internal/chidep
 	example.com/confluentkafkadep => ./internal/confluentkafkadep
+	example.com/ddspandep => ./internal/ddspandep
 	example.com/echodep => ./internal/echodep
 	example.com/elasticsearchdep => ./internal/elasticsearchdep
 	example.com/fasthttpdep => ./internal/fasthttpdep
