@@ -194,6 +194,9 @@ func loadOtelcSuitesOnly(root string) (map[string]bool, error) {
 	if err := dec.Decode(&t.IntegrationSuites); err != nil {
 		return nil, fmt.Errorf("parse integration-suites in %s: %w", path, err)
 	}
+	if err := expandOtelcModuleSuites(root, t.IntegrationSuites.Modules); err != nil {
+		return nil, fmt.Errorf("expand integration-suites in %s: %w", path, err)
+	}
 	return t.otelcSuites()
 }
 
@@ -235,46 +238,96 @@ func discoverOtelcModules(root string) ([]string, error) {
 	}
 
 	set := map[string]bool{"otelc/all": true}
-	walkErr := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+	if err := walkOtelcModuleDirs(root, root, func(otelcDir string) error {
+		set[otelcDir] = true
+		parent, err := otelcParentModule(root, otelcDir)
+		if parent != "" {
+			set[parent] = true
+		}
+		return err
+	}); err != nil {
+		return nil, err
+	}
+	return slices.Sorted(maps.Keys(set)), nil
+}
+
+func discoverOtelcIntegrationPaths(root string) ([]string, error) {
+	paths := map[string]bool{}
+	if err := walkOtelcModuleDirs(root, filepath.Join(root, "contrib"), func(otelcDir string) error {
+		parent, err := otelcParentModule(root, otelcDir)
+		if err != nil {
+			return err
+		}
+		if parent != "" {
+			paths[parent+"/**"] = true
+		} else {
+			paths[otelcDir+"/**"] = true
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return slices.Sorted(maps.Keys(paths)), nil
+}
+
+func otelcParentModule(root, otelcDir string) (string, error) {
+	parent := filepath.ToSlash(filepath.Dir(otelcDir))
+	if parent == "." {
+		return "", nil
+	}
+	info, err := os.Stat(filepath.Join(root, parent, "go.mod"))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("%s/go.mod: %w", parent, err)
+	}
+	if info.IsDir() {
+		return "", nil
+	}
+	return parent, nil
+}
+
+func expandOtelcModuleSuites(root string, modules map[string][]string) error {
+	if len(modules) == 0 {
+		return nil
+	}
+	return walkOtelcModuleDirs(root, root, func(otelcDir string) error {
+		if _, ok := modules[otelcDir]; ok {
+			return nil
+		}
+		parent := filepath.ToSlash(filepath.Dir(otelcDir))
+		if suites, ok := modules[parent]; ok {
+			modules[otelcDir] = slices.Clone(suites)
+		}
+		return nil
+	})
+}
+
+func walkOtelcModuleDirs(root, dir string, visit func(string) error) error {
+	return filepath.WalkDir(dir, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if d.IsDir() {
-			if p != root && (strings.HasPrefix(d.Name(), ".") || d.Name() == "testdata") {
+			if p != dir && (strings.HasPrefix(d.Name(), ".") || d.Name() == "testdata") {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if d.Name() != "go.mod" {
-			return nil
-		}
-		otelcDir := filepath.ToSlash(filepath.Dir(p))
-		if filepath.Base(otelcDir) != "otelc" {
+		otelcDir := filepath.Dir(p)
+		if d.Name() != "go.mod" || filepath.Base(otelcDir) != "otelc" {
 			return nil
 		}
 		rel, err := filepath.Rel(root, otelcDir)
 		if err != nil {
 			return err
 		}
-		rel = filepath.ToSlash(rel)
 		if rel == "." {
 			return nil
 		}
-		set[rel] = true
-		parent := filepath.ToSlash(filepath.Dir(rel))
-		if parent != "." {
-			if _, err := os.Stat(filepath.Join(root, parent, "go.mod")); err == nil {
-				set[parent] = true
-			} else if !errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("%s/go.mod: %w", parent, err)
-			}
-		}
-		return nil
+		return visit(filepath.ToSlash(rel))
 	})
-	if walkErr != nil {
-		return nil, walkErr
-	}
-	return slices.Sorted(maps.Keys(set)), nil
 }
 
 // selectSuites narrows the orchestrion and otelc lanes to the
