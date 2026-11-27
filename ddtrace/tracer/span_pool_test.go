@@ -900,11 +900,11 @@ func BenchmarkSpanPoolRelease(b *testing.B) {
 	// items, avoiding sync.Pool internal ring-buffer growth allocations
 	// that cause flaky B/op across runs (GC clears the pool between
 	// runN iterations, forcing ring-buffer rebuild with varying b.N).
-	s := acquireSpan(true)
+	s, _, _ := acquireSpanWithContext(true, false)
 	for b.Loop() {
 		s.clear()
 		spanPool.Put(s)
-		s = acquireSpan(true)
+		s, _, _ = acquireSpanWithContext(true, false)
 	}
 }
 

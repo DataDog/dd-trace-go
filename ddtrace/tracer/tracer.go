@@ -966,10 +966,22 @@ func (c *chunk) releasableSpans() []*Span {
 	return c.spans
 }
 
+// clear drops references to spans held by this chunk and its slice backing
+// arrays, including trace.initialSpans when this chunk is trace.finalChunk.
+func (c *chunk) clear() {
+	clear(c.spans)
+	clear(c.spansToRelease)
+	c.spans = nil
+	c.spansToRelease = nil
+}
+
 func (t *tracer) processOutChunk(trace *chunk) {
+	origSpans := trace.spans
 	spansToRelease := trace.releasableSpans()
 	if trace.filterRejected {
 		releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
+		clear(origSpans)
+		trace.clear()
 		return
 	}
 	t.sampleChunk(trace)
@@ -977,6 +989,8 @@ func (t *tracer) processOutChunk(trace *chunk) {
 		t.traceWriter.add(trace.spans)
 	}
 	releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
+	clear(origSpans)
+	trace.clear()
 }
 
 // sampleChunk applies single-span sampling to the provided trace.
@@ -1013,6 +1027,7 @@ func (t *tracer) pushChunk(trace *chunk) {
 	tracerstats.Signal(tracerstats.SpansFinished, uint32(len(trace.spans)))
 	select {
 	case <-t.stop:
+		trace.clear()
 		return
 	default:
 	}
@@ -1031,6 +1046,7 @@ func (t *tracer) pushChunk(trace *chunk) {
 		// finish() while s.mu is held. clear() acquires s.mu to serialize
 		// after finish(), so calling it here deadlocks the same goroutine.
 		// Dropped spans are GC'd instead.
+		trace.clear()
 	}
 	select {
 	case <-t.logDroppedTraces.C:
@@ -1102,7 +1118,8 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	if id == 0 {
 		id = generateSpanID(startTime)
 	}
-	span := acquireSpan(poolEnabled)
+	needsNewTrace := context == nil || context.baggageOnly || context.trace == nil // +checklocksignore - Read-only after init.
+	span, preCtx, preTrace := acquireSpanWithContext(poolEnabled, needsNewTrace)
 	span.name = operationName
 	span.service = parentService // inherit from parent if available
 	span.serviceSource = parentServiceSource
@@ -1112,7 +1129,14 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	span.start = startTime
 	span.integration = "manual"
 	span.meta.SwapSharedAttrs(sharedAttrs) // COW: shared until a per-span field is set
-	span.meta.ReserveIfLargeEnough(len(opts.Tags))
+	metaHint := len(opts.Tags)
+	if needsNewTrace && metaHint > 0 {
+		// Root spans also receive trace-level tags on finish (_dd.p.dm, _dd.p.tid,
+		// _dd.sdk.otlp_export, git metadata), so include them in the map sizing hint
+		// to avoid allocating a small map and immediately rehashing it.
+		metaHint += 4
+	}
+	span.meta.ReserveIfLargeEnough(metaHint)
 
 	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
 
@@ -1135,7 +1159,7 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	// Must evaluate isRootSpan before newSpanContext: newSpanContext sets
 	// context.trace.root = span, making the nil check unreliable afterward.
 	isRootSpan := context == nil || context.trace == nil || context.trace.root == nil
-	span.context = newSpanContext(span, context)
+	span.context = initSpanContext(preCtx, preTrace, span, context)
 	if isRootSpan && context != nil && illmobs.Enabled() {
 		activateInboundLLMObsContext(span.context)
 	}
@@ -1578,9 +1602,12 @@ func (t *tracer) submitChunk(c *chunk) {
 	if c.filterRejected {
 		t.emitFilterDrop(len(c.spans))
 	} else {
-		stats := make([]*tracerStatSpan, 0, len(c.spans))
-		for _, span := range c.spans {
+		var stats []*tracerStatSpan
+		for i, span := range c.spans {
 			if span != nil && span.statSpan != nil {
+				if stats == nil {
+					stats = make([]*tracerStatSpan, 0, len(c.spans)-i)
+				}
 				stats = append(stats, span.statSpan)
 			}
 		}

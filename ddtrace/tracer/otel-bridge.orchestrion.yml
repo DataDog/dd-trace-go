@@ -18,11 +18,11 @@ aspects:
     join-point:
       all-of:
         - import-path: github.com/DataDog/dd-trace-go/v2/ddtrace/tracer
-        - function-call: newSpanContext
+        - function-call: initSpanContext
     advice:
       - wrap-expression:
           template: |-
-            spanContextWithOwner({{ . }}, {{ (index .AST.Args 0).Copy }})
+            spanContextWithOwner({{ . }}, {{ (index .AST.Args 2).Copy }})
 
   # A span that an OpenTelemetry view pinned must not go back to the pool: the
   # view can still write to it. The pin is permanent: the span leaves the pool
