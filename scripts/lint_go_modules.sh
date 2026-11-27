@@ -16,6 +16,11 @@ set -euo pipefail
 #   - Formatters are not run: the check-format job already runs
 #     `golangci-lint fmt` on every Go file of the repository.
 #
+# It also runs scripts/lint_testifylint_new.sh, which applies the testifylint
+# go-require check to the added lines of every module, root module included.
+# That keeps the check in the CI lint job and in `make lint` without a second
+# workflow step.
+#
 # This script lints every module in go.work unless the list below names it.
 # An omitted entry fails loudly when the module has findings. A stale entry
 # silently stops the lint. Update the list when a module moves or changes
@@ -55,6 +60,12 @@ shift
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
 base="$(git merge-base "$rev" HEAD)"
+
+# New code must not call require.* off the test goroutine. The check covers the
+# root module too, which the rest of this script skips, so it runs first and
+# its result is folded into the exit code of every path below.
+testify_rc=0
+bash "$root/scripts/lint_testifylint_new.sh" "$rev" "$@" || testify_rc=1
 
 excluded=(
   "$root"
@@ -118,7 +129,7 @@ fi
 
 if [[ ${#selected[@]} -eq 0 && $lint_pr_triage_board == false ]]; then
   printf "> No Go changes in nested modules since %s\n" "$base"
-  exit 0
+  exit "$testify_rc"
 fi
 
 linters="$(golangci-lint linters --color never | awk '/^Enabled by your configuration linters:/ { on = 1; next } /^$/ { on = 0 } on { sub(/:.*/, ""); print }' | paste -sd, -)"
@@ -148,3 +159,4 @@ if [[ ${#failed[@]} -gt 0 ]]; then
   printf "  %s\n" "${failed[@]}"
   exit 1
 fi
+exit "$testify_rc"
