@@ -18,13 +18,13 @@ new_client:
   do:
     - wrap_call:
         replace: |-
-          (func(client *redisv6.Client) *redisv6.Client {
-            redisv6trace.WrapClient(client)
+          (func(client *__dd_redisv6.Client) *__dd_redisv6.Client {
+            __dd_redisv6trace.WrapClient(client)
             return client
           })({{ . }})
   imports:
-    redisv6: github.com/go-redis/redis
-    redisv6trace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2
+    __dd_redisv6: github.com/go-redis/redis
+    __dd_redisv6trace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2
 
 new_failover_client:
   target:
@@ -36,10 +36,10 @@ new_failover_client:
   do:
     - wrap_call:
         replace: |-
-          (func(client *redisv6.Client) *redisv6.Client {
-            redisv6trace.WrapClient(client)
+          (func(client *__dd_redisv6.Client) *__dd_redisv6.Client {
+            __dd_redisv6trace.WrapClient(client)
             return client
           })({{ . }})
   imports:
-    redisv6: github.com/go-redis/redis
-    redisv6trace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2
+    __dd_redisv6: github.com/go-redis/redis
+    __dd_redisv6trace: github.com/DataDog/dd-trace-go/contrib/go-redis/redis/v2

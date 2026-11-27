@@ -25,8 +25,10 @@ than rendered docs where possible.
   [tool/internal/rule](https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/tree/main/tool/internal/rule)
 - Hook API (`HookContext`):
   [pkg/hook/context.go](https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/blob/main/pkg/hook/context.go)
-- Hook authoring, the tool file, and hook limitations:
-  [docs/instrument-guide.md](https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/blob/main/docs/instrument-guide.md)
+- How hooks are linked and called, and the full `HookContext` API:
+  [docs/implementation.md](https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/blob/main/docs/implementation.md)
+- Hook authoring, the tool file, and hook limitations, in the upstream instrumentation repo:
+  [docs/instrument-guide.md](https://github.com/open-telemetry/opentelemetry-go-compile-contrib/blob/main/docs/instrument-guide.md)
 - Building and running otelc:
   [docs/getting-started.md](https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/blob/main/docs/getting-started.md)
 - Diagnosing a build that instrumented nothing, and the `.otelc-build` layout:
@@ -34,12 +36,13 @@ than rendered docs where possible.
 - Runtime configuration, including the per-instrumentation enable/disable env vars:
   [docs/configuration.md](https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/blob/main/docs/configuration.md)
 - Worked examples:
-  [instrumentation/](https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/tree/main/instrumentation)
+  [instrumentation/](https://github.com/open-telemetry/opentelemetry-go-compile-contrib/tree/main/instrumentation)
+  in the upstream instrumentation repo
 
 `OTELC_VERSION` in `.github/workflows/otelc.yml` pins a commit on upstream `main`, never a release.
 Check otelc behaviour against latest upstream `main` and ignore tags. When a port needs something
-newer than the pin, bump `OTELC_VERSION` to the latest `main` commit and re-pin
-`go.opentelemetry.io/otelc/pkg` to match (see "The otelc pin" in `SKILL.md`).
+newer than the pin, bump `OTELC_VERSION` to the latest `main` commit (see "The otelc pin" in
+`SKILL.md`), and `OTELC_REF` in `.github/workflows/build-metrics.yml` to the same version.
 
 `docs/` is not in the module zip, so the links above are the only copy. To settle what the tool
 does, read `tool/internal/` in a clone of upstream at latest `main`. The module cache copy under
@@ -65,4 +68,5 @@ and the hooks call dd-trace-go.
   rules reach packages the application does not import itself.
 - `internal/apps/otelc-external-app` and `scripts/build_otelc_external_app.sh`: the guard that the
   packages your rules are read from are importable by a real user.
-- `.github/workflows/otelc.yml`: how the suites run in CI, `OTELC_MODULES`, and `OTELC_VERSION`.
+- `.github/workflows/otelc.yml`: how the suites run in CI and `OTELC_VERSION` (`scripts/ciselect`
+  discovers otelc modules and suites dynamically).

@@ -98,7 +98,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
   copyright:
@@ -129,7 +129,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Copyright
@@ -164,7 +164,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Lint GitHub Actions workflows
@@ -209,7 +209,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Run fixmodules
@@ -218,6 +218,16 @@ jobs:
           ./scripts/fix_modules.sh
       - name: Check for changes
         run: git diff --exit-code
+      - name: Test fixmodules module
+        run: cd scripts/fixmodules && GOWORK=off go test -tags=scripts -race -count=1 ./...
+      - name: Test errtrackaudit module
+        # The root-module test suites never cross the nested-module boundary,
+        # and the advisory errtrack-audit workflow is ignored by all-green,
+        # so this is the only gated run of the audit tool's tests:
+        # check-modules fires for every scripts/** change via the
+        # @go-hygiene group and on every push, so a regression in the tool
+        # blocks the PR instead of merging silently.
+        run: cd scripts/errtrackaudit && GOWORK=off go test -race -count=1 ./...
 
   check-docs:
     needs: [changes, warm-tools-cache]
@@ -243,7 +253,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Update documentation
@@ -277,7 +287,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Format
@@ -344,7 +354,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       # The golangci-lint steps above stop at Go workspace module boundaries.
@@ -441,7 +451,7 @@ jobs:
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Run checklocks

@@ -23,8 +23,8 @@ rest_config:
     - set_fields:
         field:
           - name: WrapTransport
-            wrap: kubernetestransport.Wrappers(kubernetestrace.WrapRoundTripper, {{ . }})
-            value: kubernetestrace.WrapRoundTripper
+            wrap: __dd_kubernetestransport.Wrappers(__dd_kubernetestrace.WrapRoundTripper, {{ . }})
+            value: __dd_kubernetestrace.WrapRoundTripper
   imports:
-    kubernetestrace: github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2/kubernetes
-    kubernetestransport: k8s.io/client-go/transport
+    __dd_kubernetestrace: github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2/kubernetes
+    __dd_kubernetestransport: k8s.io/client-go/transport

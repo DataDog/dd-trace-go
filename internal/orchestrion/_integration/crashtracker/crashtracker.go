@@ -39,8 +39,9 @@ const (
 // TestCase is the orchestrion integration test for the crashtracker aspect.
 //
 // It verifies the full crash-reporting chain under an orchestrion-built test
-// binary: a subprocess starts crashtracker explicitly, panics, and the monitor
-// child uploads a structured report to the mock intake. The aspect deliberately
+// binary: a subprocess starts crashtracker explicitly and becomes the supervisor
+// of its application child, the child panics, and the supervisor uploads a
+// structured report to the mock intake. The aspect deliberately
 // excludes test binaries' main functions with test-main:false, so injection into
 // real non-test main functions is validated by TestCrashtrackerMainInjection.
 type TestCase struct {

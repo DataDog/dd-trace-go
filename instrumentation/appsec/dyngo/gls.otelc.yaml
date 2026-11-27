@@ -23,9 +23,9 @@ dyngo_operation_gls_field:
     - add_struct_fields:
         new_field:
           - name: __dd_glsPop
-            type: orchestrion.GLSPopperCell
+            type: __dd_orchestrion.GLSPopperCell
   imports:
-    orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+    __dd_orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
 
 # RegisterOperation(ctx context.Context, op Operation) context.Context
 # ctxp is non-nil here so the returned context is GLS-aware, matching what
@@ -41,10 +41,10 @@ dyngo_register_operation_gls_push:
           {{- $op := .FuncArgument 1 -}}
           {
             __dd_o := {{ $op }}.unwrap()
-            orchestrion.GLSActivate(&{{ $ctx }}, contextKey{}, {{ $op }}, &__dd_o.__dd_glsPop, nil)
+            __dd_orchestrion.GLSActivate(&{{ $ctx }}, contextKey{}, {{ $op }}, &__dd_o.__dd_glsPop, nil)
           }
   imports:
-    orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+    __dd_orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
 
 # FromContext(ctx context.Context) (Operation, bool)
 # Wrapped unconditionally, including when ctx is nil: AppSec calls
@@ -59,9 +59,9 @@ dyngo_from_context_gls_read:
     - inject_code:
         raw: |
           {{- $ctx := .FuncArgument 0 -}}
-          {{ $ctx }} = orchestrion.WrapContext({{ $ctx }})
+          {{ $ctx }} = __dd_orchestrion.WrapContext({{ $ctx }})
   imports:
-    orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+    __dd_orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
 
 # FinishOperation[O Operation, E ResultOf[O]](op O, results E)
 # Deferred so the pop runs on exit. The source declares its own `o := op.unwrap()`
@@ -76,7 +76,7 @@ dyngo_finish_operation_gls_deactivate:
           {{- $op := .FuncArgument 0 -}}
           defer func() {
             __dd_o := {{ $op }}.unwrap()
-            orchestrion.GLSDeactivate(nil, &__dd_o.__dd_glsPop)
+            __dd_orchestrion.GLSDeactivate(nil, &__dd_o.__dd_glsPop)
           }()
   imports:
-    orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
+    __dd_orchestrion: github.com/DataDog/dd-trace-go/v2/internal/orchestrion
