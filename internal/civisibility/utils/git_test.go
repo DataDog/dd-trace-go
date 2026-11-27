@@ -31,9 +31,7 @@ func TestGetSafeDirectoryConfig(t *testing.T) {
 		t.Skip("Git not available, skipping safe directory config test")
 	}
 
-	// Reset the safeDirectoryOnce to ensure we're testing a fresh state
-	safeDirectoryOnce = sync.Once{}
-	safeDirectoryValue = ""
+	resetSafeDirectoryOnceForTesting()
 
 	// Get the safe directory config
 	safeDir := getSafeDirectoryConfig()
@@ -55,9 +53,7 @@ func TestSafeDirectoryConfigPassedToGitCommands(t *testing.T) {
 		t.Skip("Git not available, skipping safe directory test")
 	}
 
-	// Reset the safeDirectoryOnce to ensure we're testing a fresh state
-	safeDirectoryOnce = sync.Once{}
-	safeDirectoryValue = ""
+	resetSafeDirectoryOnceForTesting()
 
 	// Get the safe directory config
 	safeDir := getSafeDirectoryConfig()
@@ -332,6 +328,15 @@ func TestFakeGitForUnshallowHelperProcess(t *testing.T) {
 		_, _ = os.Stdout.WriteString(phantomGitOutput)
 	}
 	os.Exit(0)
+}
+
+func resetSafeDirectoryOnceForTesting() {
+	safeDirectoryOnce = sync.Once{}
+	safeDirectoryValue = ""
+}
+
+func resetGitFinderOnceForTesting() {
+	gitFinderOnce = sync.Once{}
 }
 
 func resetGitCommandCachesForTesting(t *testing.T) {
@@ -707,7 +712,7 @@ func TestGetBaseBranchShaWithoutGit(t *testing.T) {
 	isGitFoundValue = false
 	defer func() {
 		isGitFoundValue = originalGitFound
-		gitFinderOnce = sync.Once{} // Reset the sync.Once
+		resetGitFinderOnceForTesting()
 	}()
 
 	sha, err := GetBaseBranchSha("master")

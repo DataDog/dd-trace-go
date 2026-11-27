@@ -69,11 +69,15 @@ func TestTrackDataStreamsTransactionIsNoop(t *testing.T) {
 	})
 }
 
+func resetTrackTransactionWarnOnceForTesting() {
+	warnTrackTransactionOnce = sync.Once{}
+	warnTrackTransactionAtOnce = sync.Once{}
+}
+
 func TestTrackDataStreamsTransactionWarnsOnce(t *testing.T) {
 	// Reset the package-level guards so this test does not depend on whether
 	// another test in this package called the deprecated functions first.
-	warnTrackTransactionOnce = sync.Once{}
-	warnTrackTransactionAtOnce = sync.Once{}
+	resetTrackTransactionWarnOnceForTesting()
 
 	t.Setenv("DD_DATA_STREAMS_ENABLED", "true")
 	t.Setenv("DD_INSTRUMENTATION_TELEMETRY_ENABLED", "false")

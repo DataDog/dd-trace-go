@@ -114,7 +114,7 @@ func ShutdownGlobalLoggerProvider(ctx context.Context) error {
 	// Reset the singleton state so it can be reinitialized
 	globalLoggerProvider = nil
 	globalLoggerProviderWrapper = nil
-	globalLoggerProviderOnce = sync.Once{}
+	globalLoggerProviderOnce = sync.Once{} //nolint:oncereset // singleton re-init after Shutdown, guarded by globalLoggerProviderMu
 
 	return err
 }

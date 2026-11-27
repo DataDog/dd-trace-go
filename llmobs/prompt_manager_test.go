@@ -30,6 +30,10 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/telemetrytest"
 )
 
+func resetPromptFileCacheDirWarningForTesting() {
+	promptFileCacheDirWarning = sync.Once{}
+}
+
 func promptResponse(id, version, text string) string {
 	encoded, _ := json.Marshal(map[string]any{"prompt_id": id, "version": version, "template": text, "config": map[string]any{"model": map[string]any{"temperature": 0.2}}})
 	return string(encoded)
@@ -559,8 +563,8 @@ func TestPromptFileCacheDisablesWithoutUserCacheDir(t *testing.T) {
 		t.Setenv("XDG_CACHE_HOME", "")
 		t.Setenv("HOME", "")
 	}
-	promptFileCacheDirWarning = sync.Once{}
-	t.Cleanup(func() { promptFileCacheDirWarning = sync.Once{} })
+	resetPromptFileCacheDirWarningForTesting()
+	t.Cleanup(resetPromptFileCacheDirWarningForTesting)
 	recorder := new(log.RecordLogger)
 	defer log.UseLogger(recorder)()
 

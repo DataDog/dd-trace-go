@@ -6,8 +6,10 @@
 // errlog-vet is a standalone go vet tool bundling the SDK logging safety
 // analyzers: constant message arguments (constantlogmsg), telemetry PII
 // scrubbing (telemetrysafety), and unsafe %v/%+v/%#v format verbs
-// (logformatverbs). The latter two replace the ruleguard rules formerly in
-// rules/telemetry_rules.go and rules/logging_rules.go.
+// (logformatverbs), plus oncereset (sync.Once assignment only in
+// reset*ForTesting / mark*ForTesting helpers). The logging passes replace
+// the ruleguard rules formerly in rules/telemetry_rules.go and
+// rules/logging_rules.go.
 //
 // Usage:
 //
@@ -18,6 +20,7 @@ package main
 import (
 	"golang.org/x/tools/go/analysis/multichecker"
 
+	"github.com/DataDog/dd-trace-go/v2/internal/lint/oncereset"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry/log/analyzer"
 )
 
@@ -26,5 +29,6 @@ func main() {
 		analyzer.Analyzer,
 		analyzer.TelemetrySafetyAnalyzer,
 		analyzer.FormatVerbsAnalyzer,
+		oncereset.Analyzer,
 	)
 }
