@@ -61,7 +61,7 @@ shift
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
 base="$(git merge-base "$rev" HEAD)"
-# Shared module-discovery helpers. $root must be set before this line.
+# Shared module-discovery helpers.
 . "$root/scripts/lib_go_module_discovery.sh"
 
 excluded=(
@@ -86,7 +86,7 @@ changed="$(lint_go_modules_changed_files "$base")"
 # lib_go_module_discovery.sh.
 selected=()
 nonws_list=" "
-selection="$(lint_go_modules_select "$base" "$module_list" "$changed" "${excluded[@]}")"
+selection="$(lint_go_modules_select "$root" "$module_list" "$changed" "${excluded[@]}")"
 while IFS=$'\t' read -r owner kind; do
   if [[ -z $owner ]]; then
     continue

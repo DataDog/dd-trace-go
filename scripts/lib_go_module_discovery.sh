@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Shared module-discovery helpers for scripts/lint_go_modules.sh and
 # scripts/lint_testifylint_new.sh. Source this file; it defines functions
-# only. The caller must set $root to the repository top level before use.
+# only.
 
 # lint_go_modules_workspace_dirs: echoes the directory of every go.work
 # module, one per line. Exits non-zero when go list fails. Capture the output
@@ -18,7 +18,7 @@ lint_go_modules_changed_files() {
   git ls-files --others --exclude-standard -- '*.go'
 }
 
-# lint_go_modules_select <merge-base> <module-dirs> <changed-files>
+# lint_go_modules_select <repo-root> <module-dirs> <changed-files>
 #   <excluded-dir>...: echoes "<dir><TAB>ws" or "<dir><TAB>nonws" for every
 # module that owns at least one changed file and is not excluded. A file
 # belongs to the deepest module that contains it, because modules nest, for
@@ -26,7 +26,7 @@ lint_go_modules_changed_files() {
 # between the file and its workspace module marks a Go module outside go.work,
 # reported as nonws.
 lint_go_modules_select() {
-  local base="$1" module_dirs="$2" changed_files="$3"
+  local root="$1" module_dirs="$2" changed_files="$3"
   shift 3
   local file dir owner kind walk excluded_dir
   while IFS= read -r file; do
