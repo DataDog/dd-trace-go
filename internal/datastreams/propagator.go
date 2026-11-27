@@ -11,6 +11,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"time"
+	"unsafe"
 
 	"github.com/DataDog/sketches-go/ddsketch/encoding"
 )
@@ -24,13 +25,20 @@ const (
 	PropagationKeyBase64 = "dd-pathway-ctx-base64"
 )
 
+// appendEncoded appends the binary encoding of p to dst.
+// Maximum encoded length is 8 (hash) + 10 (pathwayStart varint) + 10 (edgeStart varint) = 28 bytes.
+// binary.AppendVarint uses the same zig-zag varint encoding as ddsketch/encoding.EncodeVarint64
+// without taking a *[]byte pointer, allowing callers' stack buffers to stay on the stack.
+func (p Pathway) appendEncoded(dst []byte) []byte {
+	dst = binary.LittleEndian.AppendUint64(dst, p.hash)
+	dst = binary.AppendVarint(dst, p.pathwayStart.UnixNano()/int64(time.Millisecond))
+	dst = binary.AppendVarint(dst, p.edgeStart.UnixNano()/int64(time.Millisecond))
+	return dst
+}
+
 // Encode encodes the pathway
 func (p Pathway) Encode() []byte {
-	data := make([]byte, 8, 20)
-	binary.LittleEndian.PutUint64(data, p.hash)
-	encoding.EncodeVarint64(&data, p.pathwayStart.UnixNano()/int64(time.Millisecond))
-	encoding.EncodeVarint64(&data, p.edgeStart.UnixNano()/int64(time.Millisecond))
-	return data
+	return p.appendEncoded(make([]byte, 0, 28))
 }
 
 // Decode decodes a pathway
@@ -55,12 +63,25 @@ func Decode(ctx context.Context, data []byte) (p Pathway, outCtx context.Context
 
 // EncodeBase64 encodes a pathway context into a string using base64 encoding.
 func (p Pathway) EncodeBase64() string {
-	b := p.Encode()
-	return base64.StdEncoding.EncodeToString(b)
+	var rawBuf [28]byte
+	raw := p.appendEncoded(rawBuf[:0])
+	var b64Buf [40]byte
+	n := base64.StdEncoding.EncodedLen(len(raw))
+	base64.StdEncoding.Encode(b64Buf[:n], raw)
+	return string(b64Buf[:n])
 }
 
 // DecodeBase64 decodes a pathway context from a string using base64 encoding.
 func DecodeBase64(ctx context.Context, str string) (p Pathway, outCtx context.Context, err error) {
+	if len(str) <= 64 {
+		var rawBuf [48]byte
+		src := unsafe.Slice(unsafe.StringData(str), len(str))
+		n, decErr := base64.StdEncoding.Decode(rawBuf[:], src)
+		if decErr != nil {
+			return p, ctx, decErr
+		}
+		return Decode(ctx, rawBuf[:n])
+	}
 	data, err := base64.StdEncoding.DecodeString(str)
 	if err != nil {
 		return p, ctx, err
@@ -68,9 +89,24 @@ func DecodeBase64(ctx context.Context, str string) (p Pathway, outCtx context.Co
 	return Decode(ctx, data)
 }
 
+type pathwayContext struct {
+	context.Context
+	pathway Pathway
+}
+
+func (c *pathwayContext) Value(key any) any {
+	if key == activePathwayKey {
+		return c.pathway
+	}
+	return c.Context.Value(key)
+}
+
 // ContextWithPathway returns a copy of the given context which includes the pathway p.
 func ContextWithPathway(ctx context.Context, p Pathway) context.Context {
-	return context.WithValue(ctx, activePathwayKey, p)
+	if ctx == nil {
+		panic("cannot create context from nil parent")
+	}
+	return &pathwayContext{Context: ctx, pathway: p}
 }
 
 // PathwayFromContext returns the pathway contained in the given context, and whether a
@@ -78,6 +114,9 @@ func ContextWithPathway(ctx context.Context, p Pathway) context.Context {
 func PathwayFromContext(ctx context.Context) (p Pathway, ok bool) {
 	if ctx == nil {
 		return p, false
+	}
+	if pc, ok := ctx.(*pathwayContext); ok {
+		return pc.pathway, true
 	}
 	v := ctx.Value(activePathwayKey)
 	if p, ok := v.(Pathway); ok {
