@@ -10,7 +10,6 @@ import (
 	"errors"
 	"net/http"
 	"runtime"
-	"slices"
 	"sync"
 	"weak"
 
@@ -155,11 +154,12 @@ func (r *Router) BeforeHandle(w http.ResponseWriter, req *http.Request) (tw http
 		IsStatusError:        r.config.isStatusError,
 		OTelSemanticsEnabled: &r.config.otelEnabled,
 	}, w, req)
-	if match.MatchErr != nil || match.Route != nil && r.hasSubrouter(match.Route) {
+	if match.MatchErr != nil || match.Route != nil && (match.Handler == nil || r.hasSubrouter(match.Route)) {
 		// A route of a subrouter that matches is the route of the request. A
 		// subrouter without a route for it matches it with its own route: its 404
 		// handler answers with MatchErr, and its 405 handler, for which gorilla
-		// clears MatchErr. The request has no route.
+		// clears MatchErr. A route without a handler gets gorilla's own 404. The
+		// request has no route.
 		httpsec.ReportMatchedRoute(treq.Context(), httpsec.MatchedRoute{})
 	}
 	return tw, treq, afterHandle, handled
@@ -196,15 +196,16 @@ func defaultResourceNamer(router *Router, req *http.Request) string {
 var errFound = errors.New("found")
 
 // hasSubrouter reports whether route has a subrouter with routes: gorilla does
-// not export it, but Walk lists the routes of a subrouter with route among their
-// ancestors. The answer is cached per route.
+// not export it, but Walk lists the routes of a subrouter with route as their
+// last ancestor, as it does for a router that is the handler of route. The answer
+// is cached per route.
 func (r *Router) hasSubrouter(route *mux.Route) bool {
 	key := weak.Make(route)
 	if found, ok := r.subrouters.Load(key); ok {
 		return found.(bool)
 	}
-	err := r.Router.Walk(func(_ *mux.Route, _ *mux.Router, ancestors []*mux.Route) error {
-		if slices.Contains(ancestors, route) {
+	err := r.Router.Walk(func(_ *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
+		if n := len(ancestors); n > 0 && ancestors[n-1] == route && route.GetHandler() != http.Handler(router) {
 			return errFound
 		}
 		return nil

@@ -963,6 +963,9 @@ func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
 	sub := org.PathPrefix("/org/{org}").Subrouter()
 	sub.Handle("/item/{id}", okHandler()).Methods(http.MethodGet)
 	sub.NotFoundHandler = http.NotFoundHandler()
+	// A route without a handler: gorilla answers 404.
+	bare := NewRouter()
+	bare.NewRoute().Path("/bare/{id}")
 	sub.MethodNotAllowedHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	})
@@ -977,6 +980,10 @@ func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	})
 	parent.Handler(okHandler())
+	// A router that is the handler of a route.
+	inner := gorillamux.NewRouter()
+	inner.Handle("/inner/{id}", okHandler())
+	team.Handle("/inner/{id}", inner)
 	// A route without a handler whose matcher selects the handler.
 	team.Path("/selected/{id}").MatcherFunc(func(_ *http.Request, m *gorillamux.RouteMatch) bool {
 		m.Handler = okHandler()
@@ -996,6 +1003,8 @@ func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
 		{org, http.MethodGet, "/org/1/item/3", http.StatusOK, "/org/{org}/item/{id}"},
 		{org, http.MethodPost, "/org/1/item/3", http.StatusMethodNotAllowed, ""},
 		{org, http.MethodGet, "/org/1/missing", http.StatusNotFound, ""},
+		{bare, http.MethodGet, "/bare/2", http.StatusNotFound, ""},
+		{team, http.MethodGet, "/inner/3", http.StatusOK, "/inner/{id}"},
 		{team, http.MethodGet, "/team/1/missing", http.StatusNotFound, ""},
 		{team, http.MethodGet, "/team/1/item/3", http.StatusOK, "/team/{t}/item/{id}"},
 		{team, http.MethodPost, "/team/1/item/3", http.StatusMethodNotAllowed, ""},
