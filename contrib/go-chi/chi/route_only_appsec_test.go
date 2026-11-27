@@ -334,25 +334,41 @@ func TestEventCapBoundary(t *testing.T) {
 	assert.Len(t, events, 10)
 }
 
-// TestFiniteBudget: 5,000 path rules that do not match, and a response header block
-// rule. The middleware runs no path rule, so the budget of the request is the budget
-// of the response rule. Result of 29d38928: 200 (the budget is spent).
+// TestFiniteBudget checks that Use gives no path parameters to the WAF, so the
+// response rule blocks (403). Result of 29d38928: 200 (the budget is spent).
+// With gives the parameters to the WAF and must return 200 without an event.
+// The 5ms budget is about 20 times the measured request WAF time with Use and
+// less than one quarter of the measured path-rule time with four long parameters.
 func TestFiniteBudget(t *testing.T) {
+	const budget = "5ms"
+	const route = "/items/{a}/{b}/{c}/{d}"
+	target := "/items/" + strings.Repeat("a", 4096) + "/" + strings.Repeat("b", 4096) + "/" + strings.Repeat("c", 4096) + "/" + strings.Repeat("d", 4096)
 	rules := make([]string, 0, 5001)
 	rules = append(rules, roRule("response-block", "block", roCondition(roResponseHeaders, "x-stage", "ready")))
 	for i := range 5000 {
-		rules = append(rules, fmt.Sprintf(`{"id":"path-%d","name":"path-%d","tags":{"type":"path-%d","category":"attack_attempt"},"conditions":[{"operator":"match_regex","parameters":{"inputs":[{"address":%q,"key_path":["id"]}],"regex":"never%d[0-9]+"}}],"on_match":[]}`, i, i, i, roPathParams, i))
+		rules = append(rules, fmt.Sprintf(`{"id":"path-%d","name":"path-%d","tags":{"type":"path-%d","category":"attack_attempt"},"conditions":[{"operator":"match_regex","parameters":{"inputs":[{"address":%q}],"regex":"never%d[0-9]+"}}],"on_match":[]}`, i, i, i, roPathParams, i))
 	}
-	for _, budget := range []string{"500us", "2ms"} {
-		t.Run(budget, func(t *testing.T) {
-			mt := roStart(t, budget, rules...)
-			var ran bool
-			code, _ := roServe(t, roRouter("/items/{id}", &ran), "/items/"+strings.Repeat("a", 4096))
-			assert.Equal(t, http.StatusForbidden, code)
-			assert.True(t, ran)
-			assert.Equal(t, []string{"response-block"}, roEvents(mt))
+	t.Run("use", func(t *testing.T) {
+		mt := roStart(t, budget, rules...)
+		var ran bool
+		code, _ := roServe(t, roRouter(route, &ran), target)
+		assert.Equal(t, http.StatusForbidden, code)
+		assert.True(t, ran)
+		assert.Equal(t, []string{"response-block"}, roEvents(mt))
+	})
+	t.Run("with", func(t *testing.T) {
+		mt := roStart(t, budget, rules...)
+		var ran bool
+		r := chi.NewRouter()
+		r.With(chitrace.Middleware()).Get(route, func(w http.ResponseWriter, _ *http.Request) {
+			ran = true
+			w.Header().Set("X-Stage", "ready")
 		})
-	}
+		code, _ := roServe(t, r, target)
+		assert.Equal(t, http.StatusOK, code)
+		assert.True(t, ran)
+		assert.Empty(t, roEvents(mt))
+	})
 }
 
 // TestNoEarlyPathBlock: with Use before routing, a rule on a path parameter does not
