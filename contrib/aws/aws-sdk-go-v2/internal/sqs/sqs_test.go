@@ -141,7 +141,7 @@ func TestEnrichOperation(t *testing.T) {
 			ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:in", "topic:upstream", "type:kafka")
 			span, spanCtx := tracer.StartSpanFromContext(ctx, "test-span")
 
-			input := NewEnricher(true).EnrichOperation(spanCtx, span, tt.input, tt.operation)
+			input := NewEnricher(true, true).EnrichOperation(spanCtx, span, tt.input, tt.operation)
 
 			if tt.check != nil {
 				tt.check(t, input, span, spanCtx)
@@ -189,7 +189,7 @@ func TestInjectTraceContext(t *testing.T) {
 				}
 			}
 
-			traceContext, err := getTraceContext(spanCtx, span, "test-queue", 42)
+			traceContext, err := NewEnricher(true, true).getTraceContext(spanCtx, span, "test-queue", 42)
 			assert.NoError(t, err)
 			budget := traceBudget{remaining: maxMessageBytes}
 			messageAttributes = budget.inject(traceContext, messageAttributes)
@@ -247,7 +247,7 @@ func BenchmarkEnrichOperation(b *testing.B) {
 		inject bool
 	}{{"on", true}, {"off", false}} {
 		b.Run(tc.name, func(b *testing.B) {
-			e := NewEnricher(tc.inject)
+			e := NewEnricher(tc.inject, true)
 			b.ReportAllocs()
 			for b.Loop() {
 				in := middleware.InitializeInput{Parameters: &sqs.SendMessageInput{QueueUrl: aws.String("https://sqs.eu-west-1.amazonaws.com/123456789012/bench-queue"), MessageBody: aws.String(`{"message":"hello"}`)}}
@@ -266,11 +266,11 @@ func TestMessageSizeLimit(t *testing.T) {
 	defer span.Finish()
 
 	sendMessage := func(params *sqs.SendMessageInput) map[string]types.MessageAttributeValue {
-		sent := NewEnricher(true).EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: params}, "SendMessage")
+		sent := NewEnricher(true, false).EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: params}, "SendMessage")
 		return sent.Parameters.(*sqs.SendMessageInput).MessageAttributes
 	}
 	sendBatch := func(inject bool, params *sqs.SendMessageBatchInput) []types.SendMessageBatchRequestEntry {
-		sent := NewEnricher(inject).EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: params}, "SendMessageBatch")
+		sent := NewEnricher(inject, false).EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: params}, "SendMessageBatch")
 		return sent.Parameters.(*sqs.SendMessageBatchInput).Entries
 	}
 

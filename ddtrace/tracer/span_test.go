@@ -632,6 +632,22 @@ func TestSpanSetMetaStruct(t *testing.T) {
 		})
 	}
 
+	t.Run("otlp export mode", func(t *testing.T) {
+		tracer, _, _, stop, err := startTestTracer(t, func(c *config) {
+			c.internalConfig.SetOTLPExportMode(true, internalconfig.OriginCode)
+		})
+		require.NoError(t, err)
+		defer stop()
+
+		agentFeatures := tracer.config.agent.load()
+		agentFeatures.metaStructAvailable = true
+		tracer.config.agent.store(agentFeatures)
+
+		span := newBasicSpan("web.request")
+		assert.False(t, span.SetMetaStruct("key", &testMsgpStruct{A: "test"}))
+		assert.NotContains(t, span.metaStruct, "key")
+	})
+
 	t.Run("concurrent", func(t *testing.T) {
 		tracer, _, _, stop, err := startTestTracer(t)
 		require.NoError(t, err)

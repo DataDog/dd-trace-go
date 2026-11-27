@@ -7,6 +7,8 @@ package crashtracker
 
 import (
 	"compress/gzip"
+	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -14,7 +16,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // decompressBody gunzips a captured request body for JSON assertions.
@@ -32,7 +36,7 @@ func decompressBody(t *testing.T, body []byte) []byte {
 	return decompressed
 }
 
-// newTestReport builds a Report exercising uploadReport/buildRequestAndClient
+// newTestReport builds a Report exercising uploadReport and its request builder
 // in isolation from a real crash dump. DDTags and OSInfo are derived from the
 // real buildDDTags/osInfo rather than hand-typed, so this fixture's shape
 // tracks the actual wire contract instead of silently drifting from it.
@@ -63,6 +67,56 @@ func newTestReport() *Report {
 	return r
 }
 
+func TestUploadReportContextStopsRetryBackoff(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		cancel()
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	started := time.Now()
+	err := uploadReport(ctx, &config{agentURL: srv.URL}, newTestReport())
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("uploadReport = %v, want context.Canceled", err)
+	}
+	if requests != 1 || time.Since(started) >= uploadRetryBackoff {
+		t.Fatalf("canceled upload made %d requests in %s", requests, time.Since(started))
+	}
+}
+
+func TestUploadReportContextDeadlineInterruptsRequest(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) { <-release }))
+	defer srv.Close()
+	defer close(release)
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	err := uploadReport(ctx, &config{agentURL: srv.URL}, newTestReport())
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("uploadReport = %v, want context.DeadlineExceeded", err)
+	}
+}
+
+func TestUploadReportDeadlineErrorIncludesLastError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	// The deadline expires during the first retry backoff, after one 503.
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	err := uploadReport(ctx, &config{agentURL: srv.URL}, newTestReport())
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("uploadReport = %v, want context.DeadlineExceeded", err)
+	}
+	if !strings.Contains(err.Error(), "intake returned 503") {
+		t.Fatalf("uploadReport = %q, want the last attempt's error", err)
+	}
+}
+
 func TestUploadReportAgentPath(t *testing.T) {
 	var capturedReq *http.Request
 	var capturedBody []byte
@@ -83,7 +137,7 @@ func TestUploadReportAgentPath(t *testing.T) {
 		httpClient: srv.Client(),
 	}
 
-	if err := uploadReport(cfg, newTestReport()); err != nil {
+	if err := uploadReport(t.Context(), cfg, newTestReport()); err != nil {
 		t.Fatalf("uploadReport returned unexpected error: %v", err)
 	}
 
@@ -131,7 +185,7 @@ func TestUploadReportAgentlessPath(t *testing.T) {
 		httpClient:   srv.Client(),
 	}
 
-	if err := uploadReport(cfg, newTestReport()); err != nil {
+	if err := uploadReport(t.Context(), cfg, newTestReport()); err != nil {
 		t.Fatalf("uploadReport returned unexpected error: %v", err)
 	}
 
@@ -165,9 +219,9 @@ func TestUploadReportAgentURLIgnoredInAgentlessMode(t *testing.T) {
 		agentURL: "http://agent-host:8126", // must be ignored: this is an agent base, not an agentless target
 	}
 
-	req, _, err := buildRequestAndClient(cfg, []byte("{}"))
+	req, err := resolveUploadTarget(cfg).newRequest(cfg, []byte("{}"))
 	if err != nil {
-		t.Fatalf("buildRequestAndClient returned unexpected error: %v", err)
+		t.Fatalf("newRequest returned unexpected error: %v", err)
 	}
 
 	if req.URL.String() == cfg.agentURL {
@@ -190,7 +244,7 @@ func TestUploadReportServerError(t *testing.T) {
 		httpClient: srv.Client(),
 	}
 
-	err := uploadReport(cfg, newTestReport())
+	err := uploadReport(t.Context(), cfg, newTestReport())
 	if err == nil {
 		t.Fatal("expected error for 500 response, got nil")
 	}
@@ -216,7 +270,7 @@ func TestUploadReportRejects3xx(t *testing.T) {
 		httpClient: srv.Client(),
 	}
 
-	err := uploadReport(cfg, newTestReport())
+	err := uploadReport(t.Context(), cfg, newTestReport())
 	if err == nil {
 		t.Fatal("expected error for 304 response, got nil")
 	}
@@ -246,11 +300,58 @@ func TestUploadReportRetriesTransientFailure(t *testing.T) {
 		httpClient: srv.Client(),
 	}
 
-	if err := uploadReport(cfg, newTestReport()); err != nil {
+	if err := uploadReport(t.Context(), cfg, newTestReport()); err != nil {
 		t.Fatalf("uploadReport returned unexpected error: %v", err)
 	}
 	if requestCount != 2 {
 		t.Errorf("requestCount = %d, want 2 (one failure, one success)", requestCount)
+	}
+}
+
+// TestUploadReportReusesConnectionAcrossRetries proves uploadReport builds one
+// client per call and drains each response body, so the three attempts share one
+// TCP connection. A client per attempt, or an undrained body, opens a new one.
+func TestUploadReportReusesConnectionAcrossRetries(t *testing.T) {
+	var (
+		mu          sync.Mutex
+		connections int
+		requests    int
+	)
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requests++
+		n := requests
+		mu.Unlock()
+		if n < uploadAttempts {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte("unavailable"))
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	srv.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			mu.Lock()
+			connections++
+			mu.Unlock()
+		}
+	}
+	srv.Start()
+	defer srv.Close()
+
+	// No httpClient: this exercises the default client that uploadReport builds.
+	cfg := &config{agentURL: srv.URL}
+
+	if err := uploadReport(t.Context(), cfg, newTestReport()); err != nil {
+		t.Fatalf("uploadReport returned unexpected error: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if requests != uploadAttempts {
+		t.Fatalf("requests = %d, want %d", requests, uploadAttempts)
+	}
+	if connections != 1 {
+		t.Errorf("connections = %d, want 1 (one client, drained bodies)", connections)
 	}
 }
 
@@ -276,7 +377,7 @@ func TestUploadReportRetries408(t *testing.T) {
 		httpClient: srv.Client(),
 	}
 
-	if err := uploadReport(cfg, newTestReport()); err != nil {
+	if err := uploadReport(t.Context(), cfg, newTestReport()); err != nil {
 		t.Fatalf("uploadReport returned unexpected error: %v", err)
 	}
 	if requestCount != 2 {
@@ -285,7 +386,7 @@ func TestUploadReportRetries408(t *testing.T) {
 }
 
 // TestUploadReportDoesNotRetryBadRequest proves a non-retryable 4xx (which
-// will fail identically on every attempt) does not waste the monitor's
+// will fail identically on every attempt) does not waste the supervisor's
 // remaining time before exit retrying a request that can never succeed.
 func TestUploadReportDoesNotRetryBadRequest(t *testing.T) {
 	var requestCount int
@@ -300,7 +401,7 @@ func TestUploadReportDoesNotRetryBadRequest(t *testing.T) {
 		httpClient: srv.Client(),
 	}
 
-	err := uploadReport(cfg, newTestReport())
+	err := uploadReport(t.Context(), cfg, newTestReport())
 	if err == nil {
 		t.Fatal("expected error for 400 response, got nil")
 	}
@@ -325,7 +426,7 @@ func TestUploadReportGivesUpAfterAllAttemptsFail(t *testing.T) {
 		httpClient: srv.Client(),
 	}
 
-	err := uploadReport(cfg, newTestReport())
+	err := uploadReport(t.Context(), cfg, newTestReport())
 	if err == nil {
 		t.Fatal("expected error after every attempt fails, got nil")
 	}
@@ -343,8 +444,8 @@ func TestUploadReportGivesUpAfterAllAttemptsFail(t *testing.T) {
 // redirect target answered 200, uploadReport would have reported success for
 // a request that never actually carried the report. cfg deliberately omits
 // httpClient (unlike every other test in this file) so this exercises
-// buildRequestAndClient's own internal.DefaultHTTPClient branch, the one the
-// fix lives on and the one real (monitor) uploads always use.
+// uploadTarget.newClient's own internal.DefaultHTTPClient branch, the one the
+// fix lives on and the one supervisor uploads use when no custom client is configured.
 func TestUploadReportRejectsRedirect(t *testing.T) {
 	var redirectRequests int
 	mux := http.NewServeMux()
@@ -360,7 +461,7 @@ func TestUploadReportRejectsRedirect(t *testing.T) {
 
 	cfg := &config{agentURL: srv.URL}
 
-	err := uploadReport(cfg, newTestReport())
+	err := uploadReport(t.Context(), cfg, newTestReport())
 	if err == nil {
 		t.Fatal("expected error for a redirected response, got nil")
 	}
@@ -373,7 +474,7 @@ func TestUploadReportRejectsRedirect(t *testing.T) {
 }
 
 // TestUploadReportUnixSocket proves the Unix socket agent path (URL scheme
-// "unix://") actually reaches the socket: buildRequestAndClient's UDSClient
+// "unix://") actually reaches the socket: uploadTarget.newClient's UDSClient
 // branch and the request's http://localhost URL rewrite need each other to
 // work, and every other upload test uses a TCP httptest.Server so none of
 // them previously exercised this branch at all.
@@ -408,7 +509,7 @@ func TestUploadReportUnixSocket(t *testing.T) {
 
 	cfg := &config{agentURL: "unix://" + socketPath}
 
-	if err := uploadReport(cfg, newTestReport()); err != nil {
+	if err := uploadReport(t.Context(), cfg, newTestReport()); err != nil {
 		t.Fatalf("uploadReport over unix socket returned unexpected error: %v", err)
 	}
 	if gotMethod != http.MethodPost {
@@ -442,9 +543,9 @@ func TestBuildRequestToleratesDDSiteAsURL(t *testing.T) {
 		site:   "https://datadoghq.com/",
 	}
 
-	req, _, err := buildRequestAndClient(cfg, []byte("{}"))
+	req, err := resolveUploadTarget(cfg).newRequest(cfg, []byte("{}"))
 	if err != nil {
-		t.Fatalf("buildRequestAndClient returned unexpected error: %v", err)
+		t.Fatalf("newRequest returned unexpected error: %v", err)
 	}
 
 	wantHost := "error-tracking-intake.datadoghq.com"

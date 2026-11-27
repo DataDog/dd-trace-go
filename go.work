@@ -8,7 +8,9 @@ use (
 	./contrib/aerospike/aerospike-client-go.v7
 	./contrib/aerospike/aerospike-client-go.v7/otelc
 	./contrib/IBM/sarama
+	./contrib/IBM/sarama/otelc
 	./contrib/Shopify/sarama
+	./contrib/Shopify/sarama/otelc
 	./contrib/azure/apim-callout
 	./contrib/aws/aws-sdk-go
 	./contrib/aws/aws-sdk-go/otelc
@@ -30,6 +32,7 @@ use (
 	./contrib/database/sql/otelc
 	./contrib/dimfeld/httptreemux.v5
 	./contrib/elastic/go-elasticsearch.v6
+	./contrib/elastic/go-elasticsearch.v6/otelc
 	./contrib/emicklei/go-restful.v3
 	./contrib/envoyproxy/go-control-plane
 	./contrib/gin-gonic/gin
@@ -52,6 +55,7 @@ use (
 	./contrib/go.mongodb.org/mongo-driver.v2/otelc
 	./contrib/go.uber.org/zap
 	./contrib/gocql/gocql
+	./contrib/gocql/gocql/otelc
 	./contrib/gofiber/fiber.v2
 	./contrib/gofiber/fiber.v2/otelc
 	./contrib/gomodule/redigo

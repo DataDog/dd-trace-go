@@ -26,6 +26,10 @@ The config package also supports reporting telemetry. This functionality is buil
 
 Contains Test Optimization internals, including Go `testing` instrumentation, CI metadata collection, backend feature negotiation, ITR skippable-test handling, code coverage payloads, and subprocess fixtures. The [overview](./civisibility/CIVISIBILITY_OVERVIEW.md) documents the ITR coverage backfill safety model and its manual and Orchestrion validation fixtures.
 
+### Crashtracker State
+
+Tells the tracer and the profiler that the current process is about to become the crashtracker supervisor. With the crashtracker Orchestrion integration, the supervisor does not start the tracer or the profiler, and the application does. See [./crashtrackerstate](./crashtrackerstate/) and the [crashtracker package documentation](../crashtracker/doc.go).
+
 ### Env
 
 Contains important functions for getting and looking up environment variables. Whenever needed, use `env.Lookup` or `env.Get` instead of built in `os.Getenv` functions. This is also available at [instrumentation/env](../instrumentation/env/) for those packages that cannot import internal modules.
