@@ -3646,6 +3646,42 @@ func TestExtractBaggagePropagatorMalformedHeader(t *testing.T) {
 		})
 		assert.Len(t, got, 0)
 	})
+	t.Run("invalid percent encoding in key", func(t *testing.T) {
+		tracer, err := newTracer()
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		headers := TextMapCarrier{
+			DefaultTraceIDHeader:  "4",
+			DefaultParentIDHeader: "1",
+			DefaultBaggageHeader:  "%a=val,key1=value1",
+		}
+		s, err := tracer.Extract(headers)
+		assert.NoError(t, err)
+		got := make(map[string]string)
+		s.ForeachBaggageItem(func(k, v string) bool {
+			got[k] = v
+			return true
+		})
+		assert.Len(t, got, 0)
+	})
+	t.Run("invalid percent encoding in value", func(t *testing.T) {
+		tracer, err := newTracer()
+		assert.NoError(t, err)
+		defer tracer.Stop()
+		headers := TextMapCarrier{
+			DefaultTraceIDHeader:  "4",
+			DefaultParentIDHeader: "1",
+			DefaultBaggageHeader:  "key1=value1,k=%a",
+		}
+		s, err := tracer.Extract(headers)
+		assert.NoError(t, err)
+		got := make(map[string]string)
+		s.ForeachBaggageItem(func(k, v string) bool {
+			got[k] = v
+			return true
+		})
+		assert.Len(t, got, 0)
+	})
 }
 
 func TestExtractBaggagePropagatorMaxItems(t *testing.T) {
