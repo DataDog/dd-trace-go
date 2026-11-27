@@ -165,10 +165,11 @@ func peek(rc io.ReadCloser, encoding string, max, n int) (string, io.ReadCloser,
 		gzr, err2 := gzip.NewReader(bytes.NewReader(snip))
 		if err2 != nil {
 			// snip wasn't gzip; return it as is
-			return string(snip), rc2, nil
+			return instrumentation.TruncateUTF8(string(snip), n), rc2, nil
 		}
 		defer gzr.Close()
 		snip, err = io.ReadAll(io.LimitReader(gzr, int64(cutoff)))
+		return instrumentation.TruncateUTF8(string(snip), cutoff), rc2, err
 	}
-	return string(snip), rc2, err
+	return instrumentation.TruncateUTF8(string(snip), n), rc2, err
 }

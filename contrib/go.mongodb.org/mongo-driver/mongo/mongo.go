@@ -60,10 +60,11 @@ func (m *monitor) Started(ctx context.Context, evt *event.CommandStartedEvent) {
 	}
 	if m.cfg.maxQuerySize != 0 {
 		b, _ := bson.MarshalExtJSON(evt.Command, false, false)
-		if m.cfg.maxQuerySize > 0 && len(b) > m.cfg.maxQuerySize {
-			b = b[:m.cfg.maxQuerySize]
+		query := string(b)
+		if m.cfg.maxQuerySize > 0 {
+			query = instrumentation.TruncateUTF8(query, m.cfg.maxQuerySize)
 		}
-		tags[m.cfg.spanName] = string(b)
+		tags[m.cfg.spanName] = query
 	}
 	span, _ := tracer.StartSpanFromContext(ctx, m.cfg.spanName,
 		tracer.WithTags(tags),
