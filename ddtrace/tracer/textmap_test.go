@@ -2960,10 +2960,15 @@ func BenchmarkInjectW3COtel(b *testing.B) {
 	tracer, err := newTracer()
 	defer tracer.Stop()
 	assert.NoError(b, err)
-	root := tracer.StartSpan("test")
+	// The span ID is also the trace ID's lower 64 bits, which the 0.5 rule hashes
+	// to decide keep or drop. Pin it so every run measures the same branch.
+	root := tracer.StartSpan("test", WithSpanID(0xfff972474538efff))
 	defer root.Finish()
 
 	ctx := root.Context()
+	p, ok := ctx.SamplingPriority()
+	require.True(b, ok)
+	require.Equal(b, ext.PriorityUserKeep, p, "the pinned span ID must be kept by the 0.5 rule")
 
 	setPropagatingTag(ctx, tracestateHeader,
 		"othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~")
