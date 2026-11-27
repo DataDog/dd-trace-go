@@ -594,6 +594,7 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 		r.Mount("/grouped", http.HandlerFunc(okHandler))
 	})
 	assert.Equal(t, "/grouped/{param1}", requestTags(t, grouped, "/grouped/x")["_dd.appsec.normalized_route"])
+	assert.Equal(t, "/grouped/{param1}", requestTags(t, grouped, "/grouped/grouped/")["_dd.appsec.normalized_route"])
 
 	// An endpoint on the pattern of a mount serves its method instead of the
 	// mounted router.

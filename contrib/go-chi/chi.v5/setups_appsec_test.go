@@ -662,6 +662,7 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 		r.Mount("/grouped", http.HandlerFunc(okHandler))
 	})
 	assert.Equal(t, "/grouped/{param1}", requestTags(t, grouped, "/grouped/x")["_dd.appsec.normalized_route"])
+	assert.Equal(t, "/grouped/{param1}", requestTags(t, grouped, "/grouped/grouped/")["_dd.appsec.normalized_route"])
 
 	// An endpoint on the pattern of a mount serves its method instead of the
 	// mounted router.
@@ -711,9 +712,18 @@ func TestAppSecNormalizedRouteOTel(t *testing.T) {
 	router.Mount("/api", api)
 	matched := requestTags(t, router, "/api/x/1")
 	assert.Equal(t, "/api/x/{id}", matched["_dd.appsec.normalized_route"])
-	missed := requestTags(t, router, "/api/nope")
-	assert.Empty(t, missed[ext.HTTPRoute])
-	assert.NotContains(t, missed, "_dd.appsec.normalized_route")
+	for _, target := range []string{"/api/nope", "/api"} {
+		missed := requestTags(t, router, target)
+		assert.Empty(t, missed[ext.HTTPRoute], target)
+		assert.NotContains(t, missed, "_dd.appsec.normalized_route", target)
+	}
+	// A mounted handler that is not a chi router keeps its route, as its http.route.
+	router.Mount("/opaque", http.HandlerFunc(okHandler))
+	assert.Equal(t, "/opaque/{param1}", requestTags(t, router, "/opaque/x")["_dd.appsec.normalized_route"])
+	// An endpoint on the pattern of a mount serves its method.
+	router.Mount("/shadowed", chi.NewRouter())
+	router.Get("/shadowed/*", okHandler)
+	assert.Equal(t, "/shadowed/{param1}", requestTags(t, router, "/shadowed/x")["_dd.appsec.normalized_route"])
 }
 
 // TestAppSecNormalizedRouteLifecycle checks that the normalized route is the route

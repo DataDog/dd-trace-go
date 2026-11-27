@@ -96,14 +96,11 @@ func normalizeRoute(framework string, matched httpsec.MatchedRoute) (string, boo
 }
 
 // hasValue reports that the framework bound a value to the catch-all or
-// optional parameter key. An empty value, or only "/", is absent. gin starts
-// its catch-all values with the "/" before them: trimSlash removes it.
-func hasValue(params map[string]string, key string, trimSlash bool) bool {
+// optional parameter key. An empty value, or only "/", is absent, as an empty
+// rest of the path (gin starts its catch-all values with the "/" before them).
+func hasValue(params map[string]string, key string) bool {
 	v, ok := params[key]
-	if trimSlash {
-		v = strings.TrimPrefix(v, "/")
-	}
-	return ok && v != "" && v != "/"
+	return ok && !isEmptyRemainder(v)
 }
 
 // parseServeMuxRoute parses a [net/http.ServeMux] pattern, without its method:
@@ -162,7 +159,7 @@ func parseServeMuxRoute(route string, params map[string]string, path string) ([]
 			if rest != "" || name == "" {
 				return nil, false
 			}
-			present := hasValue(params, name, false)
+			present := hasValue(params, name)
 			if _, bound := params[name]; !bound {
 				present = hasServeMuxRemainder(route[:len(route)-len(seg)], path)
 			}
@@ -242,7 +239,7 @@ func parseBraceRoute(route string, params map[string]string, chiWildcard bool) (
 			if start < i {
 				parts = append(parts, routePart{static: route[start:i]})
 			}
-			parts = append(parts, routePart{param: true, absent: !hasValue(params, "*", false)})
+			parts = append(parts, routePart{param: true, absent: !hasValue(params, "*")})
 			start = len(route)
 		}
 	}
@@ -381,9 +378,9 @@ func parseColonRoute(route string, params map[string]string, gin bool) ([]routeP
 				if name == "" || strings.IndexByte(name, '/') >= 0 {
 					return nil, false
 				}
-				parts = append(parts, routePart{param: true, name: name, absent: !hasValue(params, name, true)})
+				parts = append(parts, routePart{param: true, name: name, absent: !hasValue(params, name)})
 			} else {
-				parts = append(parts, routePart{param: true, absent: !hasValue(params, "*", false)})
+				parts = append(parts, routePart{param: true, absent: !hasValue(params, "*")})
 			}
 			return parts, true
 		default:
@@ -507,7 +504,7 @@ func parseFiberRoute(route string, params map[string]string) ([]routePart, strin
 				key = "+" + strconv.Itoa(pluses)
 			}
 			slash := c == '*' && optionalSlashAllowed() && endsSegment(route, i+1)
-			absent := !hasValue(params, key, false)
+			absent := !hasValue(params, key)
 			flushStatic()
 			parts = append(parts, routePart{param: true, absent: absent, optionalSlash: slash})
 			matchParam(key, absent, slash)
@@ -522,6 +519,10 @@ func parseFiberRoute(route string, params map[string]string) ([]routePart, strin
 				return nil, "", false
 			}
 			if _, bound := params[name]; params != nil && !bound {
+				if len(params) > 0 {
+					// fiber reads this parameter otherwise.
+					return nil, "", false
+				}
 				// A prefix that fiber does not parse (Static) binds nothing.
 				matchStatic(c)
 				continue
@@ -542,7 +543,7 @@ func parseFiberRoute(route string, params map[string]string) ([]routePart, strin
 				end++
 			}
 			slash := optional && optionalSlashAllowed() && endsSegment(route, end)
-			absent := optional && !hasValue(params, name, false)
+			absent := optional && !hasValue(params, name)
 			if repeated[name] {
 				// fiber binds one value per name: the value of a repeated name
 				// is unknown.

@@ -162,8 +162,7 @@ func clearedWildcard(rctx *chi.Context, mounts *sync.Map) bool {
 // servesMount reports that chi served the request with the handler that Mount
 // registers for the last pattern that it matched, as the route tables of
 // rctx.Routes and of the routers mounted in it tell. The answer is cached per
-// method and patterns: Routes builds the route table of a router on each call. A
-// mount in a router with inline middlewares (With, Group) is not recognized.
+// method and patterns: Routes builds the route table of a router on each call.
 func servesMount(rctx *chi.Context, mounts *sync.Map) bool {
 	// NUL is never in a method or a pattern.
 	key := rctx.RouteMethod + "\x00" + strings.Join(rctx.RoutePatterns, "\x00")
@@ -212,8 +211,16 @@ var mountHandlerCode = sync.OnceValue(func() uintptr {
 	return 0
 })
 
-// isMountHandler reports that h is the handler that Mount registers.
+// isMountHandler reports that h is the handler that Mount registers. A router
+// with inline middlewares (With, Group) wraps it in a ChainHandler.
 func isMountHandler(h http.Handler) bool {
+	for {
+		chain, ok := h.(*chi.ChainHandler)
+		if !ok {
+			break
+		}
+		h = chain.Endpoint
+	}
 	code := handlerCode(h)
 	return code != 0 && code == mountHandlerCode()
 }

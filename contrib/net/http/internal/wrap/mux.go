@@ -94,8 +94,7 @@ func (mux *ServeMux) HandleFunc(pttrn string, handlerFunc func(http.ResponseWrit
 // pattern ("*") gets no route, as all requests with GODEBUG=httpmuxgo121=1, whose
 // patterns are literal paths.
 func matchedRoute(r *http.Request, h http.Handler, pttrn string) httpsec.MatchedRoute {
-	if r.RequestURI == "*" || legacyServeMux() ||
-		r.Method == http.MethodConnect && reflect.TypeOf(h) == redirectHandlerType {
+	if r.RequestURI == "*" || legacyServeMux() || isConnectRedirect(r, h, pttrn) {
 		return httpsec.MatchedRoute{}
 	}
 	path := r.URL.EscapedPath()
@@ -103,6 +102,15 @@ func matchedRoute(r *http.Request, h http.Handler, pttrn string) httpsec.Matched
 		path = cleanPath(path)
 	}
 	return httpsec.MatchedRoute{Route: pattern.Route(pttrn), Path: path}
+}
+
+// isConnectRedirect reports that ServeMux redirects a CONNECT request to its
+// path with a "/" added: its handler is a redirect, and its pattern is that path,
+// unescaped, and cleaned before Go 1.27. A redirect handler registered for a
+// pattern keeps its route.
+func isConnectRedirect(r *http.Request, h http.Handler, pttrn string) bool {
+	return r.Method == http.MethodConnect && reflect.TypeOf(h) == redirectHandlerType &&
+		(pttrn == r.URL.Path+"/" || pttrn == cleanPath(r.URL.Path)+"/")
 }
 
 // redirectHandlerType is the type of the handler of a redirect that ServeMux

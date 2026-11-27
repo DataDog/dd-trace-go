@@ -146,10 +146,11 @@ func (r *Router) BeforeHandle(w http.ResponseWriter, req *http.Request) (tw http
 		IsStatusError:        r.config.isStatusError,
 		OTelSemanticsEnabled: &r.config.otelEnabled,
 	}, w, req)
-	if match.Route != nil && match.Route.GetHandler() == nil {
+	if match.MatchErr != nil || match.Route != nil && match.Route.GetHandler() == nil {
 		// A subrouter without a route for the request matches it with the route
-		// of its prefix, which has no handler: its 404 or 405 handler answers, so
-		// the request has no route.
+		// of its prefix: its 404 handler answers with MatchErr, and its 405
+		// handler, for which gorilla clears MatchErr, answers for a prefix route
+		// without a handler. The request has no route.
 		httpsec.ReportMatchedRoute(treq.Context(), httpsec.MatchedRoute{})
 	}
 	return tw, treq, afterHandle, handled

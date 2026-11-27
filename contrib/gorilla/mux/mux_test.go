@@ -966,6 +966,12 @@ func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
 	sub.MethodNotAllowedHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	})
+	// A prefix route with a handler: gorilla runs it on a 405 of its subrouter,
+	// not on a 404.
+	team := NewRouter()
+	parent := team.PathPrefix("/team/{t}")
+	parent.Subrouter().NotFoundHandler = http.NotFoundHandler()
+	parent.Handler(okHandler())
 	// StrictSlash redirects the escaped path to the route with its "/".
 	strict := NewRouter()
 	strict.UseEncodedPath()
@@ -980,6 +986,7 @@ func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
 		{org, http.MethodGet, "/org/1/item/3", http.StatusOK, "/org/{org}/item/{id}"},
 		{org, http.MethodPost, "/org/1/item/3", http.StatusMethodNotAllowed, ""},
 		{org, http.MethodGet, "/org/1/missing", http.StatusNotFound, ""},
+		{team, http.MethodGet, "/team/1/missing", http.StatusNotFound, ""},
 		{strict, http.MethodGet, "/z%2Fy", http.StatusMovedPermanently, "/z%2Fy/"},
 	} {
 		mt := mocktracer.Start()

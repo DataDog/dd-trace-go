@@ -410,13 +410,16 @@ and the sampling key is unchanged. A report of no route gets no tag.
   middleware starts, for an early block, and the selected route after the handler,
   also when it panics. A request that stops at a mounted chi router with no route
   for it gets the route of the mount, but with OpenTelemetry semantics, where it
-  gets no `http.route` and no route. chi clears the `*` of a mount, which is the
+  gets no `http.route` and no route; an endpoint on the pattern of the mount
+  that serves the request keeps its route. chi clears the `*` of a mount, which is the
   `*` of the route when the mounted handler is not a chi router: its value is the
   rest of the routed path that chi gives that handler (`RoutePath`), so a
   middleware that rewrites the routing path is followed. A route that ends with
   `*` keeps the value that chi bound, also an empty one. `RoutePath` tells the
   two apart, and the route table of the router when the mount leaves the text
-  that the route would have matched.
+  that the route would have matched: the served handler is the one that `Mount`
+  registers, also when a router with inline middlewares (`With`, `Group`)
+  wraps it.
 - net/http reports the pattern that `ServeMux.Handler` returns and the path that
   ServeMux matches, before AppSec can block the request, also for a route
   registered on a caller-provided `*http.ServeMux`, which reports no path
@@ -424,7 +427,8 @@ and the sampling key is unchanged. A report of no route gets no tag.
   is not empty, or without one, when the rest of that path is not empty. A
   redirect that ServeMux generates gets the pattern that it leads to, but for the
   trailing-slash redirect of a CONNECT request, whose pattern is the redirect
-  path: it gets no route. A request that ServeMux answers without a pattern
+  path (a redirect handler registered for a pattern keeps its route): it gets
+  no route. A request that ServeMux answers without a pattern
   (`*`), and every request with the matcher of `GODEBUG=httpmuxgo121=1`, whose
   patterns are literal paths, get no route. `WrapHandler` inside a ServeMux
   reports the pattern that the ServeMux matched, with its path values.
@@ -432,7 +436,9 @@ and the sampling key is unchanged. A report of no route gets no tag.
   path that it matched (`c.Path()`) and `UnescapePath`. Without `StrictRouting`,
   a prefix route matches without its trailing `/`, as fiber matches it.
 - gorilla/mux reports no route when a subrouter's 404 or 405 handler answers:
-  gorilla matches the request with the prefix route of the subrouter.
+  gorilla matches the request with the prefix route of the subrouter. A route
+  without a handler whose matcher sets the handler itself cannot be told from
+  it, and gets no route either.
 - echo marks the path of its router's 405 and OPTIONS answers as no route
   (`httpsec.Config.RouteInferred`): it is the path of a route for another method.
 

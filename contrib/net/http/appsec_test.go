@@ -405,6 +405,8 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 	// The handler changes the path values after ServeMux matched the route.
 	clearPath := func(_ http.ResponseWriter, r *http.Request) { r.SetPathValue("path", "") }
 	underlying.HandleFunc("/uset/{path...}", clearPath)
+	// A redirect handler registered for a pattern is not a redirect of ServeMux.
+	underlying.Handle("CONNECT /redir/{path...}", http.RedirectHandler("/next", http.StatusFound))
 	mux := NewServeMux(WithServeMux(underlying))
 	mux.HandleFunc("/wrapped/{path...}", func(http.ResponseWriter, *http.Request) {})
 	mux.HandleFunc("/set/{path...}", clearPath)
@@ -453,6 +455,7 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 		// ServeMux does not clean the path of a CONNECT request.
 		{http.MethodConnect, "/pair/../s3cr3t", "", true},
 		{http.MethodConnect, "/sub/x/..", "/sub/{param1}", false},
+		{http.MethodConnect, "/redir/a", "/redir/{path}", true},
 		{http.MethodGet, "/users/123", "/users/{id}/", true},
 		{http.MethodGet, "/static/a/../", "/static/", true},
 		{http.MethodGet, "/a%2Fb/../x/42", "/x/{id}", true},
@@ -463,6 +466,7 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 		{http.MethodGet, "/uset/a/b", "/uset/{path}", false},
 		{http.MethodGet, "/files/a", "/files/{path}", false},
 		{http.MethodGet, "/files/", "/files/", false},
+		{http.MethodGet, "/files/%2F%2F", "/files/", false},
 		{http.MethodGet, "/old%2Fname", "/v2/{param1}", false},
 	} {
 		var handler http.Handler = mux

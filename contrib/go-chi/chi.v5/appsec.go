@@ -70,13 +70,13 @@ func withAppsec(next http.Handler, span trace.TagSetter, cfg *config, cache, mou
 
 		tw, tr, afterHandle, handled := httpsec.BeforeHandle(tw, r, span, &appsecCfg)
 		defer afterHandle()
-		reportDeclaredRoute(tr.Context(), rctx, cfg, cache, mounts)
+		reportDeclaredRoute(tr.Context(), rctx, cfg, mounts)
 		if handled {
 			return
 		}
 		// Deferred, so that the normalized route of a request whose handler panics
 		// is the route that chi selected.
-		defer reportDeclaredRoute(tr.Context(), rctx, cfg, cache, mounts)
+		defer reportDeclaredRoute(tr.Context(), rctx, cfg, mounts)
 		next.ServeHTTP(tw, tr)
 
 		if finalRoute := reportedRoute(rctx, cfg, cache); finalRoute != route {
@@ -90,9 +90,10 @@ func withAppsec(next http.Handler, span trace.TagSetter, cfg *config, cache, mou
 // reportDeclaredRoute reports the route that chi selected so far, as its patterns
 // declare it, with its parameters, to API Security only. With OpenTelemetry
 // semantics, a request that stops at a mounted chi router with no route for it
-// gets no route, as it gets no http.route.
-func reportDeclaredRoute(ctx context.Context, rctx *chi.Context, cfg *config, cache, mounts *sync.Map) {
-	if cfg.otelEnabled && unmatchedSubrouter(rctx, cache) {
+// gets no route, as it gets no http.route; an endpoint on the pattern of the mount
+// that serves the request keeps its route.
+func reportDeclaredRoute(ctx context.Context, rctx *chi.Context, cfg *config, mounts *sync.Map) {
+	if cfg.otelEnabled && servedMount(rctx, mounts).router {
 		httpsec.ReportMatchedRoute(ctx, httpsec.MatchedRoute{})
 		return
 	}
@@ -171,46 +172,57 @@ func clearedWildcard(rctx *chi.Context, mounts *sync.Map) bool {
 	if expandPattern(last, values[start:len(values)-1]) != rctx.RoutePath {
 		return true
 	}
-	return servesMount(rctx, mounts)
+	return servedMount(rctx, mounts).mount
 }
 
-// servesMount reports that chi served the request with the handler that Mount
-// registers for the last pattern that it matched, as the route tables of
-// rctx.Routes and of the routers mounted in it tell. The answer is cached per
-// method and patterns: Routes builds the route table of a router on each call. A
-// mount in a router with inline middlewares (With, Group) is not recognized.
-func servesMount(rctx *chi.Context, mounts *sync.Map) bool {
+// mountServed tells, for the last pattern that chi matched, whether chi served
+// the request with the handler that Mount registers, and whether that mount is a
+// chi router that has no route for the request.
+type mountServed struct{ mount, router bool }
+
+// servedMount returns what served the last pattern that chi matched, as the route
+// tables of rctx.Routes and of the routers mounted in it tell. A mount ends its
+// pattern with "*", or is an alias that leaves "/" in RoutePath. The answer is
+// cached per method and patterns: Routes builds the route table of a router on
+// each call.
+func servedMount(rctx *chi.Context, mounts *sync.Map) mountServed {
+	n := len(rctx.RoutePatterns)
+	if n == 0 || !strings.HasSuffix(rctx.RoutePatterns[n-1], "*") && rctx.RoutePath != "/" {
+		return mountServed{}
+	}
 	// NUL is never in a method or a pattern.
 	key := rctx.RouteMethod + "\x00" + strings.Join(rctx.RoutePatterns, "\x00")
-	if mount, ok := mounts.Load(key); ok {
-		return mount.(bool)
+	if served, ok := mounts.Load(key); ok {
+		return served.(mountServed)
 	}
-	mount := false
+	var served mountServed
 	routes := rctx.Routes
 	for i, pattern := range rctx.RoutePatterns {
 		route, ok := findRoute(routes, pattern)
 		if !ok {
 			break
 		}
-		if i == len(rctx.RoutePatterns)-1 {
-			mount = isMountHandler(route.Handlers[rctx.RouteMethod])
+		if i == n-1 && isMountHandler(route.Handlers[rctx.RouteMethod]) {
+			served = mountServed{mount: true, router: route.SubRoutes != nil}
 		}
 		routes = route.SubRoutes
 	}
-	mounts.Store(key, mount)
-	return mount
+	mounts.Store(key, served)
+	return served
 }
 
-// findRoute returns the route of pattern in the route table of routes. The table
-// leaves out the aliases /api and /api/ that Mount adds for /api/*: after them,
-// the mounted router routes "/", and its "*" is empty either way.
+// findRoute returns the route of pattern in the route table of routes, which
+// leaves out the aliases /api and /api/ that Mount adds for /api/*.
 func findRoute(routes chi.Routes, pattern string) (chi.Route, bool) {
 	if routes == nil {
 		return chi.Route{}, false
 	}
-	for _, route := range routes.Routes() {
-		if route.Pattern == pattern {
-			return route, true
+	table := routes.Routes()
+	for _, want := range [...]string{pattern, strings.TrimSuffix(pattern, "/") + "/*"} {
+		for _, route := range table {
+			if route.Pattern == want {
+				return route, true
+			}
 		}
 	}
 	return chi.Route{}, false
@@ -227,8 +239,16 @@ var mountHandlerCode = sync.OnceValue(func() uintptr {
 	return 0
 })
 
-// isMountHandler reports that h is the handler that Mount registers.
+// isMountHandler reports that h is the handler that Mount registers. A router
+// with inline middlewares (With, Group) wraps it in a ChainHandler.
 func isMountHandler(h http.Handler) bool {
+	for {
+		chain, ok := h.(*chi.ChainHandler)
+		if !ok {
+			break
+		}
+		h = chain.Endpoint
+	}
 	code := handlerCode(h)
 	return code != 0 && code == mountHandlerCode()
 }
