@@ -6,87 +6,49 @@
 package main
 
 import (
-	"context"
-	"io"
-	"net"
-	"net/http"
-	"net/http/httptest"
-
-	pubsubv1api "cloud.google.com/go/pubsub/apiv1"
-	pubsubv2api "cloud.google.com/go/pubsub/v2/apiv1"
-	awsv2 "github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/credentials"
-	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/gin-gonic/gin"
-	redisv6 "github.com/go-redis/redis"
-	redisv7 "github.com/go-redis/redis/v7"
-	redisv8 "github.com/go-redis/redis/v8"
-	"github.com/gorilla/mux"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/julienschmidt/httprouter"
-	redisv9 "github.com/redis/go-redis/v9"
-	"github.com/rs/zerolog"
-	"github.com/segmentio/kafka-go"
-	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/valyala/fasthttp"
-	mongooptions "go.mongodb.org/mongo-driver/mongo/options"
-	mongov2options "go.mongodb.org/mongo-driver/v2/mongo/options"
-	"google.golang.org/api/option"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
-	"gorm.io/gorm"
-	gormtests "gorm.io/gorm/utils/tests"
-	"k8s.io/client-go/rest"
+	"maps"
+	"slices"
 )
 
-// useLibraries calls libraries whose otelc rules bring their contrib into the
-// build. This module imports none of those contribs, so its otelc build fails
-// if a rules module stops pulling its contrib in. The integration suites can't
-// catch that: their module requires every contrib.
+type libraryRegistry struct {
+	checks map[string]func()
+}
+
+func newLibraryRegistry() *libraryRegistry {
+	return &libraryRegistry{checks: map[string]func(){}}
+}
+
+func (r *libraryRegistry) register(name string, fn func()) {
+	if name == "" {
+		panic("registerLibrary: empty library name")
+	}
+	if fn == nil {
+		panic("registerLibrary: nil check for " + name)
+	}
+	if _, exists := r.checks[name]; exists {
+		panic("registerLibrary: duplicate library name " + name)
+	}
+	r.checks[name] = fn
+}
+
+func (r *libraryRegistry) run() {
+	for _, name := range slices.Sorted(maps.Keys(r.checks)) {
+		r.checks[name]()
+	}
+}
+
+var defaultRegistry = newLibraryRegistry()
+
+func registerLibrary(name string, fn func()) {
+	defaultRegistry.register(name, fn)
+}
+
+// useLibraries calls libraries whose otelc rules need a contrib package.
+// The app does not import those contrib packages. The otelc build fails if a
+// rules module does not supply its contrib package. The integration suites
+// cannot detect this failure because their module requires every contrib package.
+//
+// Register each new check in a new lib_<name>.go file, not in libraries.go.
 func useLibraries() {
-	gin.SetMode(gin.ReleaseMode)
-	for _, h := range []http.Handler{gin.New(), mux.NewRouter(), httprouter.New()} {
-		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
-	}
-	client, server := net.Pipe()
-	_ = client.Close()
-	_ = fasthttp.ServeConn(server, func(*fasthttp.RequestCtx) {})
-	_ = session.Must(session.NewSession(&aws.Config{
-		Credentials: credentials.AnonymousCredentials,
-		Region:      new("us-east-1"),
-	}))
-	_ = dynamodb.NewFromConfig(awsv2.Config{Region: "us-east-1"})
-	_ = mongooptions.Client()
-	_ = mongov2options.Client()
-	// gRPC connects lazily, so nothing dials this endpoint.
-	pubsubOpts := []option.ClientOption{
-		option.WithEndpoint("localhost:1"),
-		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
-		option.WithoutAuthentication(),
-	}
-	if c, err := pubsubv1api.NewPublisherClient(context.Background(), pubsubOpts...); err == nil {
-		_ = c.Close()
-	}
-	if c, err := pubsubv2api.NewTopicAdminClient(context.Background(), pubsubOpts...); err == nil {
-		_ = c.Close()
-	}
-	_ = zerolog.New(io.Discard)
-	_ = &rest.Config{Host: "http://127.0.0.1"}
-	_ = redisv6.NewClient(&redisv6.Options{}).Close()
-	_ = redisv7.NewClient(&redisv7.Options{}).Close()
-	_ = redisv8.NewClient(&redisv8.Options{}).Close()
-	_ = redisv9.NewClient(&redisv9.Options{}).Close()
-	_, _ = gorm.Open(gormtests.DummyDialector{})
-	// The pool opens no connection until first used.
-	if pool, err := pgxpool.New(context.Background(), "postgres://localhost/db"); err == nil {
-		pool.Close()
-	}
-	// Writing no messages returns before any network call.
-	_ = (&kafka.Writer{Addr: kafka.TCP("localhost:9092")}).WriteMessages(context.Background())
-	// The client connects only when it first sends a request.
-	if cl, err := kgo.NewClient(); err == nil {
-		cl.Close()
-	}
+	defaultRegistry.run()
 }

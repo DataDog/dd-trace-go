@@ -333,7 +333,7 @@ func crashingThread(threads []Thread) *Thread {
 // path the crashed goroutine is hoisted to the front and the remainder keep
 // dump order; under the cap the input order is preserved as-is. The
 // errorsintake schema has no field for "N goroutines omitted"; truncation is
-// instead observable via the monitor's diagnostic log (see runMonitor).
+// instead observable via the supervisor's diagnostic log.
 func capThreads(threads []Thread) []Thread {
 	if len(threads) <= maxReportThreads {
 		return threads

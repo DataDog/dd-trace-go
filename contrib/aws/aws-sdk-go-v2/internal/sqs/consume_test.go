@@ -1,0 +1,669 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2016 Datadog, Inc.
+
+package sqs
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"maps"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"github.com/aws/smithy-go/middleware"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/DataDog/dd-trace-go/v2/datastreams"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+)
+
+const testQueueURL = "https://sqs.us-east-1.amazonaws.com/1234567890/consume-queue"
+
+func TestReceiveMessageRequestsDatadogAttribute(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		dataStreams bool
+		names       []string
+		want        []string
+	}{
+		{"no names", true, nil, []string{datadogKey}},
+		{"other names", true, []string{"foo"}, []string{"foo", datadogKey}},
+		{"already requested", true, []string{datadogKey}, []string{datadogKey}},
+		{"All", true, []string{"All"}, []string{"All"}},
+		{"regex all", true, []string{".*"}, []string{".*"}},
+		{"data streams off", false, nil, nil},
+		{"data streams off with names", false, []string{"foo"}, []string{"foo"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			span, ctx := tracer.StartSpanFromContext(context.Background(), "receive")
+			params := &sqs.ReceiveMessageInput{QueueUrl: aws.String(testQueueURL), MessageAttributeNames: tc.names}
+			original := *params
+
+			out := NewEnricher(true, tc.dataStreams).EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: params}, "ReceiveMessage")
+
+			assert.Equal(t, tc.want, out.Parameters.(*sqs.ReceiveMessageInput).MessageAttributeNames)
+			assert.Equal(t, original, *params)
+			if len(tc.want) == len(tc.names) {
+				assert.Same(t, params, out.Parameters)
+			}
+		})
+	}
+}
+
+func TestReceiveMessageDoesNotShareCallerSlice(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "receive")
+	backing := make([]string, 1, 4)
+	backing[0] = "foo"
+	params := &sqs.ReceiveMessageInput{QueueUrl: aws.String(testQueueURL), MessageAttributeNames: backing}
+
+	NewEnricher(true, true).EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: params}, "ReceiveMessage")
+
+	assert.Equal(t, "", backing[:2][1])
+}
+
+func producerCarrier(t *testing.T, queue string) (context.Context, tracer.TextMapCarrier) {
+	t.Helper()
+	ctx, ok := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "type:sqs", "topic:"+queue)
+	require.True(t, ok)
+	carrier := tracer.TextMapCarrier{"x-datadog-trace-id": "123"}
+	datastreams.InjectToBase64Carrier(ctx, carrier)
+	return ctx, carrier
+}
+
+func consumeHash(t *testing.T, parent context.Context, queue string) uint64 {
+	t.Helper()
+	ctx, ok := tracer.SetDataStreamsCheckpoint(parent, "direction:in", "type:sqs", "topic:"+queue)
+	require.True(t, ok)
+	pathway, ok := datastreams.PathwayFromContext(ctx)
+	require.True(t, ok)
+	return pathway.GetHash()
+}
+
+func receive(t *testing.T, dataStreams bool, messages ...types.Message) []types.Message {
+	t.Helper()
+	in := middleware.InitializeInput{Parameters: &sqs.ReceiveMessageInput{QueueUrl: aws.String(testQueueURL)}}
+	out := middleware.InitializeOutput{Result: &sqs.ReceiveMessageOutput{Messages: messages}}
+	NewEnricher(true, dataStreams).EnrichResponse(in, out, "ReceiveMessage")
+	return out.Result.(*sqs.ReceiveMessageOutput).Messages
+}
+
+func carrierFromAttribute(t *testing.T, attr types.MessageAttributeValue) tracer.TextMapCarrier {
+	t.Helper()
+	raw := attr.BinaryValue
+	if attr.StringValue != nil {
+		raw = []byte(*attr.StringValue)
+	}
+	var carrier tracer.TextMapCarrier
+	require.NoError(t, json.Unmarshal(raw, &carrier))
+	return carrier
+}
+
+func pathwayHash(t *testing.T, carrier tracer.TextMapCarrier) uint64 {
+	t.Helper()
+	pathway, ok := datastreams.PathwayFromContext(datastreams.ExtractFromBase64Carrier(context.Background(), carrier))
+	require.True(t, ok)
+	return pathway.GetHash()
+}
+
+func snsBody(t *testing.T, attrType, value string) string {
+	t.Helper()
+	body, err := json.Marshal(map[string]any{
+		"Type":    "Notification",
+		"Message": "hello",
+		"MessageAttributes": map[string]any{
+			datadogKey: map[string]string{"Type": attrType, "Value": value},
+		},
+	})
+	require.NoError(t, err)
+	return string(body)
+}
+
+func TestReceiveMessageConsumeCheckpoint(t *testing.T) {
+	const queue = "consume-queue"
+	for _, tc := range []struct {
+		name     string
+		message  func(carrier []byte) types.Message
+		wantType string
+	}{
+		{
+			name: "String attribute",
+			message: func(carrier []byte) types.Message {
+				return types.Message{Body: aws.String("hello"), MessageAttributes: map[string]types.MessageAttributeValue{
+					datadogKey: {DataType: aws.String("String"), StringValue: aws.String(string(carrier))},
+				}}
+			},
+			wantType: "String",
+		},
+		{
+			name: "Binary attribute",
+			message: func(carrier []byte) types.Message {
+				return types.Message{Body: aws.String("hello"), MessageAttributes: map[string]types.MessageAttributeValue{
+					datadogKey: {DataType: aws.String("Binary"), BinaryValue: carrier},
+				}}
+			},
+			wantType: "Binary",
+		},
+		{
+			name: "SNS notification with Binary attribute",
+			message: func(carrier []byte) types.Message {
+				return types.Message{Body: aws.String(snsBody(t, "Binary", base64.StdEncoding.EncodeToString(carrier)))}
+			},
+			wantType: "String",
+		},
+		{
+			name: "SNS notification with String attribute",
+			message: func(carrier []byte) types.Message {
+				return types.Message{Body: aws.String(snsBody(t, "String", string(carrier)))}
+			},
+			wantType: "String",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			producerCtx, carrier := producerCarrier(t, queue)
+			raw, err := json.Marshal(carrier)
+			require.NoError(t, err)
+
+			got := receive(t, true, tc.message(raw))
+
+			require.Len(t, got, 1)
+			attr, ok := got[0].MessageAttributes[datadogKey]
+			require.True(t, ok)
+			assert.Equal(t, tc.wantType, aws.ToString(attr.DataType))
+			written := carrierFromAttribute(t, attr)
+			assert.Equal(t, "123", written["x-datadog-trace-id"])
+			want := consumeHash(t, producerCtx, queue)
+			assert.Equal(t, want, pathwayHash(t, written))
+			assert.NotEqual(t, consumeHash(t, context.Background(), queue), want)
+		})
+	}
+}
+
+func TestReceiveMessageWithoutContext(t *testing.T) {
+	const queue = "consume-queue"
+	for _, tc := range []struct {
+		name string
+		body string
+	}{
+		{"plain body", "hello"},
+		{"JSON body", `{"_datadog":"not a notification"}`},
+		{"malformed JSON", `{"Type":"Notification","_datadog"`},
+		{"notification without attribute", `{"Type":"Notification","Message":"_datadog"}`},
+		{"notification with bad base64", snsBody(t, "Binary", "!!")},
+		{"notification with unknown type", snsBody(t, "Number", "1")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			got := receive(t, true, types.Message{Body: aws.String(tc.body)})
+
+			require.Len(t, got, 1)
+			assert.Equal(t, consumeHash(t, context.Background(), queue), pathwayHash(t, carrierFromAttribute(t, got[0].MessageAttributes[datadogKey])))
+		})
+	}
+}
+
+func TestReceiveMessageMalformedAttribute(t *testing.T) {
+	const queue = "consume-queue"
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	got := receive(t, true,
+		types.Message{MessageAttributes: map[string]types.MessageAttributeValue{datadogKey: {DataType: aws.String("String"), StringValue: aws.String("{")}}},
+		types.Message{MessageAttributes: map[string]types.MessageAttributeValue{datadogKey: {DataType: aws.String("Number")}}},
+	)
+
+	require.Len(t, got, 2)
+	root := consumeHash(t, context.Background(), queue)
+	for _, msg := range got {
+		assert.Equal(t, root, pathwayHash(t, carrierFromAttribute(t, msg.MessageAttributes[datadogKey])))
+	}
+}
+
+func TestReceiveMessageDataStreamsOff(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	_, carrier := producerCarrier(t, "consume-queue")
+	raw, err := json.Marshal(carrier)
+	require.NoError(t, err)
+	attrs := map[string]types.MessageAttributeValue{datadogKey: {DataType: aws.String("String"), StringValue: aws.String(string(raw))}}
+
+	got := receive(t, false, types.Message{Body: aws.String("hello")}, types.Message{Body: aws.String("hello"), MessageAttributes: attrs})
+
+	assert.Nil(t, got[0].MessageAttributes)
+	assert.Equal(t, string(raw), aws.ToString(got[1].MessageAttributes[datadogKey].StringValue))
+}
+
+func TestEnrichResponseIgnoresOtherResults(t *testing.T) {
+	e := NewEnricher(true, true)
+	receiveIn := middleware.InitializeInput{Parameters: &sqs.ReceiveMessageInput{QueueUrl: aws.String(testQueueURL)}}
+	assert.NotPanics(t, func() {
+		e.EnrichResponse(receiveIn, middleware.InitializeOutput{Result: &sqs.SendMessageOutput{}}, "ReceiveMessage")
+		e.EnrichResponse(receiveIn, middleware.InitializeOutput{Result: (*sqs.ReceiveMessageOutput)(nil)}, "ReceiveMessage")
+		e.EnrichResponse(middleware.InitializeInput{Parameters: &sqs.SendMessageInput{}}, middleware.InitializeOutput{Result: &sqs.ReceiveMessageOutput{}}, "ReceiveMessage")
+		e.EnrichResponse(receiveIn, middleware.InitializeOutput{Result: &sqs.ReceiveMessageOutput{}}, "SendMessage")
+	})
+}
+
+func TestProduceDataStreamsOff(t *testing.T) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "produce")
+
+	single := NewEnricher(true, false).EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: &sqs.SendMessageInput{QueueUrl: aws.String(testQueueURL), MessageBody: aws.String("a")}}, "SendMessage")
+	batch := NewEnricher(true, false).EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: &sqs.SendMessageBatchInput{QueueUrl: aws.String(testQueueURL), Entries: []types.SendMessageBatchRequestEntry{{Id: aws.String("1"), MessageBody: aws.String("a")}}}}, "SendMessageBatch")
+
+	for _, attrs := range []map[string]types.MessageAttributeValue{
+		single.Parameters.(*sqs.SendMessageInput).MessageAttributes,
+		batch.Parameters.(*sqs.SendMessageBatchInput).Entries[0].MessageAttributes,
+	} {
+		carrier := carrierFromAttribute(t, attrs[datadogKey])
+		assert.NotContains(t, carrier, pathwayContextKey)
+		assert.Contains(t, carrier, "x-datadog-trace-id")
+	}
+}
+
+func BenchmarkEnrichResponse(b *testing.B) {
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	ctx, _ := tracer.SetDataStreamsCheckpoint(context.Background(), "direction:out", "type:sqs", "topic:bench")
+	carrier := tracer.TextMapCarrier{}
+	datastreams.InjectToBase64Carrier(ctx, carrier)
+	raw, _ := json.Marshal(carrier)
+	in := middleware.InitializeInput{Parameters: &sqs.ReceiveMessageInput{QueueUrl: aws.String(testQueueURL)}}
+	e := NewEnricher(true, true)
+
+	for _, tc := range []struct {
+		name    string
+		message func() types.Message
+	}{
+		{"attribute", func() types.Message {
+			return types.Message{Body: aws.String(`{"message":"hello"}`), MessageAttributes: map[string]types.MessageAttributeValue{
+				datadogKey: {DataType: aws.String("String"), StringValue: aws.String(string(raw))},
+			}}
+		}},
+		{"sns notification", func() types.Message {
+			body, _ := json.Marshal(map[string]any{"Type": "Notification", "Message": `{"message":"hello"}`, "MessageAttributes": map[string]any{
+				datadogKey: map[string]string{"Type": "Binary", "Value": base64.StdEncoding.EncodeToString(raw)},
+			}})
+			return types.Message{Body: aws.String(string(body))}
+		}},
+		{"no context", func() types.Message { return types.Message{Body: aws.String(`{"message":"hello"}`)} }},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				out := middleware.InitializeOutput{Result: &sqs.ReceiveMessageOutput{Messages: []types.Message{tc.message()}}}
+				e.EnrichResponse(in, out, "ReceiveMessage")
+			}
+		})
+	}
+}
+
+func TestReceiveMessageAttributeLimit(t *testing.T) {
+	const queue = "consume-queue"
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	full := make(map[string]types.MessageAttributeValue, maxMessageAttributes)
+	for i := range maxMessageAttributes {
+		full["attr"+strconv.Itoa(i)] = types.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String("v")}
+	}
+	producerCtx, carrier := producerCarrier(t, queue)
+	raw, err := json.Marshal(carrier)
+	require.NoError(t, err)
+	withTrace := make(map[string]types.MessageAttributeValue, maxMessageAttributes)
+	for i := range maxMessageAttributes - 1 {
+		withTrace["attr"+strconv.Itoa(i)] = types.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String("v")}
+	}
+	withTrace[datadogKey] = types.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String(string(raw))}
+
+	got := receive(t, true,
+		types.Message{Body: aws.String(snsBody(t, "String", string(raw))), MessageAttributes: full},
+		types.Message{Body: aws.String("hello"), MessageAttributes: withTrace},
+	)
+
+	assert.Len(t, got[0].MessageAttributes, maxMessageAttributes)
+	assert.NotContains(t, got[0].MessageAttributes, datadogKey)
+	assert.Len(t, got[1].MessageAttributes, maxMessageAttributes)
+	assert.Equal(t, consumeHash(t, producerCtx, queue), pathwayHash(t, carrierFromAttribute(t, got[1].MessageAttributes[datadogKey])))
+}
+
+func TestForwardReplacesDatadogAtAttributeLimit(t *testing.T) {
+	const (
+		queue        = "consume-queue"
+		forwardQueue = "forward-queue"
+		forwardURL   = "https://sqs.us-east-1.amazonaws.com/1234567890/" + forwardQueue
+	)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+	_, carrier := producerCarrier(t, queue)
+	raw, err := json.Marshal(carrier)
+	require.NoError(t, err)
+	attrs := make(map[string]types.MessageAttributeValue, maxMessageAttributes)
+	for i := range maxMessageAttributes - 1 {
+		attrs["attr"+strconv.Itoa(i)] = types.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String("v")}
+	}
+	attrs[datadogKey] = types.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String(string(raw))}
+	received := receive(t, true, types.Message{Body: aws.String("hello"), MessageAttributes: attrs})[0]
+	require.Len(t, received.MessageAttributes, maxMessageAttributes)
+
+	consumeCtx := datastreams.ExtractFromBase64Carrier(context.Background(), carrierFromAttribute(t, received.MessageAttributes[datadogKey]))
+	span, ctx := tracer.StartSpanFromContext(consumeCtx, "forward")
+	expectedCtx, ok := tracer.SetDataStreamsCheckpoint(ctx, "direction:out", "type:sqs", "topic:"+forwardQueue)
+	require.True(t, ok)
+	expected, ok := datastreams.PathwayFromContext(expectedCtx)
+	require.True(t, ok)
+	e := NewEnricher(true, true)
+
+	single := e.EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: &sqs.SendMessageInput{
+		QueueUrl:          aws.String(forwardURL),
+		MessageBody:       received.Body,
+		MessageAttributes: received.MessageAttributes,
+	}}, "SendMessage")
+	batch := e.EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: &sqs.SendMessageBatchInput{
+		QueueUrl: aws.String(forwardURL),
+		Entries: []types.SendMessageBatchRequestEntry{{
+			Id:                aws.String("1"),
+			MessageBody:       received.Body,
+			MessageAttributes: received.MessageAttributes,
+		}},
+	}}, "SendMessageBatch")
+
+	for _, sent := range []map[string]types.MessageAttributeValue{
+		single.Parameters.(*sqs.SendMessageInput).MessageAttributes,
+		batch.Parameters.(*sqs.SendMessageBatchInput).Entries[0].MessageAttributes,
+	} {
+		assert.Len(t, sent, maxMessageAttributes)
+		assertInjectedPathway(t, *sent[datadogKey].StringValue, expected, span)
+	}
+}
+
+func TestForwardDropsDatadogAtBatchByteLimit(t *testing.T) {
+	const (
+		queue        = "consume-queue"
+		forwardQueue = "forward-queue"
+		forwardURL   = "https://sqs.us-east-1.amazonaws.com/1234567890/" + forwardQueue
+	)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	const limit = 1 << 20
+	probe := receive(t, true, types.Message{Body: aws.String("a")})[0]
+	probeAttr, ok := probe.MessageAttributes[datadogKey]
+	require.True(t, ok)
+	attrSize := int(attributeSize(datadogKey, probeAttr))
+	require.Positive(t, attrSize)
+
+	messages := receive(t, true,
+		types.Message{Body: aws.String(strings.Repeat("b", limit/2))},
+		types.Message{Body: aws.String(strings.Repeat("b", limit/2))},
+	)
+	require.Len(t, messages, 2)
+	original := make([]map[string]types.MessageAttributeValue, len(messages))
+	for i := range messages {
+		require.Contains(t, messages[i].MessageAttributes, datadogKey)
+		require.Equal(t, limit/2, len(aws.ToString(messages[i].Body)))
+		original[i] = maps.Clone(messages[i].MessageAttributes)
+	}
+
+	consumeCtx := datastreams.ExtractFromBase64Carrier(context.Background(), carrierFromAttribute(t, messages[0].MessageAttributes[datadogKey]))
+	span, ctx := tracer.StartSpanFromContext(consumeCtx, "forward")
+	entries := make([]types.SendMessageBatchRequestEntry, len(messages))
+	for i := range messages {
+		entries[i] = types.SendMessageBatchRequestEntry{
+			Id:                aws.String(strconv.Itoa(i)),
+			MessageBody:       messages[i].Body,
+			MessageAttributes: messages[i].MessageAttributes,
+		}
+	}
+
+	sent := NewEnricher(true, true).EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: &sqs.SendMessageBatchInput{
+		QueueUrl: aws.String(forwardURL),
+		Entries:  entries,
+	}}, "SendMessageBatch")
+
+	gotEntries := sent.Parameters.(*sqs.SendMessageBatchInput).Entries
+	require.Len(t, gotEntries, 2)
+	var total int64
+	for _, entry := range gotEntries {
+		require.NotContains(t, entry.MessageAttributes, datadogKey)
+		require.Equal(t, limit/2, len(aws.ToString(entry.MessageBody)))
+		total += int64(len(aws.ToString(entry.MessageBody))) + messageAttributesSize(entry.MessageAttributes)
+	}
+	assert.LessOrEqual(t, total, int64(maxMessageBytes))
+	for i := range messages {
+		assert.Equal(t, original[i], messages[i].MessageAttributes)
+		assert.Contains(t, messages[i].MessageAttributes, datadogKey)
+	}
+}
+
+func TestForwardDropsDatadogAtByteLimit(t *testing.T) {
+	const (
+		forwardQueue = "forward-queue"
+		forwardURL   = "https://sqs.us-east-1.amazonaws.com/1234567890/" + forwardQueue
+	)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	const limit = 1 << 20
+	received := receive(t, true, types.Message{Body: aws.String("a")})[0]
+	consumeAttr, ok := received.MessageAttributes[datadogKey]
+	require.True(t, ok)
+	consumeSize := int(attributeSize(datadogKey, consumeAttr))
+	require.Positive(t, consumeSize)
+
+	consumeCtx := datastreams.ExtractFromBase64Carrier(context.Background(), carrierFromAttribute(t, consumeAttr))
+	span, ctx := tracer.StartSpanFromContext(consumeCtx, "forward")
+	forward := NewEnricher(true, true)
+	probe := forward.EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: &sqs.SendMessageInput{
+		QueueUrl:    aws.String(forwardURL),
+		MessageBody: aws.String("a"),
+	}}, "SendMessage")
+	probeAttr, ok := probe.Parameters.(*sqs.SendMessageInput).MessageAttributes[datadogKey]
+	require.True(t, ok)
+	forwardSize := int(attributeSize(datadogKey, probeAttr))
+	require.Positive(t, forwardSize)
+	require.Greater(t, forwardSize, consumeSize)
+
+	received = receive(t, true, types.Message{Body: aws.String(strings.Repeat("b", limit-consumeSize))})[0]
+	original := maps.Clone(received.MessageAttributes)
+	require.Contains(t, received.MessageAttributes, datadogKey)
+
+	sent := forward.EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: &sqs.SendMessageInput{
+		QueueUrl:          aws.String(forwardURL),
+		MessageBody:       received.Body,
+		MessageAttributes: received.MessageAttributes,
+	}}, "SendMessage")
+
+	got := sent.Parameters.(*sqs.SendMessageInput)
+	require.NotContains(t, got.MessageAttributes, datadogKey)
+	assert.Equal(t, limit-consumeSize, len(aws.ToString(got.MessageBody)))
+	assert.LessOrEqual(t, int64(len(aws.ToString(got.MessageBody)))+messageAttributesSize(got.MessageAttributes), int64(maxMessageBytes))
+	assert.Equal(t, original, received.MessageAttributes)
+	assert.Contains(t, received.MessageAttributes, datadogKey)
+}
+
+func TestForwardCreditsStrippedAttributeToBatchBudget(t *testing.T) {
+	const (
+		forwardQueue = "forward-queue"
+		forwardURL   = "https://sqs.us-east-1.amazonaws.com/1234567890/" + forwardQueue
+	)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	const limit = 1 << 20
+	received := receive(t, true, types.Message{Body: aws.String("a")})[0]
+	consumeAttr, ok := received.MessageAttributes[datadogKey]
+	require.True(t, ok)
+	consumeSize := int(attributeSize(datadogKey, consumeAttr))
+	require.Positive(t, consumeSize)
+
+	consumeCtx := datastreams.ExtractFromBase64Carrier(context.Background(), carrierFromAttribute(t, consumeAttr))
+	span, ctx := tracer.StartSpanFromContext(consumeCtx, "forward")
+	forward := NewEnricher(true, true)
+	sent := forward.EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: &sqs.SendMessageInput{
+		QueueUrl:    aws.String(forwardURL),
+		MessageBody: aws.String("a"),
+	}}, "SendMessage")
+	forwardAttr, ok := sent.Parameters.(*sqs.SendMessageInput).MessageAttributes[datadogKey]
+	require.True(t, ok)
+	forwardSize := int(attributeSize(datadogKey, forwardAttr))
+	require.Positive(t, forwardSize)
+
+	bodies := []int{limit - consumeSize - forwardSize, 1}
+	messages := make([]types.Message, len(bodies))
+	original := make([]map[string]types.MessageAttributeValue, len(bodies))
+	for i, size := range bodies {
+		messages[i] = types.Message{Body: aws.String(strings.Repeat("b", size))}
+	}
+	messages = receive(t, true, messages...)
+	for i := range messages {
+		require.Contains(t, messages[i].MessageAttributes, datadogKey)
+		original[i] = maps.Clone(messages[i].MessageAttributes)
+	}
+
+	entries := make([]types.SendMessageBatchRequestEntry, len(messages))
+	for i := range messages {
+		entries[i] = types.SendMessageBatchRequestEntry{
+			Id:                aws.String(strconv.Itoa(i)),
+			MessageBody:       messages[i].Body,
+			MessageAttributes: messages[i].MessageAttributes,
+		}
+	}
+	batch := forward.EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: &sqs.SendMessageBatchInput{
+		QueueUrl: aws.String(forwardURL),
+		Entries:  entries,
+	}}, "SendMessageBatch")
+
+	gotEntries := batch.Parameters.(*sqs.SendMessageBatchInput).Entries
+	require.Len(t, gotEntries, 2)
+	require.NotContains(t, gotEntries[0].MessageAttributes, datadogKey)
+	injected, ok := gotEntries[1].MessageAttributes[datadogKey]
+	require.True(t, ok)
+	carrier := carrierFromAttribute(t, injected)
+	assert.Contains(t, carrier, "x-datadog-trace-id")
+	extracted, err := tracer.Extract(carrier)
+	require.NoError(t, err)
+	assert.Equal(t, span.Context().TraceID(), extracted.TraceID())
+	for i := range messages {
+		assert.Equal(t, original[i], messages[i].MessageAttributes)
+	}
+}
+
+func TestForwardRepairsBatchByteLimitWithInjectionDisabled(t *testing.T) {
+	const (
+		forwardQueue = "forward-queue"
+		forwardURL   = "https://sqs.us-east-1.amazonaws.com/1234567890/" + forwardQueue
+	)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	const limit = 1 << 20
+	messages := receive(t, true,
+		types.Message{Body: aws.String(strings.Repeat("b", limit/2))},
+		types.Message{Body: aws.String(strings.Repeat("b", limit/2))},
+	)
+	require.Len(t, messages, 2)
+	original := make([]map[string]types.MessageAttributeValue, len(messages))
+	for i := range messages {
+		require.Contains(t, messages[i].MessageAttributes, datadogKey)
+		original[i] = maps.Clone(messages[i].MessageAttributes)
+	}
+
+	consumeCtx := datastreams.ExtractFromBase64Carrier(context.Background(), carrierFromAttribute(t, messages[0].MessageAttributes[datadogKey]))
+	span, ctx := tracer.StartSpanFromContext(consumeCtx, "forward")
+	entries := make([]types.SendMessageBatchRequestEntry, len(messages))
+	for i := range messages {
+		entries[i] = types.SendMessageBatchRequestEntry{
+			Id:                aws.String(strconv.Itoa(i)),
+			MessageBody:       messages[i].Body,
+			MessageAttributes: messages[i].MessageAttributes,
+		}
+	}
+
+	batch := NewEnricher(false, true).EnrichOperation(ctx, span, middleware.InitializeInput{Parameters: &sqs.SendMessageBatchInput{
+		QueueUrl: aws.String(forwardURL),
+		Entries:  entries,
+	}}, "SendMessageBatch")
+
+	gotEntries := batch.Parameters.(*sqs.SendMessageBatchInput).Entries
+	require.Len(t, gotEntries, 2)
+	var total int64
+	for _, entry := range gotEntries {
+		require.NotContains(t, entry.MessageAttributes, datadogKey)
+		require.Equal(t, limit/2, len(aws.ToString(entry.MessageBody)))
+		total += int64(len(aws.ToString(entry.MessageBody))) + messageAttributesSize(entry.MessageAttributes)
+	}
+	assert.LessOrEqual(t, total, int64(maxMessageBytes))
+	for i := range messages {
+		assert.Equal(t, original[i], messages[i].MessageAttributes)
+	}
+}
+
+func TestReceiveMessageByteLimit(t *testing.T) {
+	const queue = "consume-queue"
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	const limit = 1 << 20
+	probe := receive(t, true, types.Message{Body: aws.String("a")})[0]
+	probeAttr, ok := probe.MessageAttributes[datadogKey]
+	require.True(t, ok)
+	require.Equal(t, "String", aws.ToString(probeAttr.DataType))
+	attrSize := int(attributeSize(datadogKey, probeAttr))
+	require.Positive(t, attrSize)
+
+	oldAttribute := types.MessageAttributeValue{DataType: aws.String("String"), StringValue: aws.String("x")}
+
+	for _, tc := range []struct {
+		name       string
+		suffix     string
+		extraBytes int
+		withTrace  bool
+	}{
+		{"exact fit", "", 0, false},
+		{"one byte over", "", 1, false},
+		{"malformed body exact fit", "\xff", 0, false},
+		{"malformed body one byte over", "\xff", 1, false},
+		{"replace exact fit", "", 0, true},
+		{"replace one byte over", "", 1, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			padding := limit - attrSize - len(strings.ToValidUTF8(tc.suffix, "�")) + tc.extraBytes
+			msg := types.Message{Body: aws.String(strings.Repeat("b", padding) + tc.suffix)}
+			if tc.withTrace {
+				msg.MessageAttributes = map[string]types.MessageAttributeValue{datadogKey: oldAttribute}
+			}
+
+			got := receive(t, true, msg)
+
+			require.Len(t, got, 1)
+			if tc.extraBytes == 0 {
+				written, ok := got[0].MessageAttributes[datadogKey]
+				require.True(t, ok)
+				assert.Equal(t, consumeHash(t, context.Background(), queue), pathwayHash(t, carrierFromAttribute(t, written)))
+			} else {
+				if tc.withTrace {
+					assert.Equal(t, oldAttribute, got[0].MessageAttributes[datadogKey])
+				} else {
+					assert.Nil(t, got[0].MessageAttributes)
+				}
+			}
+		})
+	}
+}
