@@ -1,0 +1,45 @@
+{
+  "timestamp": 0,
+  "ddsource": "crashtracker",
+  "ddtags": "",
+  "error": {
+    "type": "panic",
+    "message": "boom",
+    "stack": {
+      "format": "Datadog Crashtracker 1.0",
+      "frames": [
+        {
+          "function": "main.main",
+          "file": "/tmp/dir:123/main.go",
+          "line": 2
+        }
+      ]
+    },
+    "threads": [
+      {
+        "crashed": true,
+        "name": "goroutine 1",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "main.main",
+              "file": "/tmp/dir:123/main.go",
+              "line": 2
+            }
+          ]
+        },
+        "state": "running"
+      }
+    ],
+    "thread_name": "goroutine 1",
+    "is_crash": true,
+    "source_type": "Crashtracking"
+  },
+  "os_info": {
+    "architecture": "",
+    "bitness": "",
+    "os_type": "",
+    "version": ""
+  }
+}

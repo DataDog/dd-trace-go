@@ -1,0 +1,105 @@
+{
+  "timestamp": 0,
+  "ddsource": "crashtracker",
+  "ddtags": "",
+  "error": {
+    "type": "panic",
+    "message": "something went wrong",
+    "stack": {
+      "format": "Datadog Crashtracker 1.0",
+      "frames": [
+        {
+          "function": "panic",
+          "file": "/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/panic.go",
+          "line": 830
+        },
+        {
+          "function": "main.inner",
+          "file": "/tmp/crashdemo/main.go",
+          "line": 7
+        },
+        {
+          "function": "main.middle",
+          "file": "/tmp/crashdemo/main.go",
+          "line": 12
+        },
+        {
+          "function": "main.main",
+          "file": "/tmp/crashdemo/main.go",
+          "line": 20
+        }
+      ]
+    },
+    "threads": [
+      {
+        "crashed": true,
+        "name": "goroutine 1",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "panic",
+              "file": "/opt/homebrew/Cellar/go/1.26.5/libexec/src/runtime/panic.go",
+              "line": 830
+            },
+            {
+              "function": "main.inner",
+              "file": "/tmp/crashdemo/main.go",
+              "line": 7
+            },
+            {
+              "function": "main.middle",
+              "file": "/tmp/crashdemo/main.go",
+              "line": 12
+            },
+            {
+              "function": "main.main",
+              "file": "/tmp/crashdemo/main.go",
+              "line": 20
+            }
+          ]
+        },
+        "state": "running"
+      },
+      {
+        "crashed": false,
+        "name": "goroutine 34",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "main.main.func1",
+              "file": "/tmp/crashdemo/main.go",
+              "line": 17
+            }
+          ]
+        },
+        "state": "select (no cases)"
+      },
+      {
+        "crashed": false,
+        "name": "goroutine 35",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "main.main.func2",
+              "file": "/tmp/crashdemo/main.go",
+              "line": 18
+            }
+          ]
+        },
+        "state": "chan receive"
+      }
+    ],
+    "thread_name": "goroutine 1",
+    "is_crash": true,
+    "source_type": "Crashtracking"
+  },
+  "os_info": {
+    "architecture": "",
+    "bitness": "",
+    "os_type": "",
+    "version": ""
+  }
+}

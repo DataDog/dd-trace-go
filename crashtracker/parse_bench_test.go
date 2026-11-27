@@ -6,9 +6,13 @@
 package crashtracker
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 )
 
 // loadFixture reads a testdata fixture file and panics if it cannot be read,
@@ -22,29 +26,48 @@ func loadFixture(tb testing.TB, name string) []byte {
 	return data
 }
 
-func BenchmarkParseCrashDump_Panic(b *testing.B) {
-	dump := loadFixture(b, "panic_simple.txt")
+// benchmarkParseCrashDump times parseCrashDump alone. Building the dump is
+// the caller's job and happens before the loop, so it is not timed.
+func benchmarkParseCrashDump(b *testing.B, dump []byte) {
+	b.Helper()
 	b.SetBytes(int64(len(dump)))
-	b.ResetTimer()
+	b.ReportAllocs()
 	for b.Loop() {
 		_ = parseCrashDump(dump)
 	}
+}
+
+func BenchmarkParseCrashDump_Panic(b *testing.B) {
+	benchmarkParseCrashDump(b, loadFixture(b, "panic_simple.txt"))
 }
 
 func BenchmarkParseCrashDump_ConcurrentMapWrite(b *testing.B) {
-	dump := loadFixture(b, "concurrent_map_write.txt")
-	b.SetBytes(int64(len(dump)))
-	b.ResetTimer()
-	for b.Loop() {
-		_ = parseCrashDump(dump)
-	}
+	benchmarkParseCrashDump(b, loadFixture(b, "concurrent_map_write.txt"))
 }
 
 func BenchmarkParseCrashDump_SIGSEGV(b *testing.B) {
-	dump := loadFixture(b, "sigsegv.txt")
-	b.SetBytes(int64(len(dump)))
-	b.ResetTimer()
-	for b.Loop() {
-		_ = parseCrashDump(dump)
+	benchmarkParseCrashDump(b, loadFixture(b, "sigsegv.txt"))
+}
+
+// BenchmarkParseCrashDump_ManyGoroutines parses a near-maximum-size dump of
+// many shallow goroutines, the shape that stresses the thread cap. The parser
+// logs a truncation warning on every call, so the log is discarded here.
+func BenchmarkParseCrashDump_ManyGoroutines(b *testing.B) {
+	defer log.UseLogger(log.DiscardLogger{})()
+	dump, _ := manyGoroutinesDump(manyGoroutinesDumpSize)
+	benchmarkParseCrashDump(b, dump)
+}
+
+// BenchmarkParseCrashDump_DeepStack is a synthetic cap test: one goroutine
+// with 5000 frames, to stress the per-thread frame cap. The runtime prints at
+// most 100 frames per stack (50 innermost and 50 outermost, with an elision
+// marker between them), so a real dump never has this shape.
+func BenchmarkParseCrashDump_DeepStack(b *testing.B) {
+	const frames = 5000
+	var dump strings.Builder
+	dump.WriteString("fatal error: stack overflow\n\ngoroutine 1 [running]:\n")
+	for i := range frames {
+		fmt.Fprintf(&dump, "main.recurse(0x%x)\n\t/tmp/crashdemo/main.go:10 +0x34\n", i)
 	}
+	benchmarkParseCrashDump(b, []byte(dump.String()))
 }

@@ -1,0 +1,35 @@
+panic: runtime error: index out of range [5] with length 0
+
+goroutine 1 [running]:
+main.main()
+	/tmp/crashdemo/createdby/main.go:27 +0xc8
+
+goroutine 17 [sleep]:
+time.Sleep(0x34630b8a000)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/time.go:368 +0x150
+main.(*pool).run(0x0?, 0x0?)
+	/tmp/crashdemo/createdby/main.go:12 +0x50
+created by main.main in goroutine 1
+	/tmp/crashdemo/createdby/main.go:19 +0x48
+
+goroutine 18 [sleep]:
+time.Sleep(0x34630b8a000)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/time.go:368 +0x150
+main.(*pool).run(0x0?, 0x0?)
+	/tmp/crashdemo/createdby/main.go:12 +0x50
+created by main.main in goroutine 1
+	/tmp/crashdemo/createdby/main.go:19 +0x48
+
+goroutine 19 [sleep]:
+time.Sleep(0x34630b8a000)
+	/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/time.go:368 +0x150
+main.(*pool).run(0x0?, 0x0?)
+	/tmp/crashdemo/createdby/main.go:12 +0x50
+created by main.main in goroutine 1
+	/tmp/crashdemo/createdby/main.go:19 +0x48
+
+goroutine 20 [chan receive (nil chan)]:
+main.main.func1()
+	/tmp/crashdemo/createdby/main.go:23 +0x24
+created by main.main in goroutine 1
+	/tmp/crashdemo/createdby/main.go:21 +0xb8

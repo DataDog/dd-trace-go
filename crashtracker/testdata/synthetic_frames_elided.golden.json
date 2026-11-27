@@ -1,0 +1,122 @@
+{
+  "timestamp": 0,
+  "ddsource": "crashtracker",
+  "ddtags": "",
+  "error": {
+    "type": "runtime.plainError",
+    "message": "stack overflow",
+    "stack": {
+      "format": "Datadog Crashtracker 1.0",
+      "frames": [
+        {
+          "function": "main.recurse",
+          "file": "/tmp/crashdemo/elided/main.go",
+          "line": 10
+        },
+        {
+          "function": "main.recurse",
+          "file": "/tmp/crashdemo/elided/main.go",
+          "line": 11
+        },
+        {
+          "function": "main.recurse",
+          "file": "/tmp/crashdemo/elided/main.go",
+          "line": 11
+        },
+        {
+          "function": "main.recurse",
+          "file": "/tmp/crashdemo/elided/main.go",
+          "line": 11
+        },
+        {
+          "function": "main.main",
+          "file": "/tmp/crashdemo/elided/main.go",
+          "line": 15
+        },
+        {
+          "function": "runtime.main",
+          "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+          "line": 302
+        },
+        {
+          "function": "runtime.goexit",
+          "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s",
+          "line": 1039
+        }
+      ],
+      "incomplete": true
+    },
+    "threads": [
+      {
+        "crashed": true,
+        "name": "goroutine 1",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "main.recurse",
+              "file": "/tmp/crashdemo/elided/main.go",
+              "line": 10
+            },
+            {
+              "function": "main.recurse",
+              "file": "/tmp/crashdemo/elided/main.go",
+              "line": 11
+            },
+            {
+              "function": "main.recurse",
+              "file": "/tmp/crashdemo/elided/main.go",
+              "line": 11
+            },
+            {
+              "function": "main.recurse",
+              "file": "/tmp/crashdemo/elided/main.go",
+              "line": 11
+            },
+            {
+              "function": "main.main",
+              "file": "/tmp/crashdemo/elided/main.go",
+              "line": 15
+            },
+            {
+              "function": "runtime.main",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/proc.go",
+              "line": 302
+            },
+            {
+              "function": "runtime.goexit",
+              "file": "/opt/homebrew/Cellar/go/1.27.4/libexec/src/runtime/asm_arm64.s",
+              "line": 1039
+            }
+          ],
+          "incomplete": true
+        },
+        "state": "running"
+      },
+      {
+        "crashed": false,
+        "name": "goroutine 2",
+        "stack": {
+          "format": "Datadog Crashtracker 1.0",
+          "frames": [
+            {
+              "function": "main.worker",
+              "file": "/tmp/crashdemo/elided/main.go",
+              "line": 20
+            }
+          ]
+        },
+        "state": "chan receive"
+      }
+    ],
+    "thread_name": "goroutine 1",
+    "is_crash": true,
+    "source_type": "Crashtracking"
+  },
+  "os_info": {
+    "architecture": "",
+    "bitness": "",
+    "os_type": "",
+    "version": ""
+  }
+}
