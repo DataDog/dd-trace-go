@@ -387,8 +387,9 @@ func TestAppSecSamplingPerEndpoint(t *testing.T) {
 	assert.NotEqualValues(t, 2, requestTags(t, router, "/schema-a/2")[priority], "the same endpoint is sampled once in the delay")
 }
 
-// TestAppSecHandlerPanic checks that the route report after the handler does not
-// run in a panic, and that the panic reaches the recovering middleware unchanged.
+// TestAppSecHandlerPanic checks that the route report to the WAF after the handler
+// does not run in a panic, and that the panic reaches the recovering middleware
+// unchanged.
 // StripSlashes removes the slash after the tracer, so chi selects another route
 // than the one that it had when the tracer started.
 func TestAppSecHandlerPanic(t *testing.T) {
@@ -544,4 +545,241 @@ func TestAppSecSamePatternRewriteNested(t *testing.T) {
 	assert.False(t, o.ran, "blocked before the handler")
 	assert.Equal(t, []string{"path-block"}, o.events)
 	assert.Len(t, o.routes, 2, "the tracers of the root and of the child router")
+}
+
+// TestAppSecNormalizedRoute checks that, with Use before routing, the normalized
+// route has the catch-all of the route that chi selected only when it has a value.
+// The path parameters reach API Security after the handler, without the WAF. In a
+// mounted router, the catch-all is the last "*".
+func TestAppSecNormalizedRoute(t *testing.T) {
+	t.Setenv("DD_API_SECURITY_ENABLED", "true")
+	t.Setenv("DD_APPSEC_ENABLED", "true")
+	testutils.StartAppSec(t)
+
+	router := chi.NewRouter()
+	router.Use(Middleware())
+	router.Get("/users/{id}", okHandler)
+	router.Get("/posts/{id}/", okHandler)
+	router.Get("/files/*", okHandler)
+	api := chi.NewRouter()
+	api.Get("/", okHandler)
+	api.Get("/static/*", okHandler)
+	api.Get("/users/{id}/*", okHandler)
+	api.Mount("/t/{tenant}", http.HandlerFunc(okHandler))
+	router.Mount("/api", api)
+	// Mounted with a trailing "/", chi serves the root route only with "/".
+	slash := chi.NewRouter()
+	slash.Get("/", okHandler)
+	router.Mount("/slash/", slash)
+	// A mounted handler that is not a chi router gets the rest of the path.
+	router.Mount("/opaque", http.HandlerFunc(okHandler))
+	wild := chi.NewRouter()
+	wild.Get("/*", okHandler)
+	router.Mount("/wild", wild)
+	// chi matches URL.RawPath, which net/http sets for this request target.
+	router.Get("/a%20/{id}", okHandler)
+	for target, want := range map[string]string{
+		"/users/1":         "/users/{id}",
+		"/posts/1/":        "/posts/{id}/",
+		"/files/a/b.txt":   "/files/{param1}",
+		"/files/":          "/files/",
+		"/api":             "/api",
+		"/api/":            "/api",
+		"/api/static/a":    "/api/static/{param1}",
+		"/api/static/":     "/api/static/",
+		"/api/users/1/":    "/api/users/{id}/",
+		"/api/users/1/a":   "/api/users/{id}/{param1}",
+		"/api/t/acme/x":    "/api/t/{tenant}/{param1}",
+		"/slash/":          "/slash/",
+		"/opaque/x":        "/opaque/{param1}",
+		"/opaque/":         "/opaque/",
+		"/opaque/opaque/x": "/opaque/{param1}",
+		"/wild/":           "/wild/",
+		"/wild/a":          "/wild/{param1}",
+		// A mounted chi router without a route for the request: the mount.
+		"/api/nope":       "/api/{param1}",
+		"/a%20/caf\u00e9": "/a%20/{id}",
+	} {
+		assert.Equal(t, want, requestTags(t, router, target)["_dd.appsec.normalized_route"], target)
+	}
+
+	// A handler that is not a chi router mounted at the root.
+	root := chi.NewRouter()
+	root.Use(Middleware())
+	root.Mount("/", http.HandlerFunc(okHandler))
+	for target, want := range map[string]string{"/anything": "/{param1}", "/": "/"} {
+		assert.Equal(t, want, requestTags(t, root, target)["_dd.appsec.normalized_route"], target)
+	}
+
+	// A middleware that rewrites the routing path: chi routes /files/.json as
+	// /files/, and gives the opaque mount the rewritten rest.
+	rewritten := chi.NewRouter()
+	rewritten.Use(Middleware(), middleware.URLFormat)
+	rewritten.Get("/files/*", okHandler)
+	rewritten.Mount("/opaque", http.HandlerFunc(okHandler))
+	rewritten.Mount("/t/{tenant}", http.HandlerFunc(okHandler))
+	for target, want := range map[string]string{
+		"/files/.json":    "/files/",
+		"/files/a.json":   "/files/{param1}",
+		"/opaque/x.json":  "/opaque/{param1}",
+		"/opaque/opaque/": "/opaque/{param1}",
+		"/t/acme/x.json":  "/t/{tenant}/{param1}",
+	} {
+		assert.Equal(t, want, requestTags(t, rewritten, target)["_dd.appsec.normalized_route"], target)
+	}
+
+	// A middleware that rewrites the path that chi routes.
+	rewrite := func(from, to string) func(http.Handler) http.Handler {
+		return func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == from {
+					chi.RouteContext(r.Context()).RoutePath = to
+				}
+				next.ServeHTTP(w, r)
+			})
+		}
+	}
+	for _, tc := range []struct{ from, to, want string }{
+		{"/assets/readme", "/assets/", "/assets/"},
+		{"/assets/", "/assets/readme", "/assets/{param1}"},
+		{"/x", "/opaque/rest", "/opaque/{param1}"},
+		{"/assets/assets/", "/assets/", "/assets/"},
+		{"/y", "/opaque/opaque/", "/opaque/{param1}"},
+	} {
+		rerouted := chi.NewRouter()
+		rerouted.Use(Middleware(), rewrite(tc.from, tc.to))
+		rerouted.Get("/assets/*", okHandler)
+		rerouted.Mount("/opaque", http.HandlerFunc(okHandler))
+		assert.Equal(t, tc.want, requestTags(t, rerouted, tc.from)["_dd.appsec.normalized_route"], tc.from+" -> "+tc.to)
+	}
+
+	// A mount in a group with middlewares: its handler is not the one that Mount
+	// registers, but RoutePath tells it from a route.
+	grouped := chi.NewRouter()
+	grouped.Use(Middleware())
+	grouped.Group(func(r chi.Router) {
+		r.Use(func(next http.Handler) http.Handler { return next })
+		r.Mount("/grouped", http.HandlerFunc(okHandler))
+	})
+	assert.Equal(t, "/grouped/{param1}", requestTags(t, grouped, "/grouped/x")["_dd.appsec.normalized_route"])
+	assert.Equal(t, "/grouped/{param1}", requestTags(t, grouped, "/grouped/grouped/")["_dd.appsec.normalized_route"])
+
+	// An endpoint on the pattern of a mount serves its method instead of the
+	// mounted router.
+	shadowed := chi.NewRouter()
+	shadowed.Use(Middleware())
+	shadowed.Mount("/api", chi.NewRouter())
+	shadowed.Get("/api/*", okHandler)
+	assert.Equal(t, "/api/{param1}", requestTags(t, shadowed, "/api/x")["_dd.appsec.normalized_route"])
+
+	// WithModifyResourceName renames http.route, not the normalized route. A
+	// request that matches no route gets no tag, also when the renamed route is
+	// not empty.
+	renamed := chi.NewRouter()
+	renamed.Use(Middleware(WithModifyResourceName(func(string) string { return "/renamed" })))
+	renamed.Get("/users/{id}/", okHandler)
+	renamedAPI := chi.NewRouter()
+	renamedAPI.Get("/x", okHandler)
+	renamed.Mount("/api", renamedAPI)
+	tags := requestTags(t, renamed, "/users/1/")
+	assert.Equal(t, "/renamed", tags["http.route"])
+	assert.Equal(t, "/users/{id}/", tags["_dd.appsec.normalized_route"])
+	assert.NotContains(t, requestTags(t, renamed, "/nope"), "_dd.appsec.normalized_route")
+	assert.Equal(t, "/api/{param1}", requestTags(t, renamed, "/api/nope")["_dd.appsec.normalized_route"])
+
+	// Middleware on an endpoint of a mounted router: the route is the same before
+	// and after the handler, but the first "*" is the mount's.
+	endpoint := chi.NewRouter()
+	child := chi.NewRouter()
+	child.With(Middleware()).Get("/files/*", okHandler)
+	endpoint.Mount("/api", child)
+	assert.Equal(t, "/api/files/{param1}", requestTags(t, endpoint, "/api/files/a")["_dd.appsec.normalized_route"])
+}
+
+// TestAppSecNormalizedRouteOTel checks that, with OpenTelemetry semantics, a
+// request that stops at a mounted chi router with no route for it gets no
+// normalized route, as it gets no http.route.
+func TestAppSecNormalizedRouteOTel(t *testing.T) {
+	setChiHTTPConfig(t, "true")
+	t.Setenv("DD_API_SECURITY_ENABLED", "true")
+	t.Setenv("DD_APPSEC_ENABLED", "true")
+	testutils.StartAppSec(t)
+
+	router := chi.NewRouter()
+	router.Use(Middleware())
+	api := chi.NewRouter()
+	api.Get("/x/{id}", okHandler)
+	router.Mount("/api", api)
+	matched := requestTags(t, router, "/api/x/1")
+	assert.Equal(t, "/api/x/{id}", matched["_dd.appsec.normalized_route"])
+	for _, target := range []string{"/api/nope", "/api"} {
+		missed := requestTags(t, router, target)
+		assert.Empty(t, missed[ext.HTTPRoute], target)
+		assert.NotContains(t, missed, "_dd.appsec.normalized_route", target)
+	}
+	// A mounted handler that is not a chi router keeps its route, as its http.route.
+	router.Mount("/opaque", http.HandlerFunc(okHandler))
+	assert.Equal(t, "/opaque/{param1}", requestTags(t, router, "/opaque/x")["_dd.appsec.normalized_route"])
+	// An endpoint on the pattern of a mount serves its method.
+	router.Mount("/shadowed", chi.NewRouter())
+	router.Get("/shadowed/*", okHandler)
+	assert.Equal(t, "/shadowed/{param1}", requestTags(t, router, "/shadowed/x")["_dd.appsec.normalized_route"])
+	// The aliases of the mount are its own.
+	for _, target := range []string{"/shadowed", "/shadowed/"} {
+		assert.NotContains(t, requestTags(t, router, target), "_dd.appsec.normalized_route", target)
+	}
+}
+
+// TestAppSecNormalizedRouteLifecycle checks that the normalized route is the route
+// that chi selected, not the renamed route, when an endpoint middleware blocks
+// before the handler, and when the handler panics.
+func TestAppSecNormalizedRouteLifecycle(t *testing.T) {
+	startAppSecRules(t, rulePathBlock)
+
+	rename := WithModifyResourceName(func(string) string { return "/renamed" })
+	router := chi.NewRouter()
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				if recover() != nil {
+					w.WriteHeader(http.StatusInternalServerError)
+				}
+			}()
+			next.ServeHTTP(w, r)
+		})
+	})
+	router.With(Middleware(rename)).Get("/items/{id}/", okHandler)
+	router.With(Middleware(rename)).Get("/panics/{id}/", func(http.ResponseWriter, *http.Request) { panic("handler") })
+	// With Use at the root, chi selects the route after the middleware started.
+	root := chi.NewRouter()
+	root.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			defer func() {
+				if recover() != nil {
+					w.WriteHeader(http.StatusInternalServerError)
+				}
+			}()
+			next.ServeHTTP(w, r)
+		})
+	}, Middleware(rename))
+	root.Get("/panics/{id}/", func(http.ResponseWriter, *http.Request) { panic("handler") })
+	for _, tc := range []struct {
+		router http.Handler
+		target string
+		status int
+		want   string
+	}{
+		{router, "/items/attack-1/", http.StatusForbidden, "/items/{id}/"},
+		{router, "/panics/1/", http.StatusInternalServerError, "/panics/{id}/"},
+		{root, "/panics/1/", http.StatusInternalServerError, "/panics/{id}/"},
+	} {
+		mt := mocktracer.Start()
+		w := httptest.NewRecorder()
+		tc.router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tc.target, nil))
+		spans := mt.FinishedSpans()
+		mt.Stop()
+		assert.Equal(t, tc.status, w.Code, tc.target)
+		require.Len(t, spans, 1, tc.target)
+		assert.Equal(t, tc.want, spans[0].Tag("_dd.appsec.normalized_route"), tc.target)
+	}
 }

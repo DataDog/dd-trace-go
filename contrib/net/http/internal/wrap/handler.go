@@ -13,6 +13,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
@@ -60,7 +61,15 @@ func Handler(h http.Handler, service, resource string, opts ...internal.Option) 
 			so := make([]tracer.StartSpanOption, len(cfg.SpanOpts), len(cfg.SpanOpts)+1)
 			copy(so, cfg.SpanOpts)
 			so = append(so, httptrace.HeaderTagsFromRequest(req, cfg.HeaderTags))
-			TraceAndServe(h, w, req, &httptrace.ServeConfig{
+			params := pattern.PathParameters(req.Pattern, req)
+			var matched *httpsec.MatchedRoute
+			if req.Pattern != "" {
+				// The ServeMux that dispatched to h matched req.Pattern with the
+				// escaped path, which ignores a URL.RawPath that no longer encodes
+				// URL.Path.
+				matched = &httpsec.MatchedRoute{Route: pattern.Route(req.Pattern), Params: params, Path: req.URL.EscapedPath()}
+			}
+			traceAndServe(h, w, req, &httptrace.ServeConfig{
 				Service:              service,
 				ServiceSource:        serviceSource,
 				Framework:            "net/http",
@@ -70,8 +79,8 @@ func Handler(h http.Handler, service, resource string, opts ...internal.Option) 
 				IsStatusError:        cfg.IsStatusError,
 				Route:                route,
 				OTelSemanticsEnabled: &cfg.OTelSemanticsEnabled,
-				RouteParams:          pattern.PathParameters(req.Pattern, req),
-			})
+				RouteParams:          params,
+			}, matched)
 		}),
 	}
 }

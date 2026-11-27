@@ -61,12 +61,11 @@ func init() {
 
 // useAppSec executes the AppSec logic related to the operation start
 func useAppSec(c *gin.Context, span trace.TagSetter) {
-	var params map[string]string
-	if l := len(c.Params); l > 0 {
-		params = make(map[string]string, l)
-		for _, p := range c.Params {
-			params[p.Key] = p.Value
-		}
+	// gin binds every parameter of its route: an empty map tells the route that
+	// it has none.
+	params := make(map[string]string, len(c.Params))
+	for _, p := range c.Params {
+		params[p.Key] = p.Value
 	}
 	httpWrapper := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		c.Request = r

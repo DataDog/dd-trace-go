@@ -7,13 +7,17 @@ package fiber
 
 import (
 	"context"
+	"errors"
+	"html"
 	"iter"
 	"maps"
 	"net/http"
 	"net/url"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"weak"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/valyala/fasthttp"
@@ -114,14 +118,7 @@ func useAppSec(c *fiber.Ctx, span trace.TagSetter, next func() error) (err error
 	}
 
 	err = next()
-
-	// Wrap's route guards already report parameters before user code. Keep
-	// this fallback for global Middleware users and routes without parameters.
-	if route := c.Route(); !request.blocked.Load() && route != nil && route.Path != "" && route != request.route {
-		if blockErr := httpsec.RouteMatched(ctx, route.Path, c.AllParams()); blockErr != nil {
-			instr.Logger().Debug("gofiber/fiber.v2: request blocked on route parameters: %s", blockErr.Error())
-		}
-	}
+	reportRoute(ctx, c, request, err)
 
 	if err != nil && !request.blocked.Load() {
 		// Fiber normally renders errors after middleware returns. Render here
@@ -138,6 +135,97 @@ func useAppSec(c *fiber.Ctx, span trace.TagSetter, next func() error) (err error
 		return nil, true
 	}
 	return err, handledResponse
+}
+
+// reportRoute reports the route of the request after the handler chain ran.
+// Wrap's route guards already report parameters before user code: this is the
+// fallback for global Middleware users and routes without parameters. A blocked
+// request gets no WAF evaluation here. On a router miss, the last route is a
+// middleware: the WAF gets its parameters, but API Security gets no route.
+// Otherwise, API Security gets the last route that fiber ran, also when a route
+// guard or the handler blocked the request.
+func reportRoute(ctx context.Context, c *fiber.Ctx, request *appsecRequest, err error) {
+	route := c.Route()
+	if route == nil || route.Path == "" {
+		httpsec.ReportMatchedRoute(ctx, httpsec.MatchedRoute{})
+		return
+	}
+	params := c.AllParams()
+	if route != request.route && !request.blocked.Load() {
+		if blockErr := httpsec.RouteMatched(ctx, route.Path, params); blockErr != nil {
+			instr.Logger().Debug("gofiber/fiber.v2: request blocked on route parameters: %s", blockErr.Error())
+		}
+	}
+	if isNoRouteError(c, route, err) || answeredByRootMiddleware(c, route, err, request.blocked.Load()) {
+		httpsec.ReportMatchedRoute(ctx, httpsec.MatchedRoute{})
+		return
+	}
+	// fiber matches c.Path(), the unescaped path with UnescapePath, where the %
+	// of the route is static text. Without StrictRouting, it matches a prefix
+	// without the trailing "/" of its route: Use("/pre/") matches /prefix.
+	path, cfg := route.Path, c.App().Config()
+	if !cfg.StrictRouting && len(path) > 1 && strings.HasSuffix(path, "/") && isMiddlewareRoute(c.App(), route) {
+		path = strings.TrimRight(path, "/")
+	}
+	httpsec.ReportMatchedRoute(ctx, httpsec.MatchedRoute{Route: path, Params: params, Path: c.Path(), LiteralPercent: cfg.UnescapePath})
+}
+
+// isNoRouteError reports whether err is the error that fiber's router returns
+// when no route handles the request: 404 with a message that names the method
+// and the path, or 405 with the Allow header that the router sets for the
+// methods that have routes. route, the last route that fiber ran, is then a
+// middleware that called c.Next: it is not the route of the request. An endpoint
+// that returns its own 404 or 405 has a route, and so has a prefix handler (Use)
+// that returns another error. A prefix handler that returns the router's 404, or
+// sets Allow and returns 405, cannot be told from a middleware before a router
+// miss: it gets no route.
+func isNoRouteError(c *fiber.Ctx, route *fiber.Route, err error) bool {
+	if errors.Is(err, fiber.ErrMethodNotAllowed) {
+		return len(c.Response().Header.Peek(fiber.HeaderAllow)) > 0 && isMiddlewareRoute(c.App(), route)
+	}
+	var ferr *fiber.Error
+	return errors.As(err, &ferr) && ferr.Code == fiber.StatusNotFound &&
+		ferr.Message == "Cannot "+c.Method()+" "+html.EscapeString(string(c.Request().URI().PathOriginal())) &&
+		isMiddlewareRoute(c.App(), route)
+}
+
+// middlewareRoutes caches whether a route was registered with Use (or Static, or
+// a mount), which fiber does not export. The routes of an app do not change
+// kind, so each is classified once, and leaves the cache when it is collected.
+var middlewareRoutes sync.Map // weak.Pointer[fiber.Route] -> bool
+
+// isMiddlewareRoute reports whether route was registered with Use (or Static, or
+// a mount): GetRoutes(true) leaves these routes out, and its routes are copies
+// that share the handlers of the app's routes. Routes can share handlers, as with
+// the same slice of handlers for a Group and an endpoint.
+func isMiddlewareRoute(app *fiber.App, route *fiber.Route) bool {
+	key := weak.Make(route)
+	if middleware, found := middlewareRoutes.Load(key); found {
+		return middleware.(bool)
+	}
+	middleware := len(route.Handlers) > 0
+	for _, r := range app.GetRoutes(true) {
+		if middleware && r.Method == route.Method && r.Path == route.Path &&
+			len(r.Handlers) == len(route.Handlers) && &r.Handlers[0] == &route.Handlers[0] {
+			middleware = false
+			break
+		}
+	}
+	if _, loaded := middlewareRoutes.LoadOrStore(key, middleware); !loaded {
+		runtime.AddCleanup(route, func(key weak.Pointer[fiber.Route]) { middlewareRoutes.Delete(key) }, key)
+	}
+	return middleware
+}
+
+// answeredByRootMiddleware reports whether a middleware without a path prefix
+// (Use without a path) answered a request for another path than "/" with an
+// error, or AppSec blocked it there: before routing, or after a router miss whose
+// error it handled. Its route is not the route of the request then. A route "/"
+// that is not a middleware matches only "/". A block is written after this check:
+// the status does not show it yet.
+func answeredByRootMiddleware(c *fiber.Ctx, route *fiber.Route, err error, blocked bool) bool {
+	return route.Path == "/" && c.Path() != "/" &&
+		(err != nil || blocked || c.Response().StatusCode() >= http.StatusBadRequest)
 }
 
 // convertRequest builds the net/http request AppSec expects out of a fasthttp

@@ -12,12 +12,19 @@ import (
 	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/pattern"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 )
 
 // TraceAndServe serves the handler h using the given ResponseWriter and Request, applying tracing
 // according to the specified config.
 func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *httptrace.ServeConfig) {
+	traceAndServe(h, w, r, cfg, nil)
+}
+
+// traceAndServe is TraceAndServe, which also reports matched to API Security
+// when it is not nil, before AppSec can block the request without serving h.
+func traceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *httptrace.ServeConfig, matched *httpsec.MatchedRoute) {
 	otelSemanticsEnabled := internal.Instrumentation.OTelSemanticsEnabled()
 	if cfg != nil && cfg.OTelSemanticsEnabled != nil {
 		otelSemanticsEnabled = *cfg.OTelSemanticsEnabled
@@ -40,7 +47,9 @@ func TraceAndServe(h http.Handler, w http.ResponseWriter, r *http.Request, cfg *
 
 	tw, tr, afterHandle, handled := httptrace.BeforeHandle(cfg, w, r)
 	defer afterHandle()
-
+	if matched != nil {
+		httpsec.ReportMatchedRoute(tr.Context(), *matched)
+	}
 	if handled {
 		return
 	}

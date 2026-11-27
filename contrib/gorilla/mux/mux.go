@@ -7,11 +7,16 @@
 package mux // import "github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2"
 
 import (
+	"errors"
 	"net/http"
+	"runtime"
+	"sync"
+	"weak"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	instrhttptrace "github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 
@@ -28,6 +33,10 @@ func init() {
 type Router struct {
 	*mux.Router
 	config *routerConfig
+	// subrouters caches whether a route has a subrouter:
+	// weak.Pointer[mux.Route] -> bool. Copies of the router share it, and an
+	// entry leaves it when its route is collected.
+	subrouters *sync.Map
 }
 
 // StrictSlash defines the trailing slash behavior for new routes. The initial
@@ -131,7 +140,7 @@ func (r *Router) BeforeHandle(w http.ResponseWriter, req *http.Request) (tw http
 		// Under OpenTelemetry semantics the span is named after the method and route, as in the other HTTP integrations.
 		spanopts = append([]tracer.StartSpanOption{tracer.ResourceName(instrhttptrace.ServerSpanName(req.Method, route))}, spanopts...)
 	}
-	return instrhttptrace.BeforeHandle(&instrhttptrace.ServeConfig{
+	tw, treq, afterHandle, handled = instrhttptrace.BeforeHandle(&instrhttptrace.ServeConfig{
 		Framework:            "github.com/gorilla/mux",
 		Service:              r.config.serviceName,
 		ServiceSource:        r.config.serviceSource,
@@ -145,6 +154,15 @@ func (r *Router) BeforeHandle(w http.ResponseWriter, req *http.Request) (tw http
 		IsStatusError:        r.config.isStatusError,
 		OTelSemanticsEnabled: &r.config.otelEnabled,
 	}, w, req)
+	if match.MatchErr != nil || match.Route != nil && (match.Handler == nil || r.hasSubrouter(match.Route)) {
+		// A route of a subrouter that matches is the route of the request. A
+		// subrouter without a route for it matches it with its own route: its 404
+		// handler answers with MatchErr, and its 405 handler, for which gorilla
+		// clears MatchErr. A route without a handler gets gorilla's own 404. The
+		// request has no route.
+		httpsec.ReportMatchedRoute(treq.Context(), httpsec.MatchedRoute{})
+	}
+	return tw, treq, afterHandle, handled
 }
 
 // WrapRouter returns the given router wrapped with the tracing of the HTTP
@@ -155,8 +173,9 @@ func WrapRouter(router *mux.Router, opts ...RouterOption) *Router {
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	instr.Logger().Debug("contrib/gorilla/mux: Configuring Router: %#v", cfg)
 	return &Router{
-		Router: router,
-		config: cfg,
+		Router:     router,
+		config:     cfg,
+		subrouters: new(sync.Map),
 	}
 }
 
@@ -171,4 +190,37 @@ func defaultResourceNamer(router *Router, req *http.Request) string {
 		}
 	}
 	return req.Method + " unknown"
+}
+
+// errFound stops a walk of the routes.
+var errFound = errors.New("found")
+
+// hasSubrouter reports whether route has a subrouter with routes: gorilla does
+// not export it, but Walk lists the routes of a subrouter with route as their
+// last ancestor, as it does again for a router that is the handler of route. The
+// answer is cached per route.
+func (r *Router) hasSubrouter(route *mux.Route) bool {
+	key := weak.Make(route)
+	if found, ok := r.subrouters.Load(key); ok {
+		return found.(bool)
+	}
+	visits := make(map[*mux.Route]bool)
+	err := r.Router.Walk(func(child *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
+		if n := len(ancestors); n == 0 || ancestors[n-1] != route {
+			return nil
+		}
+		// A child router that is the handler of route is walked after its
+		// subrouter, so a child walked twice is in a subrouter too.
+		if route.GetHandler() != http.Handler(router) || visits[child] {
+			return errFound
+		}
+		visits[child] = true
+		return nil
+	})
+	found := errors.Is(err, errFound)
+	if _, loaded := r.subrouters.LoadOrStore(key, found); !loaded {
+		subrouters := r.subrouters
+		runtime.AddCleanup(route, func(key weak.Pointer[mux.Route]) { subrouters.Delete(key) }, key)
+	}
+	return found
 }

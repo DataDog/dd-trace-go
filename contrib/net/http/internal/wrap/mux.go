@@ -7,6 +7,10 @@ package wrap
 
 import (
 	"net/http"
+	"net/url"
+	pathpkg "path"
+	"reflect"
+	"sync"
 
 	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/pattern"
@@ -78,6 +82,108 @@ func (mux *ServeMux) HandleFunc(pttrn string, handlerFunc func(http.ResponseWrit
 	mux.Handle(pttrn, http.HandlerFunc(handlerFunc))
 }
 
+// matchedRoute returns the route that ServeMux selects for r, for API Security,
+// given the handler and the pattern that ServeMux.Handler returns for r: it is
+// known before AppSec can block the request, and a handler that changes its path
+// values (SetPathValue) does not change it. Its path is the path that ServeMux
+// matches: the escaped path, cleaned but for CONNECT.
+//
+// A redirect that ServeMux generates gets the registered pattern that it leads to,
+// but for CONNECT: the pattern of its trailing-slash redirect is the unescaped
+// redirect path, which is request data. A request that ServeMux answers without a
+// pattern ("*") gets no route, as all requests with GODEBUG=httpmuxgo121=1, whose
+// patterns are literal paths.
+func matchedRoute(r *http.Request, h http.Handler, pttrn string) httpsec.MatchedRoute {
+	if r.RequestURI == "*" || legacyServeMux() || isConnectRedirect(r, h, pttrn) {
+		return httpsec.MatchedRoute{}
+	}
+	path := r.URL.EscapedPath()
+	if r.Method != http.MethodConnect {
+		path = cleanPath(path)
+	}
+	return httpsec.MatchedRoute{Route: pattern.Route(pttrn), Path: path}
+}
+
+// isConnectRedirect reports that ServeMux redirects a CONNECT request to its
+// path with a "/" added. Its pattern is then that unescaped path, cleaned before
+// Go 1.27, and its handler a 307 redirect there, with the query of the request,
+// on the same host (http.Redirect cleans the location). A redirect handler
+// registered for a pattern answers otherwise and keeps its route.
+func isConnectRedirect(r *http.Request, h http.Handler, pttrn string) bool {
+	if r.Method != http.MethodConnect || reflect.TypeOf(h) != redirectHandlerType {
+		return false
+	}
+	target := r.URL.Path + "/"
+	if connectRedirectCleaned() {
+		target = cleanPath(r.URL.Path) + "/"
+	}
+	if pttrn != target {
+		return false
+	}
+	var w headerRecorder
+	h.ServeHTTP(&w, r)
+	location, err := url.Parse(w.Header().Get("Location"))
+	return err == nil && w.status == http.StatusTemporaryRedirect && location.Host == "" &&
+		location.Path == cleanPath(target) && location.RawQuery == r.URL.RawQuery
+}
+
+// connectRedirectCleaned reports that ServeMux cleans the path that it redirects
+// a CONNECT request to (before Go 1.27): a probe ServeMux redirects /x/.. to //.
+var connectRedirectCleaned = sync.OnceValue(func() bool {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/{a}/{b}/", func(http.ResponseWriter, *http.Request) {})
+	_, pttrn := mux.Handler(&http.Request{Method: http.MethodConnect, URL: &url.URL{Path: "/x/.."}})
+	return pttrn == "//"
+})
+
+// headerRecorder records the headers and the status that a redirect handler
+// writes.
+type headerRecorder struct {
+	header http.Header
+	status int
+}
+
+func (w *headerRecorder) Header() http.Header {
+	if w.header == nil {
+		w.header = make(http.Header, 2)
+	}
+	return w.header
+}
+
+func (*headerRecorder) Write(b []byte) (int, error) { return len(b), nil }
+
+func (w *headerRecorder) WriteHeader(status int) { w.status = status }
+
+// redirectHandlerType is the type of the handler of a redirect that ServeMux
+// generates.
+var redirectHandlerType = reflect.TypeOf(http.RedirectHandler("/", http.StatusTemporaryRedirect))
+
+// legacyServeMux reports that ServeMux uses the matcher of GODEBUG=httpmuxgo121=1,
+// which net/http selects when it starts: a probe ServeMux does not match a
+// wildcard.
+var legacyServeMux = sync.OnceValue(func() bool {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/{a}", func(http.ResponseWriter, *http.Request) {})
+	_, pttrn := mux.Handler(&http.Request{Method: http.MethodGet, URL: &url.URL{Path: "/x"}})
+	return pttrn != "/{a}"
+})
+
+// cleanPath returns the path that ServeMux redirects a request to: path.Clean,
+// which keeps a trailing "/".
+func cleanPath(p string) string {
+	if p == "" {
+		return "/"
+	}
+	if p[0] != '/' {
+		p = "/" + p
+	}
+	cleaned := pathpkg.Clean(p)
+	if p[len(p)-1] == '/' && cleaned != "/" {
+		cleaned += "/"
+	}
+	return cleaned
+}
+
 // ServeHTTP dispatches the request to the handler
 // whose pattern most closely matches the request URL.
 // We only need to rewrite this function to be able to trace
@@ -88,7 +194,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// get the resource associated to this request
-	_, pttrn := mux.Handler(r)
+	h, pttrn := mux.Handler(r)
 	var route string
 	if mux.cfg.OTelSemanticsEnabled {
 		route = pattern.Path(pttrn)
@@ -102,7 +208,8 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	so := make([]tracer.StartSpanOption, len(mux.cfg.SpanOpts), len(mux.cfg.SpanOpts)+1)
 	copy(so, mux.cfg.SpanOpts)
 	so = append(so, httptrace.HeaderTagsFromRequest(r, mux.cfg.HeaderTags))
-	TraceAndServe(mux.ServeMux, w, r, &httptrace.ServeConfig{
+	matched := matchedRoute(r, h, pttrn)
+	traceAndServe(mux.ServeMux, w, r, &httptrace.ServeConfig{
 		Service:              mux.cfg.ServiceName,
 		ServiceSource:        mux.cfg.ServiceSource,
 		Framework:            "net/http",
@@ -111,5 +218,5 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Route:                route,
 		OTelSemanticsEnabled: &mux.cfg.OTelSemanticsEnabled,
 		IsStatusError:        mux.cfg.IsStatusError,
-	})
+	}, &matched)
 }

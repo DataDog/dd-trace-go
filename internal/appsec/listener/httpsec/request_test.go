@@ -494,3 +494,320 @@ func TestSSRFOnStartNilMetricsNoPanic(t *testing.T) {
 		feature.OnStart(rtOp, httpsec.RoundTripOperationArgs{URL: "http://example.com", Method: "GET"})
 	})
 }
+
+func TestNormalizeRoute(t *testing.T) {
+	const (
+		chi    = "github.com/go-chi/chi/v5"
+		mux    = "github.com/gorilla/mux"
+		gin    = "github.com/gin-gonic/gin"
+		echo   = "github.com/labstack/echo/v4"
+		fiber  = "github.com/gofiber/fiber/v2"
+		netmux = "net/http"
+	)
+	for _, tc := range []struct {
+		name           string
+		framework      string
+		route          string
+		params         map[string]string
+		path           string
+		literalPercent bool
+		want           string // empty: no tag
+	}{
+		// RFC-1125 test cases, in the grammar of a Go framework.
+		{name: "1 static", framework: chi, route: "/users", want: "/users"},
+		{name: "2 root", framework: chi, route: "/", want: "/"},
+		{name: "3 param", framework: chi, route: "/users/{id}", want: "/users/{id}"},
+		{name: "4 params", framework: gin, route: "/users/:id/posts/:post_id", want: "/users/{id}/posts/{post_id}"},
+		{name: "5 trailing slash", framework: echo, route: "/users/:id/", want: "/users/{id}/"},
+		{name: "6 static before param", framework: chi, route: "/users/user-{id}", want: "/users/user-{id}"},
+		{name: "7 static before param", framework: gin, route: "/v:version/items", want: "/v{version}/items"},
+		{name: "8 static after param", framework: mux, route: "/files/{name}.json", want: "/files/{name}.json"},
+		{name: "9 non-ASCII static", framework: chi, route: "/café", want: "/caf%C3%A9"},
+		{name: "10 colon in static", framework: chi, route: "/user:me", want: "/user%3Ame"},
+		{name: "11 plus in static", framework: mux, route: "/a+b/{id}", want: "/a%2Bb/{id}"},
+		{name: "12 params in a segment", framework: chi, route: "/photos/{id}.{format}", want: "/photos/{id}.{format}"},
+		{name: "13 three params in a segment", framework: fiber, route: "/d/:a-:b-:c", want: "/d/{a}-{b}-{c}"},
+		{name: "14 adjacent params", framework: mux, route: "/v/{major}{minor}", want: "/v/{major}{minor}"},
+		{name: "15 optional present", framework: fiber, route: "/users/:id/:tab?", params: map[string]string{"id": "1", "tab": "posts"}, path: "/users/1/posts", want: "/users/{id}/{tab}"},
+		{name: "16 optional absent", framework: fiber, route: "/users/:id/:tab?", params: map[string]string{"id": "1", "tab": ""}, path: "/users/1", want: "/users/{id}"},
+		{name: "21 optionals absent", framework: fiber, route: "/a/:x?/:y?", params: map[string]string{"x": "", "y": ""}, path: "/a", want: "/a"},
+		{name: "22 first optional present", framework: fiber, route: "/a/:x?/:y?", params: map[string]string{"x": "1", "y": ""}, path: "/a/1", want: "/a/{x}"},
+		{name: "23 optionals present", framework: fiber, route: "/a/:x?/:y?", params: map[string]string{"x": "1", "y": "2"}, path: "/a/1/2", want: "/a/{x}/{y}"},
+		{name: "28 optional unknown", framework: fiber, route: "/users/:id/:tab?", path: "/users/1/posts", want: "/users/{id}"},
+		{name: "30 name with dash", framework: chi, route: "/users/{user-id}", want: "/users/{user_id}"},
+		{name: "31 name with dot", framework: mux, route: "/items/{item.id}", want: "/items/{item_id}"},
+		{name: "32 name collision", framework: gin, route: "/a/:user-id/:user_id", want: "/a/{user_id_2}/{user_id}"},
+		{name: "33 name collision, suffix used", framework: chi, route: "/a/{x-y}/{x_y}/{x_y_2}", want: "/a/{x_y_3}/{x_y}/{x_y_2}"},
+		{name: "34 non-ASCII name", framework: chi, route: "/u/{föo}", want: "/u/{f_o}"},
+		{name: "35 named catch-all", framework: gin, route: "/files/*path", params: map[string]string{"path": "/a/b/c.txt"}, want: "/files/{path}"},
+		{name: "36 unnamed catch-all", framework: chi, route: "/static/*", params: map[string]string{"*": "css/app.css"}, want: "/static/{param1}"},
+		{name: "37 unnamed catch-all, name used", framework: echo, route: "/w/:param1/*", params: map[string]string{"param1": "x", "*": "a/b"}, want: "/w/{param1}/{param2}"},
+		{name: "46 gin param name", framework: gin, route: "/files/:name.json", want: "/files/{name_json}"},
+		{name: "47 prefix route", framework: netmux, route: "/static/", path: "/static/css/app.css", want: "/static/{param1}"},
+		{name: "48 prefix route, empty remainder", framework: netmux, route: "/static/", path: "/static/", want: "/static/"},
+		{name: "49 empty catch-all", framework: netmux, route: "/files/{path...}", path: "/files/", want: "/files/"},
+
+		// Regex constraints contribute nothing.
+		{name: "regex", framework: chi, route: "/r/{name:report-[a-z]+}", want: "/r/{name}"},
+		{name: "regex matching empty", framework: mux, route: "/r/{f:(?:\\.json)?}", want: "/r/{f}"},
+		{name: "regex with braces", framework: chi, route: "/r/{id:[0-9]{3}}/x", want: "/r/{id}/x"},
+		{name: "gorilla catch-all regex", framework: mux, route: "/r/{path:.*}", want: "/r/{path}"},
+		{name: "fiber constraint", framework: fiber, route: "/r/:id<int>", want: "/r/{id}"},
+
+		// Catch-alls.
+		{name: "chi empty catch-all", framework: chi, route: "/files/*", params: map[string]string{"*": "/"}, want: "/files/"},
+		{name: "chi catch-all unknown", framework: chi, route: "/files/*", want: "/files/"},
+		{name: "gin empty catch-all", framework: gin, route: "/files/*path", params: map[string]string{"path": "//"}, want: "/files/"},
+		{name: "echo ignores the rest", framework: echo, route: "/a/*/b", params: map[string]string{"*": "x/b"}, want: "/a/{param1}"},
+		{name: "fiber wildcard", framework: fiber, route: "/static/*", params: map[string]string{"*1": "css/app.css"}, path: "/static/css/app.css", want: "/static/{param1}"},
+		{name: "fiber empty wildcard, slash", framework: fiber, route: "/static/*", params: map[string]string{"*1": ""}, path: "/static/", want: "/static/"},
+		{name: "fiber empty wildcard, no slash", framework: fiber, route: "/static/*", params: map[string]string{"*1": ""}, path: "/static", want: "/static"},
+		{name: "fiber plus", framework: fiber, route: "/static/+", params: map[string]string{"+1": "a"}, want: "/static/{param1}"},
+		{name: "fiber dot is not optional", framework: fiber, route: "/f/:name.:ext?", params: map[string]string{"name": "a", "ext": ""}, want: "/f/{name}."},
+		{name: "fiber escape", framework: fiber, route: "/a\\:b/:id", want: "/a%3Ab/{id}"},
+		{name: "fiber root", framework: fiber, route: "/", want: "/"},
+		{name: "fiber escape sequence", framework: fiber, route: "/caf%c3%a9", want: "/caf%C3%A9"},
+
+		// gorilla/mux PathPrefix routes have an implicit catch-all.
+		{name: "gorilla prefix", framework: mux, route: "/api", path: "/api/x", want: "/api/{param1}"},
+		{name: "gorilla prefix in a segment", framework: mux, route: "/api", path: "/apix", want: "/api{param1}"},
+		{name: "gorilla prefix, empty remainder", framework: mux, route: "/api", path: "/api", want: "/api"},
+		{name: "gorilla prefix, slash remainder", framework: mux, route: "/api", path: "/api/", want: "/api"},
+		{name: "gorilla prefix with slash", framework: mux, route: "/static/", path: "/static/css/app.css", want: "/static/{param1}"},
+		{name: "gorilla prefix with variable", framework: mux, route: "/u/{id}", params: map[string]string{"id": "1"}, path: "/u/1/rest", want: "/u/{id}/{param1}"},
+		{name: "gorilla prefix with constraint", framework: mux, route: "/u/{id:[0-9]+}", params: map[string]string{"id": "12"}, path: "/u/12x", want: "/u/{id}{param1}"},
+		{name: "gorilla prefix, unknown value", framework: mux, route: "/u/{id}", path: "/u/1/rest", want: "/u/{id}"},
+		{name: "gorilla prefix, escaped path", framework: mux, route: "/café", path: "/caf%C3%A9/x", want: "/caf%C3%A9/{param1}"},
+		{name: "gorilla path route", framework: mux, route: "/users/{id}", path: "/users/1", want: "/users/{id}"},
+		{name: "gorilla catch-all variable", framework: mux, route: "/r/{path:.*}", params: map[string]string{"path": "a/b"}, path: "/r/a/b", want: "/r/{path}"},
+		{name: "gorilla path route, longer alternative", framework: mux, route: "/f.{ext:json|jsonl}", params: map[string]string{"ext": "jsonl"}, path: "/f.jsonl", want: "/f.{ext}"},
+		{name: "gorilla path route, encoded path", framework: mux, route: "/u/{id}", params: map[string]string{"id": "a%2Fb"}, path: "/u/a%2Fb", want: "/u/{id}"},
+		// gorilla's regexp prefers the first alternative: PathPrefix("/p/{v:a|ab}")
+		// binds v to "a" in /p/ab.
+		{name: "gorilla prefix, first alternative", framework: mux, route: "/p/{v:a|ab}", params: map[string]string{"v": "a"}, path: "/p/ab", want: "/p/{v}{param1}"},
+		{name: "gorilla prefix, first alternative, rest", framework: mux, route: "/p/{v:a|ab}", params: map[string]string{"v": "a"}, path: "/p/ab/x", want: "/p/{v}{param1}"},
+		// gorilla's UseEncodedPath cannot be read: % is static text, and the
+		// catch-all comes from the unescaped path, unless only the escaped path
+		// starts with what gorilla matched.
+		{name: "gorilla static escape, encoded path", framework: mux, route: "/a%2Fb", path: "/a%2Fb", want: "/a%2Fb"},
+		{name: "gorilla static percent, unescaped path", framework: mux, route: "/a%2Fb", path: "/a%252Fb", want: "/a%252Fb"},
+		{name: "gorilla prefix, percent in route", framework: mux, route: "/a%25", path: "/a%2525/x", want: "/a%2525/{param1}"},
+		{name: "gorilla percent in value", framework: mux, route: "/u/{id}", params: map[string]string{"id": "100%"}, path: "/u/100%25", want: "/u/{id}"},
+		{name: "gorilla prefix, escaped value", framework: mux, route: "/api", path: "/api/caf%C3%A9", want: "/api/{param1}"},
+		{name: "gorilla prefix, encoded value", framework: mux, route: "/p/{v}", params: map[string]string{"v": "a%2Fb"}, path: "/p/a%2Fb/xyz", want: "/p/{v}/{param1}"},
+		{name: "gorilla prefix, unknown value", framework: mux, route: "/p/{v}", path: "/p/a/xyz", want: "/p/{v}"},
+		{name: "gorilla prefix, only slashes", framework: mux, route: "/api", path: "/api//", want: "/api"},
+		{name: "gorilla prefix with slash, double slash", framework: mux, route: "/api/", path: "/api//x", want: "/api/{param1}"},
+		{name: "gorilla prefix, literal escaped slash", framework: mux, route: "/files/", path: "/files/%252F", want: "/files/{param1}"},
+
+		// fiber wildcard with a literal suffix.
+		{name: "fiber wildcard, literal suffix", framework: fiber, route: "/files/*.txt", params: map[string]string{"*1": "report"}, path: "/files/report.txt", want: "/files/{param1}.txt"},
+		// fiber's UnescapePath: fiber matches the unescaped path, % is static text.
+		// Without StrictRouting, fiber matches "/item" with "/item///".
+		{name: "fiber endpoint, trailing slashes", framework: fiber, route: "/item", path: "/item///", want: "/item"},
+		{name: "fiber static escape", framework: fiber, route: "/a%2Fb", path: "/a%2Fb", want: "/a%2Fb"},
+		{name: "fiber UnescapePath, static percent", framework: fiber, route: "/a%2Fb", path: "/a%2Fb", literalPercent: true, want: "/a%252Fb"},
+		{name: "fiber UnescapePath, prefix", framework: fiber, route: "/a%25", path: "/a%25/x", literalPercent: true, want: "/a%2525/{param1}"},
+
+		// chi and echo v4 match URL.RawPath when net/http sets it.
+		{name: "chi static escape, raw path", framework: chi, route: "/a%2Fb", path: "/a%2Fb", want: "/a%2Fb"},
+		{name: "chi static percent, unescaped path", framework: chi, route: "/100%", path: "/100%25", want: "/100%25"},
+		{name: "echo v4 static escape, raw path", framework: echo, route: "/a%2Fb", path: "/a%2Fb", want: "/a%2Fb"},
+
+		// echo escaped colons.
+		{name: "echo escaped colon", framework: echo, route: "/files/a\\:undelete", path: "/files/a:undelete", want: "/files/a%3Aundelete"},
+		{name: "echo inline verb", framework: echo, route: "/tasks/:id\\:cancel", path: "/tasks/1:cancel", want: "/tasks/{id}%3Acancel"},
+		{name: "echo escaped colon in a name", framework: echo, route: "/t/:a\\:b:c", path: "/t/x", want: "/t/{a__b_c}"},
+		{name: "gin backslash", framework: gin, route: "/files/a\\:b", path: "/files/a%5C:b", want: "/files/a%5C{b}"},
+
+		// fiber prefix routes (Use, Static, mounts) have an implicit catch-all.
+		{name: "fiber prefix", framework: fiber, route: "/api", path: "/api/v1/x", want: "/api/{param1}"},
+		{name: "fiber prefix in a segment", framework: fiber, route: "/api", path: "/apix", want: "/api{param1}"},
+		{name: "fiber route, trailing slash", framework: fiber, route: "/api", path: "/api/", want: "/api"},
+		{name: "fiber prefix, other case", framework: fiber, route: "/api", path: "/API/x", want: "/api/{param1}"},
+		{name: "fiber root prefix", framework: fiber, route: "/", path: "/a/b", want: "/{param1}"},
+		{name: "fiber root prefix, double slash", framework: fiber, route: "/", path: "//x", want: "/{param1}"},
+		{name: "fiber repeated name", framework: fiber, route: "/d/:id/:id", params: map[string]string{"id": "1"}, path: "/d/1/2", want: "/d/{id}/{id_2}"},
+		{name: "fiber repeated optional name", framework: fiber, route: "/d/:id/:id?", params: map[string]string{"id": "1"}, path: "/d/1", want: "/d/{id}"},
+		{name: "fiber absent wildcard before text", framework: fiber, route: "/files/*.txt", params: map[string]string{"*1": ""}, path: "/files/.txt", want: "/files/.txt"},
+		{name: "fiber absent optional before text", framework: fiber, route: "/:base?.txt", params: map[string]string{"base": ""}, path: "/.txt", want: "/.txt"},
+		{name: "fiber unbound colon", framework: fiber, route: "/assets:v1", params: map[string]string{}, path: "/assets:v1/a.css", want: "/assets%3Av1/{param1}"},
+		{name: "fiber unbound colon in a route with parameters", framework: fiber, route: "/t/:a<open", params: map[string]string{"a<open": "abc"}, path: "/t/abc"},
+		{name: "chi slash-only catch-all", framework: chi, route: "/files/*", params: map[string]string{"*": "//"}, want: "/files/"},
+		{name: "servemux slash-only bound catch-all", framework: netmux, route: "/files/{path...}", params: map[string]string{"path": "//"}, path: "/%2F%2F", want: "/files/"},
+		{name: "fiber text after constraint", framework: fiber, route: "/r/:id<int>foo", params: map[string]string{"id": "12"}, path: "/r/12"},
+		{name: "fiber escaped backslash", framework: fiber, route: "/esc/a\\\\:b", params: map[string]string{}, path: "/esc/a:b"},
+		{name: "gin repeated name", framework: gin, route: "/d/:id/:id", params: map[string]string{"id": "b"}, want: "/d/{id}/{id_2}"},
+		{name: "gin unbound colon", framework: gin, route: "/actions/build:start", params: map[string]string{}, want: "/actions/build%3Astart"},
+		{name: "chi literal brace", framework: chi, route: "/literal}/item/{id}", want: "/literal%7D/item/{id}"},
+		{name: "servemux literal brace", framework: netmux, route: "/literal}/item/{id}", want: "/literal%7D/item/{id}"},
+		{name: "gorilla StrictSlash redirect, escaped route", framework: mux, route: "/z%2Fy/", path: "/z%2Fy", want: "/z%2Fy/"},
+		{name: "fiber prefix, escaped slash", framework: fiber, route: "/files", path: "/files/%2F", want: "/files/{param1}"},
+		{name: "fiber UnescapePath prefix, literal escaped slash", framework: fiber, route: "/files", path: "/files/%2F", literalPercent: true, want: "/files/{param1}"},
+		{name: "fiber prefix with slash, double slash", framework: fiber, route: "/api/", path: "/api//x", want: "/api/{param1}"},
+		{name: "fiber prefix with parameter", framework: fiber, route: "/t/:tenant", params: map[string]string{"tenant": "acme"}, path: "/t/acme/x", want: "/t/{tenant}/{param1}"},
+		{name: "fiber prefix, other value", framework: fiber, route: "/t/:tenant", params: map[string]string{"tenant": "other"}, path: "/t/acme/x", want: "/t/{tenant}"},
+		{name: "fiber prefix, unknown value", framework: fiber, route: "/t/:tenant", path: "/t/acme/x", want: "/t/{tenant}"},
+		{name: "fiber route, absent optional", framework: fiber, route: "/u/:id?", params: map[string]string{"id": ""}, path: "/u", want: "/u"},
+		{name: "fiber catch-all, empty with slashes", framework: fiber, route: "/c/*", params: map[string]string{"*1": ""}, path: "/c//", want: "/c/"},
+		{name: "fiber prefix after a wildcard", framework: fiber, route: "/api/*/fixed", params: map[string]string{"*1": "x"}, path: "/api/x/fixed/rest", want: "/api/{param1}/fixed/{param2}"},
+		{name: "fiber consecutive colons", framework: fiber, route: "/color::color", params: map[string]string{"color": "blue"}, path: "/color:blue", want: "/color%3A{color}"},
+		{name: "fiber regexp constraint with >", framework: fiber, route: "/r/:id<regex((?<n>abc))>", params: map[string]string{"id": "abc"}, path: "/r/abc", want: "/r/{id}"},
+		{name: "fiber constraint then segment", framework: fiber, route: "/r/:id<int>/x", params: map[string]string{"id": "1"}, path: "/r/1/x", want: "/r/{id}/x"},
+		{name: "fiber optional constraint", framework: fiber, route: "/r/:id<int>?", params: map[string]string{"id": ""}, path: "/r", want: "/r"},
+
+		// net/http patterns.
+		{name: "servemux host", framework: netmux, route: "example.com/foo/{id}", want: "/foo/{id}"},
+		{name: "servemux method", framework: netmux, route: "GET /foo/{id}", want: "/foo/{id}"},
+		{name: "servemux anchor", framework: netmux, route: "/users/{$}", want: "/users/"},
+		{name: "servemux root", framework: netmux, route: "/", path: "/", want: "/"},
+		{name: "servemux root prefix", framework: netmux, route: "/", path: "/foo", want: "/{param1}"},
+		{name: "servemux prefix, unknown path", framework: netmux, route: "/static/", want: "/static/"},
+		{name: "servemux prefix, only slashes", framework: netmux, route: "/static/", path: "/static//", want: "/static/"},
+		{name: "servemux prefix, escaped slash", framework: netmux, route: "/static/", path: "/static/%2F", want: "/static/"},
+		{name: "servemux prefix with param", framework: netmux, route: "/u/{id}/", path: "/u/1/x", want: "/u/{id}/{param1}"},
+		{name: "servemux catch-all", framework: netmux, route: "/files/{path...}", path: "/files/a/b", want: "/files/{path}"},
+		{name: "servemux catch-all, escaped slash", framework: netmux, route: "/files/{path...}", path: "/files/%2F", want: "/files/"},
+		{name: "servemux catch-all, redirect", framework: netmux, route: "/files/{path...}", path: "/files", want: "/files/"},
+		{name: "servemux catch-all, stripped path", framework: netmux, route: "/files/{path...}", params: map[string]string{"path": "a"}, path: "/a", want: "/files/{path}"},
+		{name: "servemux catch-all, stripped path, empty value", framework: netmux, route: "/files/{path...}", params: map[string]string{"path": ""}, path: "/", want: "/files/"},
+		{name: "servemux escape", framework: netmux, route: "/caf%c3%a9", want: "/caf%C3%A9"},
+		{name: "servemux invalid escape", framework: netmux, route: "/100%", want: "/100%25"},
+		{name: "servemux partial wildcard", framework: netmux, route: "/users/user-{id}"},
+
+		// % is static text when the framework treats it literally.
+		{name: "gin percent", framework: gin, route: "/a%41", want: "/a%2541"},
+
+		// No tag.
+		{name: "unknown framework", framework: "github.com/julienschmidt/httprouter", route: "/users/:id"},
+		{name: "no leading slash", framework: chi, route: "users"},
+		{name: "unbalanced brace", framework: chi, route: "/users/{id"},
+		{name: "unnamed param", framework: gin, route: "/users/:"},
+		{name: "empty segment", framework: chi, route: "/a//b"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := normalizeRoute(tc.framework, httpsec.MatchedRoute{Route: tc.route, Params: tc.params, Path: tc.path, LiteralPercent: tc.literalPercent})
+			require.Equal(t, tc.want != "", ok, "normalized route: %q", got)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestNormalizedRouteTag(t *testing.T) {
+	if usable, err := libddwaf.Usable(); !usable {
+		t.Skipf("libddwaf is not usable in this context: %v", err)
+	}
+
+	wafManager, err := config.NewWAFManagerWithStaticRules(config.ObfuscatorConfig{}, wafRulesJSON)
+	require.NoError(t, err)
+	defer wafManager.Close()
+
+	start := func(t *testing.T, apiSec bool, args httpsec.HandlerOperationArgs) (*httpsec.HandlerOperation, *MockSpan, context.Context) {
+		cfg := config.Config{
+			WAFManager:         wafManager,
+			WAFTimeout:         time.Hour,
+			TraceRateLimit:     1_000,
+			APISec:             config.APISecConfig{Enabled: apiSec, Sampler: apisec.NewSampler(0)},
+			SupportedAddresses: config.NewAddressSet([]string{"server.request.headers.no_cookies"}),
+		}
+		rootOp := dyngo.NewRootOperation()
+		wafFeat, err := waf.NewWAFFeature(&cfg, rootOp)
+		require.NoError(t, err)
+		t.Cleanup(wafFeat.Stop)
+		httpFeat, err := NewHTTPSecFeature(&cfg, rootOp)
+		require.NoError(t, err)
+		t.Cleanup(httpFeat.Stop)
+
+		var span MockSpan
+		op, _, ctx := httpsec.StartOperation(dyngo.RegisterOperation(context.Background(), rootOp), args, &span)
+		return op, &span, ctx
+	}
+
+	t.Run("matched route", func(t *testing.T) {
+		op, span, _ := start(t, true, httpsec.HandlerOperationArgs{
+			Framework:    "github.com/gin-gonic/gin",
+			RequestPath:  "/users/42",
+			RequestRoute: "/users/:id",
+			PathParams:   map[string]string{"id": "42"},
+		})
+		op.Finish(httpsec.HandlerOperationRes{StatusCode: 200})
+		require.Equal(t, "/users/{id}", span.Tags[normalizedRouteTag])
+	})
+
+	t.Run("late route and parameters", func(t *testing.T) {
+		op, span, ctx := start(t, true, httpsec.HandlerOperationArgs{
+			Framework:     "net/http",
+			RequestPath:   "/files/a/b",
+			RequestRoute:  "/files/{param:str}/{param:str}",
+			RouteInferred: true,
+		})
+		require.NoError(t, httpsec.RouteMatched(ctx, "/files/{path...}", map[string]string{"path": "a/b"}))
+		op.Finish(httpsec.HandlerOperationRes{StatusCode: 200})
+		require.Equal(t, "/files/{path}", span.Tags[normalizedRouteTag])
+	})
+
+	// An integration that reports the matched route, as chi with
+	// WithModifyResourceName: the tag follows it, not the renamed route.
+	t.Run("reported route", func(t *testing.T) {
+		op, span, ctx := start(t, true, httpsec.HandlerOperationArgs{
+			Framework:    "github.com/go-chi/chi/v5",
+			RequestPath:  "/users/42/",
+			RequestRoute: "renamed",
+		})
+		httpsec.ReportMatchedRoute(ctx, httpsec.MatchedRoute{Route: "/users/{id}/", Params: map[string]string{"id": "42"}})
+		op.Finish(httpsec.HandlerOperationRes{StatusCode: 200})
+		require.Equal(t, "/users/{id}/", span.Tags[normalizedRouteTag])
+	})
+
+	t.Run("reported path", func(t *testing.T) {
+		op, span, ctx := start(t, true, httpsec.HandlerOperationArgs{
+			Framework:    "github.com/gofiber/fiber/v2",
+			RequestPath:  "/api",
+			RequestRoute: "/api",
+		})
+		httpsec.ReportMatchedRoute(ctx, httpsec.MatchedRoute{Route: "/api", Path: "/api/x"})
+		op.Finish(httpsec.HandlerOperationRes{StatusCode: 200})
+		require.Equal(t, "/api/{param1}", span.Tags[normalizedRouteTag])
+	})
+
+	t.Run("reported no route", func(t *testing.T) {
+		op, span, ctx := start(t, true, httpsec.HandlerOperationArgs{
+			Framework:    "github.com/go-chi/chi/v5",
+			RequestPath:  "/nope",
+			RequestRoute: "/renamed",
+		})
+		httpsec.ReportMatchedRoute(ctx, httpsec.MatchedRoute{})
+		op.Finish(httpsec.HandlerOperationRes{StatusCode: 404})
+		require.NotContains(t, span.Tags, normalizedRouteTag)
+	})
+
+	t.Run("inferred route", func(t *testing.T) {
+		op, span, _ := start(t, true, httpsec.HandlerOperationArgs{
+			Framework:     "net/http",
+			RequestPath:   "/users/42",
+			RequestRoute:  "/users",
+			RouteInferred: true,
+		})
+		op.Finish(httpsec.HandlerOperationRes{StatusCode: 200})
+		require.NotContains(t, span.Tags, normalizedRouteTag)
+	})
+
+	t.Run("no route", func(t *testing.T) {
+		op, span, _ := start(t, true, httpsec.HandlerOperationArgs{
+			Framework:   "github.com/gin-gonic/gin",
+			RequestPath: "/users/42",
+		})
+		op.Finish(httpsec.HandlerOperationRes{StatusCode: 404})
+		require.NotContains(t, span.Tags, normalizedRouteTag)
+	})
+
+	t.Run("api security disabled", func(t *testing.T) {
+		op, span, _ := start(t, false, httpsec.HandlerOperationArgs{
+			Framework:    "github.com/gin-gonic/gin",
+			RequestPath:  "/users/42",
+			RequestRoute: "/users/:id",
+		})
+		op.Finish(httpsec.HandlerOperationRes{StatusCode: 200})
+		require.NotContains(t, span.Tags, normalizedRouteTag)
+	})
+}

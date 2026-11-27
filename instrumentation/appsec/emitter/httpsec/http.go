@@ -18,6 +18,7 @@ import (
 	_ "embed"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"sync/atomic"
 
 	"github.com/DataDog/go-libddwaf/v5"
@@ -50,6 +51,14 @@ type (
 		method string
 		// route is the HTTP route for the current handler operation (or the URL if no route is available).
 		route string
+		// routeInferred reports that route was inferred from the request URL, and not matched by a router.
+		routeInferred bool
+		pathParams    map[string]string
+		requestPath   string
+		matchedRoute  MatchedRoute
+		// matchedRouteReported tells a report of no route, which gets no
+		// normalized route, from no report, which falls back to route.
+		matchedRouteReported bool
 
 		// downstreamRequestBodyAnalysis is the number of times a call to a downstream request body monitoring function was made.
 		downstreamRequestBodyAnalysis atomic.Int32
@@ -82,6 +91,29 @@ type (
 		Cookies      map[string][]string
 		QueryParams  map[string][]string
 		PathParams   map[string]string
+
+		// RouteInferred reports that RequestRoute was inferred from the request URL, and not matched by a router.
+		RouteInferred bool
+		// RequestPath is the escaped path of the request URL, as the router reads
+		// it: URL.RawPath when net/http sets it. A handler before the router can
+		// make it differ from the path of RequestURI (http.StripPrefix).
+		RequestPath string
+	}
+
+	// MatchedRoute is the route that a router selected for a request, as API
+	// Security reads it to describe the route (see ReportMatchedRoute).
+	MatchedRoute struct {
+		// Route is the route as the router declares it, before any renaming.
+		// It is empty when the router selected no route.
+		Route string
+		// Params are the values that the router bound to the parameters of Route.
+		Params map[string]string
+		// Path is the path that the router matched Route with, when it is not
+		// the escaped path of the request.
+		Path string
+		// LiteralPercent reports that the router matches a "%" in Route as
+		// itself, when its default is to match it as the start of an escaped byte.
+		LiteralPercent bool
 	}
 
 	// HandlerOperationRes is the HTTP handler operation results.
@@ -125,6 +157,9 @@ func StartOperation(ctx context.Context, args HandlerOperationArgs, span trace.T
 		framework:        args.Framework,
 		method:           args.Method,
 		route:            args.RequestRoute,
+		routeInferred:    args.RouteInferred,
+		pathParams:       args.PathParams,
+		requestPath:      args.RequestPath,
 	}
 
 	// We need to use an atomic pointer to store the action because the action may be created asynchronously in the future.
@@ -158,6 +193,24 @@ func (op *HandlerOperation) Method() string {
 // Route returns the HTTP route for the current handler operation.
 func (op *HandlerOperation) Route() string {
 	return op.route
+}
+
+// MatchedRoute returns the route that the router selected for the current
+// handler operation: the last one reported with ReportMatchedRoute, otherwise the
+// route of the operation with its path parameters, unless it was inferred from
+// the request URL. Its Path is the escaped path of the request URL by default.
+func (op *HandlerOperation) MatchedRoute() MatchedRoute {
+	matched := op.matchedRoute
+	if !op.matchedRouteReported {
+		matched = MatchedRoute{Params: op.pathParams}
+		if !op.routeInferred {
+			matched.Route = op.route
+		}
+	}
+	if matched.Path == "" {
+		matched.Path = op.requestPath
+	}
+	return matched
 }
 
 // DownstreamRequestBodyAnalysis returns the number of times a call to a downstream request body monitoring function was made.
@@ -270,6 +323,10 @@ func RouteMatched(ctx context.Context, route string, routeParams map[string]stri
 
 	// Overwrite the previous route that was created using a quantization algorithm
 	op.route = route
+	op.routeInferred = false
+	if routeParams != nil {
+		op.pathParams = routeParams
+	}
 
 	var err error
 	dyngo.OnData(op, func(e *events.BlockingSecurityEvent) {
@@ -283,6 +340,30 @@ func RouteMatched(ctx context.Context, route string, routeParams map[string]stri
 	)
 
 	return err
+}
+
+// ReportMatchedRoute records the route that the router selected, for API
+// Security only: it describes the route of the request with it instead of the
+// route of the operation, which can be renamed for the span resource, and it
+// knows from its parameters which catch-alls and optional parameters the
+// request has. Nothing is sent to the WAF: the call causes no WAF evaluation,
+// and the route of the operation, its API Security sampling key, is unchanged.
+// It must be called before the operation finishes, and the parameters must not
+// change after. It does nothing for a request without an AppSec operation, as
+// when AppSec is disabled, so a router integration can call it for every request.
+func ReportMatchedRoute(ctx context.Context, route MatchedRoute) {
+	if op, ok := dyngo.FindOperation[HandlerOperation](ctx); ok {
+		op.matchedRoute, op.matchedRouteReported = route, true
+	}
+}
+
+// requestPath returns the escaped path that routers read: go-chi and echo read
+// URL.RawPath when net/http sets it, also when EscapedPath does not return it.
+func requestPath(u *url.URL) string {
+	if u.RawPath != "" {
+		return u.RawPath
+	}
+	return u.EscapedPath()
 }
 
 func responseStarted(w http.ResponseWriter) bool {
@@ -419,17 +500,19 @@ func BeforeHandle(
 	}
 
 	op, blockAtomic, ctx := StartOperation(r.Context(), HandlerOperationArgs{
-		Framework:    opts.Framework,
-		Method:       r.Method,
-		RequestURI:   r.RequestURI,
-		RequestRoute: opts.Route,
-		Host:         r.Host,
-		RemoteAddr:   r.RemoteAddr,
-		ClientIP:     clientIP,
-		Headers:      r.Header,
-		Cookies:      cookies,
-		QueryParams:  queryParams,
-		PathParams:   opts.RouteParams,
+		Framework:     opts.Framework,
+		Method:        r.Method,
+		RequestURI:    r.RequestURI,
+		RequestRoute:  opts.Route,
+		RouteInferred: opts.RouteInferred,
+		RequestPath:   requestPath(r.URL),
+		Host:          r.Host,
+		RemoteAddr:    r.RemoteAddr,
+		ClientIP:      clientIP,
+		Headers:       r.Header,
+		Cookies:       cookies,
+		QueryParams:   queryParams,
+		PathParams:    opts.RouteParams,
 	}, span)
 	tr := r.WithContext(ctx)
 

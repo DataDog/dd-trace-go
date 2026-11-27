@@ -384,3 +384,118 @@ is not counted as a block (see [Block outcome telemetry](#block-outcome-telemetr
 go-chi details are next to the code: the route timing and the WAF input in
 `contrib/go-chi/*/appsec.go`, and how the commit tracker sees a sent response in
 `contrib/go-chi/*/writer_appsec.go`.
+
+### Normalized route
+
+When API Security is enabled and the HTTP WAF feature of `listener/httpsec` runs,
+it sets `_dd.appsec.normalized_route` (RFC-1125) when the response is reported: the
+route of the request as an OpenAPI path template, such as `/users/{id}`. It is
+computed with the grammar of the framework that started the
+`httpsec.HandlerOperation` (`normalized_route.go`) from `HandlerOperation.MatchedRoute`:
+the route, its path parameters, and the path that the router matched. An unknown
+framework or a route that cannot be expressed as segments and parameters gets no
+tag.
+
+The route must come from a router. By default it is the route of the operation,
+after any `RouteMatched` call, with its path parameters. `httptrace.BeforeHandle`
+uses a route inferred from the request URL as the API Security sampling key when
+the integration has no route, and sets `httpsec.Config.RouteInferred` for it: such
+a route gets no tag. An integration whose operation route is not the router's own,
+or that learns the route after the handler started, reports it with
+`httpsec.ReportMatchedRoute`, which is for API Security only: no WAF evaluation,
+and the sampling key is unchanged. A report of no route gets no tag.
+- go-chi reports the route from `RoutePatterns`, which keeps a declared trailing
+  `/` and is not renamed by `WithModifyResourceName` (go-chi v5), with the
+  parameters of the selected route. It reports the route that chi knows when the
+  middleware starts, for an early block, and the selected route after the handler,
+  also when it panics. A request that stops at a mounted chi router with no route
+  for it gets the route of the mount, but with OpenTelemetry semantics, where it
+  gets no `http.route` and no route; an endpoint on the pattern of the mount
+  that serves the request keeps its route. The route table of a router does not
+  list the handlers of the aliases of a mount (`/api` and `/api/` for
+  `/api/*`): with these semantics, an endpoint on an alias whose middleware
+  leaves `/` in `RoutePath` is taken for the mount, and gets no route. chi clears the `*` of a mount, which is the
+  `*` of the route when the mounted handler is not a chi router: its value is the
+  rest of the routed path that chi gives that handler (`RoutePath`), so a
+  middleware that rewrites the routing path is followed. A route that ends with
+  `*` keeps the value that chi bound, also an empty one. `RoutePath` tells the
+  two apart, and the route table of the router when the mount leaves the text
+  that the route would have matched: the served handler is the one that `Mount`
+  registers, also when a router with inline middlewares (`With`, `Group`)
+  wraps it.
+- net/http reports the pattern that `ServeMux.Handler` returns and the path that
+  ServeMux matches, before AppSec can block the request, also for a route
+  registered on a caller-provided `*http.ServeMux`, which reports no path
+  parameters to the WAF. A `{name...}` wildcard is present when its path value
+  is not empty, or without one, when the rest of that path is not empty. A
+  redirect that ServeMux generates gets the pattern that it leads to, but for the
+  trailing-slash redirect of a CONNECT request, whose pattern is the redirect
+  path (a redirect handler registered for a pattern keeps its route; before
+  Go 1.27, a registered 307 redirect to exactly its cleaned pattern, without
+  another query, answers as ServeMux does): it gets no route. A request that ServeMux answers without a pattern
+  (`*`), and every request with the matcher of `GODEBUG=httpmuxgo121=1`, whose
+  patterns are literal paths, get no route. `WrapHandler` inside a ServeMux
+  reports the pattern that the ServeMux matched, with its path values.
+- fiber reports the last route that it ran, also for a blocked request, with the
+  path that it matched (`c.Path()`) and `UnescapePath`. Without `StrictRouting`,
+  a prefix route matches without its trailing `/`, as fiber matches it.
+- gorilla/mux reports no route when a subrouter's 404 or 405 handler answers:
+  gorilla matches the request with the prefix route of the subrouter, which is
+  never the route of a request that a route of the subrouter matches. A route
+  without a handler gets gorilla's own 404, and no route. A router that is the
+  handler of a route is not its subrouter. The integration remembers which
+  routes have a subrouter: a subrouter that gets its first route after its
+  prefix served requests, or a matcher of the prefix route that selects a
+  handler itself, is not told apart.
+- echo marks the path of its router's 405 and OPTIONS answers as no route
+  (`httpsec.Config.RouteInferred`): it is the path of a route for another method.
+
+gin and fiber bind every parameter of their route, so a `:` starts a parameter
+only when the router bound it: gin (v1.11+) reports an escaped `\:` as `:`, and
+fiber does not parse the prefix of `Static`. A parameter name that the route
+repeats gets a numeric suffix, and fiber, which binds one value per name, leaves
+out a repeated optional parameter.
+
+By default, the path that the router matched is the escaped path of the request
+URL that `httpsec.BeforeHandle` gets, as the router reads it (`URL.RawPath` when
+net/http sets it), so a handler before the router that rewrites it
+(`http.StripPrefix`) is followed.
+
+Every Go integration that sets the tag resolves the presence of its optional parts:
+an optional parameter or a catch-all is in the tag only when its path parameter
+has a non-empty value, and a rest of the path that is empty or only `/`, in the
+form that the router matched, is an absent catch-all. When the parameter has no value, or a prefix catch-all below
+cannot be found, it is left out: the fallback that RFC-1125 allows.
+
+A prefix route has an implicit catch-all: the rest of the path after the part that
+the route matched. Routers report a prefix route as its template, so the listener
+rebuilds that part from the route's static text and the values that the router
+bound to its parameters:
+- gorilla/mux `PathPrefix`: gorilla matches the unescaped path, or the escaped
+  path with `UseEncodedPath`, which the integration cannot read. The part is
+  looked for in the unescaped path, then in the escaped path: gorilla matched the
+  escaped path only when the unescaped one does not start with the part. A `Path`
+  route matches the whole path, so it has no rest.
+- fiber `Use`, `Static` and mounts: the part starts the path that fiber matched,
+  ignoring case. A route that ends with `*` or `+` takes the rest of the path.
+
+Without the value of a parameter, or when the path does not start with the part,
+the route gets no catch-all.
+
+The `%XX` in the static text of a route are escaped bytes only when the router
+matches the escaped path: always for net/http, for fiber without `UnescapePath`,
+for go-chi and echo v4 when net/http sets `URL.RawPath`, and for gorilla/mux when
+the escaped path is the one found above. When the setting that decides it cannot
+be read otherwise (gorilla/mux `UseEncodedPath`, echo v5
+`UseEscapedPathForMatching`), `%` is static text and is encoded as `%25`.
+
+fiber reports no route when its router found none: the last route is then a
+middleware, which answers the router's 404 (its message names the method and the
+path) or a 405 with `Allow`. The WAF still gets the parameters of that middleware.
+An endpoint that returns its own 404 or 405 keeps its route, and so does a prefix
+handler (`Use`) that returns another error. A prefix handler that returns the
+router's 404, or sets `Allow` and answers 405, cannot be told from a middleware
+before a router miss: it gets no route.
+fiber also reports no route when a middleware without a path prefix answers
+another path than `/` with an error: it answered before routing, or after a
+router miss whose error it handled.

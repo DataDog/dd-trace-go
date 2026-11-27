@@ -900,3 +900,139 @@ func setMuxHTTPConfig(t *testing.T, otel string) {
 		tracer.Stop()
 	})
 }
+
+// TestAppSecNormalizedRoutePathPrefix checks that the normalized route of a
+// PathPrefix route has an unnamed catch-all for the rest of the path, and that
+// a Path route has none.
+func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
+	t.Setenv("DD_API_SECURITY_ENABLED", "true")
+	testutils.StartAppSec(t)
+
+	router := NewRouter()
+	router.PathPrefix("/static/").Handler(okHandler())
+	router.PathPrefix("/api").Handler(okHandler())
+	router.Handle("/users/{id}", okHandler())
+	router.Handle("/f.{ext:json|jsonl}", okHandler())
+	// gorilla's regexp prefers the first alternative: v is "a" in /p/ab.
+	router.PathPrefix("/p/{v:a|ab}").Handler(okHandler())
+	encoded := NewRouter()
+	encoded.UseEncodedPath()
+	encoded.Handle("/u/{id}", okHandler())
+	encoded.Handle("/a%2Fb", okHandler())
+	// Without path cleaning, a prefix that ends with "/" matches a rest that
+	// starts with "/".
+	unclean := NewRouter()
+	unclean.SkipClean(true)
+	unclean.PathPrefix("/api/").Handler(okHandler())
+	unclean.PathPrefix("/").Handler(okHandler())
+	for _, tc := range []struct {
+		router       *Router
+		target, want string
+	}{
+		{router, "/static/css/app.css", "/static/{param1}"},
+		{router, "/static/", "/static/"},
+		{router, "/api/v1/x", "/api/{param1}"},
+		{router, "/apix", "/api{param1}"},
+		{router, "/api", "/api"},
+		{router, "/users/1", "/users/{id}"},
+		{router, "/f.jsonl", "/f.{ext}"},
+		{router, "/p/ab", "/p/{v}{param1}"},
+		{router, "/p/a/x", "/p/{v}/{param1}"},
+		{router, "/users/100%25", "/users/{id}"},
+		// gorilla matches the unescaped path: its rest is a literal %2F.
+		{router, "/static/%252F", "/static/{param1}"},
+		// UseEncodedPath cannot be read, but only the escaped path starts with
+		// what gorilla matched.
+		{encoded, "/u/a%2Fb", "/u/{id}"},
+		{encoded, "/a%2Fb", "/a%2Fb"},
+		{unclean, "/api//x", "/api/{param1}"},
+		{unclean, "//x", "/{param1}"},
+	} {
+		mt := mocktracer.Start()
+		rec := httptest.NewRecorder()
+		tc.router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.target, nil))
+		spans := mt.FinishedSpans()
+		mt.Stop()
+		require.Equal(t, http.StatusOK, rec.Code, tc.target)
+		require.Len(t, spans, 1, tc.target)
+		assert.Equal(t, tc.want, spans[0].Tag("_dd.appsec.normalized_route"), tc.target)
+	}
+
+	// A subrouter without a route for the request answers with its miss handlers.
+	org := NewRouter()
+	sub := org.PathPrefix("/org/{org}").Subrouter()
+	sub.Handle("/item/{id}", okHandler()).Methods(http.MethodGet)
+	sub.NotFoundHandler = http.NotFoundHandler()
+	// A subrouter that is also the handler of its route.
+	dual := NewRouter()
+	dualPrefix := dual.PathPrefix("/dual/{t}")
+	dualSub := dualPrefix.Subrouter()
+	dualSub.Handle("/item/{id}", okHandler()).Methods(http.MethodGet)
+	dualSub.MethodNotAllowedHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	})
+	dualPrefix.Handler(dualSub)
+	// A route without a handler: gorilla answers 404.
+	bare := NewRouter()
+	bare.NewRoute().Path("/bare/{id}")
+	sub.MethodNotAllowedHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	})
+	// A prefix route with a handler: gorilla runs it on a 405 of its subrouter,
+	// not on a 404.
+	team := NewRouter()
+	parent := team.PathPrefix("/team/{t}")
+	teamSub := parent.Subrouter()
+	teamSub.Handle("/item/{id}", okHandler()).Methods(http.MethodGet)
+	teamSub.NotFoundHandler = http.NotFoundHandler()
+	teamSub.MethodNotAllowedHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	})
+	parent.Handler(okHandler())
+	// A router that is the handler of a route.
+	inner := gorillamux.NewRouter()
+	inner.Handle("/inner/{id}", okHandler())
+	team.Handle("/inner/{id}", inner)
+	// A route without a handler whose matcher selects the handler.
+	team.Path("/selected/{id}").MatcherFunc(func(_ *http.Request, m *gorillamux.RouteMatch) bool {
+		m.Handler = okHandler()
+		return true
+	})
+	// StrictSlash redirects the escaped path to the route with its "/".
+	strict := NewRouter()
+	strict.UseEncodedPath()
+	strict.StrictSlash(true)
+	strict.Handle("/z%2Fy/", okHandler())
+	for _, tc := range []struct {
+		router         *Router
+		method, target string
+		status         int
+		want           string // empty: no tag
+	}{
+		{org, http.MethodGet, "/org/1/item/3", http.StatusOK, "/org/{org}/item/{id}"},
+		{org, http.MethodPost, "/org/1/item/3", http.StatusMethodNotAllowed, ""},
+		{org, http.MethodGet, "/org/1/missing", http.StatusNotFound, ""},
+		{bare, http.MethodGet, "/bare/2", http.StatusNotFound, ""},
+		{dual, http.MethodGet, "/dual/1/item/3", http.StatusOK, "/dual/{t}/item/{id}"},
+		{dual, http.MethodPost, "/dual/1/item/3", http.StatusMethodNotAllowed, ""},
+		{team, http.MethodGet, "/inner/3", http.StatusOK, "/inner/{id}"},
+		{team, http.MethodGet, "/team/1/missing", http.StatusNotFound, ""},
+		{team, http.MethodGet, "/team/1/item/3", http.StatusOK, "/team/{t}/item/{id}"},
+		{team, http.MethodPost, "/team/1/item/3", http.StatusMethodNotAllowed, ""},
+		{team, http.MethodGet, "/selected/1", http.StatusOK, "/selected/{id}"},
+		{strict, http.MethodGet, "/z%2Fy", http.StatusMovedPermanently, "/z%2Fy/"},
+	} {
+		mt := mocktracer.Start()
+		rec := httptest.NewRecorder()
+		tc.router.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.target, nil))
+		spans := mt.FinishedSpans()
+		mt.Stop()
+		require.Equal(t, tc.status, rec.Code, tc.method+" "+tc.target)
+		require.Len(t, spans, 1, tc.target)
+		if tc.want == "" {
+			assert.Nil(t, spans[0].Tag("_dd.appsec.normalized_route"), tc.method+" "+tc.target)
+		} else {
+			assert.Equal(t, tc.want, spans[0].Tag("_dd.appsec.normalized_route"), tc.method+" "+tc.target)
+		}
+	}
+}

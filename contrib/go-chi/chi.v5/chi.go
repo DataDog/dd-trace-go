@@ -58,6 +58,9 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 		// The cache is scoped to this handler because a
 		// chain is only meaningful relative to the router that recorded it.
 		var subrouterCache sync.Map
+		// The cache of method and pattern chain -> served by a mount handler (see
+		// servesMount), scoped to this handler for the same reason.
+		var mountCache sync.Map
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if cfg.ignoreRequest(r) {
 				next.ServeHTTP(w, r)
@@ -80,7 +83,7 @@ func Middleware(opts ...Option) func(next http.Handler) http.Handler {
 
 			next := next // avoid modifying the value of next in the outer closure scope
 			if instr.AppSecEnabled() && !cfg.appsecDisabled {
-				next = withAppsec(next, httptrace.AppSecSpanTagSetter(span, cfg.otelEnabled), cfg, &subrouterCache)
+				next = withAppsec(next, httptrace.AppSecSpanTagSetter(span, cfg.otelEnabled), cfg, &subrouterCache, &mountCache)
 				// Note that the following response writer passed to the handler
 				// implements the `interface { Status() int }` expected by httpsec.
 			}
