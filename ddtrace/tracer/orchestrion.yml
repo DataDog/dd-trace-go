@@ -107,7 +107,10 @@ aspects:
                 {{- end -}}
               {{- else if ne $req "" -}}
                 {{- $ctx = "ctx" -}}
-              ctx := {{ $req }}.Context()
+              ctx := context.TODO()
+              if {{ $req }} != nil {
+                ctx = {{ $req }}.Context()
+              }
               {{- else -}}
                 {{- $ctx = "ctx" -}}
               ctx := context.TODO()
@@ -137,7 +140,9 @@ aspects:
               {{- end }}
             )
             {{- with $req }}
-              {{ $req }} = {{ $req }}.WithContext({{ $ctx }})
+              if {{ $req }} != nil {
+                {{ $req }} = {{ $req }}.WithContext({{ $ctx }})
+              }
             {{- end }}
 
             {{ with .Function.ResultOfType "error" -}}
