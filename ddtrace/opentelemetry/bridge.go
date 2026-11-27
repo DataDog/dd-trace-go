@@ -16,6 +16,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -48,7 +49,11 @@ func loadBridge() {
 		cfg := internalconfig.Get()
 		bridgeEnabled = cfg.TraceOTelEnabled()
 		p := &TracerProvider{bridge: true}
-		p.tracer = &oteltracer{provider: p, otelSemanticsEnabled: cfg.OTelSemanticsEnabled()}
+		p.tracer = &oteltracer{
+			provider:             p,
+			spansCreated:         telemetry.Count(telemetry.NamespaceTracers, "spans_created", telemetryTags),
+			otelSemanticsEnabled: cfg.OTelSemanticsEnabled(),
+		}
 		bridgeTracerInst = p.tracer
 	})
 }
@@ -154,7 +159,7 @@ func bridgeSpanFromContext(ctx context.Context, current any) (oteltrace.Span, bo
 	if ddSpan == nil {
 		return nil, false
 	}
-	return &borrowedSpan{ddSpan: ddSpan, sc: sc, tracer: bridgeOTelTracer()}, true
+	return &borrowedSpan{ddSpan: ddSpan, sc: sc, tracer: bridgeTracerInst}, true
 }
 
 // borrowedSpan is the OpenTelemetry view of a span that a Datadog integration started and
@@ -183,7 +188,7 @@ func (s *borrowedSpan) live() bool {
 // Remote is false, because the span is local. Spans that this package starts report Remote
 // true, which is a known difference.
 func (s *borrowedSpan) SpanContext() oteltrace.SpanContext {
-	return ddSpanContext(s.ddSpan).WithRemote(false)
+	return spanContextFromDD(s.sc, false)
 }
 
 // IsRecording returns false after the integration that owns the span finished it.
@@ -250,9 +255,11 @@ func (s *borrowedSpan) End(options ...oteltrace.SpanEndOption) {
 		return
 	}
 	var opts []tracer.FinishOption
-	cfg := oteltrace.NewSpanEndConfig(options...)
-	if t := cfg.Timestamp(); !t.IsZero() {
-		opts = append(opts, tracer.FinishTime(t))
+	if len(options) > 0 {
+		cfg := oteltrace.NewSpanEndConfig(options...)
+		if t := cfg.Timestamp(); !t.IsZero() {
+			opts = append(opts, tracer.FinishTime(t))
+		}
 	}
 	s.ddSpan.Finish(opts...)
 }
