@@ -112,9 +112,9 @@ fallback works and where it stops.
 
 ## Wiring the module in
 
-- Blank-import the module from `otelc/all/otel.instrumentation.go`, and add its `require` and
-  `replace` to `otelc/all/go.mod`.
-- Add the module to `go.work`.
+- Blank-import the module from `otelc/all/otel.instrumentation.go`.
+- Add the module to `go.work`, then run `make fix-modules`. It wires local `replace` directives into
+  sorted `replace (...)` blocks and tidies modules in dependency order.
 - In `.github/ci-components.yml`, map both modules to the suite (a non-empty suite list for
   `contrib/<name>/otelc` registers the suite in the OTelc lane), and add `contrib/<name>/**` to the
   `otelc-integrations` component. For a suite covering code outside `contrib/` (or without a
@@ -123,7 +123,7 @@ fallback works and where it stops.
   automatically via `scripts/ciselect`, so `.github/workflows/otelc.yml` needs no edit.
 - When a rule adds an import of the contrib, or the hooks use it, add a new `lib_<name>.go` file in
   `internal/apps/otelc-external-app` that calls `registerLibrary` from `init()` with a call that
-  needs no network, and add its `replace`. The External Application Build job then checks that the
+  needs no network. The External Application Build job then checks that the
   rules module brings its contrib into an application that never imports it.
 
 ## Integration tests
