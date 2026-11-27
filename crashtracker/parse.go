@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -59,7 +60,25 @@ var (
 	// and elides the middle (runtime/traceback.go). It is not a frame itself:
 	// it has no source location line following it.
 	framesElidedRe = regexp.MustCompile(`^\.\.\.\d+ frames elided\.\.\.$`)
+
+	// registerRe matches the pc, sp and fp values that the runtime prints in
+	// signal lines. They change with every build and run.
+	registerRe = regexp.MustCompile(` (?:pc|sp|fp)=0x[0-9a-fA-F]+`)
+
+	// addressedValueRe matches the runtime's print of a panic value that has no
+	// text form, e.g. "(main.point) 0x407238". The address changes with every build.
+	addressedValueRe = regexp.MustCompile(`^(\(.+\)) 0x[0-9a-fA-F]+$`)
+
+	// recoveredSuffixRe matches the marker that the runtime appends to a panic
+	// that a deferred call recovered, e.g. " [recovered]".
+	recoveredSuffixRe = regexp.MustCompile(` \[recovered[^\]]*\]$`)
+
+	// stackLimitRe matches the runtime's stderr line that names the stack limit.
+	stackLimitRe = regexp.MustCompile(`^runtime: goroutine stack exceeds (\d+)-byte limit$`)
 )
+
+// stackOverflowMessage is the message of a fatal error from stack exhaustion.
+const stackOverflowMessage = "stack overflow"
 
 // maxReportThreads bounds how many goroutines a single report includes. A
 // crash dump can contain thousands of goroutines; including all of them
@@ -78,15 +97,19 @@ const maxFramesPerThread = 1000
 // parseCrashDump parses a raw Go crash dump into a Report.
 // The input is the full text written by the Go runtime to the crash output fd.
 func parseCrashDump(dump []byte) *Report {
+	return parseCrashDumpWithStderr(dump, stderrCrashLines{})
+}
+
+// parseCrashDumpWithStderr uses stderr for fatal error text that the runtime
+// omits from the crash output file (https://github.com/golang/go/issues/76859).
+func parseCrashDumpWithStderr(dump []byte, stderr stderrCrashLines) *Report {
 	preamble, threads := splitDump(dump)
 
 	sigInfo := parseSignal(preamble)
-	errType := errorType(preamble, sigInfo)
-	message := errorMessage(preamble, sigInfo)
-
 	// crashingThread must run before the cap below: it marks the crashed
 	// goroutine and we need that goroutine to survive truncation.
 	crashed := crashingThread(threads)
+	errType, message := classifyError(preamble, threads, crashed, sigInfo, stderr)
 	var stack *StackTrace
 	var threadName string
 	if crashed != nil {
@@ -319,13 +342,17 @@ func crashingThread(threads []Thread) *Thread {
 	}
 	idx := 0
 	for i := range threads {
-		if threads[i].State == "running" {
+		if isRunningState(threads[i].State) {
 			idx = i
 			break
 		}
 	}
 	threads[idx].Crashed = true
 	return &threads[idx]
+}
+
+func isRunningState(state string) bool {
+	return state == "running" || strings.HasPrefix(state, "running,")
 }
 
 // capThreads bounds the number of goroutines included in a report to
@@ -402,11 +429,37 @@ func parseSignal(preamble []string) *SigInfo {
 	return nil
 }
 
-// errorType classifies the crash into an error.type value following the
-// Crashtracking model. Anything that is not a signal or a recognised
-// "fatal error:" kind is reported as a panic — this includes both
-// explicit "panic:"/"panic(" preamble lines and the default case, since a
-// panic is the only remaining crash kind Go's runtime produces.
+func classifyError(preamble []string, threads []Thread, crashed *Thread, sigInfo *SigInfo, stderr stderrCrashLines) (errType, message string) {
+	if errType = errorType(preamble, sigInfo); errType != "" {
+		return errType, scrubVolatile(errorMessage(preamble, sigInfo))
+	}
+	// The runtime writes a header for each panic. Without a known header,
+	// classify the dump as a fatal error even when the frames give no cause.
+	message = stderrFatalMessage(stderr)
+	if message == "" {
+		message = runtimeFatalMessage(preamble, threads, crashed)
+	}
+	return "runtime.plainError", scrubVolatile(message)
+}
+
+// scrubVolatile removes the values that change with each build or run from a
+// message, so that equal crashes have equal messages.
+func scrubVolatile(message string) string {
+	message = registerRe.ReplaceAllString(message, "")
+	return addressedValueRe.ReplaceAllString(message, "$1")
+}
+
+func stderrFatalMessage(stderr stderrCrashLines) string {
+	message := strings.TrimSpace(strings.TrimPrefix(stderr.fatal, stderrFatalPrefix))
+	if message == stackOverflowMessage {
+		if m := stackLimitRe.FindStringSubmatch(stderr.stackLimit); m != nil {
+			message += " (goroutine stack exceeds " + m[1] + "-byte limit)"
+		}
+	}
+	return message
+}
+
+// errorType returns the type if the preamble identifies the crash.
 func errorType(preamble []string, sigInfo *SigInfo) string {
 	// A signal-triggered crash reports the specific signal name (e.g.
 	// "SIGSEGV"), not the generic "UnixSignal" kind label, so Error Tracking
@@ -425,8 +478,75 @@ func errorType(preamble []string, sigInfo *SigInfo) string {
 			// every native crash on Windows as a Go-level panic.
 			return "WindowsException"
 		}
+		if strings.HasPrefix(line, "panic: ") {
+			return "panic"
+		}
 	}
-	return "panic"
+	return ""
+}
+
+// runtimeFatalMessage returns a fallback when stderr has no fatal error text.
+func runtimeFatalMessage(preamble []string, threads []Thread, crashed *Thread) string {
+	var runtimeFrames []Frame
+	hasPreamble := false
+	for i, line := range preamble {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		hasPreamble = true
+		if line != "runtime stack:" {
+			return errorMessage(preamble, nil)
+		}
+		// Stack overflow can put the fatal frames on the runtime stack,
+		// separate from the user goroutine that exhausted its stack.
+		runtimeFrames, _, _ = parseFrames(preamble[i+1:])
+		break
+	}
+
+	const missingMessage = " (message not in crash output, golang/go#76859)"
+	// The runtime stack of a stack overflow ends in runtime.throw called from
+	// runtime.newstack.
+	if hasFatalFrame(runtimeFrames) && slices.ContainsFunc(runtimeFrames, func(f Frame) bool {
+		return f.Function == "runtime.newstack"
+	}) {
+		return stackOverflowMessage
+	}
+	// Parked goroutines alone do not prove a deadlock. Use a tentative message.
+	if !hasPreamble && len(threads) > 0 && !slices.ContainsFunc(threads, func(thread Thread) bool {
+		return isRunningState(thread.State) || hasFatalFrame(thread.Stack.Frames)
+	}) {
+		return "possible deadlock" + missingMessage
+	}
+	if crashed != nil {
+		for _, frame := range crashed.Stack.Frames {
+			if isFatalCallerFrame(frame.Function) {
+				return "fatal error in " + frame.Function + missingMessage
+			}
+		}
+	}
+	return "fatal error" + missingMessage
+}
+
+func isFatalCallerFrame(name string) bool {
+	return !isRuntimeFunction(name) && !strings.HasPrefix(name, "sync.") && !strings.HasPrefix(name, "internal/sync.")
+}
+
+func hasFatalFrame(frames []Frame) bool {
+	for _, frame := range frames {
+		if !isRuntimeFunction(frame.Function) {
+			return false
+		}
+		_, name, _ := strings.Cut(frame.Function, ".")
+		switch name {
+		case "throw", "fatal", "fatalthrow", "fatalpanic":
+			return true
+		}
+	}
+	return false
+}
+
+func isRuntimeFunction(name string) bool {
+	return strings.HasPrefix(name, "runtime.") || strings.HasPrefix(name, "internal/runtime/")
 }
 
 // fatalErrorType maps a "fatal error: <msg>" message to its Go runtime error
@@ -440,9 +560,16 @@ func fatalErrorType(msg string) string {
 
 // errorMessage derives the human-readable error message from the preamble.
 func errorMessage(preamble []string, sigInfo *SigInfo) string {
-	// For signal crashes, prefer the "[signal SIG...]" line. Anchored the same
+	// A panic that a signal started keeps the panic value as its message. The
+	// signal name, code and address stay in the report's signal fields.
+	// Without a panic line, prefer the "[signal SIG...]" line. Anchored the same
 	// way as parseSignal, for the same reason.
 	if sigInfo != nil {
+		for i, line := range preamble {
+			if strings.HasPrefix(line, "panic:") {
+				return collectPanicMessage(preamble, i)
+			}
+		}
 		for _, line := range preamble {
 			if strings.HasPrefix(strings.TrimSpace(line), "[signal ") {
 				return strings.Trim(strings.TrimSpace(line), "[]")
@@ -473,25 +600,28 @@ func errorMessage(preamble []string, sigInfo *SigInfo) string {
 	return ""
 }
 
-// collectPanicMessage returns a "panic:" line's message extended with any
-// subsequent preamble lines up to the next blank line. A single "panic:" line
-// is not always the whole message: a panic value containing an embedded
-// newline prints as multiple physical lines, and a panic recovered and
-// re-raised during deferred cleanup prints as an indented
-// "panic: ... [recovered]" line followed by the final panic on its own line.
-// Returning only the first line loses that continuation — including, in the
-// recovered case, the panic that actually terminated the process.
+// collectPanicMessage returns the message of the last panic that a "panic:"
+// line starts, extended with any subsequent preamble lines up to the next blank
+// line or signal line. A single "panic:" line is not always the whole message:
+// a panic value containing an embedded newline prints as multiple physical
+// lines. A panic recovered and then followed by another panic prints each panic
+// on its own line, the earlier ones first and the later ones indented with a
+// tab, e.g. "panic: first [recovered]" then "\tpanic: second". Only the last
+// panic ended the process, so only its value is the message.
 func collectPanicMessage(preamble []string, start int) string {
-	var b strings.Builder
-	b.WriteString(strings.TrimSpace(strings.TrimPrefix(preamble[start], "panic:")))
-	for _, line := range preamble[start+1:] {
-		if strings.TrimSpace(line) == "" {
+	var lines []string
+	for _, line := range preamble[start:] {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "[signal ") {
 			break
 		}
-		b.WriteByte('\n')
-		b.WriteString(strings.TrimSpace(line))
+		if strings.HasPrefix(line, "\tpanic:") {
+			lines = lines[:0]
+		}
+		lines = append(lines, trimmed)
 	}
-	return b.String()
+	lines[0] = strings.TrimSpace(strings.TrimPrefix(lines[0], "panic:"))
+	return recoveredSuffixRe.ReplaceAllString(strings.Join(lines, "\n"), "")
 }
 
 // panicValue extracts a simple string argument from a "panic(...)" frame line,

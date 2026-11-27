@@ -1,0 +1,12 @@
+panic: first [recovered]
+	panic: repanic after: first
+
+goroutine 1 [running]:
+main.crash.func1()
+	/app/generate.go:148 +0x60
+panic({0xecb80?, 0x11caa0?})
+	/usr/local/go/src/runtime/panic.go:860 +0x12c
+main.crash({0xffffcbc9ded1, 0x7}, {0xffffcbc9ded9?, 0x1a29c?})
+	/app/generate.go:150 +0x6ec
+main.main()
+	/app/generate.go:35 +0x94

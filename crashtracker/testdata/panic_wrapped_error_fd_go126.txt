@@ -1,0 +1,7 @@
+panic: wrapped: inner error
+
+goroutine 1 [running]:
+main.crash({0xffffee53deb9, 0x13}, {0xffffee53decd?, 0x1a29c?})
+	/app/generate.go:158 +0x578
+main.main()
+	/app/generate.go:35 +0x94

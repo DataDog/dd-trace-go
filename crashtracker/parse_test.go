@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -345,16 +346,78 @@ func TestErrorMessageMultilinePanic(t *testing.T) {
 }
 
 func TestErrorMessageRecoveredNestedPanic(t *testing.T) {
-	// A panic recovered and re-raised during deferred cleanup prints the
-	// original panic, then the final one that actually terminated the
-	// process, as additional preamble lines before the blank separator.
-	// collectPanicMessage does not special-case this shape — it just
-	// continues to the blank line — so this proves the final panic is no
-	// longer silently dropped.
-	preamble := []string{"panic: first", "\tpanic: second [recovered]", ""}
-	got := errorMessage(preamble, nil)
-	if !strings.Contains(got, "second") {
-		t.Errorf("errorMessage() = %q, want it to contain the recovered panic %q", got, "second")
+	// A panic recovered and then followed by another panic prints each panic
+	// on its own line: the earlier ones first, the later ones indented with a
+	// tab. Only the last panic ended the process, so its value is the message.
+	for _, preamble := range [][]string{
+		{"panic: first [recovered]", "\tpanic: second", ""},
+		{"panic: first", "\tpanic: second [recovered]", ""},
+		{"panic: first [recovered]", "\tpanic: second [recovered]", "\tpanic: third", ""},
+	} {
+		got := errorMessage(preamble, nil)
+		want := strings.TrimSuffix(strings.TrimPrefix(strings.TrimSpace(preamble[len(preamble)-2]), "panic: "), " [recovered]")
+		if got != want {
+			t.Errorf("errorMessage(%q) = %q, want %q", preamble, got, want)
+		}
+	}
+}
+
+func TestErrorMessageSignalPanicKeepsOnlyPanicValue(t *testing.T) {
+	preamble := []string{
+		"panic: runtime error: invalid memory address or nil pointer dereference",
+		"[signal SIGSEGV: segmentation violation code=0x1 addr=0x0 pc=0x2be9a0]",
+		"",
+	}
+	sigInfo := parseSignal(preamble)
+	got := errorMessage(preamble, sigInfo)
+	want := "runtime error: invalid memory address or nil pointer dereference"
+	if got != want {
+		t.Errorf("errorMessage() = %q, want %q", got, want)
+	}
+}
+
+func TestErrorMessageSignalWithoutPanicDropsRegisters(t *testing.T) {
+	preamble := []string{
+		"fatal error: unexpected signal during runtime execution",
+		"[signal SIGSEGV: segmentation violation code=0x1 addr=0x8 pc=0x2be9a0]",
+		"",
+	}
+	_, message := classifyError(preamble, nil, nil, parseSignal(preamble), stderrCrashLines{})
+	want := "signal SIGSEGV: segmentation violation code=0x1 addr=0x8"
+	if message != want {
+		t.Errorf("message = %q, want %q", message, want)
+	}
+}
+
+func TestParseCrashDumpWithStderr(t *testing.T) {
+	for _, tt := range crashKinds {
+		if tt.wantStderr == "" || tt.wantType != "runtime.plainError" {
+			continue
+		}
+		t.Run(tt.name, func(t *testing.T) {
+			fd := readFixture(t, tt.name+"_fd_go126.txt")
+			var scanner stderrLineScanner
+			scanner.scan([]byte("application output\n"))
+			scanner.scan(readFixture(t, tt.name+"_stderr_go126.txt"))
+			r := parseCrashDumpWithStderr(fd, scanner.snapshot())
+			want := tt.wantStderr
+			if tt.name == "stack_exhaustion" {
+				want = "stack overflow (goroutine stack exceeds 32768-byte limit)"
+			}
+			if r.Error.Type != "runtime.plainError" || r.Error.Message != want {
+				t.Errorf("error = (%q, %q), want (runtime.plainError, %q)", r.Error.Type, r.Error.Message, want)
+			}
+		})
+	}
+}
+
+func TestParseCrashDumpIgnoresStderrForPanic(t *testing.T) {
+	// A fatal error line in the application's own output must not replace
+	// the message of a normal panic.
+	fd := readFixture(t, "panic_string_fd_go126.txt")
+	r := parseCrashDumpWithStderr(fd, stderrCrashLines{fatal: "fatal error: logged by the application"})
+	if r.Error.Type != "panic" || r.Error.Message != "boom" {
+		t.Errorf("error = (%q, %q), want (panic, boom)", r.Error.Type, r.Error.Message)
 	}
 }
 
@@ -507,6 +570,175 @@ func TestParseCrashDumpSignalDetails(t *testing.T) {
 	}
 	if r.SigInfo.SiAddr != "0x0" {
 		t.Errorf("SigInfo.SiAddr = %q, want %q", r.SigInfo.SiAddr, "0x0")
+	}
+}
+
+// crashKinds lists the type and message that every Go crash kind reports. The
+// fd message is for the crash output file. The stderr message is for the text
+// that the runtime writes to stderr, which the supervisor tees. An empty stderr
+// message means the kind has no stderr fixture because stderr adds nothing.
+var crashKinds = []struct {
+	name          string
+	wantType      string
+	wantFDMessage string
+	wantStderr    string
+}{
+	{"concurrent_map_write", "runtime.plainError", "fatal error in main.writeMap" + missingFatalMessage, "concurrent map writes"},
+	{"concurrent_map_read_write", "runtime.plainError", "fatal error in main.crash" + missingFatalMessage, "concurrent map read and map write"},
+	{"deadlock", "runtime.plainError", "possible deadlock" + missingFatalMessage, "all goroutines are asleep - deadlock!"},
+	{"stack_exhaustion", "runtime.plainError", "stack overflow", "stack overflow"},
+	{"mutex_unlock", "runtime.plainError", "fatal error in main.crash" + missingFatalMessage, "sync: unlock of unlocked mutex"},
+	{"rwmutex_runlock", "runtime.plainError", "fatal error in main.crash" + missingFatalMessage, "sync: RUnlock of unlocked RWMutex"},
+	{"nil_deref", "SIGSEGV", "runtime error: invalid memory address or nil pointer dereference", "runtime error: invalid memory address or nil pointer dereference"},
+	{"repanic", "panic", "repanic after: first", ""},
+	{"panic_struct", "panic", "(main.point)", ""},
+	{"panic_string", "panic", "boom", ""},
+	{"panic_error", "panic", "boom error", ""},
+	{"panic_wrapped_error", "panic", "wrapped: inner error", ""},
+	{"panic_custom_error", "panic", "custom error 7", ""},
+	{"panic_int", "panic", "42", ""},
+	{"panic_nil", "panic", "panic called with nil argument", ""},
+	{"index_out_of_range", "panic", "runtime error: index out of range [118] with length 3", ""},
+	{"nil_map_write", "panic", "assignment to entry in nil map", "assignment to entry in nil map"},
+	{"send_closed_channel", "panic", "send on closed channel", ""},
+	{"close_closed_channel", "panic", "close of closed channel", "close of closed channel"},
+	{"type_assertion", "panic", "interface conversion: interface {} is string, not int", ""},
+	{"divide_by_zero", "panic", "runtime error: integer divide by zero", ""},
+	{"panic_goroutine", "panic", "goroutine boom", ""},
+}
+
+const missingFatalMessage = " (message not in crash output, golang/go#76859)"
+
+func TestParseCrashDumpCrashOutputFixtures(t *testing.T) {
+	volatile := regexp.MustCompile(`0x[0-9a-fA-F]+|\b(pc|sp|fp)=`)
+	for _, tt := range crashKinds {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, shape := range []string{"fd", "stderr"} {
+				wantMessage := tt.wantFDMessage
+				if shape == "stderr" {
+					if tt.wantStderr == "" {
+						continue
+					}
+					wantMessage = tt.wantStderr
+				}
+				t.Run(shape, func(t *testing.T) {
+					r := parseCrashDump(readFixture(t, tt.name+"_"+shape+"_go126.txt"))
+					if r.Error.Type != tt.wantType {
+						t.Errorf("Error.Type = %q, want %q", r.Error.Type, tt.wantType)
+					}
+					if r.Error.Message != wantMessage {
+						t.Errorf("Error.Message = %q, want %q", r.Error.Message, wantMessage)
+					}
+					if volatile.MatchString(r.Error.Message) {
+						t.Errorf("Error.Message = %q, want no address, pc, sp or fp", r.Error.Message)
+					}
+					if tt.name == "nil_deref" {
+						if r.SigInfo == nil || r.SigInfo.SiSignoHuman != "SIGSEGV" || r.SigInfo.SiSigno != 11 || r.SigInfo.SiCode != 1 || r.SigInfo.SiAddr != "0x0" {
+							t.Errorf("SigInfo = %+v, want SIGSEGV with code 1 and address 0x0", r.SigInfo)
+						}
+					} else if r.SigInfo != nil {
+						t.Errorf("SigInfo = %+v, want nil", r.SigInfo)
+					}
+					if r.Error.Stack == nil || len(r.Error.Stack.Frames) == 0 {
+						t.Fatal("Error.Stack has no frames")
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestParseCrashDumpFatalFrames(t *testing.T) {
+	for _, fn := range []string{"runtime.throw", "runtime.fatal", "runtime.fatalthrow", "runtime.fatalpanic", "internal/runtime/maps.fatal"} {
+		t.Run(fn, func(t *testing.T) {
+			dump := "\ngoroutine 12 [running]:\n" + fn + "(0x1234)\n\t/runtime/panic.go:1 +0x20\nmain.writeMap(0x5678)\n\t/app/main.go:10 +0x10\n"
+			r := parseCrashDump([]byte(dump))
+			if r.Error.Type != "runtime.plainError" {
+				t.Errorf("Error.Type = %q, want runtime.plainError", r.Error.Type)
+			}
+			want := "fatal error in main.writeMap (message not in crash output, golang/go#76859)"
+			if r.Error.Message != want {
+				t.Errorf("Error.Message = %q, want %q", r.Error.Message, want)
+			}
+		})
+	}
+}
+
+func TestParseCrashDumpFatalFramesWithoutUserFrame(t *testing.T) {
+	for _, dump := range []string{
+		"\ngoroutine 1 [running]:\nruntime.throw(0x1)\n\t/runtime/panic.go:1229\n",
+		"\nruntime stack:\nruntime.throw(0x1)\n\t/runtime/panic.go:1229\n",
+	} {
+		r := parseCrashDump([]byte(dump))
+		want := "fatal error (message not in crash output, golang/go#76859)"
+		if r.Error.Type != "runtime.plainError" || r.Error.Message != want {
+			t.Errorf("error = (%q, %q), want (runtime.plainError, %q)", r.Error.Type, r.Error.Message, want)
+		}
+	}
+}
+
+func TestParseCrashDumpUnknownPreambleIsNotDeadlock(t *testing.T) {
+	dump := []byte("unknown preamble\n\ngoroutine 1 [select (no cases)]:\nmain.main()\n\t/app/main.go:10\n")
+	r := parseCrashDump(dump)
+	if r.Error.Type != "runtime.plainError" || r.Error.Message != "unknown preamble" {
+		t.Errorf("error = (%q, %q), want (runtime.plainError, unknown preamble)", r.Error.Type, r.Error.Message)
+	}
+}
+
+func TestParseCrashDumpHeaderlessRunningIsNotDeadlock(t *testing.T) {
+	dump := []byte("\ngoroutine 1 [running]:\nmain.main()\n\t/app/main.go:10\n")
+	r := parseCrashDump(dump)
+	want := "fatal error in main.main" + missingFatalMessage
+	if r.Error.Type != "runtime.plainError" || r.Error.Message != want {
+		t.Errorf("error = (%q, %q), want (runtime.plainError, %q)", r.Error.Type, r.Error.Message, want)
+	}
+}
+
+func TestParseCrashDumpHeaderlessRunningLockedToThread(t *testing.T) {
+	dump := []byte(`
+goroutine 1 [chan receive]:
+main.main()
+	/app/main.go:10
+
+goroutine 2 [running, locked to thread]:
+sync.(*Mutex).Unlock(...)
+	/runtime/sync/mutex.go:65
+main.crash()
+	/app/main.go:20
+`)
+	r := parseCrashDump(dump)
+	want := "fatal error in main.crash" + missingFatalMessage
+	if r.Error.Type != "runtime.plainError" || r.Error.Message != want {
+		t.Errorf("error = (%q, %q), want (runtime.plainError, %q)", r.Error.Type, r.Error.Message, want)
+	}
+	if len(r.Error.Threads) != 2 {
+		t.Fatalf("len(Error.Threads) = %d, want 2", len(r.Error.Threads))
+	}
+	for _, thread := range r.Error.Threads {
+		if want := thread.Name == "goroutine 2"; thread.Crashed != want {
+			t.Errorf("%s Crashed = %t, want %t", thread.Name, thread.Crashed, want)
+		}
+	}
+}
+
+func TestParseCrashDumpPreambleOverridesFatalFrames(t *testing.T) {
+	for _, tt := range []struct {
+		preamble string
+		wantType string
+		wantMsg  string
+	}{
+		{"panic: original panic\n", "panic", "original panic"},
+		{"fatal error: original fatal\n", "runtime.plainError", "original fatal"},
+		{"SIGABRT: abort\n", "SIGABRT", "SIGABRT: abort"},
+		{"Exception 0xc0000005 0x0 0x18 0x1234\n", "WindowsException", "Exception 0xc0000005 0x0 0x18 0x1234"},
+	} {
+		t.Run(tt.wantType, func(t *testing.T) {
+			dump := tt.preamble + "\ngoroutine 1 [running]:\nruntime.fatalpanic(0x1)\n\t/runtime/panic.go:1456\nmain.main()\n\t/app/main.go:10\n"
+			r := parseCrashDump([]byte(dump))
+			if r.Error.Type != tt.wantType || r.Error.Message != tt.wantMsg {
+				t.Errorf("error = (%q, %q), want (%q, %q)", r.Error.Type, r.Error.Message, tt.wantType, tt.wantMsg)
+			}
+		})
 	}
 }
 

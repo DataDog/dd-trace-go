@@ -1,0 +1,7 @@
+panic: runtime error: integer divide by zero
+
+goroutine 1 [running]:
+main.crash({0xffffcb8a6ec3, 0xe}, {0xffffcb8a6ed2?, 0x1a29c?})
+	/app/generate.go:178 +0x818
+main.main()
+	/app/generate.go:35 +0x94

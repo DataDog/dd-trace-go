@@ -1,0 +1,12 @@
+
+goroutine 1 [running]:
+sync.fatal({0x11767c?, 0x104640?})
+	/usr/local/go/src/runtime/panic.go:1161 +0x20
+sync.(*RWMutex).rUnlockSlow(0x2c444a1fa048, 0x39?)
+	/usr/local/go/src/sync/rwmutex.go:132 +0x38
+sync.(*RWMutex).RUnlock(...)
+	/usr/local/go/src/sync/rwmutex.go:122
+main.crash({0xffffec02dec1, 0xf}, {0xffffec02ded1?, 0x1a29c?})
+	/app/generate.go:132 +0x2cc
+main.main()
+	/app/generate.go:35 +0x94

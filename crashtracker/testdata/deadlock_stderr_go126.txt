@@ -1,0 +1,7 @@
+fatal error: all goroutines are asleep - deadlock!
+
+goroutine 1 [select (no cases)]:
+main.crash({0xffffdfe6fecf, 0x8}, {0xffffdfe6fed8?, 0x1a29c?})
+	/app/generate.go:126 +0x710
+main.main()
+	/app/generate.go:35 +0x94

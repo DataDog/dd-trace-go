@@ -1,0 +1,7 @@
+panic: runtime error: index out of range [118] with length 3
+
+goroutine 1 [running]:
+main.crash({0xffffd895cebb, 0x12}, {0xffffd895cece?, 0x1a29c?})
+	/app/generate.go:168 +0x864
+main.main()
+	/app/generate.go:35 +0x94
