@@ -112,6 +112,33 @@ func TestNilContextArgument(t *testing.T) {
 	assert.Equal(t, map[string]string{"function-name": "spanWithNilContext", "arg": "nil"}, userMeta(nilCtx))
 }
 
+// A nil request does not panic and stays nil in the function body.
+func TestNilRequestArgument(t *testing.T) {
+	spans := traced(t, func(ctx context.Context) {
+		assert.True(t, spanWithNilRequest(nil, nil))
+		assert.True(t, spanWithNilContextAndRequest(nil, nil))
+		other := startOnGoroutine("test.other")
+		defer other.Finish()
+		assert.True(t, spanWithContextAndNilRequest(ctx, nil))
+	})
+
+	requireOperations(t, spans, "test.root", "test.other",
+		"spanWithNilRequest", "spanWithContextAndNilRequest", "spanWithNilContextAndRequest")
+	requireParent(t, spans, "spanWithNilRequest", "test.root")
+	// The parent comes from the context argument, not from the active span.
+	requireParent(t, spans, "spanWithContextAndNilRequest", "test.root")
+	// A nil context.Context starts a new trace.
+	nilCtx := spans["spanWithNilContextAndRequest"]
+	assert.Zero(t, nilCtx.ParentID)
+	assert.NotEqual(t, spans["test.root"].TraceID, nilCtx.TraceID)
+	assert.Equal(t, map[string]string{"function-name": "spanWithNilRequest", "arg": "nil-request"},
+		userMeta(spans["spanWithNilRequest"]))
+	assert.Equal(t, map[string]string{"function-name": "spanWithContextAndNilRequest", "arg": "nil-request-context"},
+		userMeta(spans["spanWithContextAndNilRequest"]))
+	assert.Equal(t, map[string]string{"function-name": "spanWithNilContextAndRequest", "arg": "nil-context-request"},
+		userMeta(nilCtx))
+}
+
 // An argument that only implements context.Context gives the parent, not the
 // active span.
 func TestImplementingContextArgument(t *testing.T) {
