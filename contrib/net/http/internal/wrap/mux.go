@@ -7,8 +7,10 @@ package wrap
 
 import (
 	"net/http"
+	"net/url"
 	pathpkg "path"
-	"strings"
+	"reflect"
+	"sync"
 
 	internal "github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/config"
 	"github.com/DataDog/dd-trace-go/contrib/net/http/v2/internal/pattern"
@@ -81,26 +83,41 @@ func (mux *ServeMux) HandleFunc(pttrn string, handlerFunc func(http.ResponseWrit
 }
 
 // matchedRoute returns the route that ServeMux selects for r, for API Security,
-// given the pattern that ServeMux.Handler returns for r: it is known before AppSec
-// can block the request, and a handler that changes its path values
-// (SetPathValue) does not change it. Its path is the path that ServeMux matches:
-// the escaped path, cleaned but for CONNECT.
+// given the handler and the pattern that ServeMux.Handler returns for r: it is
+// known before AppSec can block the request, and a handler that changes its path
+// values (SetPathValue) does not change it. Its path is the path that ServeMux
+// matches: the escaped path, cleaned but for CONNECT.
 //
-// For a redirect that ServeMux generates, the pattern is the registered pattern
-// that the redirect leads to, but for the trailing-slash redirect of a CONNECT
-// request: the pattern is then the unescaped redirect path, which is request data,
-// and the request gets no route. Depending on the Go version, that path is the
-// request path or the cleaned request path, with a "/" added.
-func matchedRoute(r *http.Request, pttrn string) httpsec.MatchedRoute {
+// A redirect that ServeMux generates gets the registered pattern that it leads to,
+// but for CONNECT: the pattern of its trailing-slash redirect is the unescaped
+// redirect path, which is request data. A request that ServeMux answers without a
+// pattern ("*") gets no route, as all requests with GODEBUG=httpmuxgo121=1, whose
+// patterns are literal paths.
+func matchedRoute(r *http.Request, h http.Handler, pttrn string) httpsec.MatchedRoute {
+	if r.RequestURI == "*" || legacyServeMux() ||
+		r.Method == http.MethodConnect && reflect.TypeOf(h) == redirectHandlerType {
+		return httpsec.MatchedRoute{}
+	}
 	path := r.URL.EscapedPath()
 	if r.Method != http.MethodConnect {
 		path = cleanPath(path)
-	} else if path != "" && !strings.HasSuffix(path, "/") &&
-		(pttrn == r.URL.Path+"/" || pttrn == cleanPath(r.URL.Path)+"/") {
-		return httpsec.MatchedRoute{}
 	}
 	return httpsec.MatchedRoute{Route: pattern.Route(pttrn), Path: path}
 }
+
+// redirectHandlerType is the type of the handler of a redirect that ServeMux
+// generates.
+var redirectHandlerType = reflect.TypeOf(http.RedirectHandler("/", http.StatusTemporaryRedirect))
+
+// legacyServeMux reports that ServeMux uses the matcher of GODEBUG=httpmuxgo121=1,
+// which net/http selects when it starts: a probe ServeMux does not match a
+// wildcard.
+var legacyServeMux = sync.OnceValue(func() bool {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/{a}", func(http.ResponseWriter, *http.Request) {})
+	_, pttrn := mux.Handler(&http.Request{Method: http.MethodGet, URL: &url.URL{Path: "/x"}})
+	return pttrn != "/{a}"
+})
 
 // cleanPath returns the path that ServeMux redirects a request to: path.Clean,
 // which keeps a trailing "/".
@@ -128,7 +145,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// get the resource associated to this request
-	_, pttrn := mux.Handler(r)
+	h, pttrn := mux.Handler(r)
 	var route string
 	if mux.cfg.OTelSemanticsEnabled {
 		route = pattern.Path(pttrn)
@@ -142,11 +159,7 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	so := make([]tracer.StartSpanOption, len(mux.cfg.SpanOpts), len(mux.cfg.SpanOpts)+1)
 	copy(so, mux.cfg.SpanOpts)
 	so = append(so, httptrace.HeaderTagsFromRequest(r, mux.cfg.HeaderTags))
-	var matched *httpsec.MatchedRoute
-	if internal.Instrumentation.AppSecEnabled() {
-		route := matchedRoute(r, pttrn)
-		matched = &route
-	}
+	matched := matchedRoute(r, h, pttrn)
 	traceAndServe(mux.ServeMux, w, r, &httptrace.ServeConfig{
 		Service:              mux.cfg.ServiceName,
 		ServiceSource:        mux.cfg.ServiceSource,
@@ -156,5 +169,5 @@ func (mux *ServeMux) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Route:                route,
 		OTelSemanticsEnabled: &mux.cfg.OTelSemanticsEnabled,
 		IsStatusError:        mux.cfg.IsStatusError,
-	}, matched)
+	}, &matched)
 }

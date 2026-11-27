@@ -12,6 +12,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	instrhttptrace "github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/options"
 
@@ -131,7 +132,7 @@ func (r *Router) BeforeHandle(w http.ResponseWriter, req *http.Request) (tw http
 		// Under OpenTelemetry semantics the span is named after the method and route, as in the other HTTP integrations.
 		spanopts = append([]tracer.StartSpanOption{tracer.ResourceName(instrhttptrace.ServerSpanName(req.Method, route))}, spanopts...)
 	}
-	return instrhttptrace.BeforeHandle(&instrhttptrace.ServeConfig{
+	tw, treq, afterHandle, handled = instrhttptrace.BeforeHandle(&instrhttptrace.ServeConfig{
 		Framework:            "github.com/gorilla/mux",
 		Service:              r.config.serviceName,
 		ServiceSource:        r.config.serviceSource,
@@ -145,6 +146,13 @@ func (r *Router) BeforeHandle(w http.ResponseWriter, req *http.Request) (tw http
 		IsStatusError:        r.config.isStatusError,
 		OTelSemanticsEnabled: &r.config.otelEnabled,
 	}, w, req)
+	if match.Route != nil && match.Route.GetHandler() == nil {
+		// A subrouter without a route for the request matches it with the route
+		// of its prefix, which has no handler: its 404 or 405 handler answers, so
+		// the request has no route.
+		httpsec.ReportMatchedRoute(treq.Context(), httpsec.MatchedRoute{})
+	}
+	return tw, treq, afterHandle, handled
 }
 
 // WrapRouter returns the given router wrapped with the tracing of the HTTP

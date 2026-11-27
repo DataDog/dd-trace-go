@@ -12,6 +12,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"testing"
@@ -411,10 +413,22 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 	// The normalized route follows the path that the mux matched, not the path
 	// of the request URI.
 	stripped := http.StripPrefix("/api", mux)
+	// A handler behind http.StripPrefix reports the pattern and the path values
+	// that a ServeMux bound before the prefix was stripped.
+	std := http.NewServeMux()
+	std.Handle("/files/{path...}", http.StripPrefix("/files", WrapHandler(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), "svc", "res")))
+	// A handler before the ServeMux rewrites URL.Path only: URL.RawPath no longer
+	// encodes it, and ServeMux matches the escaped path.
+	std.Handle("/v2/", WrapHandler(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), "svc", "res"))
+	rewritten := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.URL.Path = "/v2/item"
+		std.ServeHTTP(w, r)
+	})
 
 	mux.HandleFunc("/users/{id}/", func(http.ResponseWriter, *http.Request) {})
 	mux.HandleFunc("/x/{id}", func(http.ResponseWriter, *http.Request) {})
 	mux.HandleFunc("/pair/{a}/{b}/", func(http.ResponseWriter, *http.Request) {})
+	mux.HandleFunc("/sub/", func(http.ResponseWriter, *http.Request) {})
 	// A handler that redirects itself keeps its route.
 	mux.HandleFunc("/moved/{id}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
@@ -438,6 +452,7 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 		{http.MethodConnect, "/users/x%20%2Fadmin", "", true},
 		// ServeMux does not clean the path of a CONNECT request.
 		{http.MethodConnect, "/pair/../s3cr3t", "", true},
+		{http.MethodConnect, "/sub/x/..", "/sub/{param1}", false},
 		{http.MethodGet, "/users/123", "/users/{id}/", true},
 		{http.MethodGet, "/static/a/../", "/static/", true},
 		{http.MethodGet, "/a%2Fb/../x/42", "/x/{id}", true},
@@ -446,10 +461,19 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 		{http.MethodGet, "/panics/a/b", "/panics/{path}", false},
 		{http.MethodGet, "/set/a/b", "/set/{path}", false},
 		{http.MethodGet, "/uset/a/b", "/uset/{path}", false},
+		{http.MethodGet, "/files/a", "/files/{path}", false},
+		{http.MethodGet, "/files/", "/files/", false},
+		{http.MethodGet, "/old%2Fname", "/v2/{param1}", false},
 	} {
 		var handler http.Handler = mux
 		if strings.HasPrefix(tc.target, "/api/") {
 			handler = stripped
+		}
+		if strings.HasPrefix(tc.target, "/files/") {
+			handler = std
+		}
+		if strings.HasPrefix(tc.target, "/old") {
+			handler = rewritten
 		}
 		if strings.HasPrefix(tc.target, "/panics/") {
 			handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -462,7 +486,11 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 		handler.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.target, nil))
 		spans := mt.FinishedSpans()
 		mt.Stop()
-		assert.Equal(t, tc.redirect, rec.Code >= 300 && rec.Code < 400, "%s %s: status %d", tc.method, tc.target, rec.Code)
+		if tc.redirect {
+			assert.True(t, rec.Code >= 300 && rec.Code < 400, "%s %s: status %d", tc.method, tc.target, rec.Code)
+		} else {
+			assert.Equal(t, http.StatusOK, rec.Code, tc.method+" "+tc.target)
+		}
 		require.Len(t, spans, 1, tc.target)
 		if tc.want == "" {
 			assert.Nil(t, spans[0].Tag("_dd.appsec.normalized_route"), tc.method+" "+tc.target)
@@ -500,4 +528,45 @@ func TestAppsecNormalizedRouteBlocked(t *testing.T) {
 			assert.Equal(t, tc.want, spans[0].Tag("_dd.appsec.normalized_route"), tc.method)
 		}
 	}
+}
+
+// TestAppsecNormalizedRouteWithoutPattern checks that a request that ServeMux
+// answers without matching a pattern gets no normalized route: "*", and all the
+// requests with the matcher of GODEBUG=httpmuxgo121=1, whose patterns are literal
+// paths. net/http reads that setting when it starts: the test runs itself again
+// with it.
+func TestAppsecNormalizedRouteWithoutPattern(t *testing.T) {
+	t.Setenv("DD_API_SECURITY_ENABLED", "true")
+	testutils.StartAppSec(t)
+
+	mux := NewServeMux()
+	mux.HandleFunc("/", func(http.ResponseWriter, *http.Request) {})
+	mux.HandleFunc("/literal/{item}", func(http.ResponseWriter, *http.Request) {})
+	serve := func(method, target string) (int, any) {
+		mt := mocktracer.Start()
+		defer mt.Stop()
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(method, target, nil))
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1, target)
+		return rec.Code, spans[0].Tag("_dd.appsec.normalized_route")
+	}
+
+	code, tag := serve(http.MethodOptions, "*")
+	assert.Equal(t, http.StatusBadRequest, code)
+	assert.Nil(t, tag)
+
+	if strings.Contains(os.Getenv("GODEBUG"), "httpmuxgo121=1") {
+		code, tag = serve(http.MethodGet, "/literal/{item}")
+		assert.Equal(t, http.StatusOK, code)
+		assert.Nil(t, tag)
+		return
+	}
+	code, tag = serve(http.MethodGet, "/literal/x")
+	assert.Equal(t, http.StatusOK, code)
+	assert.Equal(t, "/literal/{item}", tag)
+	cmd := exec.Command(os.Args[0], "-test.run=^TestAppsecNormalizedRouteWithoutPattern$", "-test.count=1")
+	cmd.Env = append(os.Environ(), "GODEBUG=httpmuxgo121=1")
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
 }

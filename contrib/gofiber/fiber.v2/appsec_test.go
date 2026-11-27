@@ -288,6 +288,12 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 		app.Use("/api", func(c *fiber.Ctx) error { return c.SendString("ok") })
 		app.Use("/pre/", func(c *fiber.Ctx) error { return c.SendString("ok") })
 		app.Static("/static", static)
+		// fiber matches a Static prefix as written: ":" is text.
+		app.Static("/assets:v1", static)
+		// The Group middleware and the endpoint share one slice of handlers.
+		chain := []fiber.Handler{func(c *fiber.Ctx) error { return c.Next() }}
+		app.Group("/grp", chain...)
+		app.Get("/other", chain...)
 		return app
 	}
 	wrapped := fiber.New()
@@ -325,12 +331,20 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 		{"GET", "/item///", http.StatusOK, "/item", nil},
 		{"GET", "/api/v1/x", http.StatusOK, "/api/{param1}", nil},
 		{"GET", "/pre//x", http.StatusOK, "/pre/{param1}", nil},
+		// Without StrictRouting, fiber matches Use("/pre/") as "/pre".
+		{"GET", "/prefix", http.StatusOK, "/pre{param1}", nil},
+		{"GET", "/assets:v1/app.css", http.StatusOK, "/assets%3Av1/{param1}", nil},
+		{"GET", "/grp/missing", http.StatusNotFound, "", nil},
 		{"GET", "/w/x/fixed/rest", http.StatusOK, "/w/{param1}/fixed/{param2}", nil},
 		{"GET", "/static/app.css", http.StatusOK, "/static/{param1}", nil},
 		// fiber matches the escaped path, or the unescaped path with UnescapePath.
 		{"GET", "/a%2Fb", http.StatusOK, "/a%2Fb", []string{"Wrap", "Middleware"}},
 		{"GET", "/a%252Fb", http.StatusOK, "/a%252Fb", []string{"UnescapePath"}},
 		{"GET", "/p%2525/x", http.StatusOK, "/p%2525/{param1}", []string{"UnescapePath"}},
+		// The rest of the path that fiber matched: %2F is text, and a literal
+		// %2F with UnescapePath.
+		{"GET", "/api/%2F", http.StatusOK, "/api/{param1}", []string{"Wrap", "Middleware"}},
+		{"GET", "/api/%252F", http.StatusOK, "/api/{param1}", []string{"UnescapePath"}},
 	} {
 		names := tc.apps
 		if names == nil {
@@ -378,30 +392,53 @@ func TestAppSecNormalizedRouteBlocked(t *testing.T) {
 		app.Get("/body/a%2Fb/:id", blockBody)
 		return app
 	}
+	// A root middleware that ignores the error of a blocking SDK call answers
+	// the request: its route is not the route of the request.
+	swallow := func(app *fiber.App) *fiber.App {
+		app.Use(func(c *fiber.Ctx) error {
+			_ = appsec.MonitorParsedHTTPBody(c.UserContext(), map[string]string{"name": "$globals"})
+			return nil
+		})
+		app.Post("/users/:id", func(c *fiber.Ctx) error { return c.SendString("ok") })
+		return app
+	}
 	wrapped := fiber.New(fiber.Config{UnescapePath: true})
 	Wrap(wrapped)
 	middleware := fiber.New(fiber.Config{UnescapePath: true})
 	middleware.Use(Middleware())
-	apps := map[string]*fiber.App{"Wrap": routes(wrapped), "Middleware": routes(middleware)}
+	wrappedSwallow := fiber.New()
+	Wrap(wrappedSwallow)
+	middlewareSwallow := fiber.New()
+	middlewareSwallow.Use(Middleware())
+	apps := map[string]*fiber.App{
+		"Wrap": routes(wrapped), "Middleware": routes(middleware),
+		"Wrap swallow": swallow(wrappedSwallow), "Middleware swallow": swallow(middlewareSwallow),
+	}
 
-	for _, tc := range []struct{ app, target, want string }{
-		{"Wrap", "/a%252Fb/$globals", "/a%252Fb/{id}"},
-		{"Wrap", "/body/a%252Fb", "/body/a%252Fb"},
-		{"Wrap", "/body/a%252Fb/1", "/body/a%252Fb/{id}"},
-		{"Middleware", "/body/a%252Fb", "/body/a%252Fb"},
-		{"Middleware", "/body/a%252Fb/1", "/body/a%252Fb/{id}"},
-		{"Middleware", "/body/a%252Fb/%3Cscript%3E", "/body/a%252Fb/{id}"},
+	for _, tc := range []struct{ app, method, target, want string }{
+		{"Wrap", "GET", "/a%252Fb/$globals", "/a%252Fb/{id}"},
+		{"Wrap", "GET", "/body/a%252Fb", "/body/a%252Fb"},
+		{"Wrap", "GET", "/body/a%252Fb/1", "/body/a%252Fb/{id}"},
+		{"Middleware", "GET", "/body/a%252Fb", "/body/a%252Fb"},
+		{"Middleware", "GET", "/body/a%252Fb/1", "/body/a%252Fb/{id}"},
+		{"Middleware", "GET", "/body/a%252Fb/%3Cscript%3E", "/body/a%252Fb/{id}"},
+		{"Wrap swallow", "POST", "/users/42", ""},
+		{"Middleware swallow", "POST", "/users/42", ""},
 	} {
-		t.Run(tc.app+" "+tc.target, func(t *testing.T) {
+		t.Run(tc.app+" "+tc.method+" "+tc.target, func(t *testing.T) {
 			mt := mocktracer.Start()
 			defer mt.Stop()
-			res, err := apps[tc.app].Test(httptest.NewRequest("GET", tc.target, nil))
+			res, err := apps[tc.app].Test(httptest.NewRequest(tc.method, tc.target, nil))
 			require.NoError(t, err)
 			defer res.Body.Close()
 			require.Equal(t, http.StatusForbidden, res.StatusCode)
 			spans := mt.FinishedSpans()
 			require.Len(t, spans, 1)
-			require.Equal(t, tc.want, spans[0].Tag("_dd.appsec.normalized_route"))
+			if tc.want == "" {
+				require.Nil(t, spans[0].Tag("_dd.appsec.normalized_route"))
+			} else {
+				require.Equal(t, tc.want, spans[0].Tag("_dd.appsec.normalized_route"))
+			}
 			if tc.app == "Middleware" {
 				// No WAF evaluation after the block: the path parameters would
 				// match crs-941-110.

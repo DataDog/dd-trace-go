@@ -64,9 +64,12 @@ func withAppSec(next echo.HandlerFunc, span trace.TagSetter, e *echo.Echo) echo.
 		})
 		// Wrap the echo response to allow monitoring of the response status code in httpsec.WrapHandler()
 		httpsec.WrapHandler(handler, span, &httpsec.Config{
-			Framework:   "github.com/labstack/echo/v5",
-			Route:       c.Path(),
-			RouteParams: params,
+			Framework: "github.com/labstack/echo/v5",
+			Route:     c.Path(),
+			// The router answers 405 or OPTIONS for a path without a route for the
+			// method: c.Path() is then the path of another route.
+			RouteInferred: c.RouteInfo().Name == echo.MethodNotAllowedRouteName,
+			RouteParams:   params,
 		}).ServeHTTP(&statusResponseWriter{c.Response()}, c.Request())
 		// If an error occurred, wrap it under an echo.HTTPError so APM doesn't
 		// override the response code tag with 500 when it doesn't recognize the

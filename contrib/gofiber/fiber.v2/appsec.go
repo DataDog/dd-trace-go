@@ -156,13 +156,18 @@ func reportRoute(ctx context.Context, c *fiber.Ctx, request *appsecRequest, err 
 			instr.Logger().Debug("gofiber/fiber.v2: request blocked on route parameters: %s", blockErr.Error())
 		}
 	}
-	if isNoRouteError(c, route, err) || answeredByRootMiddleware(c, route, err) {
+	if isNoRouteError(c, route, err) || answeredByRootMiddleware(c, route, err, request.blocked.Load()) {
 		httpsec.ReportMatchedRoute(ctx, httpsec.MatchedRoute{})
 		return
 	}
 	// fiber matches c.Path(), the unescaped path with UnescapePath, where the %
-	// of the route is static text.
-	httpsec.ReportMatchedRoute(ctx, httpsec.MatchedRoute{Route: route.Path, Params: params, Path: c.Path(), LiteralPercent: c.App().Config().UnescapePath})
+	// of the route is static text. Without StrictRouting, it matches a prefix
+	// without the trailing "/" of its route: Use("/pre/") matches /prefix.
+	path, cfg := route.Path, c.App().Config()
+	if !cfg.StrictRouting && len(path) > 1 && strings.HasSuffix(path, "/") && isMiddlewareRoute(c.App(), route) {
+		path = strings.TrimRight(path, "/")
+	}
+	httpsec.ReportMatchedRoute(ctx, httpsec.MatchedRoute{Route: path, Params: params, Path: c.Path(), LiteralPercent: cfg.UnescapePath})
 }
 
 // isNoRouteError reports whether err is the error that fiber's router returns
@@ -191,7 +196,8 @@ var middlewareRoutes sync.Map // weak.Pointer[fiber.Route] -> bool
 
 // isMiddlewareRoute reports whether route was registered with Use (or Static, or
 // a mount): GetRoutes(true) leaves these routes out, and its routes are copies
-// that share the handlers of the app's routes.
+// that share the handlers of the app's routes. Routes can share handlers, as with
+// the same slice of handlers for a Group and an endpoint.
 func isMiddlewareRoute(app *fiber.App, route *fiber.Route) bool {
 	key := weak.Make(route)
 	if middleware, found := middlewareRoutes.Load(key); found {
@@ -199,7 +205,8 @@ func isMiddlewareRoute(app *fiber.App, route *fiber.Route) bool {
 	}
 	middleware := len(route.Handlers) > 0
 	for _, r := range app.GetRoutes(true) {
-		if middleware && len(r.Handlers) == len(route.Handlers) && &r.Handlers[0] == &route.Handlers[0] {
+		if middleware && r.Method == route.Method && r.Path == route.Path &&
+			len(r.Handlers) == len(route.Handlers) && &r.Handlers[0] == &route.Handlers[0] {
 			middleware = false
 			break
 		}
@@ -212,12 +219,13 @@ func isMiddlewareRoute(app *fiber.App, route *fiber.Route) bool {
 
 // answeredByRootMiddleware reports whether a middleware without a path prefix
 // (Use without a path) answered a request for another path than "/" with an
-// error: before routing, or after a router miss whose error it handled. Its
-// route is not the route of the request then. A route "/" that is not a
-// middleware matches only "/".
-func answeredByRootMiddleware(c *fiber.Ctx, route *fiber.Route, err error) bool {
+// error, or AppSec blocked it there: before routing, or after a router miss whose
+// error it handled. Its route is not the route of the request then. A route "/"
+// that is not a middleware matches only "/". A block is written after this check:
+// the status does not show it yet.
+func answeredByRootMiddleware(c *fiber.Ctx, route *fiber.Route, err error, blocked bool) bool {
 	return route.Path == "/" && c.Path() != "/" &&
-		(err != nil || c.Response().StatusCode() >= http.StatusBadRequest)
+		(err != nil || blocked || c.Response().StatusCode() >= http.StatusBadRequest)
 }
 
 // convertRequest builds the net/http request AppSec expects out of a fasthttp

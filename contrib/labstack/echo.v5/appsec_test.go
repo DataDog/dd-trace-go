@@ -761,3 +761,36 @@ func TestAppSecRequestLocalHandler(t *testing.T) {
 	wg.Wait()
 	assert.Len(t, mt.FinishedSpans(), 50)
 }
+
+// TestAppSecNormalizedRouteRouterMiss checks that the 405 and the OPTIONS answer
+// of the echo router, for a path whose route has another method, get no
+// normalized route.
+func TestAppSecNormalizedRouteRouterMiss(t *testing.T) {
+	t.Setenv("DD_API_SECURITY_ENABLED", "true")
+	testutils.StartAppSec(t)
+
+	e := Wrap(echo.New())
+	e.GET("/jobs/:id", func(c *echo.Context) error { return c.String(http.StatusOK, "ok") })
+	for _, tc := range []struct {
+		method string
+		status int
+		want   string // empty: no tag
+	}{
+		{http.MethodGet, http.StatusOK, "/jobs/{id}"},
+		{http.MethodPost, http.StatusMethodNotAllowed, ""},
+		{http.MethodOptions, http.StatusNoContent, ""},
+	} {
+		mt := mocktracer.Start()
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, httptest.NewRequest(tc.method, "/jobs/7", nil))
+		spans := mt.FinishedSpans()
+		mt.Stop()
+		require.Equal(t, tc.status, rec.Code, tc.method)
+		require.Len(t, spans, 1, tc.method)
+		if tc.want == "" {
+			assert.Nil(t, spans[0].Tag("_dd.appsec.normalized_route"), tc.method)
+		} else {
+			assert.Equal(t, tc.want, spans[0].Tag("_dd.appsec.normalized_route"), tc.method)
+		}
+	}
+}

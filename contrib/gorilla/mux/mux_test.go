@@ -939,6 +939,8 @@ func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
 		{router, "/p/ab", "/p/{v}{param1}"},
 		{router, "/p/a/x", "/p/{v}/{param1}"},
 		{router, "/users/100%25", "/users/{id}"},
+		// gorilla matches the unescaped path: its rest is a literal %2F.
+		{router, "/static/%252F", "/static/{param1}"},
 		// UseEncodedPath cannot be read, but only the escaped path starts with
 		// what gorilla matched.
 		{encoded, "/u/a%2Fb", "/u/{id}"},
@@ -954,5 +956,43 @@ func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
 		require.Equal(t, http.StatusOK, rec.Code, tc.target)
 		require.Len(t, spans, 1, tc.target)
 		assert.Equal(t, tc.want, spans[0].Tag("_dd.appsec.normalized_route"), tc.target)
+	}
+
+	// A subrouter without a route for the request answers with its miss handlers.
+	org := NewRouter()
+	sub := org.PathPrefix("/org/{org}").Subrouter()
+	sub.Handle("/item/{id}", okHandler()).Methods(http.MethodGet)
+	sub.NotFoundHandler = http.NotFoundHandler()
+	sub.MethodNotAllowedHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	})
+	// StrictSlash redirects the escaped path to the route with its "/".
+	strict := NewRouter()
+	strict.UseEncodedPath()
+	strict.StrictSlash(true)
+	strict.Handle("/z%2Fy/", okHandler())
+	for _, tc := range []struct {
+		router         *Router
+		method, target string
+		status         int
+		want           string // empty: no tag
+	}{
+		{org, http.MethodGet, "/org/1/item/3", http.StatusOK, "/org/{org}/item/{id}"},
+		{org, http.MethodPost, "/org/1/item/3", http.StatusMethodNotAllowed, ""},
+		{org, http.MethodGet, "/org/1/missing", http.StatusNotFound, ""},
+		{strict, http.MethodGet, "/z%2Fy", http.StatusMovedPermanently, "/z%2Fy/"},
+	} {
+		mt := mocktracer.Start()
+		rec := httptest.NewRecorder()
+		tc.router.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.target, nil))
+		spans := mt.FinishedSpans()
+		mt.Stop()
+		require.Equal(t, tc.status, rec.Code, tc.method+" "+tc.target)
+		require.Len(t, spans, 1, tc.target)
+		if tc.want == "" {
+			assert.Nil(t, spans[0].Tag("_dd.appsec.normalized_route"), tc.method+" "+tc.target)
+		} else {
+			assert.Equal(t, tc.want, spans[0].Tag("_dd.appsec.normalized_route"), tc.method+" "+tc.target)
+		}
 	}
 }
