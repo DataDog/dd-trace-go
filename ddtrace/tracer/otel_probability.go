@@ -27,6 +27,13 @@ const otelRVHexLen = 14
 // randomness value: flip the comparison direction (^h) and drop the low 8 bits
 // to keep the top 56, which preserves the ordering the keep/drop comparison
 // relies on.
+//
+// rv is the source of truth on the wire: it is emitted explicitly in the ot=
+// member and must not be recomputed from the trace ID downstream. An inbound rv
+// is forwarded verbatim and never re-derived (see setOtelUpstream). All
+// dd-trace-* SDKs derive a local rv with this same Knuth hash and the same
+// one-step adjustment against th (see setOtelProbability), so a mixed-language
+// trace emits identical (rv, th) for the same trace ID and sampling rate.
 func deriveOtelRV(traceIDLower uint64) uint64 {
 	h := traceIDLower * knuthFactor // wraps mod 2^64, same hash as sampledByRate
 	return (^h) >> 8
@@ -133,9 +140,7 @@ func appendOtelValue(b *strings.Builder, rv, th *uint64, unknown string) {
 // hexEncode14 writes n as exactly 14 lowercase hex digits (56 bits, big-endian)
 // into buf. Only the low 56 bits of n are represented.
 func hexEncode14(buf *[otelRVHexLen]byte, n uint64) {
-	const digits = "0123456789abcdef"
-	for i := otelRVHexLen - 1; i >= 0; i-- {
-		buf[i] = digits[n&0xf]
-		n >>= 4
-	}
+	// Masking keeps the digits within the buffer: without it a value of 2^56
+	// or more would need a 15th digit.
+	hexEncodePadded(buf[:], n&(1<<56-1), otelRVHexLen)
 }

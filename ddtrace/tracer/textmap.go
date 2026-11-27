@@ -1151,7 +1151,8 @@ func (*propagatorB3SingleHeader) extractTextMap(reader TextMapReader) (*SpanCont
 const (
 	traceparentHeader = "traceparent"
 	tracestateHeader  = "tracestate"
-	// tracestateDDMaxSize bounds the length of a `dd=` list-entry in tracestate.
+	// tracestateDDMaxSize bounds the length of the `dd=` and `ot=` list-entries
+	// in tracestate.
 	tracestateDDMaxSize = 256
 	// tracestateMaxSize bounds the total length of an incoming tracestate
 	// header. Headers larger than this are dropped entirely rather than
@@ -1693,10 +1694,11 @@ func parseTraceparent(ctx *SpanContext, header string) error {
 // `_dd.p.` prefix = `t.`
 // tracestateEntryOversized reports whether a tracestate list-member exceeds
 // its applicable size cap: tracestateDDMaxSize for the dd= member (Datadog's
-// own), or tracestateMemberMaxSize for any other vendor, per the W3C
-// recommendation. entry must already be trimmed of surrounding whitespace.
+// own) and the ot= member (OpenTelemetry's), or tracestateMemberMaxSize for any
+// other vendor, per the W3C recommendation. entry must already be trimmed of
+// surrounding whitespace.
 func tracestateEntryOversized(entry string) bool {
-	if strings.HasPrefix(entry, "dd=") {
+	if strings.HasPrefix(entry, "dd=") || strings.HasPrefix(entry, "ot=") {
 		return len(entry) > tracestateDDMaxSize
 	}
 	return len(entry) > tracestateMemberMaxSize
@@ -1709,10 +1711,11 @@ func parseTracestate(ctx *SpanContext, header string) {
 		return
 	}
 	if len(header) > tracestateMaxSize {
-		// Only the dd= member is size-checked below; an oversized header is
-		// otherwise stored and re-propagated verbatim regardless of how many
-		// (or how large) non-dd vendors it carries. Treat it like an absent
-		// header rather than trying to selectively trim it.
+		// Only individual members are size-checked below (dd= and ot= at 256,
+		// other vendors at 512); an oversized header is otherwise stored and
+		// re-propagated verbatim regardless of how many members it carries.
+		// Treat it like an absent header rather than trying to selectively
+		// trim it.
 		log.Warn("tracestate header exceeds the maximum size (%d), dropping it", tracestateMaxSize) //errtrack:ignore incoming request header exceeds a documented limit
 		return
 	}
@@ -1722,7 +1725,15 @@ func parseTracestate(ctx *SpanContext, header string) {
 		if after, ok := strings.CutPrefix(group, "ot="); ok {
 			// OpenTelemetry consistent probability sampling: read rv/th so DD
 			// can honor an upstream decision. Malformed values are treated as
-			// absent (never reject the trace).
+			// absent (never reject the trace). An oversized member is dropped
+			// without being parsed, and stripped from the stored tracestate
+			// below so it is not re-propagated.
+			if tracestateEntryOversized(group) {
+				// Don't log the member: it comes from an untrusted peer.
+				log.Debug("tracestate ot= member exceeds the maximum size (%d), dropping it", tracestateDDMaxSize)
+				needsCleaning = true
+				continue
+			}
 			rv, rvOK, th, thOK, unknown := parseOtelTracestate(after)
 			if rvOK || thOK || unknown != "" {
 				if ctx.trace == nil {

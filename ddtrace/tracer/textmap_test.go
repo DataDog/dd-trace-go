@@ -553,6 +553,111 @@ func TestExtractTracestateKeepsDDAtBoundary(t *testing.T) {
 	assert.True(t, sctx.trace.hasPropagatingTag("_dd.p.foo"))
 }
 
+func TestExtractTracestateDropsOversizedOT(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	// Build an ot= entry that exceeds tracestateDDMaxSize.
+	otEntry := "ot=rv:ef284ace7a91e1;th:8;zz:" + strings.Repeat("a", tracestateDDMaxSize)
+	require.Greater(t, len(otEntry), tracestateDDMaxSize)
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  "dd=s:1," + otEntry + ",vendor1=v1",
+	})
+	sctx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	// The oversized ot= is treated as absent: nothing inherited from it.
+	rv, th, unknown := sctx.trace.otelTracestate()
+	assert.Nil(t, rv)
+	assert.Nil(t, th)
+	assert.Empty(t, unknown)
+	assert.Nil(t, sctx.trace.otel)
+
+	// It is stripped from the stored tag, other members are kept.
+	stored := sctx.trace.propagatingTag(tracestateHeader)
+	assert.NotContains(t, stored, "ot=")
+	assert.Contains(t, stored, "dd=")
+	assert.Contains(t, stored, "vendor1=v1")
+
+	// And it is not re-emitted by an inject that reuses the cached tag.
+	assert.NotContains(t, injectTracestate(t, sctx), "ot=")
+}
+
+func TestExtractTracestateKeepsOTAtBoundary(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	// ot= entry exactly at the limit should be kept and parsed.
+	prefix := "ot=rv:ef284ace7a91e1;th:8;zz:"
+	otEntry := prefix + strings.Repeat("a", tracestateDDMaxSize-len(prefix))
+	require.Equal(t, tracestateDDMaxSize, len(otEntry))
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  "dd=s:1," + otEntry + ",vendor1=v1",
+	})
+	sctx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	rv, th, _ := sctx.trace.otelTracestate()
+	require.NotNil(t, rv)
+	require.NotNil(t, th)
+	assert.Equal(t, uint64(0xef284ace7a91e1), *rv)
+	assert.Equal(t, uint64(0x80000000000000), *th)
+
+	stored := sctx.trace.propagatingTag(tracestateHeader)
+	assert.Contains(t, stored, otEntry)
+	assert.Contains(t, stored, "vendor1=v1")
+}
+
+func TestExtractTracestateDropsOversizedOTWithWhitespace(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	otEntry := "ot=rv:ef284ace7a91e1;th:8;zz:" + strings.Repeat("a", tracestateDDMaxSize)
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		// Optional whitespace around the oversized member.
+		tracestateHeader: "dd=s:1,\t " + otEntry + " \t,vendor1=v1",
+	})
+	sctx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	assert.Nil(t, sctx.trace.otel)
+	stored := sctx.trace.propagatingTag(tracestateHeader)
+	assert.NotContains(t, stored, "ot=")
+	assert.Contains(t, stored, "vendor1=v1")
+}
+
+func TestExtractTracestateOversizedOTNotInSpanLink(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	t.Setenv(envPropagationBehaviorExtract, "restart")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	otEntry := "ot=rv:ef284ace7a91e1;th:8;zz:" + strings.Repeat("a", tracestateDDMaxSize)
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  "dd=s:1," + otEntry + ",vendor1=v1",
+	})
+	sctx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	links := sctx.SpanLinks()
+	require.Len(t, links, 1)
+	assert.NotContains(t, links[0].Tracestate, "ot=")
+	assert.Contains(t, links[0].Tracestate, "vendor1=v1")
+}
+
 func TestExtractTracestateDropsOversizedDDWithWhitespace(t *testing.T) {
 	t.Setenv(envPropagationStyle, "tracecontext")
 	tracer, err := newTracer()
@@ -2847,6 +2952,45 @@ func BenchmarkInjectW3C(b *testing.B) {
 	}
 }
 
+// BenchmarkInjectW3COtel mirrors BenchmarkInjectW3C with a sampling rule, so the
+// root span records an (rv, th) pair and the inject emits an ot= member.
+func BenchmarkInjectW3COtel(b *testing.B) {
+	b.Setenv(envPropagationStyleInject, "tracecontext")
+	b.Setenv("DD_TRACE_SAMPLING_RULES", `[{"sample_rate": 0.5}]`)
+	tracer, err := newTracer()
+	defer tracer.Stop()
+	assert.NoError(b, err)
+	// The span ID is also the trace ID's lower 64 bits, which the 0.5 rule hashes
+	// to decide keep or drop. Pin it so every run measures the same branch.
+	root := tracer.StartSpan("test", WithSpanID(0xfff972474538efff))
+	defer root.Finish()
+
+	ctx := root.Context()
+	p, ok := ctx.SamplingPriority()
+	require.True(b, ok)
+	require.Equal(b, ext.PriorityUserKeep, p, "the pinned span ID must be kept by the 0.5 rule")
+
+	setPropagatingTag(ctx, tracestateHeader,
+		"othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~")
+
+	for i := range 100 {
+		// _dd.p. prefix is needed for w3c
+		k := fmt.Sprintf("_dd.p.k%d", i)
+		v := fmt.Sprintf("v%d", i)
+		setPropagatingTag(ctx, k, v)
+	}
+	dst := map[string]string{}
+
+	// Fail instead of measuring the wrong thing if the fixture stops producing ot=.
+	require.NoError(b, tracer.Inject(ctx, TextMapCarrier(dst)))
+	require.Contains(b, dst[tracestateHeader], "ot=rv:")
+
+	b.ResetTimer()
+	for b.Loop() {
+		tracer.Inject(root.Context(), TextMapCarrier(dst))
+	}
+}
+
 func BenchmarkExtractDatadog(b *testing.B) {
 	b.Setenv(envPropagationStyleExtract, "datadog")
 	propagator := NewPropagator(nil)
@@ -2870,6 +3014,31 @@ func BenchmarkExtractW3C(b *testing.B) {
 		traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
 		tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 	})
+	b.ResetTimer()
+	defer log.SetLevel(log.GetLevel())
+	log.SetLevel(log.LevelError)
+	for b.Loop() {
+		propagator.Extract(carrier)
+	}
+}
+
+// BenchmarkExtractW3COtel mirrors BenchmarkExtractW3C with an ot= member in the
+// tracestate, so the extract parses rv/th.
+func BenchmarkExtractW3COtel(b *testing.B) {
+	b.Setenv(envPropagationStyleExtract, "tracecontext")
+	propagator := NewPropagator(nil)
+	carrier := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+		tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,ot=rv:ef284ace7a91e1;th:e6666666666666,othervendor=t61rcWkgMzE",
+	})
+
+	// Fail instead of measuring the wrong thing if the fixture stops carrying ot=.
+	sctx, err := propagator.Extract(carrier)
+	require.NoError(b, err)
+	rv, th, _ := sctx.trace.otelTracestate()
+	require.NotNil(b, rv)
+	require.NotNil(b, th)
+
 	b.ResetTimer()
 	defer log.SetLevel(log.GetLevel())
 	log.SetLevel(log.LevelError)
@@ -3317,6 +3486,29 @@ func BenchmarkComposeTracestate(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		composeTracestate(ctx, 1, "s:-2;o:synthetics___web")
+	}
+}
+
+// BenchmarkComposeTracestateOtel mirrors BenchmarkComposeTracestate with a
+// recorded (rv, th) pair and an inbound ot= member, covering both the emit and
+// the strip paths.
+func BenchmarkComposeTracestateOtel(b *testing.B) {
+	ctx := new(SpanContext)
+	ctx.trace = newTrace()
+	ctx.origin = "synthetics"
+	ctx.trace.setPropagatingTag("_dd.p.keyOne", "json")
+	ctx.trace.setPropagatingTag("_dd.p.KeyTwo", "123123")
+	ctx.trace.setPropagatingTag("_dd.p.table", "chair")
+	ctx.trace.setOtelProbability(0xfff972474538efff, 0.1)
+	ctx.isRemote = false
+	oldState := "vendorA=x, ot=rv:aabbccddeeff00, dd=s:9, vendorB=y"
+
+	// Fail instead of measuring the wrong thing if the fixture stops emitting ot=.
+	require.Contains(b, composeTracestate(ctx, 1, oldState), "ot=rv:")
+
+	b.ResetTimer()
+	for b.Loop() {
+		composeTracestate(ctx, 1, oldState)
 	}
 }
 
