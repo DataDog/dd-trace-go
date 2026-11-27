@@ -2847,6 +2847,40 @@ func BenchmarkInjectW3C(b *testing.B) {
 	}
 }
 
+// BenchmarkInjectW3COtel mirrors BenchmarkInjectW3C with a sampling rule, so the
+// root span records an (rv, th) pair and the inject emits an ot= member.
+func BenchmarkInjectW3COtel(b *testing.B) {
+	b.Setenv(envPropagationStyleInject, "tracecontext")
+	b.Setenv("DD_TRACE_SAMPLING_RULES", `[{"sample_rate": 0.5}]`)
+	tracer, err := newTracer()
+	defer tracer.Stop()
+	assert.NoError(b, err)
+	root := tracer.StartSpan("test")
+	defer root.Finish()
+
+	ctx := root.Context()
+
+	setPropagatingTag(ctx, tracestateHeader,
+		"othervendor=t61rcWkgMzE,dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~")
+
+	for i := range 100 {
+		// _dd.p. prefix is needed for w3c
+		k := fmt.Sprintf("_dd.p.k%d", i)
+		v := fmt.Sprintf("v%d", i)
+		setPropagatingTag(ctx, k, v)
+	}
+	dst := map[string]string{}
+
+	// Fail instead of measuring the wrong thing if the fixture stops producing ot=.
+	require.NoError(b, tracer.Inject(ctx, TextMapCarrier(dst)))
+	require.Contains(b, dst[tracestateHeader], "ot=rv:")
+
+	b.ResetTimer()
+	for b.Loop() {
+		tracer.Inject(root.Context(), TextMapCarrier(dst))
+	}
+}
+
 func BenchmarkExtractDatadog(b *testing.B) {
 	b.Setenv(envPropagationStyleExtract, "datadog")
 	propagator := NewPropagator(nil)
@@ -2870,6 +2904,31 @@ func BenchmarkExtractW3C(b *testing.B) {
 		traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
 		tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,othervendor=t61rcWkgMzE",
 	})
+	b.ResetTimer()
+	defer log.SetLevel(log.GetLevel())
+	log.SetLevel(log.LevelError)
+	for b.Loop() {
+		propagator.Extract(carrier)
+	}
+}
+
+// BenchmarkExtractW3COtel mirrors BenchmarkExtractW3C with an ot= member in the
+// tracestate, so the extract parses rv/th.
+func BenchmarkExtractW3COtel(b *testing.B) {
+	b.Setenv(envPropagationStyleExtract, "tracecontext")
+	propagator := NewPropagator(nil)
+	carrier := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+		tracestateHeader:  "dd=s:2;o:rum;t.dm:-4;t.usr.id:baz64~~,ot=rv:ef284ace7a91e1;th:e6666666666666,othervendor=t61rcWkgMzE",
+	})
+
+	// Fail instead of measuring the wrong thing if the fixture stops carrying ot=.
+	sctx, err := propagator.Extract(carrier)
+	require.NoError(b, err)
+	rv, th, _ := sctx.trace.otelTracestate()
+	require.NotNil(b, rv)
+	require.NotNil(b, th)
+
 	b.ResetTimer()
 	defer log.SetLevel(log.GetLevel())
 	log.SetLevel(log.LevelError)
@@ -3317,6 +3376,29 @@ func BenchmarkComposeTracestate(b *testing.B) {
 	b.ResetTimer()
 	for b.Loop() {
 		composeTracestate(ctx, 1, "s:-2;o:synthetics___web")
+	}
+}
+
+// BenchmarkComposeTracestateOtel mirrors BenchmarkComposeTracestate with a
+// recorded (rv, th) pair and an inbound ot= member, covering both the emit and
+// the strip paths.
+func BenchmarkComposeTracestateOtel(b *testing.B) {
+	ctx := new(SpanContext)
+	ctx.trace = newTrace()
+	ctx.origin = "synthetics"
+	ctx.trace.setPropagatingTag("_dd.p.keyOne", "json")
+	ctx.trace.setPropagatingTag("_dd.p.KeyTwo", "123123")
+	ctx.trace.setPropagatingTag("_dd.p.table", "chair")
+	ctx.trace.setOtelProbability(0xfff972474538efff, 0.1)
+	ctx.isRemote = false
+	oldState := "vendorA=x, ot=rv:aabbccddeeff00, dd=s:9, vendorB=y"
+
+	// Fail instead of measuring the wrong thing if the fixture stops emitting ot=.
+	require.Contains(b, composeTracestate(ctx, 1, oldState), "ot=rv:")
+
+	b.ResetTimer()
+	for b.Loop() {
+		composeTracestate(ctx, 1, oldState)
 	}
 }
 
