@@ -182,23 +182,6 @@ func (h *agentTraceWriter) newPayload(protocol float64, hint int) payload {
 	return payload
 }
 
-// rotateStalePayload replaces h.payload with a freshly protocol-matched one if
-// it is still empty but was built for a protocol the agent no longer (or not
-// yet) accepts. An empty payload holds no encoded bytes, so it can adopt the
-// current protocol for free. Both add and flush must call this before relying
-// on h.payload's protocol: add is the first point a trace can land in an idle
-// payload, and flush is the only place that otherwise re-reads the protocol —
-// without either call, a writer that saw no traffic across an agent-info poll
-// would hold a stale payload indefinitely after the agent's advertised
-// protocol changed. A non-empty stale payload is not this function's job: add
-// seals that case itself (in the same critical section, so there is no gap
-// between the mismatch check and the push) since a non-empty payload cannot
-// switch protocol for free. The discarded payload was never handed to the
-// transport, so it is simply dropped rather than recycled through the
-// payloadV1 pool:
-// handoff(pv1StateFlushDone) alone would not return it (the two-party handoff
-// also needs the transport's bit), and forcing both bits risks a double pool
-// return.
 // +checklocks:h.mu
 func (h *agentTraceWriter) rotateStalePayload(protocol float64) {
 	if h.payload.itemCount() == 0 && h.payload.protocol() != protocol {
@@ -226,15 +209,9 @@ func (h *agentTraceWriter) flush() {
 	h.sendAsync(oldp)
 }
 
-// retirePayload runs the cleanup a payload needs once it's done being sent:
-// v1 payloads hand off to their pool via the two-party bit, v0.4 payloads are
-// just cleared. Shared by sendAsync's deferred cleanup and by
-// downgradeAfterRejectedSend's caller, which retires the original v1 payload
-// early — before that deferred cleanup runs — because it replaces it with a
-// re-encoded v0.4 payload for the rest of the send loop.
 func (h *agentTraceWriter) retirePayload(p payload) {
 	if p.protocol() == traceProtocolV1 {
-		p.(*safePayload).p.(*payloadV1).handoff(pv1StateFlushDone)
+		p.(*safePayload).p.(*payloadV1).releaseRef()
 	} else {
 		p.clear()
 	}

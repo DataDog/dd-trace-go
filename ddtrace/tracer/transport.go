@@ -214,25 +214,26 @@ func (t *httpTransport) sendStats(p *pb.ClientStatsPayload, tracerObfuscationVer
 	return nil
 }
 
+func newTraceRequestBody(p payload) io.ReadCloser {
+	if sp, ok := p.(*safePayload); ok {
+		if pv1, ok := sp.p.(*payloadV1); ok {
+			return pv1.newBody(sp)
+		}
+	}
+	return p
+}
+
 func (t *httpTransport) send(p payload) (body io.ReadCloser, err error) {
 	protocol := p.protocol()
-	req, err := http.NewRequest("POST", t.traceURLFor(protocol), p)
+	req, err := http.NewRequest("POST", t.traceURLFor(protocol), newTraceRequestBody(p))
 	if err != nil {
 		return nil, fmt.Errorf("cannot create http request: %s", err)
 	}
 	stats := p.stats()
 	req.ContentLength = int64(stats.size)
-	// Mark the POST replayable so net/http transparently retries on a fresh
-	// connection when an idle UDS conn was silently closed by the agent.
-	// http.NewRequest does not auto-populate GetBody for the custom payload
-	// type, so we set it explicitly. The payload is returned directly (not
-	// wrapped in io.NopCloser) so that the stdlib's request path calls
-	// req.Body.Close() on it: payloadV04.Close is a no-op, and
-	// payloadV1.Close signals the pool-return handoff via atomic.Or
-	// (idempotent), which is required for payloadV1 to return to its pool.
 	req.GetBody = func() (io.ReadCloser, error) {
 		p.reset()
-		return p, nil
+		return newTraceRequestBody(p), nil
 	}
 	for header, value := range t.headers {
 		req.Header.Set(header, value)

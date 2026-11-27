@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"sync/atomic"
 	_ "unsafe"
@@ -124,27 +125,33 @@ type payloadV1 struct {
 	processTagsCached anyValue
 	processTagsStr    string
 
-	// poolState coordinates returning this payload to the pool after all HTTP
-	// activity is done. roundTrip() can return before writeLoop calls body.Close(),
-	// so we use two bits — whoever sets both is responsible for pool return.
-	poolState atomic.Uint32
+	refs atomic.Int32
 }
 
-// Bits for payloadV1.poolState, used by handoff.
-const (
-	pv1StateFlushDone  uint32 = 1 << 0 // set by flush goroutine after all sends complete
-	pv1StateBodyClosed uint32 = 1 << 1 // set by payloadV1.Close() when HTTP is done
-)
+func (p *payloadV1) newBody(reader io.Reader) io.ReadCloser {
+	p.refs.Add(1)
+	return &pv1Body{p: reader, owner: p}
+}
 
-// handoff signals that one side (flush or HTTP close) is done with the payload.
-// It sets own bit and returns the payload to the pool if the counterpart bit was
-// already set — i.e., both parties are done. Idempotent: repeated calls with the
-// same bit are no-ops after the first.
-func (p *payloadV1) handoff(ownBit uint32) {
-	counterpart := (pv1StateFlushDone | pv1StateBodyClosed) &^ ownBit
-	if old := p.poolState.Or(ownBit); old == counterpart { // both parties done
+func (p *payloadV1) releaseRef() {
+	if p.refs.Add(-1) == 0 {
 		putPayloadV1(p)
 	}
+}
+
+type pv1Body struct {
+	p      io.Reader
+	owner  *payloadV1
+	closed atomic.Bool
+}
+
+func (b *pv1Body) Read(bs []byte) (int, error) { return b.p.Read(bs) }
+
+func (b *pv1Body) Close() error {
+	if b.closed.CompareAndSwap(false, true) {
+		b.owner.releaseRef()
+	}
+	return nil
 }
 
 // Constant dummy value to represent a serialization failure. Used to prevent failures while
@@ -153,12 +160,14 @@ const serializationFailed string = "serialization_failed"
 
 // newPayloadV1 returns a ready to use payloadV1.
 func newPayloadV1() *payloadV1 {
-	return &payloadV1{
+	p := &payloadV1{
 		attributes: make(map[string]anyValue),
 		chunks:     make([]traceChunk, 0),
 		header:     make([]byte, 0, 8),
 		chunkAttr:  make(map[string]anyValue),
 	}
+	p.refs.Store(1)
+	return p
 }
 
 var payloadV1Pool = sync.Pool{
@@ -360,8 +369,8 @@ func (p *payloadV1) clear() {
 	clear(p.attributes)
 	atomic.StoreUint32(&p.fields, 0)
 	atomic.StoreUint32(&p.count, 0)
-	p.poolState.Store(0)
 	p.sizeHint = 0
+	p.refs.Store(1)
 }
 
 // recordItem records that a new chunk was added to the payload.
@@ -425,8 +434,13 @@ func (p *payloadV1) setProcessTags() {
 	p.attributes[keyProcessTags] = p.processTagsCached
 }
 
+// Close implements io.Closer. The transport sends every request through its
+// own body (see newTraceRequestBody), so net/http closes that body and never
+// the payload itself. A transport that passes the payload itself as the
+// request body does not drive the pool return through Close either: the
+// return waits only for the flush side and for the bodies that
+// newTraceRequestBody issued.
 func (p *payloadV1) Close() error {
-	p.handoff(pv1StateBodyClosed)
 	return nil
 }
 
