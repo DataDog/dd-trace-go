@@ -123,6 +123,8 @@ func TestTags(t *testing.T) {
 				t.Run(name, func(t *testing.T) {
 					setEnvs(t, env)
 					providerTags := getProviderTags()
+					replaceWithUserSpecificTags(providerTags)
+					normalizeTags(providerTags)
 
 					for expectedKey, expectedValue := range tags {
 						if actualValue, ok := providerTags[expectedKey]; ok {

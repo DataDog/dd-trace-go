@@ -610,6 +610,19 @@ func uploadRepositoryChangesWithHooks(hooks repositoryUploadHooks) (bytes int64,
 		return 0, fmt.Errorf("civisibility: error getting the search commits response: %s", err)
 	}
 
+	recoveredSelectedCommit := false
+	if !initialCommitData.IsOk || !initialCommitData.hasCommits() {
+		recovered, recoveryErr := hooks.unshallowGitRepository()
+		if recoveryErr != nil || !recovered {
+			return 0, nil
+		}
+		initialCommitData, err = hooks.getSearchCommits()
+		if err != nil {
+			return 0, fmt.Errorf("civisibility: error getting the search commits response: %s", err)
+		}
+		recoveredSelectedCommit = true
+	}
+
 	// let's check if we could retrieve commit data
 	if !initialCommitData.IsOk {
 		return 0, nil
@@ -632,6 +645,9 @@ func uploadRepositoryChangesWithHooks(hooks repositoryUploadHooks) (bytes int64,
 		log.Debug("civisibility: initial commit data has everything already, we don't need to upload anything")
 		return 0, nil
 	}
+	if recoveredSelectedCommit {
+		return hooks.sendObjectsPackFile(initialCommitData.LocalCommits[0], initialMissingCommits, initialCommitData.RemoteCommits)
+	}
 
 	// there's some missing commits on the backend, first we need to check if we need to unshallow before sending anything...
 	hasBeenUnshallowed, err := hooks.unshallowGitRepository()
@@ -653,7 +669,7 @@ func uploadRepositoryChangesWithHooks(hooks repositoryUploadHooks) (bytes int64,
 	}
 
 	// let's check if we could retrieve commit data
-	if !commitsData.IsOk {
+	if !commitsData.IsOk || !commitsData.hasCommits() {
 		return 0, nil
 	}
 

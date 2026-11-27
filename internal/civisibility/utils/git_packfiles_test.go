@@ -33,6 +33,23 @@ func usePackFilesGitFixture(t *testing.T) (repo string) {
 	return repo
 }
 
+func TestPackFilesGitFixtureRestoresCITags(t *testing.T) {
+	t.Setenv("DD_GIT_COMMIT_SHA", "")
+	ResetCITags()
+	t.Cleanup(ResetCITags)
+	original := GetCITags()["git.commit.sha"]
+
+	t.Run("temporary checkout", func(t *testing.T) {
+		usePackFilesGitFixture(t)
+		selected := GetCITags()["git.commit.sha"]
+		assert.NotEqual(t, original, selected)
+		assert.Equal(t, []string{selected}, GetLastLocalGitCommitShas())
+	})
+
+	assert.Equal(t, original, GetCITags()["git.commit.sha"])
+	assert.NotEmpty(t, GetLastLocalGitCommitShas())
+}
+
 // useTempDir makes os.TempDir return dir on every platform.
 func useTempDir(t *testing.T, dir string) {
 	t.Helper()

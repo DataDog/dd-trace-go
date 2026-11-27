@@ -45,6 +45,7 @@ type localGitData struct {
 	SourceRoot    string
 	RepositoryURL string
 	Branch        string
+	Tag           string
 }
 
 // gitVersionData holds the major, minor, and patch version numbers of the Git executable.
@@ -345,19 +346,26 @@ func getLocalGitData() (localGitData, error) {
 	// Extract the current branch name
 	log.Debug("civisibility.git: getting the current branch name")
 	out, err = execGitString(telemetry.GetBranchCommandsType, "rev-parse", "--abbrev-ref", "HEAD")
-	if err == nil {
+	if err == nil && out != "HEAD" {
 		gitData.Branch = out
 	}
+	if gitData.Branch == "" {
+		if out, tagErr := execGitString(telemetry.GetBranchCommandsType, "tag", "--no-column", "--points-at", "HEAD"); tagErr == nil {
+			if tags := strings.Fields(out); len(tags) == 1 {
+				gitData.Tag = tags[0]
+			}
+		}
+	}
 
-	// Get commit details from the latest commit using git log (git log -1 --pretty='%H","%aI","%an","%ae","%cI","%cn","%ce","%B')
+	// Read machine-readable commit details without signature diagnostics.
 	log.Debug("civisibility.git: getting the latest commit details")
-	out, err = execGitString(telemetry.GetGitCommitInfoCommandType, "log", "-1", "--pretty=%H\",\"%at\",\"%an\",\"%ae\",\"%ct\",\"%cn\",\"%ce\",\"%B")
+	out, err = execGitString(telemetry.GetGitCommitInfoCommandType, "log", "--no-show-signature", "-1", "--pretty=%H%x00%at%x00%an%x00%ae%x00%ct%x00%cn%x00%ce%x00%B")
 	if err != nil {
 		return gitData, err
 	}
 
 	// Split the output into individual components
-	outArray := strings.Split(out, "\",\"")
+	outArray := strings.SplitN(out, "\x00", 8)
 	if len(outArray) < 8 {
 		return gitData, errors.New("git log failed")
 	}
@@ -430,15 +438,15 @@ func fetchCommitData(commitSha string) (localCommitData, error) {
 		}
 	}
 
-	// Get commit details from the latest commit using git log (git show <commitSha> -s --format='%H","%aI","%an","%ae","%cI","%cn","%ce","%B')
+	// Read machine-readable commit details without signature diagnostics.
 	log.Debug("civisibility.git: getting the latest commit details")
-	out, err := execGitString(telemetry.GetGitCommitInfoCommandType, "show", commitSha, "-s", "--format=%H\",\"%at\",\"%an\",\"%ae\",\"%ct\",\"%cn\",\"%ce\",\"%B")
+	out, err := execGitString(telemetry.GetGitCommitInfoCommandType, "show", commitSha, "-s", "--no-show-signature", "--format=%H%x00%at%x00%an%x00%ae%x00%ct%x00%cn%x00%ce%x00%B")
 	if err != nil {
 		return commitData, err
 	}
 
 	// Split the output into individual components
-	outArray := strings.Split(out, "\",\"")
+	outArray := strings.SplitN(out, "\x00", 8)
 	if len(outArray) < 8 {
 		return commitData, errors.New("git log failed")
 	}
@@ -461,18 +469,29 @@ func fetchCommitData(commitSha string) (localCommitData, error) {
 	return commitData, nil
 }
 
-// GetLastLocalGitCommitShas retrieves the commit SHAs of the last 1000 commits in the local Git repository.
+// GetLastLocalGitCommitShas retrieves bounded history rooted at the selected Git commit.
 func GetLastLocalGitCommitShas() []string {
-	// git log --format=%H -n 1000 --since=\"1 month ago\"
+	selected := GetCITags()[constants.GitCommitSHA]
+	if selected == "" || strings.HasPrefix(selected, "-") {
+		return nil
+	}
 	log.Debug("civisibility.git: getting the commit SHAs of the last 1000 commits in the local Git repository")
-	out, err := execGitString(telemetry.GetLocalCommitsCommandsType, "log", "--format=%H", "-n", "1000", "--since=\"1 month ago\"")
-	if err != nil || out == "" {
+	out, err := execGitString(telemetry.GetLocalCommitsCommandsType, "log", "--format=%H", "-n", "1000", "--since=\"1 month ago\"", selected, "--")
+	if err != nil {
 		return []string{}
 	}
-	return strings.Split(out, "\n")
+	commits := strings.Fields(out)
+	if len(commits) == 0 || commits[0] != selected {
+		resolved, err := execGitString(telemetry.GetLocalCommitsCommandsType, "rev-parse", "--verify", selected+"^{commit}")
+		if err != nil || resolved != selected {
+			return nil
+		}
+		commits = append([]string{selected}, commits...)
+	}
+	return commits
 }
 
-// UnshallowGitRepository converts a shallow clone into a complete clone by fetching all missing commits without git content (only commits and tree objects).
+// UnshallowGitRepository fetches missing selected history or bounded shallow checkout history without blobs.
 func UnshallowGitRepository() (bool, error) {
 
 	// let's do a first check to see if the repository is a shallow clone
@@ -482,20 +501,34 @@ func UnshallowGitRepository() (bool, error) {
 		return false, fmt.Errorf("civisibility.unshallow: error checking if the repository is a shallow clone: %s", err)
 	}
 
-	// if the git repo is not a shallow clone, we can return early
-	if !isAShallowClone {
+	selected := GetCITags()[constants.GitCommitSHA]
+	validSelected := isGitCommitSHA(selected)
+	selectedMissing := false
+	if validSelected {
+		_, err := execGitString(telemetry.GetHeadCommandsType, "rev-parse", "--verify", selected+"^{commit}")
+		selectedMissing = err != nil
+	}
+
+	if !isAShallowClone && !selectedMissing {
 		log.Debug("civisibility.unshallow: the repository is not a shallow clone")
 		return false, nil
 	}
 
-	// the git repo is a shallow clone, we need to double check if there are more than just 1 commit in the logs.
-	log.Debug("civisibility.unshallow: the repository is a shallow clone, checking if there are more than one commit in the logs")
-	hasMoreThanOneCommits, err := hasTheGitLogHaveMoreThanOneCommits()
-	if err != nil {
-		return false, fmt.Errorf("civisibility.unshallow: error checking if the git log has more than one commit: %s", err)
+	// Check whether existing checkout history needs deepening.
+	log.Debug("civisibility.unshallow: checking if there are more than one commit in the logs")
+	hasMoreThanOneCommits := false
+	if !selectedMissing {
+		root := "HEAD"
+		if validSelected {
+			root = selected
+		}
+		hasMoreThanOneCommits, err = hasTheGitLogHaveMoreThanOneCommits(root)
+		if err != nil {
+			return false, fmt.Errorf("civisibility.unshallow: error checking if the git log has more than one commit: %s", err)
+		}
 	}
 
-	// if there are more than 1 commits, we can return early
+	// Existing selected history is sufficient when at least two commits are available.
 	if hasMoreThanOneCommits {
 		log.Debug("civisibility.unshallow: the git log has more than one commits")
 		return false, nil
@@ -513,9 +546,6 @@ func UnshallowGitRepository() (bool, error) {
 		return false, nil
 	}
 
-	// after asking for 2 logs lines, if the git log command returns just one commit sha, we reconfigure the repo
-	// to ask for git commits and trees of the last month (no blobs)
-
 	// let's get the remote name
 	remoteName, err := getRemoteName()
 	if err != nil {
@@ -526,20 +556,39 @@ func UnshallowGitRepository() (bool, error) {
 		remoteName = "origin"
 	}
 	log.Debug("civisibility.unshallow: remote name: %s", remoteName)
-
-	// let's get the sha of the HEAD (git rev-parse HEAD)
-	headSha, err := execGitString(telemetry.GetHeadCommandsType, "rev-parse", "HEAD")
-	if err != nil {
-		return false, fmt.Errorf("civisibility.unshallow: error getting the HEAD sha: %s\n%s", err, headSha)
-	}
-	if headSha == "" {
-		// if the HEAD is empty, we fallback to the current branch (git branch --show-current)
-		headSha, err = execGitString(telemetry.GetBranchCommandsType, "branch", "--show-current")
+	headSha := ""
+	if !selectedMissing {
+		// let's get the sha of the HEAD (git rev-parse HEAD)
+		headSha, err = execGitString(telemetry.GetHeadCommandsType, "rev-parse", "HEAD")
 		if err != nil {
-			return false, fmt.Errorf("civisibility.unshallow: error getting the current branch: %s\n%s", err, headSha)
+			return false, fmt.Errorf("civisibility.unshallow: error getting the HEAD sha: %s\n%s", err, headSha)
 		}
+		if headSha == "" {
+			// if the HEAD is empty, we fallback to the current branch (git branch --show-current)
+			headSha, err = execGitString(telemetry.GetBranchCommandsType, "branch", "--show-current")
+			if err != nil {
+				return false, fmt.Errorf("civisibility.unshallow: error getting the current branch: %s\n%s", err, headSha)
+			}
+		}
+		log.Debug("civisibility.unshallow: HEAD sha: %s", headSha)
 	}
-	log.Debug("civisibility.unshallow: HEAD sha: %s", headSha)
+	if selectedMissing || (validSelected && !strings.EqualFold(selected, headSha)) {
+		args := []string{"fetch"}
+		if isAShallowClone {
+			args = append(args, "--shallow-since=\"1 month ago\"", "--update-shallow")
+		}
+		args = append(args, "--filter=blob:none", "--recurse-submodules=no", remoteName, selected)
+		out, err := execGitString(telemetry.UnshallowCommandsType, args...)
+		if err != nil && isAShallowClone {
+			// Old selected commits can precede the bounded history window.
+			out, err = execGitString(telemetry.UnshallowCommandsType, "fetch", "--depth=1", "--update-shallow", "--filter=blob:none", "--recurse-submodules=no", remoteName, selected)
+		}
+		if err != nil {
+			return false, fmt.Errorf("civisibility.unshallow: error fetching the selected commit: %s | %s", err, out)
+		}
+		invalidateShallowCloneCache()
+		return true, nil
+	}
 
 	// let's fetch the missing commits and trees from the last month
 	// git fetch --shallow-since="1 month ago" --update-shallow --filter="blob:none" --recurse-submodules=no $(git config --default origin --get clone.defaultRemoteName) $(git rev-parse HEAD)
@@ -587,6 +636,10 @@ func UnshallowGitRepository() (bool, error) {
 	log.Debug("civisibility.unshallow: was completed successfully")
 	invalidateShallowCloneCache()
 	return true, nil
+}
+
+func isGitCommitSHA(sha string) bool {
+	return (len(sha) == 40 || len(sha) == 64) && strings.Trim(sha, "0123456789abcdefABCDEF") == ""
 }
 
 // GetGitDiff retrieves the diff between two Git commits using the `git diff` command.
@@ -667,9 +720,8 @@ func invalidateShallowCloneCache() {
 }
 
 // hasTheGitLogHaveMoreThanOneCommits checks if the local Git repository has more than one commit.
-func hasTheGitLogHaveMoreThanOneCommits() (bool, error) {
-	// git log --format=oneline -n 2
-	out, err := execGitString(telemetry.CheckShallowCommandsType, "log", "--format=oneline", "-n", "2")
+func hasTheGitLogHaveMoreThanOneCommits(commitSha string) (bool, error) {
+	out, err := execGitString(telemetry.CheckShallowCommandsType, "log", "--format=oneline", "-n", "2", commitSha, "--")
 	if err != nil || out == "" {
 		return false, err
 	}
@@ -680,17 +732,41 @@ func hasTheGitLogHaveMoreThanOneCommits() (bool, error) {
 
 // getObjectsSha get the objects shas from the git repository based on the commits to include and exclude
 func getObjectsSha(commitsToInclude []string, commitsToExclude []string) []string {
-	// git rev-list --objects --no-object-names --filter=blob:none --since="1 month ago" HEAD " + string.Join(" ", commitsToExclude.Select(c => "^" + c)) + " " + string.Join(" ", commitsToInclude);
+	if len(commitsToInclude) == 0 {
+		return nil
+	}
 	commitsToExcludeArgs := make([]string, 0, len(commitsToExclude)+len(commitsToInclude))
+	outsideWindow := make(map[string]struct{}, len(commitsToInclude))
+	for _, c := range commitsToInclude {
+		outsideWindow[c] = struct{}{}
+	}
 	for _, c := range commitsToExclude {
 		commitsToExcludeArgs = append(commitsToExcludeArgs, "^"+c)
+		delete(outsideWindow, c)
 	}
-	args := append([]string{"rev-list", "--objects", "--no-object-names", "--filter=blob:none", "--since=\"1 month ago\"", "HEAD"}, append(commitsToExcludeArgs, commitsToInclude...)...)
+	args := append([]string{"rev-list", "--objects", "--no-object-names", "--filter=blob:none", "--since=\"1 month ago\"", "--max-count=1000"}, append(commitsToExcludeArgs, commitsToInclude...)...)
 	out, err := execGitString(telemetry.GetObjectsCommandsType, args...)
 	if err != nil {
 		return []string{}
 	}
-	return strings.Split(out, "\n")
+	objects := strings.Fields(out)
+	for _, object := range objects {
+		delete(outsideWindow, object)
+	}
+	if len(outsideWindow) > 0 {
+		args = []string{"rev-list", "--objects", "--no-object-names", "--filter=blob:none", "--no-walk=unsorted"}
+		for _, c := range commitsToInclude {
+			if _, missing := outsideWindow[c]; missing {
+				args = append(args, c)
+			}
+		}
+		out, err = execGitString(telemetry.GetObjectsCommandsType, args...)
+		if err != nil {
+			return nil
+		}
+		objects = append(objects, strings.Fields(out)...)
+	}
+	return objects
 }
 
 // CreatePackFiles creates pack files from the given commits to include and exclude.
