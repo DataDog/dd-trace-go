@@ -58,6 +58,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.14.0-dev
+	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.14.0-dev
@@ -212,7 +213,6 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.14.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.14.0-dev // indirect
@@ -473,6 +473,11 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/log/slog/otelc/v2 v2.14.0-dev // indirect
 )
 
+require (
+	example.com/logrusdep v0.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/otelc/v2 v2.14.0-dev // indirect
+)
+
 replace (
 	example.com/awsv1dep => ./internal/awsv1dep
 	example.com/awsv2dep => ./internal/awsv2dep
@@ -493,6 +498,7 @@ replace (
 	example.com/httpdep => ./internal/httpdep
 	example.com/httprouterdep => ./internal/httprouterdep
 	example.com/k8sclientgodep => ./internal/k8sclientgodep
+	example.com/logrusdep => ./internal/logrusdep
 	example.com/mongodep => ./internal/mongodep
 	example.com/pgxdep => ./internal/pgxdep
 	example.com/pubsubdep => ./internal/pubsubdep
@@ -580,6 +586,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 => ../../../contrib/rs/zerolog
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 => ../../../contrib/segmentio/kafka-go/otelc
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 => ../../../contrib/segmentio/kafka-go
+	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/otelc/v2 => ../../../contrib/sirupsen/logrus/otelc
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 => ../../../contrib/sirupsen/logrus
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/otelc/v2 => ../../../contrib/twitchtv/twirp/otelc
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 => ../../../contrib/twitchtv/twirp

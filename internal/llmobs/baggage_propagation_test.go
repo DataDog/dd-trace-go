@@ -44,9 +44,8 @@ func baggageItems(t *testing.T, header string) map[string]string {
 	for member := range strings.SplitSeq(header, ",") {
 		k, v, ok := strings.Cut(member, "=")
 		require.True(t, ok, "malformed baggage member %q", member)
-		key, err := url.QueryUnescape(strings.TrimSpace(k))
-		require.NoError(t, err)
-		val, err := url.QueryUnescape(strings.TrimSpace(v))
+		key := strings.TrimSpace(k)
+		val, err := url.PathUnescape(strings.TrimSpace(v))
 		require.NoError(t, err)
 		items[key] = val
 	}

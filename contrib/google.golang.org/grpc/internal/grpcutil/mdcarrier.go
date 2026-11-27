@@ -29,10 +29,32 @@ func (mdc MDCarrier) Get(key string) string {
 	return ""
 }
 
-// Set will add the given value to the values found at key. Key will be lowercased to match
-// the metadata implementation.
+// isValidMetadataKey reports whether key satisfies gRPC's metadata key rules:
+// non-empty ASCII consisting only of [0-9a-z_.-]. Keys outside this set (for
+// example, legacy ot-baggage-* headers derived from opaque W3C baggage keys
+// containing '%' or other RFC 7230 token characters) cause gRPC to fail the
+// outbound call with codes.Internal.
+func isValidMetadataKey(key string) bool {
+	if key == "" {
+		return false
+	}
+	for i := 0; i < len(key); i++ {
+		c := key[i]
+		if !(c >= 'a' && c <= 'z') && !(c >= '0' && c <= '9') && c != '.' && c != '-' && c != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+// Set adds val under the lowercased metadata key, matching gRPC's metadata
+// implementation. Keys that gRPC cannot represent as metadata names are
+// omitted so they cannot fail an outbound call.
 func (mdc MDCarrier) Set(key, val string) {
 	k := strings.ToLower(key) // as per google.golang.org/grpc/metadata/metadata.go
+	if !isValidMetadataKey(k) {
+		return
+	}
 	mdc[k] = append(mdc[k], val)
 }
 
