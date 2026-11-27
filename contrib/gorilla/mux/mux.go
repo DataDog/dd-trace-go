@@ -9,8 +9,10 @@ package mux // import "github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2"
 import (
 	"errors"
 	"net/http"
+	"runtime"
 	"slices"
 	"sync"
+	"weak"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -32,8 +34,9 @@ func init() {
 type Router struct {
 	*mux.Router
 	config *routerConfig
-	// subrouters caches whether a route has a subrouter: *mux.Route -> bool.
-	// Copies of the router share it.
+	// subrouters caches whether a route has a subrouter:
+	// weak.Pointer[mux.Route] -> bool. Copies of the router share it, and an
+	// entry leaves it when its route is collected.
 	subrouters *sync.Map
 }
 
@@ -196,7 +199,8 @@ var errFound = errors.New("found")
 // not export it, but Walk lists the routes of a subrouter with route among their
 // ancestors. The answer is cached per route.
 func (r *Router) hasSubrouter(route *mux.Route) bool {
-	if found, ok := r.subrouters.Load(route); ok {
+	key := weak.Make(route)
+	if found, ok := r.subrouters.Load(key); ok {
 		return found.(bool)
 	}
 	err := r.Router.Walk(func(_ *mux.Route, _ *mux.Router, ancestors []*mux.Route) error {
@@ -206,6 +210,9 @@ func (r *Router) hasSubrouter(route *mux.Route) bool {
 		return nil
 	})
 	found := errors.Is(err, errFound)
-	r.subrouters.Store(route, found)
+	if _, loaded := r.subrouters.LoadOrStore(key, found); !loaded {
+		subrouters := r.subrouters
+		runtime.AddCleanup(route, func(key weak.Pointer[mux.Route]) { subrouters.Delete(key) }, key)
+	}
 	return found
 }

@@ -105,10 +105,9 @@ func matchedRoute(r *http.Request, h http.Handler, pttrn string) httpsec.Matched
 }
 
 // isConnectRedirect reports that ServeMux redirects a CONNECT request to its
-// path with a "/" added: its handler is a redirect to its pattern, on the same
-// host, which is that unescaped path (http.Redirect cleans the location). A
-// redirect handler registered for a pattern redirects elsewhere and keeps its
-// route.
+// path with a "/" added: its handler is a redirect, on the same host, to that
+// path, which is also its pattern (http.Redirect cleans the location). A redirect
+// handler registered for a pattern redirects elsewhere and keeps its route.
 func isConnectRedirect(r *http.Request, h http.Handler, pttrn string) bool {
 	if r.Method != http.MethodConnect || reflect.TypeOf(h) != redirectHandlerType {
 		return false
@@ -116,7 +115,8 @@ func isConnectRedirect(r *http.Request, h http.Handler, pttrn string) bool {
 	var w headerRecorder
 	h.ServeHTTP(&w, r)
 	location, err := url.Parse(w.Header().Get("Location"))
-	return err == nil && location.Host == "" && location.Path == cleanPath(pttrn)
+	return err == nil && location.Host == "" &&
+		location.Path == cleanPath(pttrn) && location.Path == cleanPath(r.URL.Path+"/")
 }
 
 // headerRecorder records the headers that a redirect handler writes.

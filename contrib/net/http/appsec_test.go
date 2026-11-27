@@ -409,6 +409,7 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 	underlying.Handle("CONNECT /redir/{path...}", http.RedirectHandler("/next", http.StatusFound))
 	underlying.Handle("/rsub/", http.RedirectHandler("/next", http.StatusFound))
 	underlying.Handle("/csub/", http.RedirectHandler("https://canonical.example/csub/", http.StatusFound))
+	underlying.Handle("/same/", http.RedirectHandler("/same/", http.StatusFound))
 	mux := NewServeMux(WithServeMux(underlying))
 	mux.HandleFunc("/wrapped/{path...}", func(http.ResponseWriter, *http.Request) {})
 	mux.HandleFunc("/set/{path...}", clearPath)
@@ -461,6 +462,7 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 		{http.MethodConnect, "/rsub", "", true},
 		{http.MethodConnect, "/rsub/x/..", "/rsub/{param1}", true},
 		{http.MethodConnect, "/csub/x", "/csub/{param1}", true},
+		{http.MethodConnect, "/same/x", "/same/{param1}", true},
 		{http.MethodGet, "/users/123", "/users/{id}/", true},
 		{http.MethodGet, "/static/a/../", "/static/", true},
 		{http.MethodGet, "/a%2Fb/../x/42", "/x/{id}", true},
