@@ -449,6 +449,33 @@ func assertWrappedSuccessesClosed(t *testing.T, producer sarama.AsyncProducer) {
 	}
 }
 
+func TestWrapAsyncProducerIgnoresNilMessage(t *testing.T) {
+	cfg := sarama.NewConfig()
+	cfg.Version = sarama.V0_11_0_0
+	raw := newBlockedAsyncProducer()
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	producer := WrapAsyncProducer(cfg, raw)
+	producer.Input() <- nil
+	msg := &sarama.ProducerMessage{Topic: "topic"}
+	producer.Input() <- msg
+
+	select {
+	case got := <-raw.input:
+		require.Same(t, msg, got)
+	case <-time.After(time.Second):
+		t.Fatal("wrapped producer did not forward the message after the nil one")
+	}
+	require.Eventually(t, func() bool {
+		return len(mt.FinishedSpans()) == 1
+	}, time.Second, 10*time.Millisecond)
+
+	close(raw.successes)
+	assertWrappedSuccessesClosed(t, producer)
+}
+
 func (p *blockedAsyncProducer) Input() chan<- *sarama.ProducerMessage {
 	return p.input
 }

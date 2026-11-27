@@ -100,11 +100,10 @@ jobs:
           go-version: ${{ matrix.go-version }}
           check-latest: "true"
           workload: dynamic-locking
-          # Nightly default-branch seed-set key: the nightly schedule seeds
-          # these four matrix entries so every pull-request run restores
-          # them through the default-branch fallback instead of compiling
-          # cold. Without it the family never saves and its hit rate is 0%
-          # by construction (the gap found on the CI caching dashboard).
+          # Seed-set key: the nightly schedule saves this matrix, and
+          # pull-request runs restore it through the default-branch
+          # fallback instead of compiling cold. Without it the family
+          # never saves, so no run can restore it.
           seed: "true"
           variant: |-
             {"runner":"ubuntu-latest",

@@ -31,6 +31,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	appsecConfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/crashtrackerstate"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
@@ -252,6 +253,15 @@ func reportInitTime(start time.Time) {
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
 func Start(opts ...StartOption) error {
+	if crashtrackerstate.SupervisorPending() {
+		log.Debug("tracer.Start deferred: this process becomes the crashtracker supervisor.")
+		crashtrackerstate.Defer(func() {
+			if err := Start(opts...); err != nil {
+				log.Error("Deferred tracer start failed: %s", err.Error())
+			}
+		})
+		return nil
+	}
 	return start(false, opts...)
 }
 
@@ -427,10 +437,10 @@ func (t *tracer) startAppSec() {
 	appsec.Start(appsecopts...)
 }
 
-// metaStructAvailable reports whether spans can carry meta_struct to the backend. OTLP has no
-// meta_struct field: the OTLP exporter writes a meta_struct value as a JSON string attribute under
-// its own key, which Datadog does not read. Without meta_struct, App and API Protection writes the
-// _dd.appsec.json span tag, which OTLP ingestion keeps.
+// metaStructAvailable reports whether callers with a JSON fallback
+// (App and API Protection, Span.SetMetaStruct) can emit meta_struct tags.
+// In OTLP mode this returns false: agent discovery does not tell us whether
+// the OTLP receiver can restore structured report bytes.
 func (t *tracer) metaStructAvailable() bool {
 	return t.config.agent.load().metaStructAvailable && !t.otlpExportMode
 }

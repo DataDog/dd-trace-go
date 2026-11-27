@@ -748,17 +748,17 @@ func TestEveryGoBearingComponentIsPinned(t *testing.T) {
 }
 
 // TestOTelcModulesGateTheOTelcLane keeps the otelc-integrations entry honest.
-// The otelc lane reads and links every module in OTELC_MODULES (see
-// .github/workflows/otelc.yml), including the parent integrations its hooks
-// attach to. A module on that list whose paths do not turn on the otelc gate
-// would break the lane on a later pull request, with only the nightly run to
-// catch it, so a migration that forgets the table entry fails here first.
+// The otelc lane reads and links every module discovered by discoverOtelcModules,
+// including the parent integrations its hooks attach to. A module on that list
+// whose paths do not turn on the otelc gate would break the lane on a later
+// pull request, with only the nightly run to catch it, so a migration that
+// forgets the table entry fails here first.
 func TestOTelcModulesGateTheOTelcLane(t *testing.T) {
 	tab, graph, root := testTable(t)
 
 	modules := otelcModules(t, root)
 	if len(modules) == 0 {
-		t.Fatal("OTELC_MODULES in .github/workflows/otelc.yml parsed to no modules")
+		t.Fatal("discoverOtelcModules returned no modules")
 	}
 	for _, dir := range modules {
 		t.Run(dir, func(t *testing.T) {
@@ -775,14 +775,15 @@ func TestOTelcModulesGateTheOTelcLane(t *testing.T) {
 	}
 }
 
-// otelcModules returns the module directories listed in OTELC_MODULES in
-// .github/workflows/otelc.yml.
+// otelcModules returns the module directories in the otelc lane, discovered
+// across the repository via discoverOtelcModules.
 func otelcModules(t *testing.T, root string) []string {
 	t.Helper()
-	doc, _ := parseWorkflow(t, filepath.Join(root, workflowDir+"/otelc.yml"))
-	env, _ := doc["env"].(map[string]any)
-	raw, _ := env["OTELC_MODULES"].(string)
-	return strings.Fields(raw)
+	mods, err := discoverOtelcModules(root)
+	if err != nil {
+		t.Fatalf("discoverOtelcModules() = %v", err)
+	}
+	return mods
 }
 
 // TestOTelcGatedModulesFeedTheLane is the reverse of
@@ -790,9 +791,9 @@ func otelcModules(t *testing.T, root string) []string {
 // no longer feeds anything the lane reads keeps spending the three-OS matrix
 // on every pull request that touches it, with nothing to notice. Every
 // contrib or instrumentation module a component gates onto the otelc lane
-// must be covered by an OTELC_MODULES entry in .github/workflows/otelc.yml,
-// itself or an ancestor, with one exception: the otelc suites import
-// testcontainers, so it gates the lane without the module list reading it.
+// must be covered by a discoverOtelcModules entry, itself or an ancestor,
+// with one exception: the otelc suites import testcontainers, so it gates
+// the lane without the module list reading it.
 func TestOTelcGatedModulesFeedTheLane(t *testing.T) {
 	tab, graph, root := testTable(t)
 	modules := otelcModules(t, root)
@@ -821,9 +822,9 @@ func TestOTelcGatedModulesFeedTheLane(t *testing.T) {
 			}
 		}
 		if !covered {
-			t.Errorf("%s gates the otelc lane but no OTELC_MODULES entry covers it. "+
-				"Either add the module to OTELC_MODULES in .github/workflows/otelc.yml "+
-				"or drop the otelc gate from its component in %s.", dir, tableRelPath)
+			t.Errorf("%s gates the otelc lane but discoverOtelcModules does not cover it. "+
+				"Either add a %s/otelc/go.mod or drop the otelc gate from its component in %s.",
+				dir, dir, tableRelPath)
 		}
 	}
 }
