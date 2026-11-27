@@ -43,6 +43,8 @@ Usage: $(basename "${BASH_SOURCE[0]}") <git-revision> [golangci-lint run flags]
 
 Run golangci-lint in the nested Go workspace modules changed since the merge
 base of <git-revision> and HEAD, including uncommitted and untracked files.
+It also runs the testifylint go-require check on the changed lines of every
+Go module, root module included.
 
 Examples:
   $(basename "${BASH_SOURCE[0]}") origin/main
