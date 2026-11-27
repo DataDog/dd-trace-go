@@ -430,8 +430,9 @@ and the sampling key is unchanged. A report of no route gets no tag.
   is not empty, or without one, when the rest of that path is not empty. A
   redirect that ServeMux generates gets the pattern that it leads to, but for the
   trailing-slash redirect of a CONNECT request, whose pattern is the redirect
-  path (a redirect handler registered for a pattern keeps its route): it gets
-  no route. A request that ServeMux answers without a pattern
+  path (a redirect handler registered for a pattern keeps its route; before
+  Go 1.27, a registered 307 redirect to exactly its cleaned pattern, without
+  another query, answers as ServeMux does): it gets no route. A request that ServeMux answers without a pattern
   (`*`), and every request with the matcher of `GODEBUG=httpmuxgo121=1`, whose
   patterns are literal paths, get no route. `WrapHandler` inside a ServeMux
   reports the pattern that the ServeMux matched, with its path values.

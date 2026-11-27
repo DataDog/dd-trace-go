@@ -197,17 +197,24 @@ var errFound = errors.New("found")
 
 // hasSubrouter reports whether route has a subrouter with routes: gorilla does
 // not export it, but Walk lists the routes of a subrouter with route as their
-// last ancestor, as it does for a router that is the handler of route. The answer
-// is cached per route.
+// last ancestor, as it does again for a router that is the handler of route. The
+// answer is cached per route.
 func (r *Router) hasSubrouter(route *mux.Route) bool {
 	key := weak.Make(route)
 	if found, ok := r.subrouters.Load(key); ok {
 		return found.(bool)
 	}
-	err := r.Router.Walk(func(_ *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
-		if n := len(ancestors); n > 0 && ancestors[n-1] == route && route.GetHandler() != http.Handler(router) {
+	visits := make(map[*mux.Route]bool)
+	err := r.Router.Walk(func(child *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
+		if n := len(ancestors); n == 0 || ancestors[n-1] != route {
+			return nil
+		}
+		// A child router that is the handler of route is walked after its
+		// subrouter, so a child walked twice is in a subrouter too.
+		if route.GetHandler() != http.Handler(router) || visits[child] {
 			return errFound
 		}
+		visits[child] = true
 		return nil
 	})
 	found := errors.Is(err, errFound)

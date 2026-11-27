@@ -105,22 +105,43 @@ func matchedRoute(r *http.Request, h http.Handler, pttrn string) httpsec.Matched
 }
 
 // isConnectRedirect reports that ServeMux redirects a CONNECT request to its
-// path with a "/" added: its handler is a redirect, on the same host, to that
-// path, which is also its pattern (http.Redirect cleans the location). A redirect
-// handler registered for a pattern redirects elsewhere and keeps its route.
+// path with a "/" added. Its pattern is then that unescaped path, cleaned before
+// Go 1.27, and its handler a 307 redirect there, with the query of the request,
+// on the same host (http.Redirect cleans the location). A redirect handler
+// registered for a pattern answers otherwise and keeps its route.
 func isConnectRedirect(r *http.Request, h http.Handler, pttrn string) bool {
 	if r.Method != http.MethodConnect || reflect.TypeOf(h) != redirectHandlerType {
+		return false
+	}
+	target := r.URL.Path + "/"
+	if connectRedirectCleaned() {
+		target = cleanPath(r.URL.Path) + "/"
+	}
+	if pttrn != target {
 		return false
 	}
 	var w headerRecorder
 	h.ServeHTTP(&w, r)
 	location, err := url.Parse(w.Header().Get("Location"))
-	return err == nil && location.Host == "" &&
-		location.Path == cleanPath(pttrn) && location.Path == cleanPath(r.URL.Path+"/")
+	return err == nil && w.status == http.StatusTemporaryRedirect && location.Host == "" &&
+		location.Path == cleanPath(target) && location.RawQuery == r.URL.RawQuery
 }
 
-// headerRecorder records the headers that a redirect handler writes.
-type headerRecorder struct{ header http.Header }
+// connectRedirectCleaned reports that ServeMux cleans the path that it redirects
+// a CONNECT request to (before Go 1.27): a probe ServeMux redirects /x/.. to //.
+var connectRedirectCleaned = sync.OnceValue(func() bool {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/{a}/{b}/", func(http.ResponseWriter, *http.Request) {})
+	_, pttrn := mux.Handler(&http.Request{Method: http.MethodConnect, URL: &url.URL{Path: "/x/.."}})
+	return pttrn == "//"
+})
+
+// headerRecorder records the headers and the status that a redirect handler
+// writes.
+type headerRecorder struct {
+	header http.Header
+	status int
+}
 
 func (w *headerRecorder) Header() http.Header {
 	if w.header == nil {
@@ -131,7 +152,7 @@ func (w *headerRecorder) Header() http.Header {
 
 func (*headerRecorder) Write(b []byte) (int, error) { return len(b), nil }
 
-func (*headerRecorder) WriteHeader(int) {}
+func (w *headerRecorder) WriteHeader(status int) { w.status = status }
 
 // redirectHandlerType is the type of the handler of a redirect that ServeMux
 // generates.

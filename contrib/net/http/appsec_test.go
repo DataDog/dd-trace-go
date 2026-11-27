@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"strconv"
@@ -410,6 +411,22 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 	underlying.Handle("/rsub/", http.RedirectHandler("/next", http.StatusFound))
 	underlying.Handle("/csub/", http.RedirectHandler("https://canonical.example/csub/", http.StatusFound))
 	underlying.Handle("/same/", http.RedirectHandler("/same/", http.StatusFound))
+	underlying.Handle("/qsub/", http.RedirectHandler("/qsub/?view=index", http.StatusFound))
+	// Registered redirects to their own pattern: ServeMux answers 307, with the
+	// query of the request, and does not clean its pattern since Go 1.27.
+	underlying.Handle("/s302/", http.RedirectHandler("/s302/", http.StatusFound))
+	underlying.Handle("/q307/", http.RedirectHandler("/q307/?v=1", http.StatusTemporaryRedirect))
+	underlying.Handle("/s307/", http.RedirectHandler("/s307/", http.StatusTemporaryRedirect))
+	underlying.Handle("/o307/", http.RedirectHandler("/other", http.StatusTemporaryRedirect))
+	underlying.Handle("/h307/", http.RedirectHandler("https://other.example/h307/", http.StatusTemporaryRedirect))
+	probe := http.NewServeMux()
+	probe.HandleFunc("/{a}/{b}/", func(http.ResponseWriter, *http.Request) {})
+	_, probed := probe.Handler(&http.Request{Method: http.MethodConnect, URL: &url.URL{Path: "/x/.."}})
+	s307 := "/s307/{param1}"
+	if probed == "//" {
+		// Before Go 1.27, this redirect is the one that ServeMux would generate.
+		s307 = ""
+	}
 	mux := NewServeMux(WithServeMux(underlying))
 	mux.HandleFunc("/wrapped/{path...}", func(http.ResponseWriter, *http.Request) {})
 	mux.HandleFunc("/set/{path...}", clearPath)
@@ -463,6 +480,13 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 		{http.MethodConnect, "/rsub/x/..", "/rsub/{param1}", true},
 		{http.MethodConnect, "/csub/x", "/csub/{param1}", true},
 		{http.MethodConnect, "/same/x", "/same/{param1}", true},
+		{http.MethodConnect, "/qsub/x/..", "/qsub/{param1}", true},
+		{http.MethodConnect, "/qsub", "", true},
+		{http.MethodConnect, "/s302/x/..", "/s302/{param1}", true},
+		{http.MethodConnect, "/q307/x/..", "/q307/{param1}", true},
+		{http.MethodConnect, "/s307/x/..", s307, true},
+		{http.MethodConnect, "/o307/x/..", "/o307/{param1}", true},
+		{http.MethodConnect, "/h307/x/..", "/h307/{param1}", true},
 		{http.MethodGet, "/users/123", "/users/{id}/", true},
 		{http.MethodGet, "/static/a/../", "/static/", true},
 		{http.MethodGet, "/a%2Fb/../x/42", "/x/{id}", true},

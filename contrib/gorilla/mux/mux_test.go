@@ -963,6 +963,15 @@ func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
 	sub := org.PathPrefix("/org/{org}").Subrouter()
 	sub.Handle("/item/{id}", okHandler()).Methods(http.MethodGet)
 	sub.NotFoundHandler = http.NotFoundHandler()
+	// A subrouter that is also the handler of its route.
+	dual := NewRouter()
+	dualPrefix := dual.PathPrefix("/dual/{t}")
+	dualSub := dualPrefix.Subrouter()
+	dualSub.Handle("/item/{id}", okHandler()).Methods(http.MethodGet)
+	dualSub.MethodNotAllowedHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	})
+	dualPrefix.Handler(dualSub)
 	// A route without a handler: gorilla answers 404.
 	bare := NewRouter()
 	bare.NewRoute().Path("/bare/{id}")
@@ -1004,6 +1013,8 @@ func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
 		{org, http.MethodPost, "/org/1/item/3", http.StatusMethodNotAllowed, ""},
 		{org, http.MethodGet, "/org/1/missing", http.StatusNotFound, ""},
 		{bare, http.MethodGet, "/bare/2", http.StatusNotFound, ""},
+		{dual, http.MethodGet, "/dual/1/item/3", http.StatusOK, "/dual/{t}/item/{id}"},
+		{dual, http.MethodPost, "/dual/1/item/3", http.StatusMethodNotAllowed, ""},
 		{team, http.MethodGet, "/inner/3", http.StatusOK, "/inner/{id}"},
 		{team, http.MethodGet, "/team/1/missing", http.StatusNotFound, ""},
 		{team, http.MethodGet, "/team/1/item/3", http.StatusOK, "/team/{t}/item/{id}"},
