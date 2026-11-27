@@ -16,6 +16,14 @@ set -euo pipefail
 #   - Formatters are not run: the check-format job already runs
 #     `golangci-lint fmt` on every Go file of the repository.
 #
+# The `unused` linter is also enabled here, for new issues only. Reviewers
+# repeatedly had to ask authors to delete test types and helpers that the PR
+# declared and never used (dead scaffolding), which `unused` finds mechanically.
+# It stays out of .golangci.yml because the full-repo golangci-lint steps would
+# then fail on the findings that predate it (see the TODO there). The root
+# module, which the lint job otherwise lints in full, gets the same diff-scoped
+# `unused` run below when its Go files changed.
+#
 # This script lints every module in go.work unless the list below names it.
 # An omitted entry fails loudly when the module has findings. A stale entry
 # silently stops the lint. Update the list when a module moves or changes
@@ -74,6 +82,15 @@ is_excluded() {
   return 1
 }
 
+# Enable `unused` on top of the configured linters, unless the configuration
+# turns it on by itself one day (then the entry is redundant but harmless).
+add_unused() {
+  case ",$1," in
+    *,unused,*) printf '%s' "$1" ;;
+    *) printf '%s,unused' "$1" ;;
+  esac
+}
+
 modules=()
 while IFS= read -r dir; do
   modules+=("$dir")
@@ -91,6 +108,7 @@ changed="$(
 # A file belongs to the deepest module that contains it: modules nest, for
 # example contrib/google.golang.org/api/internal/gen_endpoints.
 selected=()
+lint_root_unused=false
 while IFS= read -r file; do
   [[ -z $file ]] && continue
   owner=""
@@ -99,6 +117,12 @@ while IFS= read -r file; do
       owner="$dir"
     fi
   done
+  if [[ $owner == "$root" ]]; then
+    # The root module is linted in full by the lint job; only `unused` needs
+    # the diff-scoped run below.
+    lint_root_unused=true
+    continue
+  fi
   if [[ -z $owner ]] || is_excluded "$owner"; then
     continue
   fi
@@ -116,7 +140,7 @@ if grep -q "^$apps_dir/pr-triage-board/" <<< "$changed"; then
   lint_pr_triage_board=true
 fi
 
-if [[ ${#selected[@]} -eq 0 && $lint_pr_triage_board == false ]]; then
+if [[ ${#selected[@]} -eq 0 && $lint_pr_triage_board == false && $lint_root_unused == false ]]; then
   printf "> No Go changes in nested modules since %s\n" "$base"
   exit 0
 fi
@@ -126,6 +150,8 @@ if [[ -z $linters ]]; then
   echo "could not read the enabled linters from golangci-lint linters" >&2
   exit 1
 fi
+
+linters="$(add_unused "$linters")"
 
 failed=()
 for dir in "${selected[@]+"${selected[@]}"}"; do
@@ -140,6 +166,13 @@ if [[ $lint_pr_triage_board == true ]]; then
   printf "\n> Linting %s/pr-triage-board\n" "$apps_dir"
   if ! (cd "$root/$apps_dir" && golangci-lint run --enable-only="$linters" --new-from-rev="$base" "$@" ./pr-triage-board); then
     failed+=("$apps_dir/pr-triage-board")
+  fi
+fi
+
+if [[ $lint_root_unused == true ]]; then
+  printf "\n> Linting root module (unused only)\n"
+  if ! golangci-lint run --enable-only=unused --new-from-rev="$base" "$@" ./...; then
+    failed+=("root module (unused)")
   fi
 fi
 
