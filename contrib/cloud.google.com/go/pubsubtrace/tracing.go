@@ -92,6 +92,9 @@ func (tr *Tracer) TracePublish(ctx context.Context, topic Topic, msg *Message, o
 	if err := tracer.Inject(span.Context(), tracer.TextMapCarrier(msg.Attributes)); err != nil {
 		tr.instr.Logger().Debug("contrib/cloud.google.com/go/pubsubtrace: failed injecting tracing attributes: %s", err.Error())
 	}
+	if tr.instr.DataStreamsEnabled() {
+		tr.produceCheckpoint(ctx, topic, msg)
+	}
 	span.SetTag(ext.PubsubNumAttributes, len(msg.Attributes))
 
 	var once sync.Once
@@ -180,6 +183,9 @@ func (tr *Tracer) TraceReceiveFunc(s Subscription, opts ...Option) func(ctx cont
 		span, ctx := tracer.StartSpanFromContext(ctx, cfg.receiveSpanName, opts...)
 		for k, v := range baggage {
 			span.SetBaggageItem(k, v)
+		}
+		if tr.instr.DataStreamsEnabled() {
+			ctx = tr.consumeCheckpoint(ctx, s, msg)
 		}
 		if msg.DeliveryAttempt != nil {
 			span.SetTag(ext.PubsubDeliveryAttempt, *msg.DeliveryAttempt)
