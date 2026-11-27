@@ -12,6 +12,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/opentelemetry/internal/otlpjson"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -25,6 +26,7 @@ var errShutdown = errors.New("OTLP/JSON metrics exporter is shut down")
 type jsonExporter struct {
 	sender      *otlpjson.Sender
 	temporality metric.TemporalitySelector
+	aggregation metric.AggregationSelector
 	stopped     atomic.Bool
 }
 
@@ -39,6 +41,7 @@ func newJSONExporter(temporality metric.TemporalitySelector) *jsonExporter {
 	}
 	return &jsonExporter{
 		temporality: temporality,
+		aggregation: histogramAggregationSelector(cfg.RuntimeMetricsHistogramAggregation()),
 		sender: otlpjson.NewSender(otlpjson.SenderConfig{
 			URL:           cfg.RuntimeMetricsHTTPURL(),
 			Headers:       cfg.RuntimeMetricsHeaders(),
@@ -55,9 +58,28 @@ func (e *jsonExporter) Temporality(k metric.InstrumentKind) metricdata.Temporali
 	return e.temporality(k)
 }
 
-// Aggregation implements metric.Exporter. It uses the SDK default, as the upstream exporter does.
+// histogramAggregationSelector maps OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION
+// to an aggregation selector, as the upstream otlpmetrichttp exporter does.
+// Unknown values fall back to explicit_bucket_histogram.
+func histogramAggregationSelector(preference string) metric.AggregationSelector {
+	switch preference {
+	case "explicit_bucket_histogram":
+	case "base2_exponential_bucket_histogram":
+		return func(k metric.InstrumentKind) metric.Aggregation {
+			if k == metric.InstrumentKindHistogram {
+				return metric.AggregationBase2ExponentialHistogram{MaxSize: 160, MaxScale: 20}
+			}
+			return metric.DefaultAggregationSelector(k)
+		}
+	default:
+		log.Warn("Unsupported OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION %q; must be explicit_bucket_histogram or base2_exponential_bucket_histogram. Falling back to explicit_bucket_histogram.", preference) //errtrack:ignore invalid user configuration
+	}
+	return metric.DefaultAggregationSelector
+}
+
+// Aggregation implements metric.Exporter.
 func (e *jsonExporter) Aggregation(k metric.InstrumentKind) metric.Aggregation {
-	return metric.DefaultAggregationSelector(k)
+	return e.aggregation(k)
 }
 
 // Export implements metric.Exporter.

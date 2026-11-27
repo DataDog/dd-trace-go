@@ -199,6 +199,41 @@ func TestJSONExporterWarnsAboutDroppedHTTPExporterOptions(t *testing.T) {
 	})
 }
 
+func TestJSONExporterHistogramAggregation(t *testing.T) {
+	const warning = "Unsupported OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION"
+	newExporter := func(t *testing.T, value string) (agg sdkmetric.Aggregation, logs string) {
+		logger := new(log.RecordLogger)
+		defer log.UseLogger(logger)()
+		url, _ := newCollector(t, nil)
+		useJSONProtocol(t, url)
+		if value != "" {
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION", value)
+			internalconfig.CreateNew()
+		}
+		exp := newJSONExporter(nil)
+		defer exp.Shutdown(t.Context())
+		return exp.Aggregation(sdkmetric.InstrumentKindHistogram), strings.Join(logger.Logs(), "\n")
+	}
+
+	t.Run("defaults to explicit bucket histograms", func(t *testing.T) {
+		agg, logs := newExporter(t, "")
+		assert.IsType(t, sdkmetric.AggregationExplicitBucketHistogram{}, agg)
+		assert.NotContains(t, logs, warning)
+	})
+
+	t.Run("base2_exponential_bucket_histogram selects exponential histograms", func(t *testing.T) {
+		agg, logs := newExporter(t, "base2_exponential_bucket_histogram")
+		assert.Equal(t, sdkmetric.AggregationBase2ExponentialHistogram{MaxSize: 160, MaxScale: 20}, agg)
+		assert.NotContains(t, logs, warning)
+	})
+
+	t.Run("an invalid value warns and falls back to explicit bucket histograms", func(t *testing.T) {
+		agg, logs := newExporter(t, "bogus")
+		assert.IsType(t, sdkmetric.AggregationExplicitBucketHistogram{}, agg)
+		assert.Contains(t, logs, warning)
+	})
+}
+
 func TestJSONExporterFailsAfterShutdown(t *testing.T) {
 	url, requests := newCollector(t, nil)
 	useJSONProtocol(t, url)
