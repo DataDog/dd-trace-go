@@ -9,20 +9,10 @@ import (
 	"bytes"
 	"fmt"
 	"runtime"
-	"sync/atomic"
 	"testing"
 	"time"
 )
 
-// TestParseCrashDumpManyGoroutinesStaysWithinSupervisorMemoryBudget answers a
-// resource-validation question raised in review (not a demonstrated bug):
-// whether a near-32MiB dump containing many shallow goroutines -- as opposed
-// to one deeply recursive goroutine, a different allocation pattern -- pushes
-// peak parsing memory past the supervisor's 256MiB GOMEMLIMIT, since capThreads
-// runs after parseThreads has already allocated every goroutine's frames.
-// Measured directly rather than assumed: the parse increment (peak HeapAlloc
-// above a baseline that already holds the ~31MiB dump) is ~124MiB. The real
-// supervisor peak adds its own init heap and the raw dump to that figure.
 func TestParseCrashDumpManyGoroutinesStaysWithinSupervisorMemoryBudget(t *testing.T) {
 	const targetSize = 31 * 1024 * 1024 // just under maxCrashDumpSize (32 MiB)
 	var buf bytes.Buffer
@@ -37,45 +27,45 @@ func TestParseCrashDumpManyGoroutinesStaysWithinSupervisorMemoryBudget(t *testin
 	dump := buf.Bytes()
 	t.Logf("synthetic dump: %d bytes, %d goroutines", len(dump), goroutineNum-1)
 
-	var peakHeapAlloc uint64
+	runtime.GC()
+	var baseline runtime.MemStats
+	runtime.ReadMemStats(&baseline)
+	peak := baseline.HeapAlloc
 	stop := make(chan struct{})
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		var m runtime.MemStats
-		ticker := time.NewTicker(2 * time.Millisecond)
+		last := baseline
+		sample := func() {
+			var current runtime.MemStats
+			runtime.ReadMemStats(&current)
+			// Add all allocations since the last sample to bound peaks between samples.
+			peak = max(peak, last.HeapAlloc+(current.TotalAlloc-last.TotalAlloc))
+			last = current
+		}
+		ticker := time.NewTicker(time.Millisecond)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-stop:
+				sample()
 				return
 			case <-ticker.C:
-				runtime.ReadMemStats(&m)
-				for {
-					old := atomic.LoadUint64(&peakHeapAlloc)
-					if m.HeapAlloc <= old || atomic.CompareAndSwapUint64(&peakHeapAlloc, old, m.HeapAlloc) {
-						break
-					}
-				}
+				sample()
 			}
 		}
 	}()
 
-	var baseline runtime.MemStats
-	runtime.GC()
-	runtime.ReadMemStats(&baseline)
-
 	report := parseCrashDump(dump)
-
 	close(stop)
 	<-done
 
-	peakAboveBaseline := peakHeapAlloc - baseline.HeapAlloc
+	peakAboveBaseline := peak - baseline.HeapAlloc
 	t.Logf("threads parsed (pre-cap would have been %d, capThreads reduced to): %d", goroutineNum-1, len(report.Error.Threads))
-	t.Logf("peak HeapAlloc above baseline during parseCrashDump: %d bytes (%.1f MiB)", peakAboveBaseline, float64(peakAboveBaseline)/(1024*1024))
+	t.Logf("upper bound on HeapAlloc above baseline during parseCrashDump: %d bytes (%.1f MiB)", peakAboveBaseline, float64(peakAboveBaseline)/(1024*1024))
 
 	if peakAboveBaseline > supervisorMemoryLimit {
-		t.Errorf("peak parsing allocation = %.1f MiB, want under the supervisor's %.0f MiB GOMEMLIMIT budget for this many-shallow-goroutines shape",
+		t.Errorf("peak parsing allocation bound = %.1f MiB, want under the supervisor's %.0f MiB GOMEMLIMIT budget for this many-shallow-goroutines shape",
 			float64(peakAboveBaseline)/(1024*1024), float64(supervisorMemoryLimit)/(1024*1024))
 	}
 }

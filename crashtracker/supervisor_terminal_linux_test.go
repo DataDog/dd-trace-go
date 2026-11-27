@@ -55,8 +55,8 @@ func TestSupervisorTerminalHelper(t *testing.T) {
 			signal.Stop(interrupts)
 			signal.Reset(syscall.SIGINT)
 			_ = syscall.Kill(os.Getpid(), syscall.SIGINT)
-			time.Sleep(100 * time.Millisecond)
-			os.Exit(130)
+			<-time.After(5 * time.Second)
+			t.Fatal("SIGINT did not terminate the application")
 		}
 	}
 }
@@ -69,11 +69,16 @@ func runTerminalShell(t *testing.T, dir string) {
 	// A shell keeps the job's group non-orphaned so terminal stop signals
 	// have their normal effect. A Setsid supervisor alone cannot model this.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Foreground: true, Ctty: 0}
+	setHelperParentDeathSignal(t, cmd)
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 	defer cmd.Process.Release()
+	var reaped bool
 	defer func() {
+		if reaped {
+			return
+		}
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		if data, err := os.ReadFile(filepath.Join(dir, "ready")); err == nil {
 			if pid, err := strconv.Atoi(string(data)); err == nil {
@@ -81,6 +86,7 @@ func runTerminalShell(t *testing.T, dir string) {
 				_ = syscall.Kill(pid, syscall.SIGKILL)
 			}
 		}
+		_ = waitTerminalStatus(t, cmd.Process.Pid, 0)
 	}()
 	signal.Ignore(syscall.SIGTTOU)
 	if err := os.WriteFile(filepath.Join(dir, "supervisor"), []byte(strconv.Itoa(cmd.Process.Pid)), 0600); err != nil {
@@ -111,6 +117,7 @@ func runTerminalShell(t *testing.T, dir string) {
 		t.Fatal(err)
 	}
 	status = waitTerminalStatus(t, cmd.Process.Pid, 0)
+	reaped = status != 0
 	if !status.Signaled() || status.Signal() != unix.SIGINT {
 		t.Fatalf("supervisor exit status = %v, want SIGINT", status)
 	}
@@ -147,38 +154,17 @@ func terminalProcessState(t *testing.T, pid int) byte {
 }
 
 func TestSupervisorTerminalJobControl(t *testing.T) {
-	masterFD, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC|unix.O_NONBLOCK, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	master := os.NewFile(uintptr(masterFD), "pty-master")
-	defer master.Close()
-	if err := unix.IoctlSetPointerInt(masterFD, unix.TIOCSPTLCK, 0); err != nil {
-		t.Fatal(err)
-	}
-	number, err := unix.IoctlGetInt(masterFD, unix.TIOCGPTN)
-	if err != nil {
-		t.Fatal(err)
-	}
-	slaveFD, err := unix.Open(fmt.Sprintf("/dev/pts/%d", number), unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	slave := os.NewFile(uintptr(slaveFD), "pty-slave")
-	defer slave.Close()
+	master, slave := crashtracker.OpenTestPTY(t)
 	dir := t.TempDir()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestSupervisorTerminalHelper$")
 	cmd.Env = append(filterE2EEnv(os.Environ()), "_CRASHTRACKER_TERMINAL_ROLE=shell",
 		"_CRASHTRACKER_REGRESSION_DIR="+dir, "DD_CRASHTRACKING_ENABLED=true", "GORACE=atexit_sleep_ms=0")
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = slave, slave, slave
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
-	if err := cmd.Start(); err != nil {
+	if err := startVictim(t, cmd); err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-	}()
+	_ = slave.Close()
 	var output bytes.Buffer
 	drained := make(chan struct{})
 	go func() {

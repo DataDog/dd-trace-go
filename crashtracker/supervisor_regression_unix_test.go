@@ -51,8 +51,12 @@ func TestSupervisorRegressionHelper(t *testing.T) {
 		if err := os.Remove(exe); err != nil {
 			t.Fatal(err)
 		}
+		signal.Ignore(syscall.SIGCHLD)
 		if err := crashtracker.Start(); err == nil || !strings.Contains(err.Error(), "start application process") {
 			t.Fatalf("expected re-exec failure, got %v", err)
+		}
+		if !signal.Ignored(syscall.SIGCHLD) {
+			t.Fatal("the failed start did not restore the ignored SIGCHLD")
 		}
 		assertInheritedFile(t, 3)
 		return
@@ -131,7 +135,6 @@ func supervisorRegressionCommand(t *testing.T, mode string) (*exec.Cmd, string) 
 	t.Helper()
 	dir := t.TempDir()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestSupervisorRegressionHelper$")
-	detachSupervisor(cmd)
 	cmd.Env = append(filterE2EEnv(os.Environ()), regressionModeEnv+"="+mode,
 		"_CRASHTRACKER_REGRESSION_DIR="+dir, "DD_CRASHTRACKING_ENABLED=true", "GORACE=atexit_sleep_ms=0")
 	output, err := os.Create(filepath.Join(dir, "output"))
@@ -140,16 +143,7 @@ func supervisorRegressionCommand(t *testing.T, mode string) (*exec.Cmd, string) 
 	}
 	t.Cleanup(func() { _ = output.Close() })
 	cmd.Stdout, cmd.Stderr = output, output
-	t.Cleanup(func() {
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
-		if data, err := os.ReadFile(filepath.Join(dir, "ready")); err == nil {
-			if pid, err := strconv.Atoi(string(data)); err == nil {
-				_ = syscall.Kill(pid, syscall.SIGKILL)
-			}
-		}
-	})
+
 	return cmd, dir
 }
 
@@ -188,7 +182,7 @@ func TestSupervisorPreservesInheritedDescriptors(t *testing.T) {
 	cmd, dir := supervisorRegressionCommand(t, "inherited-fds")
 	cmd.ExtraFiles = []*os.File{inheritedFile(t, 3, cmd), nil, inheritedFile(t, 5, cmd)}
 	cmd.Env = append(cmd.Env, "DD_TRACE_AGENT_URL="+srv.URL)
-	if err := cmd.Start(); err != nil {
+	if err := startVictim(t, cmd); err != nil {
 		t.Fatal(err)
 	}
 	_ = waitForVictim(t, cmd, 15*time.Second)
@@ -218,7 +212,7 @@ func TestSupervisorReexecFailurePreservesInheritedDescriptor(t *testing.T) {
 		t.Fatalf("copy helper: %v, close: %v", copyErr, closeErr)
 	}
 	cmd.Path, cmd.Args[0] = path, path
-	if err := cmd.Start(); err != nil {
+	if err := startVictim(t, cmd); err != nil {
 		t.Fatal(err)
 	}
 	if err := waitForVictim(t, cmd, 5*time.Second); err != nil {
@@ -243,7 +237,7 @@ func TestSupervisorBrokenStderrStillUploads(t *testing.T) {
 	defer r.Close()
 	defer w.Close()
 	cmd.Stderr = w
-	if err := cmd.Start(); err != nil {
+	if err := startVictim(t, cmd); err != nil {
 		t.Fatal(err)
 	}
 	_ = w.Close()
@@ -271,7 +265,7 @@ func TestSupervisorSocketActivation(t *testing.T) {
 			}
 			cmd.Env = append(cmd.Env, "_CRASHTRACKER_EXPECT_LISTEN_PID="+expected,
 				"LISTEN_FDS=1", "LISTEN_FDNAMES=listener")
-			if err := cmd.Start(); err != nil {
+			if err := startVictim(t, cmd); err != nil {
 				t.Fatal(err)
 			}
 			listenPID := "1"
@@ -290,7 +284,7 @@ func TestSupervisorSocketActivation(t *testing.T) {
 
 func TestSupervisorDetachedProcessGroup(t *testing.T) {
 	cmd, dir := supervisorRegressionCommand(t, "detached")
-	if err := cmd.Start(); err != nil {
+	if err := startVictim(t, cmd); err != nil {
 		t.Fatal(err)
 	}
 	if err := waitForVictim(t, cmd, 5*time.Second); err != nil {

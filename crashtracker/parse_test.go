@@ -58,6 +58,8 @@ func TestParseCrashDump(t *testing.T) {
 		wantSignal        bool
 		wantSigName       string
 		wantSigNo         int
+		wantSigCode       int
+		wantSigAddr       string
 	}{
 		{
 			name:        "panic",
@@ -79,6 +81,8 @@ func TestParseCrashDump(t *testing.T) {
 			wantSignal:  true,
 			wantSigName: "SIGSEGV",
 			wantSigNo:   11,
+			wantSigCode: 2,
+			wantSigAddr: "0x0",
 		},
 		{
 			name:              "deadlock",
@@ -229,6 +233,9 @@ func TestParseCrashDump(t *testing.T) {
 				}
 				if r.SigInfo.SiSigno != tt.wantSigNo {
 					t.Errorf("SigInfo.SiSigno = %d, want %d", r.SigInfo.SiSigno, tt.wantSigNo)
+				}
+				if r.SigInfo.SiCode != tt.wantSigCode || r.SigInfo.SiAddr != tt.wantSigAddr {
+					t.Errorf("signal code and address = %d and %q, want %d and %q", r.SigInfo.SiCode, r.SigInfo.SiAddr, tt.wantSigCode, tt.wantSigAddr)
 				}
 			} else if r.SigInfo != nil {
 				t.Errorf("SigInfo = %+v, want nil for a non-signal crash", r.SigInfo)
@@ -555,21 +562,6 @@ func TestParseFramesContinuesPastElisionMarker(t *testing.T) {
 	last := frames[len(frames)-1]
 	if last.Function != "runtime.main" {
 		t.Errorf("last frame = %+v, want the resumed runtime.main frame to survive", last)
-	}
-}
-
-func TestParseCrashDumpSignalDetails(t *testing.T) {
-	dump := readFixture(t, "sigsegv.txt")
-	r := parseCrashDump(dump)
-
-	if r.SigInfo == nil {
-		t.Fatal("SigInfo is nil")
-	}
-	if r.SigInfo.SiCode != 2 {
-		t.Errorf("SigInfo.SiCode = %d, want 2", r.SigInfo.SiCode)
-	}
-	if r.SigInfo.SiAddr != "0x0" {
-		t.Errorf("SigInfo.SiAddr = %q, want %q", r.SigInfo.SiAddr, "0x0")
 	}
 }
 

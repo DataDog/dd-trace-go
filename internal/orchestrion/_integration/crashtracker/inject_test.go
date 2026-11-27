@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"go/ast"
-	"go/format"
 	"go/parser"
 	"go/token"
 	"io/fs"
@@ -18,8 +17,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -134,6 +135,7 @@ func TestCrashtrackerIsFirstMainStatement(t *testing.T) {
 	defer cancel()
 	cmd := orchestrionCommand(ctx, "go", "build", "-a", "-work", "-o", filepath.Join(t.TempDir(), "victim-order"), victimImportPath)
 	cmd.Dir = moduleRoot
+	prepareCrashtrackerCommand(cmd)
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
 		t.Fatal("build victim with -work: timeout")
@@ -166,15 +168,48 @@ func TestCrashtrackerIsFirstMainStatement(t *testing.T) {
 		t.Fatal("woven main()'s body is empty")
 	}
 
-	first := mainFunc.Body.List[0]
-	var buf strings.Builder
-	if err := format.Node(&buf, fset, first); err != nil {
-		t.Fatalf("format main()'s first statement: %v", err)
+	if first := mainFunc.Body.List[0]; !isCrashtrackerStart(first, file.Imports) {
+		t.Fatalf("main() first statement at %s does not call crashtracker.Start()", fset.Position(first.Pos()))
 	}
-	src := buf.String()
-	if !strings.Contains(src, "crashtracker") || !strings.Contains(src, "Start") {
-		t.Fatalf("main()'s first statement is not crashtracker.Start(); got:\n%s", src)
+}
+
+func isCrashtrackerStart(stmt ast.Stmt, imports []*ast.ImportSpec) bool {
+	// Orchestrion wraps prepended statements in a block to isolate their scope.
+	if block, ok := stmt.(*ast.BlockStmt); ok && len(block.List) > 0 {
+		stmt = block.List[0]
 	}
+	ifStmt, ok := stmt.(*ast.IfStmt)
+	if !ok {
+		return false
+	}
+	init, ok := ifStmt.Init.(*ast.AssignStmt)
+	if !ok || len(init.Rhs) != 1 {
+		return false
+	}
+	call, ok := init.Rhs[0].(*ast.CallExpr)
+	if !ok || len(call.Args) != 0 {
+		return false
+	}
+	selector, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || selector.Sel.Name != "Start" {
+		return false
+	}
+	pkg, ok := selector.X.(*ast.Ident)
+	if !ok {
+		return false
+	}
+	for _, spec := range imports {
+		importPath, err := strconv.Unquote(spec.Path.Value)
+		if err != nil || importPath != "github.com/DataDog/dd-trace-go/v2/crashtracker" {
+			continue
+		}
+		name := path.Base(importPath)
+		if spec.Name != nil {
+			name = spec.Name.Name
+		}
+		return pkg.Name == name
+	}
+	return false
 }
 
 // parseWorkDir extracts the temporary work directory path go build reports
@@ -260,6 +295,7 @@ func buildVictim(t *testing.T, moduleRoot, output, importPath string, instrument
 	}
 	cmd.Dir = moduleRoot
 
+	prepareCrashtrackerCommand(cmd)
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
 		t.Fatalf("build victim (instrumented=%v): timeout", instrumented)
@@ -314,6 +350,7 @@ func runVictim(t *testing.T, binary, agentURL string) []byte {
 		// branch that does set it.
 		"DD_SERVICE=crashtracker-ordering-proof",
 	)
+	prepareCrashtrackerCommand(cmd)
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
 		t.Fatalf("run victim %q: timeout", binary)

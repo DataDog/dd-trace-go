@@ -6,27 +6,40 @@
 package crashtracker_test
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
+
+	"github.com/DataDog/dd-trace-go/v2/crashtracker"
 )
 
+func setHelperParentDeathSignal(t *testing.T, cmd *exec.Cmd) {
+	t.Helper()
+	// Linux delivers the signal when the thread that starts the helper exits.
+	runtime.LockOSThread()
+	t.Cleanup(runtime.UnlockOSThread)
+	cmd.SysProcAttr.Pdeathsig = syscall.SIGKILL
+}
+
 func TestSupervisorDeathKillsChild(t *testing.T) {
-	cmd, dir := startSupervisorHelper(t, "wait")
+	cmd, dir := startSupervisorHelper(t, "wait-for-signal")
 	pid, err := strconv.Atoi(string(waitForFile(t, filepath.Join(dir, "ready"))))
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Check that the child stays alive before the supervisor dies.
-	// This does not force the spawning OS thread to retire.
-	time.Sleep(100 * time.Millisecond)
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
 	if childIsDead(t, pid) {
 		t.Fatal("child died while its supervisor was still alive")
 	}
@@ -67,7 +80,7 @@ func TestSupervisorClosesInheritedListener(t *testing.T) {
 	cmd, dir := supervisorRegressionCommand(t, "listener")
 	cmd.ExtraFiles = []*os.File{file}
 	cmd.Env = append(cmd.Env, fmt.Sprintf("_CRASHTRACKER_FD_3=%v:%v", stat.Dev, stat.Ino))
-	if err := cmd.Start(); err != nil {
+	if err := startVictim(t, cmd); err != nil {
 		t.Fatal(err)
 	}
 	_ = file.Close()
@@ -119,4 +132,55 @@ func childIsDead(t *testing.T, pid int) bool {
 	// A zombie has exited even if the container's PID 1 has not reaped it.
 	_, rest, _ := strings.Cut(string(data), ") ")
 	return strings.HasPrefix(rest, "Z")
+}
+
+func TestSupervisorStartFailsOpenWithoutDevFD(t *testing.T) {
+	const noDevFDEnv = "_CRASHTRACKER_NO_DEV_FD"
+	const mountUnavailable = 77
+	if os.Getenv(noDevFDEnv) != "" {
+		if err := hideDevFD(); err != nil {
+			if errors.Is(err, unix.EPERM) || errors.Is(err, unix.EACCES) {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(mountUnavailable)
+			}
+			t.Fatal(err)
+		}
+		if err := crashtracker.Start(); !errors.Is(err, os.ErrNotExist) || !strings.Contains(err.Error(), "/dev/fd") {
+			t.Fatalf("Start without /dev/fd = %v, want an error for /dev/fd", err)
+		}
+		return
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestSupervisorStartFailsOpenWithoutDevFD$")
+	cmd.Env = append(filterE2EEnv(os.Environ()), noDevFDEnv+"=1", "DD_CRASHTRACKING_ENABLED=true", "GORACE=atexit_sleep_ms=0")
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setsid:                     true,
+		Cloneflags:                 unix.CLONE_NEWUSER | unix.CLONE_NEWNS,
+		UidMappings:                []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getuid(), Size: 1}},
+		GidMappings:                []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getgid(), Size: 1}},
+		GidMappingsEnableSetgroups: false,
+	}
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	if err := startVictim(t, cmd); errors.Is(err, unix.EPERM) || errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ENOSPC) {
+		t.Skipf("cannot create a user and mount namespace without root: %v", err)
+	} else if err != nil {
+		t.Fatal(err)
+	}
+	if err := waitForVictim(t, cmd, 5*time.Second); err != nil {
+		if cmd.ProcessState.ExitCode() == mountUnavailable {
+			t.Skipf("cannot mount /dev without root: %s", &out)
+		}
+		t.Fatalf("fail-open helper: %v: %s", err, &out)
+	}
+}
+
+func hideDevFD() error {
+	// Make the mounts private before the helper hides /dev/fd.
+	if err := unix.Mount("", "/", "", unix.MS_REC|unix.MS_PRIVATE, ""); err != nil {
+		return fmt.Errorf("make mounts private: %w", err)
+	}
+	if err := unix.Mount("tmpfs", "/dev", "tmpfs", 0, ""); err != nil {
+		return fmt.Errorf("mount private /dev: %w", err)
+	}
+	return nil
 }

@@ -111,6 +111,7 @@ func TestCrashtrackerSupervisorDoesNotStartTracerOrProfiler(t *testing.T) {
 		"DD_REMOTE_CONFIGURATION_ENABLED=false",
 		"DD_SERVICE=crashtracker-supervisor-start-count",
 	)
+	prepareCrashtrackerCommand(cmd)
 	out, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
 		t.Fatalf("run idlevictim: timeout\n%s", out)

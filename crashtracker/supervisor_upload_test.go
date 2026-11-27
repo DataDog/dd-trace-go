@@ -27,7 +27,6 @@ func TestSupervisorUploadDeadline(t *testing.T) {
 	defer srv.Close()
 	defer close(release)
 	cmd := exec.Command(os.Args[0], "-test.run=^$")
-	detachSupervisor(cmd)
 	cmd.Env = append(filterE2EEnv(os.Environ()), e2eRoleEnv+"=panic",
 		"DD_CRASHTRACKING_ENABLED=true", "DD_TRACE_AGENT_URL="+srv.URL, "GORACE=atexit_sleep_ms=0")
 	null, err := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
@@ -37,7 +36,7 @@ func TestSupervisorUploadDeadline(t *testing.T) {
 	defer null.Close()
 	cmd.Stdout, cmd.Stderr = null, null
 	started := time.Now()
-	if err := cmd.Start(); err != nil {
+	if err := startVictim(t, cmd); err != nil {
 		t.Fatal(err)
 	}
 	_ = waitForVictim(t, cmd, 20*time.Second)
