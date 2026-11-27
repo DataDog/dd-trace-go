@@ -21,13 +21,13 @@ wrap_handler_new:
   do:
     - wrap_call:
         replace: |-
-          func(s *handler.Server) *handler.Server {
-            s.Use(gqlgentrace.NewTracer())
+          func(s *__dd_handler.Server) *__dd_handler.Server {
+            s.Use(__dd_gqlgentrace.NewTracer())
             return s
           }({{ . }})
   imports:
-    handler: github.com/99designs/gqlgen/graphql/handler
-    gqlgentrace: github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2
+    __dd_handler: github.com/99designs/gqlgen/graphql/handler
+    __dd_gqlgentrace: github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2
 
 wrap_handler_new_default_server:
   target:
@@ -39,10 +39,10 @@ wrap_handler_new_default_server:
   do:
     - wrap_call:
         replace: |-
-          func(s *handler.Server) *handler.Server {
-            s.Use(gqlgentrace.NewTracer())
+          func(s *__dd_handler.Server) *__dd_handler.Server {
+            s.Use(__dd_gqlgentrace.NewTracer())
             return s
           }({{ . }})
   imports:
-    handler: github.com/99designs/gqlgen/graphql/handler
-    gqlgentrace: github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2
+    __dd_handler: github.com/99designs/gqlgen/graphql/handler
+    __dd_gqlgentrace: github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2

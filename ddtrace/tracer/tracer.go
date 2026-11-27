@@ -31,9 +31,11 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/appsec"
 	appsecConfig "github.com/DataDog/dd-trace-go/v2/internal/appsec/config"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/crashtrackerstate"
 	"github.com/DataDog/dd-trace-go/v2/internal/datastreams"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
 	"github.com/DataDog/dd-trace-go/v2/internal/llmobs"
+	illmobs "github.com/DataDog/dd-trace-go/v2/internal/llmobs"
 	llmobsconfig "github.com/DataDog/dd-trace-go/v2/internal/llmobs/config"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
@@ -251,6 +253,15 @@ func reportInitTime(start time.Time) {
 // any running tracer, meaning that calling it several times will result in a restart
 // of the tracer by replacing the current instance with a new one.
 func Start(opts ...StartOption) error {
+	if crashtrackerstate.SupervisorPending() {
+		log.Debug("tracer.Start deferred: this process becomes the crashtracker supervisor.")
+		crashtrackerstate.Defer(func() {
+			if err := Start(opts...); err != nil {
+				log.Error("Deferred tracer start failed: %s", err.Error())
+			}
+		})
+		return nil
+	}
 	return start(false, opts...)
 }
 
@@ -1125,6 +1136,9 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	// context.trace.root = span, making the nil check unreliable afterward.
 	isRootSpan := context == nil || context.trace == nil || context.trace.root == nil
 	span.context = newSpanContext(span, context)
+	if isRootSpan && context != nil && illmobs.Enabled() {
+		activateInboundLLMObsContext(span.context)
+	}
 	if pprofContext != nil {
 		setLLMObsPropagatingTags(pprofContext, span.context)
 	}

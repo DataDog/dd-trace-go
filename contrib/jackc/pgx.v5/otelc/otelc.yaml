@@ -10,7 +10,7 @@
 # the contrib because it calls the pgx constructors after installing its
 # tracer, so each connection and pool is traced once.
 #
-# The parameters and the contrib's alias keep a prefix, so they cannot hide, or
+# The parameters and the import aliases keep a prefix, so they cannot hide, or
 # be hidden by, a variable at the call site.
 pgx_connect:
   target:
@@ -23,12 +23,12 @@ pgx_connect:
   do:
     - wrap_call:
         replace: |-
-          (func(__dd_ctx context.Context, __dd_connString string) (*pgx.Conn, error) {
+          (func(__dd_ctx __dd_context.Context, __dd_connString string) (*__dd_pgx.Conn, error) {
             return __dd_pgxtrace.Connect(__dd_ctx, __dd_connString)
           })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
   imports:
-    context: context
-    pgx: github.com/jackc/pgx/v5
+    __dd_context: context
+    __dd_pgx: github.com/jackc/pgx/v5
     __dd_pgxtrace: github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2
 
 pgx_connect_config:
@@ -42,12 +42,12 @@ pgx_connect_config:
   do:
     - wrap_call:
         replace: |-
-          (func(__dd_ctx context.Context, __dd_connConfig *pgx.ConnConfig) (*pgx.Conn, error) {
+          (func(__dd_ctx __dd_context.Context, __dd_connConfig *__dd_pgx.ConnConfig) (*__dd_pgx.Conn, error) {
             return __dd_pgxtrace.ConnectConfig(__dd_ctx, __dd_connConfig)
           })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
   imports:
-    context: context
-    pgx: github.com/jackc/pgx/v5
+    __dd_context: context
+    __dd_pgx: github.com/jackc/pgx/v5
     __dd_pgxtrace: github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2
 
 pgxpool_new:
@@ -61,12 +61,12 @@ pgxpool_new:
   do:
     - wrap_call:
         replace: |-
-          (func(__dd_ctx context.Context, __dd_connString string) (*pgxpool.Pool, error) {
+          (func(__dd_ctx __dd_context.Context, __dd_connString string) (*__dd_pgxpool.Pool, error) {
             return __dd_pgxtrace.NewPool(__dd_ctx, __dd_connString)
           })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
   imports:
-    context: context
-    pgxpool: github.com/jackc/pgx/v5/pgxpool
+    __dd_context: context
+    __dd_pgxpool: github.com/jackc/pgx/v5/pgxpool
     __dd_pgxtrace: github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2
 
 pgxpool_new_with_config:
@@ -80,10 +80,10 @@ pgxpool_new_with_config:
   do:
     - wrap_call:
         replace: |-
-          (func(__dd_ctx context.Context, __dd_config *pgxpool.Config) (*pgxpool.Pool, error) {
+          (func(__dd_ctx __dd_context.Context, __dd_config *__dd_pgxpool.Config) (*__dd_pgxpool.Pool, error) {
             return __dd_pgxtrace.NewPoolWithConfig(__dd_ctx, __dd_config)
           })({{ .CallArgument 0 }}, {{ .CallArgument 1 }})
   imports:
-    context: context
-    pgxpool: github.com/jackc/pgx/v5/pgxpool
+    __dd_context: context
+    __dd_pgxpool: github.com/jackc/pgx/v5/pgxpool
     __dd_pgxtrace: github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2

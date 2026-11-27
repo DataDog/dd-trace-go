@@ -22,6 +22,8 @@ type config struct {
 	injectSQS         bool
 	injectSNS         bool
 	injectSFN         bool
+
+	dataStreamsEnabled bool
 }
 
 // Option describes options for the AWS integration.
@@ -45,6 +47,7 @@ func defaults(cfg *config) {
 	cfg.injectSQS = instr.SQSInjectDatadogAttributeEnabled()
 	cfg.injectSNS = instr.SNSInjectDatadogAttributeEnabled()
 	cfg.injectSFN = instr.SFNInjectDatadogAttributeEnabled()
+	cfg.dataStreamsEnabled = instr.DataStreamsEnabled()
 }
 
 // WithService sets the given service name for the dialled connection.

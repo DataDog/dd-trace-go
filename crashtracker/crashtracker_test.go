@@ -13,15 +13,15 @@ import (
 
 // Start uses a package-level sync.Once, so it fires at most once per process
 // and cannot be reset from an external test package. A Start call that actually
-// spawns the monitor would re-exec the test binary, which is not hermetic.
+// starts the child would re-exec the test binary, which is not hermetic.
 //
 // Every Start call below therefore passes WithEnabled(false): the enabled gate
-// short-circuits before spawnMonitor, so no monitor child is ever launched no
+// short-circuits before supervision, so no child is ever launched no
 // matter which test happens to win the Once. The remaining behaviour under test
 // is the option plumbing, the enabled gate, and idempotency.
 
 func TestStartRespectsDisabled(t *testing.T) {
-	// A disabled crashtracker must return nil without spawning a monitor.
+	// A disabled crashtracker must return nil without starting a child.
 	if err := crashtracker.Start(crashtracker.WithEnabled(false)); err != nil {
 		t.Fatalf("Start(WithEnabled(false)) = %v, want nil", err)
 	}
@@ -40,7 +40,7 @@ func TestStartIdempotent(t *testing.T) {
 
 func TestStartWithOptions(t *testing.T) {
 	// Options must be accepted and applied without error. WithEnabled(false)
-	// keeps the call from spawning a monitor child.
+	// keeps the call from starting a child.
 	err := crashtracker.Start(
 		crashtracker.WithService("mysvc"),
 		crashtracker.WithEnv("prod"),
