@@ -411,7 +411,10 @@ and the sampling key is unchanged. A report of no route gets no tag.
   also when it panics. A request that stops at a mounted chi router with no route
   for it gets the route of the mount, but with OpenTelemetry semantics, where it
   gets no `http.route` and no route; an endpoint on the pattern of the mount
-  that serves the request keeps its route. chi clears the `*` of a mount, which is the
+  that serves the request keeps its route. The route table of a router does not
+  list the handlers of the aliases of a mount (`/api` and `/api/` for
+  `/api/*`): with these semantics, an endpoint on an alias whose middleware
+  leaves `/` in `RoutePath` is taken for the mount, and gets no route. chi clears the `*` of a mount, which is the
   `*` of the route when the mounted handler is not a chi router: its value is the
   rest of the routed path that chi gives that handler (`RoutePath`), so a
   middleware that rewrites the routing path is followed. A route that ends with
@@ -437,7 +440,10 @@ and the sampling key is unchanged. A report of no route gets no tag.
   a prefix route matches without its trailing `/`, as fiber matches it.
 - gorilla/mux reports no route when a subrouter's 404 or 405 handler answers:
   gorilla matches the request with the prefix route of the subrouter, which is
-  never the route of a request that a route of the subrouter matches.
+  never the route of a request that a route of the subrouter matches. The
+  integration remembers which routes have a subrouter: a subrouter that gets
+  its first route after its prefix served requests, or a matcher of the prefix
+  route that selects a handler itself, is not told apart.
 - echo marks the path of its router's 405 and OPTIONS answers as no route
   (`httpsec.Config.RouteInferred`): it is the path of a route for another method.
 
