@@ -1019,6 +1019,10 @@ func (t *tracer) pushChunk(trace *chunk) {
 	tracerstats.Signal(tracerstats.SpansFinished, uint32(len(trace.spans)))
 	select {
 	case <-t.stop:
+		// The tracer stopped, so no worker will process this chunk. Drop the
+		// span references here; a chunk embedded in a trace (trace.inlineChunk)
+		// would otherwise retain them for the trace's lifetime.
+		trace.clearSpans()
 		return
 	default:
 	}

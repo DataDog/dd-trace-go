@@ -1280,11 +1280,18 @@ func (t *trace) finishedOneLocked(s *Span) {
 	submitChunkWithTracer(tr, &chunk{spans: finishedSpans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected})
 }
 
-// submitChunkWithTracer submits a finished chunk when tr is backed by the real tracer.
+// submitChunkWithTracer submits a finished chunk when tr is backed by the real
+// tracer. Tracers that do not consume chunks (mocktracer, noopTracer, or a
+// tracer stopped after t.stop) leave the chunk unprocessed, so its span
+// references are dropped here. A chunk embedded in a trace (trace.inlineChunk)
+// would otherwise retain every span of the first full flush for the trace's
+// lifetime.
 func submitChunkWithTracer(tr Tracer, c *chunk) {
 	if t, ok := tr.(*tracer); ok {
 		t.submitChunk(c)
+		return
 	}
+	c.clearSpans()
 }
 
 // setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from
