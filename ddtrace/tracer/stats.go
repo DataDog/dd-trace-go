@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"errors"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -328,11 +329,8 @@ func (c *concentrator) newTracerStatSpanPrealloc(s *Span, obfuscator *obfuscate.
 	// removes it from the flat map (see SpanMeta.Map). runtime-id is promoted,
 	// so request the merged map when it is configured as an additional tag.
 	spanMeta := s.meta.Map(false)
-	for _, key := range c.cfg.internalConfig.StatsAdditionalTags() {
-		if key == ext.RuntimeID {
-			spanMeta = s.meta.Map(true)
-			break
-		}
+	if slices.Contains(c.cfg.internalConfig.StatsAdditionalTags(), ext.RuntimeID) {
+		spanMeta = s.meta.Map(true)
 	}
 	if len(spanMeta) == 0 && s.metrics[keyTopLevel] != 1 && s.metrics[keyTopLevelLegacy] != 1 && s.metrics[keyMeasured] != 1 {
 		return nil, false
