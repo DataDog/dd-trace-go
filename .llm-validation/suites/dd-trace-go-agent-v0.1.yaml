@@ -651,6 +651,51 @@ cases:
       - Does not mention SCA or any security/composition-analysis motivation for sending dependency
         information
 
+# ==== Internal Config Tests ====
+
+  - id: dd-trace-go-internal-config-migration-routing
+    files:
+      - internal/config/AGENTS.md
+    input: |
+      I want to migrate a config setting that is still owned by ddtrace/tracer into internal/config.
+      What should I do before I start writing code?
+    expected_criteria:
+      - Says to read the config-migration skill (.agents/skills/config-migration/SKILL.md) before
+        writing any code
+      - Says to read internal/config/README.md
+    bad_signals:
+      - Jumps straight into an implementation without mentioning the config-migration skill
+      - Points to the config-migration-review skill instead of config-migration
+
+  - id: dd-trace-go-internal-config-implicit-migration-routing
+    files:
+      - internal/config/AGENTS.md
+    input: |
+      ddtrace/tracer reads an env var with env.Get and keeps the parsed value on its own config struct.
+      I want to add a getter for it in internal/config and switch the tracer to call that instead.
+      It's a small change -- can I just make it?
+    expected_criteria:
+      - Recognizes this as moving a config field from ddtrace/tracer into internal/config, even though
+        the request does not say "migrate"
+      - Says the config-migration skill (.agents/skills/config-migration/SKILL.md) must be read before
+        making the change
+    bad_signals:
+      - Agrees the change is small enough to make without reading the config-migration skill
+      - Does not mention the config-migration skill
+
+  - id: dd-trace-go-internal-config-review-routing
+    files:
+      - internal/config/AGENTS.md
+    input: |
+      Can you review a PR that adds a new field to internal/config/config.go and updates a WithX option
+      in ddtrace/tracer/option.go to use it? What should you read before reviewing?
+    expected_criteria:
+      - Says to read the config-migration-review skill (.agents/skills/config-migration-review/SKILL.md)
+        before reviewing the diff
+    bad_signals:
+      - Reviews without mentioning the config-migration-review skill
+      - Points only to the config-migration skill and omits config-migration-review
+
 # ==== LLMObs Tests ====
 # TODO: LLMObs does not currently have any AGENTS.md files. Add some in order to start testing.
 
