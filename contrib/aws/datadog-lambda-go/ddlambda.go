@@ -438,3 +438,17 @@ func setupAppSec() {
 		}
 	}
 }
+
+// The extension forwards feature flag config requests with the API key it
+// resolved (e.g. from DD_API_KEY_SECRET_ARN). Only use it when DD_API_KEY is
+// unset: an extension without that route returns 404, and the tracer does not
+// fall back to the default endpoint. This runs in init so that it happens
+// before main creates a feature flag provider.
+func init() { setFeatureFlagsBaseURL(ddExtensionFilePath) }
+
+func setFeatureFlagsBaseURL(extensionPath string) {
+	const baseURL = "DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL"
+	if _, err := os.Stat(extensionPath); err == nil && env.Get("DD_API_KEY") == "" && env.Get(baseURL) == "" {
+		_ = os.Setenv(baseURL, "http://127.0.0.1:8126")
+	}
+}
