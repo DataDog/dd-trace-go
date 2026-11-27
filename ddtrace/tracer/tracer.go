@@ -407,6 +407,10 @@ func buildLLMObsConfig(c *config) (llmobsconfig.Config, error) {
 	}
 	if c.llmobsHTTPClient != nil {
 		cfg.TracerConfig.HTTPClient = c.llmobsHTTPClient
+	} else if resolvedAgentless && c.httpClientIsDefaultUDS {
+		// The tracer client targets the agent and may dial its Unix socket
+		// regardless of the intake URL.
+		cfg.TracerConfig.HTTPClient = nil
 	}
 	return cfg, nil
 }
