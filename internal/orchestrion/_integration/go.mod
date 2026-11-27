@@ -53,6 +53,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 v2.14.0-dev
+	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.14.0-dev
@@ -205,7 +206,6 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 v2.14.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/opensearch-project/opensearch-go.v4/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/otelc/v2 v2.14.0-dev // indirect
@@ -468,6 +468,11 @@ require (
 	software.sslmate.com/src/go-pkcs12 v0.7.3 // indirect
 )
 
+require (
+	example.com/slogdep v0.0.0-00010101000000-000000000000
+	github.com/DataDog/dd-trace-go/contrib/log/slog/otelc/v2 v2.14.0-dev // indirect
+)
+
 replace (
 	example.com/awsv1dep => ./internal/awsv1dep
 	example.com/awsv2dep => ./internal/awsv2dep
@@ -493,6 +498,7 @@ replace (
 	example.com/pgxdep => ./internal/pgxdep
 	example.com/pubsubdep => ./internal/pubsubdep
 	example.com/saramadep => ./internal/saramadep
+	example.com/slogdep => ./internal/slogdep
 	example.com/zerologdep => ./internal/zerologdep
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../../../contrib/99designs/gqlgen/otelc
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ../../../contrib/99designs/gqlgen
@@ -562,6 +568,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/v2 => ../../../contrib/labstack/echo.v4
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2 => ../../../contrib/labstack/echo.v5/otelc
 	github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/v2 => ../../../contrib/labstack/echo.v5
+	github.com/DataDog/dd-trace-go/contrib/log/slog/otelc/v2 => ../../../contrib/log/slog/otelc
 	github.com/DataDog/dd-trace-go/contrib/log/slog/v2 => ../../../contrib/log/slog
 	github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2 => ../../../contrib/net/http/otelc
 	github.com/DataDog/dd-trace-go/contrib/net/http/v2 => ../../../contrib/net/http
