@@ -21,6 +21,8 @@ import (
 )
 
 const (
+	defaultOTLPProtocol = "http/protobuf"
+
 	// Telemetry tag values for protocol and encoding
 	protocolHTTP     = "http"
 	protocolGRPC     = "grpc"
@@ -99,7 +101,10 @@ func newDatadogOTLPExporter(ctx context.Context, httpOpts []otlpmetrichttp.Optio
 		exporter = newJSONExporter(temporality)
 		protocolTag = protocolHTTP
 		encodingTag = encodingJSON
-	default: // "http/protobuf" or "http"
+	default:
+		log.Warn("Unknown OTLP protocol %q, defaulting to %s", protocol, defaultOTLPProtocol) //errtrack:ignore invalid user configuration
+		fallthrough
+	case defaultOTLPProtocol, protocolHTTP:
 		if temporality != nil {
 			// Last option wins over the delta default set by buildHTTPExporterOptions.
 			httpOpts = append(httpOpts, otlpmetrichttp.WithTemporalitySelector(temporality))
