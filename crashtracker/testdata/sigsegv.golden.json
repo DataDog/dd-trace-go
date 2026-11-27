@@ -72,7 +72,8 @@
               "file": "/tmp/crashdemo/main.go",
               "line": 11
             }
-          ]
+          ],
+          "incomplete": true
         },
         "state": "sleep"
       }

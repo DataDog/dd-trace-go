@@ -87,7 +87,8 @@
               "file": "/tmp/crashdemo/main.go",
               "line": 18
             }
-          ]
+          ],
+          "incomplete": true
         },
         "state": "chan receive"
       }
