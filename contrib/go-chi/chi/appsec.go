@@ -8,8 +8,9 @@ package chi
 import (
 	"context"
 	"net/http"
-	"net/url"
+	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/emitter/httpsec"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation/appsec/trace"
@@ -42,7 +43,7 @@ import (
 //
 // The response writer is wrapped in a commitTracker (see writer_appsec.go) to know
 // if the response is sent.
-func withAppsec(next http.Handler, span trace.TagSetter) http.Handler {
+func withAppsec(next http.Handler, span trace.TagSetter, mounts *sync.Map) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cfg := &httpsec.Config{Framework: "github.com/go-chi/chi"}
 
@@ -64,14 +65,13 @@ func withAppsec(next http.Handler, span trace.TagSetter) http.Handler {
 
 		tw, tr, afterHandle, handled := httpsec.BeforeHandle(tw, r, span, cfg)
 		defer afterHandle()
-		path := routingPath(r.URL)
-		reportDeclaredRoute(tr.Context(), rctx, path)
+		reportDeclaredRoute(tr.Context(), rctx, mounts)
 		if handled {
 			return
 		}
 		// Deferred, so that the normalized route of a request whose handler panics
 		// is the route that chi selected.
-		defer reportDeclaredRoute(tr.Context(), rctx, path)
+		defer reportDeclaredRoute(tr.Context(), rctx, mounts)
 		next.ServeHTTP(tw, tr)
 
 		if finalRoute := rctx.RoutePattern(); finalRoute != route {
@@ -84,18 +84,9 @@ func withAppsec(next http.Handler, span trace.TagSetter) http.Handler {
 
 // reportDeclaredRoute reports the route that chi selected so far, as its patterns
 // declare it, with its parameters, to API Security only.
-func reportDeclaredRoute(ctx context.Context, rctx *chi.Context, path string) {
+func reportDeclaredRoute(ctx context.Context, rctx *chi.Context, mounts *sync.Map) {
 	route := declaredRoute(rctx)
-	httpsec.ReportMatchedRoute(ctx, httpsec.MatchedRoute{Route: route, Params: selectedParams(rctx, route, path)})
-}
-
-// routingPath returns the path that chi routes: URL.RawPath when net/http sets it,
-// otherwise URL.Path.
-func routingPath(u *url.URL) string {
-	if u.RawPath != "" {
-		return u.RawPath
-	}
-	return u.Path
+	httpsec.ReportMatchedRoute(ctx, httpsec.MatchedRoute{Route: route, Params: selectedParams(rctx, route, mounts)})
 }
 
 // declaredRoute returns the route that chi selected, as its patterns declare it.
@@ -124,16 +115,115 @@ func declaredRoute(rctx *chi.Context) string {
 	return route
 }
 
-// selectedParams returns the parameters of route, the route that chi selected
-// for path, as knownParams does: the catch-all of a route in a mounted router is
-// the last "*". A "*" that chi cleared for a mounted handler gets the rest of the
-// path that chi gave it.
-func selectedParams(rctx *chi.Context, route, path string) map[string]string {
+// selectedParams returns the parameters of route, the route that chi selected,
+// when it ends with "*": the normalized route needs no other value. As
+// knownParams does, the catch-all of a route in a mounted router is the last
+// "*". A "*" that chi cleared for a mounted handler gets the rest of the path
+// that chi gave that handler.
+func selectedParams(rctx *chi.Context, route string, mounts *sync.Map) map[string]string {
+	if !strings.HasSuffix(route, "*") {
+		return nil
+	}
 	params := knownParams(rctx)
-	if params != nil && params["*"] == "" && strings.HasSuffix(route, "*") && clearedWildcard(rctx, route, path) {
+	if params != nil && params["*"] == "" && clearedWildcard(rctx, mounts) {
 		params["*"] = strings.TrimPrefix(rctx.RoutePath, "/")
 	}
 	return params
+}
+
+// clearedWildcard reports that chi cleared the "*" that ends the route that it
+// selected: the "*" of a mount whose handler is not a chi router. Mount gives that
+// handler the rest of the routed path, after a "/", in RoutePath. A route that
+// chi selected does not change RoutePath: it is empty at the root, or what the
+// route matched with an empty "*", as a middleware can rewrite it. When a mount
+// leaves the same text in RoutePath (/opaque/ for /opaque/opaque/), the route
+// table tells which handler chi ran.
+func clearedWildcard(rctx *chi.Context, mounts *sync.Map) bool {
+	last := strings.TrimSuffix(rctx.RoutePatterns[len(rctx.RoutePatterns)-1], "*")
+	params := 0
+	for i := 0; i < len(last); i++ {
+		if last[i] == '{' {
+			params++
+			i = closingBrace(last, i)
+		}
+	}
+	// The parameters of the last pattern are the last ones that chi bound.
+	values := rctx.URLParams.Values
+	start := len(values) - 1 - params
+	if start < 0 {
+		return false
+	}
+	if expandPattern(last, values[start:len(values)-1]) != rctx.RoutePath {
+		return true
+	}
+	return servesMount(rctx, mounts)
+}
+
+// servesMount reports that chi served the request with the handler that Mount
+// registers for the last pattern that it matched, as the route tables of
+// rctx.Routes and of the routers mounted in it tell. The answer is cached per
+// method and patterns: Routes builds the route table of a router on each call. A
+// mount in a router with inline middlewares (With, Group) is not recognized.
+func servesMount(rctx *chi.Context, mounts *sync.Map) bool {
+	// NUL is never in a method or a pattern.
+	key := rctx.RouteMethod + "\x00" + strings.Join(rctx.RoutePatterns, "\x00")
+	if mount, ok := mounts.Load(key); ok {
+		return mount.(bool)
+	}
+	mount := false
+	routes := rctx.Routes
+	for i, pattern := range rctx.RoutePatterns {
+		route, ok := findRoute(routes, pattern)
+		if !ok {
+			break
+		}
+		if i == len(rctx.RoutePatterns)-1 {
+			mount = isMountHandler(route.Handlers[rctx.RouteMethod])
+		}
+		routes = route.SubRoutes
+	}
+	mounts.Store(key, mount)
+	return mount
+}
+
+// findRoute returns the route of pattern in the route table of routes. The table
+// leaves out the aliases /api and /api/ that Mount adds for /api/*: after them,
+// the mounted router routes "/", and its "*" is empty either way.
+func findRoute(routes chi.Routes, pattern string) (chi.Route, bool) {
+	if routes == nil {
+		return chi.Route{}, false
+	}
+	for _, route := range routes.Routes() {
+		if route.Pattern == pattern {
+			return route, true
+		}
+	}
+	return chi.Route{}, false
+}
+
+// mountHandlerCode is the code of the handler that Mount registers, which all
+// mounts share.
+var mountHandlerCode = sync.OnceValue(func() uintptr {
+	router := chi.NewRouter()
+	router.Mount("/", http.NotFoundHandler())
+	if routes := router.Routes(); len(routes) == 1 {
+		return handlerCode(routes[0].Handlers["*"])
+	}
+	return 0
+})
+
+// isMountHandler reports that h is the handler that Mount registers.
+func isMountHandler(h http.Handler) bool {
+	code := handlerCode(h)
+	return code != 0 && code == mountHandlerCode()
+}
+
+// handlerCode returns the code of h when it is a function, or 0.
+func handlerCode(h http.Handler) uintptr {
+	if v := reflect.ValueOf(h); v.Kind() == reflect.Func {
+		return v.Pointer()
+	}
+	return 0
 }
 
 // knownParams returns the parameters that chi matched so far, as AppSec read them
@@ -151,59 +241,20 @@ func knownParams(rctx *chi.Context) map[string]string {
 	return params
 }
 
-// clearedWildcard reports that chi cleared the "*" that ends route, the route
-// that chi selected for path: it is the "*" of a mount whose handler is not a chi
-// router, and chi gives that handler the rest of the routed path, after a "/", in
-// RoutePath. Otherwise RoutePath is empty, or the path that the last pattern
-// matched with an empty "*", which a middleware can rewrite (middleware.URLFormat).
-// When the rest is what the last pattern matched, as in /opaque/opaque/, the rest
-// of path after what route matched tells them apart.
-func clearedWildcard(rctx *chi.Context, route, path string) bool {
-	routePath := rctx.RoutePath
-	if routePath == "" {
-		return false
-	}
-	keys, values := rctx.URLParams.Keys, rctx.URLParams.Values
-	last := strings.TrimSuffix(rctx.RoutePatterns[len(rctx.RoutePatterns)-1], "*")
-	params := 0
-	for i := 0; i < len(last); i++ {
-		if last[i] == '{' {
-			params++
-			i = closingBrace(last, i)
-		}
-	}
-	if start := len(keys) - 1 - params; start >= 0 {
-		if matched, ok := expandPattern(last, keys[start:len(keys)-1], values[start:len(keys)-1]); ok && matched != routePath {
-			return true
-		}
-	}
-	matched, ok := expandPattern(strings.TrimSuffix(route, "*"), keys, values)
-	return ok && strings.HasPrefix(path, matched) && "/"+path[len(matched):] == routePath
-}
-
-// expandPattern returns the path that pattern matched with the parameters that
-// chi bound in order: each {name} or {name:regexp} is the value of the next
-// parameter that is not a "*", the "*" of a mount. It returns false when there
-// are fewer values.
-func expandPattern(pattern string, keys, values []string) (string, bool) {
+// expandPattern returns the path that pattern matched with values, the values of
+// its parameters in order: each {name} or {name:regexp} is the next value.
+func expandPattern(pattern string, values []string) string {
 	var path strings.Builder
-	next := 0
 	for i := 0; i < len(pattern); i++ {
 		if pattern[i] != '{' {
 			path.WriteByte(pattern[i])
 			continue
 		}
-		for next < len(keys) && keys[next] == "*" {
-			next++
-		}
-		if next == len(keys) {
-			return "", false
-		}
-		path.WriteString(values[next])
-		next++
+		path.WriteString(values[0])
+		values = values[1:]
 		i = closingBrace(pattern, i)
 	}
-	return path.String(), true
+	return path.String()
 }
 
 // closingBrace returns the index of the "}" that closes the "{" at start in a chi

@@ -409,19 +409,38 @@ and the sampling key is unchanged. A report of no route gets no tag.
   parameters of the selected route. It reports the route that chi knows when the
   middleware starts, for an early block, and the selected route after the handler,
   also when it panics. A request that stops at a mounted chi router with no route
-  for it gets the route of the mount. chi clears the `*` of a mount, which is the
+  for it gets the route of the mount, but with OpenTelemetry semantics, where it
+  gets no `http.route` and no route. chi clears the `*` of a mount, which is the
   `*` of the route when the mounted handler is not a chi router: its value is the
-  rest of the routed path that chi gives that handler (`RoutePath`), which
-  follows a middleware that rewrites the routing path (`middleware.URLFormat`).
+  rest of the routed path that chi gives that handler (`RoutePath`), so a
+  middleware that rewrites the routing path is followed. A route that ends with
+  `*` keeps the value that chi bound, also an empty one. `RoutePath` tells the
+  two apart, and the route table of the router when the mount leaves the text
+  that the route would have matched.
 - net/http reports the pattern that `ServeMux.Handler` returns and the path that
   ServeMux matches, before AppSec can block the request, also for a route
   registered on a caller-provided `*http.ServeMux`, which reports no path
-  parameters to the WAF. A `{name...}` wildcard is present when the rest of that
-  path is not empty. A redirect that ServeMux generates gets the pattern that it
-  leads to, but for the trailing-slash redirect of a CONNECT request, whose
-  pattern is the redirect path: it gets no route.
+  parameters to the WAF. A `{name...}` wildcard is present when its path value
+  is not empty, or without one, when the rest of that path is not empty. A
+  redirect that ServeMux generates gets the pattern that it leads to, but for the
+  trailing-slash redirect of a CONNECT request, whose pattern is the redirect
+  path: it gets no route. A request that ServeMux answers without a pattern
+  (`*`), and every request with the matcher of `GODEBUG=httpmuxgo121=1`, whose
+  patterns are literal paths, get no route. `WrapHandler` inside a ServeMux
+  reports the pattern that the ServeMux matched, with its path values.
 - fiber reports the last route that it ran, also for a blocked request, with the
-  path that it matched (`c.Path()`) and `UnescapePath`.
+  path that it matched (`c.Path()`) and `UnescapePath`. Without `StrictRouting`,
+  a prefix route matches without its trailing `/`, as fiber matches it.
+- gorilla/mux reports no route when a subrouter's 404 or 405 handler answers:
+  gorilla matches the request with the prefix route of the subrouter.
+- echo marks the path of its router's 405 and OPTIONS answers as no route
+  (`httpsec.Config.RouteInferred`): it is the path of a route for another method.
+
+gin and fiber bind every parameter of their route, so a `:` starts a parameter
+only when the router bound it: gin (v1.11+) reports an escaped `\:` as `:`, and
+fiber does not parse the prefix of `Static`. A parameter name that the route
+repeats gets a numeric suffix, and fiber, which binds one value per name, leaves
+out a repeated optional parameter.
 
 By default, the path that the router matched is the escaped path of the request
 URL that `httpsec.BeforeHandle` gets, as the router reads it (`URL.RawPath` when
@@ -430,8 +449,8 @@ net/http sets it), so a handler before the router that rewrites it
 
 Every Go integration that sets the tag resolves the presence of its optional parts:
 an optional parameter or a catch-all is in the tag only when its path parameter
-has a non-empty value, and a rest of the path that is empty or only `/` is an
-absent catch-all. When the parameter has no value, or a prefix catch-all below
+has a non-empty value, and a rest of the path that is empty or only `/`, in the
+form that the router matched, is an absent catch-all. When the parameter has no value, or a prefix catch-all below
 cannot be found, it is left out: the fallback that RFC-1125 allows.
 
 A prefix route has an implicit catch-all: the rest of the path after the part that

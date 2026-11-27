@@ -560,6 +560,41 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 		assert.Equal(t, want, requestTags(t, rewritten, target)["_dd.appsec.normalized_route"], target)
 	}
 
+	// A middleware that rewrites the path that chi routes.
+	rewrite := func(from, to string) func(http.Handler) http.Handler {
+		return func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == from {
+					chi.RouteContext(r.Context()).RoutePath = to
+				}
+				next.ServeHTTP(w, r)
+			})
+		}
+	}
+	for _, tc := range []struct{ from, to, want string }{
+		{"/assets/readme", "/assets/", "/assets/"},
+		{"/assets/", "/assets/readme", "/assets/{param1}"},
+		{"/x", "/opaque/rest", "/opaque/{param1}"},
+		{"/assets/assets/", "/assets/", "/assets/"},
+		{"/y", "/opaque/opaque/", "/opaque/{param1}"},
+	} {
+		rerouted := chi.NewRouter()
+		rerouted.Use(Middleware(), rewrite(tc.from, tc.to))
+		rerouted.Get("/assets/*", okHandler)
+		rerouted.Mount("/opaque", http.HandlerFunc(okHandler))
+		assert.Equal(t, tc.want, requestTags(t, rerouted, tc.from)["_dd.appsec.normalized_route"], tc.from+" -> "+tc.to)
+	}
+
+	// A mount in a group with middlewares: its handler is not the one that Mount
+	// registers, but RoutePath tells it from a route.
+	grouped := chi.NewRouter()
+	grouped.Use(Middleware())
+	grouped.Group(func(r chi.Router) {
+		r.Use(func(next http.Handler) http.Handler { return next })
+		r.Mount("/grouped", http.HandlerFunc(okHandler))
+	})
+	assert.Equal(t, "/grouped/{param1}", requestTags(t, grouped, "/grouped/x")["_dd.appsec.normalized_route"])
+
 	// An endpoint on the pattern of a mount serves its method instead of the
 	// mounted router.
 	shadowed := chi.NewRouter()

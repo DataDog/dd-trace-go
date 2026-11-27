@@ -628,6 +628,41 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 		assert.Equal(t, want, requestTags(t, rewritten, target)["_dd.appsec.normalized_route"], target)
 	}
 
+	// A middleware that rewrites the path that chi routes.
+	rewrite := func(from, to string) func(http.Handler) http.Handler {
+		return func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == from {
+					chi.RouteContext(r.Context()).RoutePath = to
+				}
+				next.ServeHTTP(w, r)
+			})
+		}
+	}
+	for _, tc := range []struct{ from, to, want string }{
+		{"/assets/readme", "/assets/", "/assets/"},
+		{"/assets/", "/assets/readme", "/assets/{param1}"},
+		{"/x", "/opaque/rest", "/opaque/{param1}"},
+		{"/assets/assets/", "/assets/", "/assets/"},
+		{"/y", "/opaque/opaque/", "/opaque/{param1}"},
+	} {
+		rerouted := chi.NewRouter()
+		rerouted.Use(Middleware(), rewrite(tc.from, tc.to))
+		rerouted.Get("/assets/*", okHandler)
+		rerouted.Mount("/opaque", http.HandlerFunc(okHandler))
+		assert.Equal(t, tc.want, requestTags(t, rerouted, tc.from)["_dd.appsec.normalized_route"], tc.from+" -> "+tc.to)
+	}
+
+	// A mount in a group with middlewares: its handler is not the one that Mount
+	// registers, but RoutePath tells it from a route.
+	grouped := chi.NewRouter()
+	grouped.Use(Middleware())
+	grouped.Group(func(r chi.Router) {
+		r.Use(func(next http.Handler) http.Handler { return next })
+		r.Mount("/grouped", http.HandlerFunc(okHandler))
+	})
+	assert.Equal(t, "/grouped/{param1}", requestTags(t, grouped, "/grouped/x")["_dd.appsec.normalized_route"])
+
 	// An endpoint on the pattern of a mount serves its method instead of the
 	// mounted router.
 	shadowed := chi.NewRouter()
@@ -658,6 +693,27 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 	child.With(Middleware()).Get("/files/*", okHandler)
 	endpoint.Mount("/api", child)
 	assert.Equal(t, "/api/files/{param1}", requestTags(t, endpoint, "/api/files/a")["_dd.appsec.normalized_route"])
+}
+
+// TestAppSecNormalizedRouteOTel checks that, with OpenTelemetry semantics, a
+// request that stops at a mounted chi router with no route for it gets no
+// normalized route, as it gets no http.route.
+func TestAppSecNormalizedRouteOTel(t *testing.T) {
+	setChiHTTPConfig(t, "true")
+	t.Setenv("DD_API_SECURITY_ENABLED", "true")
+	t.Setenv("DD_APPSEC_ENABLED", "true")
+	testutils.StartAppSec(t)
+
+	router := chi.NewRouter()
+	router.Use(Middleware())
+	api := chi.NewRouter()
+	api.Get("/x/{id}", okHandler)
+	router.Mount("/api", api)
+	matched := requestTags(t, router, "/api/x/1")
+	assert.Equal(t, "/api/x/{id}", matched["_dd.appsec.normalized_route"])
+	missed := requestTags(t, router, "/api/nope")
+	assert.Empty(t, missed[ext.HTTPRoute])
+	assert.NotContains(t, missed, "_dd.appsec.normalized_route")
 }
 
 // TestAppSecNormalizedRouteLifecycle checks that the normalized route is the route
