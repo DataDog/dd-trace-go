@@ -410,8 +410,9 @@ and the sampling key is unchanged. A report of no route gets no tag.
   middleware starts, for an early block, and the selected route after the handler,
   also when it panics. A request that stops at a mounted chi router with no route
   for it gets the route of the mount. chi clears the `*` of a mount, which is the
-  `*` of the route when the mounted handler is not a chi router: the value of the
-  last `*` is the rest of the routing path after what the patterns matched.
+  `*` of the route when the mounted handler is not a chi router: its value is the
+  rest of the routed path that chi gives that handler (`RoutePath`), which
+  follows a middleware that rewrites the routing path (`middleware.URLFormat`).
 - net/http reports the pattern that `ServeMux.Handler` returns and the path that
   ServeMux matches, before AppSec can block the request, also for a route
   registered on a caller-provided `*http.ServeMux`, which reports no path

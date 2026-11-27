@@ -124,18 +124,14 @@ func declaredRoute(rctx *chi.Context) string {
 	return route
 }
 
-// selectedParams returns the parameters of route, the route that chi selected,
-// for path, the path that chi routed, as knownParams does: the catch-all of a
-// route in a mounted router is the last "*". chi clears the "*" of a mount before
-// it calls the mounted handler, which is also the "*" of route when that handler
-// is not a chi router: the value of the "*" of route is the rest of path after
-// what route matched before it.
+// selectedParams returns the parameters of route, the route that chi selected
+// for path, as knownParams does: the catch-all of a route in a mounted router is
+// the last "*". A "*" that chi cleared for a mounted handler gets the rest of the
+// path that chi gave it.
 func selectedParams(rctx *chi.Context, route, path string) map[string]string {
 	params := knownParams(rctx)
-	if prefix, ok := strings.CutSuffix(route, "*"); ok && params != nil {
-		if matched, ok := expandPattern(prefix, rctx.URLParams); ok && strings.HasPrefix(path, matched) {
-			params["*"] = path[len(matched):]
-		}
+	if params != nil && params["*"] == "" && strings.HasSuffix(route, "*") && clearedWildcard(rctx, route, path) {
+		params["*"] = strings.TrimPrefix(rctx.RoutePath, "/")
 	}
 	return params
 }
@@ -155,11 +151,41 @@ func knownParams(rctx *chi.Context) map[string]string {
 	return params
 }
 
-// expandPattern returns the path that pattern matched with params, the values
-// that chi bound in order at each routing level: each {name} or {name:regexp}
-// is the value of the next parameter that is not a "*", the "*" of a mount. It
-// returns false when params has fewer values.
-func expandPattern(pattern string, params chi.RouteParams) (string, bool) {
+// clearedWildcard reports that chi cleared the "*" that ends route, the route
+// that chi selected for path: it is the "*" of a mount whose handler is not a chi
+// router, and chi gives that handler the rest of the routed path, after a "/", in
+// RoutePath. Otherwise RoutePath is empty, or the path that the last pattern
+// matched with an empty "*", which a middleware can rewrite (middleware.URLFormat).
+// When the rest is what the last pattern matched, as in /opaque/opaque/, the rest
+// of path after what route matched tells them apart.
+func clearedWildcard(rctx *chi.Context, route, path string) bool {
+	routePath := rctx.RoutePath
+	if routePath == "" {
+		return false
+	}
+	keys, values := rctx.URLParams.Keys, rctx.URLParams.Values
+	last := strings.TrimSuffix(rctx.RoutePatterns[len(rctx.RoutePatterns)-1], "*")
+	params := 0
+	for i := 0; i < len(last); i++ {
+		if last[i] == '{' {
+			params++
+			i = closingBrace(last, i)
+		}
+	}
+	if start := len(keys) - 1 - params; start >= 0 {
+		if matched, ok := expandPattern(last, keys[start:len(keys)-1], values[start:len(keys)-1]); ok && matched != routePath {
+			return true
+		}
+	}
+	matched, ok := expandPattern(strings.TrimSuffix(route, "*"), keys, values)
+	return ok && strings.HasPrefix(path, matched) && "/"+path[len(matched):] == routePath
+}
+
+// expandPattern returns the path that pattern matched with the parameters that
+// chi bound in order: each {name} or {name:regexp} is the value of the next
+// parameter that is not a "*", the "*" of a mount. It returns false when there
+// are fewer values.
+func expandPattern(pattern string, keys, values []string) (string, bool) {
 	var path strings.Builder
 	next := 0
 	for i := 0; i < len(pattern); i++ {
@@ -167,25 +193,32 @@ func expandPattern(pattern string, params chi.RouteParams) (string, bool) {
 			path.WriteByte(pattern[i])
 			continue
 		}
-		depth, end := 0, i
-		for ; end < len(pattern); end++ {
-			if pattern[end] == '{' {
-				depth++
-			} else if pattern[end] == '}' {
-				if depth--; depth == 0 {
-					break
-				}
-			}
-		}
-		for next < len(params.Keys) && params.Keys[next] == "*" {
+		for next < len(keys) && keys[next] == "*" {
 			next++
 		}
-		if next == len(params.Keys) {
+		if next == len(keys) {
 			return "", false
 		}
-		path.WriteString(params.Values[next])
+		path.WriteString(values[next])
 		next++
-		i = end
+		i = closingBrace(pattern, i)
 	}
 	return path.String(), true
+}
+
+// closingBrace returns the index of the "}" that closes the "{" at start in a chi
+// pattern. Braces nest in a regexp: {id:[0-9]{3}}.
+func closingBrace(pattern string, start int) int {
+	depth := 0
+	for i := start; i < len(pattern); i++ {
+		switch pattern[i] {
+		case '{':
+			depth++
+		case '}':
+			if depth--; depth == 0 {
+				return i
+			}
+		}
+	}
+	return len(pattern)
 }

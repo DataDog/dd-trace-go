@@ -611,6 +611,23 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 		assert.Equal(t, want, requestTags(t, root, target)["_dd.appsec.normalized_route"], target)
 	}
 
+	// A middleware that rewrites the routing path: chi routes /files/.json as
+	// /files/, and gives the opaque mount the rewritten rest.
+	rewritten := chi.NewRouter()
+	rewritten.Use(Middleware(), middleware.URLFormat)
+	rewritten.Get("/files/*", okHandler)
+	rewritten.Mount("/opaque", http.HandlerFunc(okHandler))
+	rewritten.Mount("/t/{tenant}", http.HandlerFunc(okHandler))
+	for target, want := range map[string]string{
+		"/files/.json":    "/files/",
+		"/files/a.json":   "/files/{param1}",
+		"/opaque/x.json":  "/opaque/{param1}",
+		"/opaque/opaque/": "/opaque/{param1}",
+		"/t/acme/x.json":  "/t/{tenant}/{param1}",
+	} {
+		assert.Equal(t, want, requestTags(t, rewritten, target)["_dd.appsec.normalized_route"], target)
+	}
+
 	// An endpoint on the pattern of a mount serves its method instead of the
 	// mounted router.
 	shadowed := chi.NewRouter()
