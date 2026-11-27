@@ -42,6 +42,14 @@ func NewRoundTripper(opts ...ClientOption) http.RoundTripper {
 	return &roundTripper{config: *cfg}
 }
 
+// IsTraced reports whether rt is a round tripper returned by [NewRoundTripper].
+// The otelc rules use it to keep a transport that already traces requests, so
+// a client the application sets up with this package is traced once.
+func IsTraced(rt http.RoundTripper) bool {
+	_, ok := rt.(*roundTripper)
+	return ok
+}
+
 // bodyCutoff specifies the maximum number of bytes that will be stored as a tag
 // value obtained from an HTTP request or response body.
 var bodyCutoff = 5 * 1024

@@ -68,4 +68,5 @@ and the hooks call dd-trace-go.
   rules reach packages the application does not import itself.
 - `internal/apps/otelc-external-app` and `scripts/build_otelc_external_app.sh`: the guard that the
   packages your rules are read from are importable by a real user.
-- `.github/workflows/otelc.yml`: how the suites run in CI, `OTELC_MODULES`, and `OTELC_VERSION`.
+- `.github/workflows/otelc.yml`: how the suites run in CI and `OTELC_VERSION` (`scripts/ciselect`
+  discovers otelc modules and suites dynamically).
