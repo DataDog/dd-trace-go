@@ -32,8 +32,11 @@ var DefaultSocketDSDPath = "/var/run/datadog/dsd.socket"
 
 // The OTLP protocols each exporter supports, default first.
 var (
-	otlpMetricsProtocols = []string{defaultOTLPProtocol, "http/json"}
-	otlpLogsProtocols    = []string{defaultOTLPProtocol, "http", "grpc"}
+	otlpMetricsProtocols        = []string{defaultOTLPProtocol, "http/json"}
+	otlpRuntimeMetricsProtocols = []string{defaultOTLPProtocol, "http", "http/json", "grpc"}
+	otlpLogsProtocols           = []string{defaultOTLPProtocol, "http", "http/json", "grpc"}
+	// otlpCompressions are the OTEL_EXPORTER_OTLP_*COMPRESSION values dd-trace-go honors for http/json, default first.
+	otlpCompressions = []string{"none", "gzip"}
 )
 
 const (
@@ -582,17 +585,27 @@ func resolveOTLPHeaders(genericHeaders, signalHeaders map[string]string) map[str
 
 // resolveOTLPProtocol returns the lowercased signal-specific protocol, else the generic one, else the default.
 func resolveOTLPProtocol(specific, generic string) string {
-	return normalizeOTLPProtocol(cmp.Or(specific, generic, defaultOTLPProtocol))
+	return normalizeOTLPValue(cmp.Or(specific, generic, defaultOTLPProtocol))
 }
 
 // supportsOTLPProtocol returns a validator accepting the given protocols, case-insensitively.
 func supportsOTLPProtocol(protocols []string) func(string) bool {
 	return func(v string) bool {
-		return slices.Contains(protocols, normalizeOTLPProtocol(v))
+		return slices.Contains(protocols, normalizeOTLPValue(v))
 	}
 }
 
-func normalizeOTLPProtocol(v string) string {
+// resolveOTLPCompression returns the signal-specific compression, else the generic one, else "none".
+func resolveOTLPCompression(specific, generic string) string {
+	return normalizeOTLPValue(cmp.Or(specific, generic, otlpCompressions[0]))
+}
+
+// supportsOTLPCompression accepts "none" and "gzip", case-insensitively.
+func supportsOTLPCompression(v string) bool {
+	return slices.Contains(otlpCompressions, normalizeOTLPValue(v))
+}
+
+func normalizeOTLPValue(v string) string {
 	return strings.ToLower(strings.TrimSpace(v))
 }
 

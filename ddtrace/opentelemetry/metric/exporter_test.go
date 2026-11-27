@@ -138,12 +138,7 @@ func TestTemporalitySelectorHonored(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("cumulative selector overrides delta default for monotonic counter", func(t *testing.T) {
-		// Mirror what the fixed NewMeterProviderWithContext does when
-		// WithCumulativeTemporality() is set: append the selector as the last option.
-		httpOpts := []otlpmetrichttp.Option{
-			otlpmetrichttp.WithTemporalitySelector(cumulativeTemporalitySelector()),
-		}
-		exp, err := newDatadogOTLPExporter(ctx, httpOpts, nil)
+		exp, err := newDatadogOTLPExporter(ctx, nil, nil, cumulativeTemporalitySelector())
 		require.NoError(t, err)
 		defer exp.Shutdown(ctx) //nolint:errcheck
 
@@ -151,7 +146,7 @@ func TestTemporalitySelectorHonored(t *testing.T) {
 	})
 
 	t.Run("default (no selector option) gives delta for monotonic counter", func(t *testing.T) {
-		exp, err := newDatadogOTLPExporter(ctx, nil, nil)
+		exp, err := newDatadogOTLPExporter(ctx, nil, nil, nil)
 		require.NoError(t, err)
 		defer exp.Shutdown(ctx) //nolint:errcheck
 

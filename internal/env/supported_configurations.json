@@ -2151,6 +2151,13 @@
         "default": "1000"
       }
     ],
+    "OTEL_EXPORTER_OTLP_COMPRESSION": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": "none"
+      }
+    ],
     "OTEL_EXPORTER_OTLP_ENDPOINT": [
       {
         "implementation": "B",
@@ -2171,6 +2178,13 @@
         "implementation": "A",
         "type": "boolean",
         "default": "false"
+      }
+    ],
+    "OTEL_EXPORTER_OTLP_LOGS_COMPRESSION": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": "none"
       }
     ],
     "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": [
@@ -2200,6 +2214,20 @@
         "implementation": "A",
         "type": "int",
         "default": "10000"
+      }
+    ],
+    "OTEL_EXPORTER_OTLP_METRICS_COMPRESSION": [
+      {
+        "implementation": "B",
+        "type": "string",
+        "default": "none"
+      }
+    ],
+    "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "explicit_bucket_histogram"
       }
     ],
     "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": [

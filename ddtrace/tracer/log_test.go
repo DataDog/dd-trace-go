@@ -406,6 +406,21 @@ func TestOTelStartupInfoUserMeterProvider(t *testing.T) {
 	}
 }
 
+func TestRuntimeMetricsExporterInfoProtocol(t *testing.T) {
+	for protocol, want := range map[string]string{
+		"":              "http/protobuf",
+		"http":          "http/protobuf",
+		"http/protobuf": "http/protobuf",
+		"http/json":     "http/json",
+		"grpc":          "grpc",
+	} {
+		t.Run(protocol, func(t *testing.T) {
+			t.Setenv("OTEL_EXPORTER_OTLP_METRICS_PROTOCOL", protocol)
+			assert.Equal(t, want, runtimeMetricsExporterInfo(internalconfig.CreateNew()).protocol)
+		})
+	}
+}
+
 func TestOTLPLogsEndpoint(t *testing.T) {
 	for _, tc := range []struct {
 		name               string
@@ -417,6 +432,9 @@ func TestOTLPLogsEndpoint(t *testing.T) {
 		{"generic", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318/"}, "http://collector:4318/v1/logs", "http/protobuf"},
 		{"signal", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "https://u:p@collector/v1/logs?k=v"}, "https://collector/v1/logs", "http/protobuf"},
 		{"signal other scheme", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "grpc://collector:4318/v1/logs"}, "http://collector:4318/v1/logs", "http/protobuf"},
+		{"http/json agent", map[string]string{"DD_AGENT_HOST": "agent", "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "http/json"}, "http://agent:4318/v1/logs", "http/json"},
+		{"http/json generic", map[string]string{"OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector:4318/", "OTEL_EXPORTER_OTLP_PROTOCOL": "http/json"}, "http://collector:4318/v1/logs", "http/json"},
+		{"http alias", map[string]string{"DD_AGENT_HOST": "agent", "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "http"}, "http://agent:4318/v1/logs", "http/protobuf"},
 		{"signal encoded path", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "http://collector:4318/tenant%2Fblue"}, "http://collector:4318/tenant/blue", "http/protobuf"},
 		{"signal grpc", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "grpc://collector:4317", "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "grpc"}, "http://collector:4317", "grpc"},
 		{"signal grpc https", map[string]string{"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "https://collector:4317", "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL": "grpc"}, "https://collector:4317", "grpc"},

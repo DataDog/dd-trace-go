@@ -8,6 +8,7 @@ package metric
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
@@ -25,7 +26,12 @@ const (
 	// Telemetry tag values for protocol and encoding
 	protocolHTTP     = "http"
 	protocolGRPC     = "grpc"
+	protocolHTTPJSON = "http/json"
 	encodingProtobuf = "protobuf"
+	encodingJSON     = "json"
+
+	// exporterTimeout is the export timeout of the OTLP exporters, retries included.
+	exporterTimeout = 30 * time.Second
 )
 
 // telemetryExporter wraps a metric.Exporter to track export attempts and successes.
@@ -51,9 +57,14 @@ func (e *telemetryExporter) Export(ctx context.Context, rm *metricdata.ResourceM
 // 2. OTEL_EXPORTER_OTLP_PROTOCOL
 // 3. Default: http/protobuf
 //
-// Supported protocols:
-// - "http/protobuf" or "http": HTTP with protobuf encoding
-// - "grpc": gRPC
+// Supported protocols, as validated by internal/config:
+// - "http/protobuf" or "http": HTTP with protobuf encoding, using the upstream exporter
+// - "http/json": HTTP with JSON encoding, using our own exporter because the upstream one only produces protobuf
+// - "grpc": gRPC, using the upstream exporter
+//
+// temporality is the selector chosen with WithDeltaTemporality, WithCumulativeTemporality or
+// WithTemporalitySelector, or nil to keep the Datadog delta default. Under "http/json" the
+// WithHTTPExporter options cannot apply, so they are dropped with a warning.
 //
 // Endpoint resolution priority:
 // 1. OTEL_EXPORTER_OTLP_METRICS_ENDPOINT (highest priority)
@@ -61,7 +72,10 @@ func (e *telemetryExporter) Export(ctx context.Context, rm *metricdata.ResourceM
 // 3. DD_TRACE_AGENT_URL hostname with appropriate port
 // 4. DD_AGENT_HOST with appropriate port
 // 5. localhost with default port (default)
-func newDatadogOTLPExporter(ctx context.Context, httpOpts []otlpmetrichttp.Option, grpcOpts []otlpmetricgrpc.Option) (metric.Exporter, error) {
+// warnHTTPOptionsIgnored makes the WithHTTPExporter warning fire once per process.
+var warnHTTPOptionsIgnored sync.Once
+
+func newDatadogOTLPExporter(ctx context.Context, httpOpts []otlpmetrichttp.Option, grpcOpts []otlpmetricgrpc.Option, temporality metric.TemporalitySelector) (metric.Exporter, error) {
 	// Determine protocol
 	protocol := internalconfig.Get().RuntimeMetricsProtocol()
 
@@ -71,15 +85,30 @@ func newDatadogOTLPExporter(ctx context.Context, httpOpts []otlpmetrichttp.Optio
 
 	switch protocol {
 	case protocolGRPC:
+		if temporality != nil {
+			// Last option wins over the delta default set by buildGRPCExporterOptions.
+			grpcOpts = append(grpcOpts, otlpmetricgrpc.WithTemporalitySelector(temporality))
+		}
 		exporter, err = newDatadogOTLPGRPCExporter(ctx, grpcOpts...)
 		protocolTag = protocolGRPC
 		encodingTag = encodingProtobuf
-	case defaultOTLPProtocol, protocolHTTP:
-		exporter, err = newDatadogOTLPHTTPExporter(ctx, httpOpts...)
+	case protocolHTTPJSON:
+		if len(httpOpts) > 0 {
+			warnHTTPOptionsIgnored.Do(func() {
+				log.Warn("WithHTTPExporter options are ignored when OTEL_EXPORTER_OTLP_METRICS_PROTOCOL is http/json") //errtrack:ignore unsupported user configuration
+			})
+		}
+		exporter = newJSONExporter(temporality)
 		protocolTag = protocolHTTP
-		encodingTag = encodingProtobuf
+		encodingTag = encodingJSON
 	default:
 		log.Warn("Unknown OTLP protocol %q, defaulting to %s", protocol, defaultOTLPProtocol) //errtrack:ignore invalid user configuration
+		fallthrough
+	case defaultOTLPProtocol, protocolHTTP:
+		if temporality != nil {
+			// Last option wins over the delta default set by buildHTTPExporterOptions.
+			httpOpts = append(httpOpts, otlpmetrichttp.WithTemporalitySelector(temporality))
+		}
 		exporter, err = newDatadogOTLPHTTPExporter(ctx, httpOpts...)
 		protocolTag = protocolHTTP
 		encodingTag = encodingProtobuf
@@ -131,7 +160,7 @@ func buildHTTPExporterOptions(userOpts ...otlpmetrichttp.Option) []otlpmetrichtt
 		// Set retry configuration
 		otlpmetrichttp.WithRetry(datadogRetryConfig()),
 		// Set timeout
-		otlpmetrichttp.WithTimeout(30*time.Second),
+		otlpmetrichttp.WithTimeout(exporterTimeout),
 		// Set delta temporality as default (Datadog preference)
 		otlpmetrichttp.WithTemporalitySelector(deltaTemporalitySelector()),
 	)
@@ -148,7 +177,7 @@ func buildHTTPExporterOptions(userOpts ...otlpmetrichttp.Option) []otlpmetrichtt
 func buildGRPCExporterOptions(userOpts ...otlpmetricgrpc.Option) []otlpmetricgrpc.Option {
 	opts := []otlpmetricgrpc.Option{
 		// Set timeout
-		otlpmetricgrpc.WithTimeout(30 * time.Second),
+		otlpmetricgrpc.WithTimeout(exporterTimeout),
 		// Set delta temporality as default (Datadog preference)
 		otlpmetricgrpc.WithTemporalitySelector(deltaTemporalitySelector()),
 		// Set retry config

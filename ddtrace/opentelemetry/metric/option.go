@@ -61,6 +61,9 @@ func WithResource(opts ...resource.Option) Option {
 }
 
 // WithHTTPExporter allows customization of the OTLP HTTP exporter with additional options.
+//
+// The options only apply to the http/protobuf exporter. They are ignored, with a
+// warning, when the protocol is http/json, which uses dd-trace-go's own exporter.
 func WithHTTPExporter(opts ...otlpmetrichttp.Option) Option {
 	return optionFunc(func(c *config) {
 		c.httpExporterOptions = append(c.httpExporterOptions, opts...)
