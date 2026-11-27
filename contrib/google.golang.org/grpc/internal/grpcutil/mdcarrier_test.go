@@ -60,3 +60,27 @@ func TestMDCarrierForeachKey(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, want, got)
 }
+
+func TestMDCarrierSetOmitsInvalidMetadataKeys(t *testing.T) {
+	md := metadata.MD{}
+	mdc := MDCarrier(md)
+
+	// Valid keys (including uppercase letters that lowercase to [0-9a-z_.-]).
+	mdc.Set("baggage", "tenant%41=v")
+	mdc.Set("X-Datadog-Trace-Id", "1234")
+	mdc.Set("ot-baggage-valid_key-1.2", "ok")
+
+	// Invalid gRPC metadata keys must be omitted rather than poisoning md.
+	mdc.Set("", "empty")
+	mdc.Set("ot-baggage-tenant%2541", "v")
+	mdc.Set("ot-baggage-key+plus", "v")
+	mdc.Set("ot-baggage-key!bang", "v")
+	mdc.Set("ot-baggage-key space", "v")
+	mdc.Set(":authority", "pseudo")
+
+	assert.Equal(t, metadata.MD{
+		"baggage":                  {"tenant%41=v"},
+		"x-datadog-trace-id":       {"1234"},
+		"ot-baggage-valid_key-1.2": {"ok"},
+	}, md)
+}
