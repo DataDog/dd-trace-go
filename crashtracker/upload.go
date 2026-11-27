@@ -200,9 +200,9 @@ func (t uploadTarget) newRequest(cfg *config, body []byte) (*http.Request, error
 	return req, nil
 }
 
-// newClient returns the client for the upload: the caller-supplied client from
-// WithHTTPClient, a UDS-aware client for a Unix socket agent URL, or the default
-// client.
+// newClient returns the client for the upload. The default client limits
+// each attempt to 3 seconds for Agent uploads and 5 seconds for agentless uploads.
+// A custom client keeps its own timeout.
 func (t uploadTarget) newClient(cfg *config) *http.Client {
 	switch {
 	case cfg.httpClient != nil:
@@ -212,7 +212,11 @@ func (t uploadTarget) newClient(cfg *config) *http.Client {
 		client.CheckRedirect = rejectRedirects
 		return client
 	default:
-		client := internal.DefaultHTTPClient(attemptTimeout, false)
+		timeout := attemptTimeout
+		if t.useKey {
+			timeout = agentlessAttemptTimeout
+		}
+		client := internal.DefaultHTTPClient(timeout, false)
 		client.CheckRedirect = rejectRedirects
 		return client
 	}
