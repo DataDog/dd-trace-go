@@ -31,6 +31,8 @@ const (
 // to the repository root.
 const integrationRoot = "internal/orchestrion/_integration"
 
+const contribTree = "contrib"
+
 // otelcExternalAppPrefixes are the inputs of the otelc lane's external-app
 // job: it builds one application and runs no suites. Such a change
 // contributes no suite and does not fail the otelc lane open -- a suite-less
@@ -253,7 +255,7 @@ func discoverOtelcModules(root string) ([]string, error) {
 
 func discoverOtelcIntegrationPaths(root string) ([]string, error) {
 	paths := map[string]bool{}
-	if err := walkOtelcModuleDirs(root, filepath.Join(root, "contrib"), func(otelcDir string) error {
+	if err := walkOtelcModuleDirs(root, filepath.Join(root, contribTree), func(otelcDir string) error {
 		parent, err := otelcParentModule(root, otelcDir)
 		if err != nil {
 			return err
@@ -292,16 +294,24 @@ func expandOtelcModuleSuites(root string, modules map[string][]string) error {
 	if len(modules) == 0 {
 		return nil
 	}
-	return walkOtelcModuleDirs(root, root, func(otelcDir string) error {
+	var otelcDirs []string
+	if err := walkOtelcModuleDirs(root, root, func(otelcDir string) error {
+		otelcDirs = append(otelcDirs, otelcDir)
+		return nil
+	}); err != nil {
+		return err
+	}
+	slices.Sort(otelcDirs)
+	for _, otelcDir := range otelcDirs {
 		if _, ok := modules[otelcDir]; ok {
-			return nil
+			continue
 		}
 		parent := filepath.ToSlash(filepath.Dir(otelcDir))
 		if suites, ok := modules[parent]; ok {
 			modules[otelcDir] = slices.Clone(suites)
 		}
-		return nil
-	})
+	}
+	return nil
 }
 
 func walkOtelcModuleDirs(root, dir string, visit func(string) error) error {

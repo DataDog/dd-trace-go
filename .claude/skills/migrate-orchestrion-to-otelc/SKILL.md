@@ -110,6 +110,7 @@ on `PATH`, or the app is built with whatever older binary is there.
 ## Build enough context first
 
 From the sources in `references.md`, learn:
+
 - Orchestrion: the full set of join points and advice, and what advice templates can read (the `.`
   accessors).
 - otelc: every rule kind, the `where` and `where.file` selectors, the target forms and `version`
@@ -175,6 +176,7 @@ wrap its call sites with `wrap_call` instead (see "Rules" under "Design rules").
    - If `contrib/<name>` has a `go.mod` and a non-empty `integration-suites.modules` entry, do not
      edit `.github/ci-components.yml`. CI derives the `otelc-integrations` path from
      `contrib/<name>/otelc/go.mod`, and the hook module inherits the parent's suite list. If the
+     parent module has no suite list, add a non-empty list for the parent module. If the
      parent has no `go.mod`, add an explicit hook module entry, such as `contrib/os/otelc`. Add an
      explicit entry if the hook module needs a different suite list. For suites outside `contrib/`
      without a `*/otelc` entry, use `integration-suites.otelc-extra-suites`. Do not edit

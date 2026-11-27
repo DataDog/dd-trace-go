@@ -77,7 +77,7 @@ func TestEveryContribModuleHasASuitesEntry(t *testing.T) {
 	tab, _, root := testTable(t)
 
 	want := map[string]bool{}
-	for _, tree := range []string{"contrib", "instrumentation"} {
+	for _, tree := range []string{contribTree, "instrumentation"} {
 		err := filepath.WalkDir(filepath.Join(root, tree), func(p string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err

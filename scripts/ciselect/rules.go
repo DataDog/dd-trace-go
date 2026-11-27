@@ -96,16 +96,24 @@ func loadTable(root string) (*table, error) {
 	if err := dec.Decode(&t); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", tableRelPath, err)
 	}
+	var (
+		otelcPaths      []string
+		otelcDiscovered bool
+	)
 	for i := range t.Components {
 		c := &t.Components[i]
 		if !c.DiscoverOtelcIntegrations {
 			continue
 		}
-		paths, err := discoverOtelcIntegrationPaths(root)
-		if err != nil {
-			return nil, fmt.Errorf("discover %s paths: %w", c.ID, err)
+		if !otelcDiscovered {
+			paths, err := discoverOtelcIntegrationPaths(root)
+			if err != nil {
+				return nil, fmt.Errorf("discover %s paths: %w", c.ID, err)
+			}
+			otelcPaths = paths
+			otelcDiscovered = true
 		}
-		c.Paths = append(c.Paths, paths...)
+		c.Paths = append(c.Paths, otelcPaths...)
 		slices.Sort(c.Paths)
 		c.Paths = slices.Compact(c.Paths)
 	}
