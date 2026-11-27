@@ -553,6 +553,111 @@ func TestExtractTracestateKeepsDDAtBoundary(t *testing.T) {
 	assert.True(t, sctx.trace.hasPropagatingTag("_dd.p.foo"))
 }
 
+func TestExtractTracestateDropsOversizedOT(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	// Build an ot= entry that exceeds tracestateDDMaxSize.
+	otEntry := "ot=rv:ef284ace7a91e1;th:8;zz:" + strings.Repeat("a", tracestateDDMaxSize)
+	require.Greater(t, len(otEntry), tracestateDDMaxSize)
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  "dd=s:1," + otEntry + ",vendor1=v1",
+	})
+	sctx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	// The oversized ot= is treated as absent: nothing inherited from it.
+	rv, th, unknown := sctx.trace.otelTracestate()
+	assert.Nil(t, rv)
+	assert.Nil(t, th)
+	assert.Empty(t, unknown)
+	assert.Nil(t, sctx.trace.otel)
+
+	// It is stripped from the stored tag, other members are kept.
+	stored := sctx.trace.propagatingTag(tracestateHeader)
+	assert.NotContains(t, stored, "ot=")
+	assert.Contains(t, stored, "dd=")
+	assert.Contains(t, stored, "vendor1=v1")
+
+	// And it is not re-emitted by an inject that reuses the cached tag.
+	assert.NotContains(t, injectTracestate(t, sctx), "ot=")
+}
+
+func TestExtractTracestateKeepsOTAtBoundary(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	// ot= entry exactly at the limit should be kept and parsed.
+	prefix := "ot=rv:ef284ace7a91e1;th:8;zz:"
+	otEntry := prefix + strings.Repeat("a", tracestateDDMaxSize-len(prefix))
+	require.Equal(t, tracestateDDMaxSize, len(otEntry))
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  "dd=s:1," + otEntry + ",vendor1=v1",
+	})
+	sctx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	rv, th, _ := sctx.trace.otelTracestate()
+	require.NotNil(t, rv)
+	require.NotNil(t, th)
+	assert.Equal(t, uint64(0xef284ace7a91e1), *rv)
+	assert.Equal(t, uint64(0x80000000000000), *th)
+
+	stored := sctx.trace.propagatingTag(tracestateHeader)
+	assert.Contains(t, stored, otEntry)
+	assert.Contains(t, stored, "vendor1=v1")
+}
+
+func TestExtractTracestateDropsOversizedOTWithWhitespace(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	otEntry := "ot=rv:ef284ace7a91e1;th:8;zz:" + strings.Repeat("a", tracestateDDMaxSize)
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		// Optional whitespace around the oversized member.
+		tracestateHeader: "dd=s:1,\t " + otEntry + " \t,vendor1=v1",
+	})
+	sctx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	assert.Nil(t, sctx.trace.otel)
+	stored := sctx.trace.propagatingTag(tracestateHeader)
+	assert.NotContains(t, stored, "ot=")
+	assert.Contains(t, stored, "vendor1=v1")
+}
+
+func TestExtractTracestateOversizedOTNotInSpanLink(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	t.Setenv(envPropagationBehaviorExtract, "restart")
+	tracer, err := newTracer()
+	require.NoError(t, err)
+	defer tracer.Stop()
+
+	otEntry := "ot=rv:ef284ace7a91e1;th:8;zz:" + strings.Repeat("a", tracestateDDMaxSize)
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-00000000000000000000000000000004-2222222222222222-01",
+		tracestateHeader:  "dd=s:1," + otEntry + ",vendor1=v1",
+	})
+	sctx, err := tracer.Extract(headers)
+	require.NoError(t, err)
+
+	links := sctx.SpanLinks()
+	require.Len(t, links, 1)
+	assert.NotContains(t, links[0].Tracestate, "ot=")
+	assert.Contains(t, links[0].Tracestate, "vendor1=v1")
+}
+
 func TestExtractTracestateDropsOversizedDDWithWhitespace(t *testing.T) {
 	t.Setenv(envPropagationStyle, "tracecontext")
 	tracer, err := newTracer()
