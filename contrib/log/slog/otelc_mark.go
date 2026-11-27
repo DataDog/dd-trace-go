@@ -18,37 +18,51 @@ var otelcEnabled = instrumentation.OtelcEnabled
 
 type correlatedKey struct{}
 
-// markCorrelated, in an otelc build, returns ctx marked to show that a handler
-// of this package added the trace IDs to the record.
+// correlatedIDs are a trace ID and a span ID, as they appear in a record.
+type correlatedIDs struct {
+	traceID string
+	spanID  string
+}
+
+// markCorrelated, in an otelc build, returns ctx marked with the trace IDs a
+// handler of this package added to the record.
 //
 // The otelc rules wrap the handler of every slog.New call, so a handler that
 // holds one of ours, such as a third-party handler built around
 // logger.Handler(), gets a second one around it. The outer one passes its IDs
-// down with WithAttrs, and the inner one skips its own only when they reached
-// its root level (outerIDs), not a group it already had open. Plain builds
-// skip all of it.
-func markCorrelated(ctx context.Context) context.Context {
+// down with WithAttrs, and the inner one skips its own only when the same IDs
+// reached its root level (rootIDs), not a group it already had open. An older
+// dd.trace_id set by the application does not match. Plain builds skip all of
+// it.
+func markCorrelated(ctx context.Context, ids correlatedIDs) context.Context {
 	if !otelcEnabled() {
 		return ctx
 	}
-	return context.WithValue(ctx, correlatedKey{}, struct{}{})
+	return context.WithValue(ctx, correlatedKey{}, ids)
 }
 
 // correlatedByOuter reports whether an outer handler of this package already
 // put the trace IDs of the record at the root level of h.
 func (h *handler) correlatedByOuter(ctx context.Context) bool {
-	return otelcEnabled() && h.outerIDs && ctx.Value(correlatedKey{}) != nil
-}
-
-// hasTraceID reports, in an otelc build, whether attrs hold a trace ID.
-func hasTraceID(attrs []slog.Attr) bool {
 	if !otelcEnabled() {
 		return false
 	}
+	ids, ok := ctx.Value(correlatedKey{}).(correlatedIDs)
+	return ok && h.rootIDs == ids
+}
+
+// withRootIDs returns ids with the trace IDs in attrs, in an otelc build.
+func withRootIDs(ids correlatedIDs, attrs []slog.Attr) correlatedIDs {
+	if !otelcEnabled() {
+		return ids
+	}
 	for _, a := range attrs {
-		if a.Key == ext.LogKeyTraceID {
-			return true
+		switch a.Key {
+		case ext.LogKeyTraceID:
+			ids.traceID = a.Value.String()
+		case ext.LogKeySpanID:
+			ids.spanID = a.Value.String()
 		}
 	}
-	return false
+	return ids
 }

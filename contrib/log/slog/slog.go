@@ -55,8 +55,8 @@ func WrapHandler(h slog.Handler) slog.Handler {
 type handler struct {
 	wrapped slog.Handler
 	groups  []group
-	// outerIDs is set in otelc builds only. See markCorrelated.
-	outerIDs bool
+	// rootIDs is set in otelc builds only. See markCorrelated.
+	rootIDs correlatedIDs
 }
 
 // Enabled calls the wrapped handler Enabled method.
@@ -88,7 +88,7 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 			slog.String(ext.LogKeySpanID, spanID),
 		}
 		reqHandler = reqHandler.WithAttrs(attrs)
-		ctx = markCorrelated(ctx)
+		ctx = markCorrelated(ctx, correlatedIDs{traceID: traceID, spanID: spanID})
 	}
 	for _, g := range h.groups {
 		reqHandler = reqHandler.WithGroup(g.name)
@@ -104,11 +104,11 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	if len(h.groups) == 0 {
 		// The wrapped handler owns attrs once it gets them, so read them first.
-		outerIDs := h.outerIDs || hasTraceID(attrs)
+		rootIDs := withRootIDs(h.rootIDs, attrs)
 		return &handler{
-			wrapped:  h.wrapped.WithAttrs(attrs),
-			groups:   h.groups,
-			outerIDs: outerIDs,
+			wrapped: h.wrapped.WithAttrs(attrs),
+			groups:  h.groups,
+			rootIDs: rootIDs,
 		}
 	}
 	groups := append([]group{}, h.groups...)
@@ -117,9 +117,9 @@ func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	groups[len(groups)-1] = curGroup
 
 	return &handler{
-		wrapped:  h.wrapped,
-		groups:   groups,
-		outerIDs: h.outerIDs,
+		wrapped: h.wrapped,
+		groups:  groups,
+		rootIDs: h.rootIDs,
 	}
 }
 
@@ -130,9 +130,9 @@ func (h *handler) WithGroup(name string) slog.Handler {
 		return h
 	}
 	return &handler{
-		wrapped:  h.wrapped,
-		groups:   append(h.groups, group{name: name}),
-		outerIDs: h.outerIDs,
+		wrapped: h.wrapped,
+		groups:  append(h.groups, group{name: name}),
+		rootIDs: h.rootIDs,
 	}
 }
 

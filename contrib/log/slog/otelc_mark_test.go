@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -171,4 +172,25 @@ func TestNestedHandlerDedup(t *testing.T) {
 			assert.Equal(t, 1, strings.Count(b.String(), `"`+ext.LogKeySpanID+`"`), b.String())
 		})
 	}
+}
+
+func TestNestedHandlerStaleTraceID(t *testing.T) {
+	setOtelcEnabled(t, true)
+	ctx := startSpan(t)
+	span, ok := tracer.SpanFromContext(ctx)
+	require.True(t, ok)
+
+	var b bytes.Buffer
+	inner := slog.New(WrapHandler(slog.NewJSONHandler(&b, nil))).
+		With(ext.LogKeyTraceID, "old").
+		WithGroup("g").
+		Handler()
+	slog.New(WrapHandler(passthrough{next: inner})).InfoContext(ctx, "nested", "key", "value")
+
+	// A dd.trace_id the application set is not the outer handler's, so the
+	// inner one adds the current IDs at the root level. The last value wins.
+	var entry map[string]any
+	require.NoError(t, json.Unmarshal(b.Bytes(), &entry))
+	assert.Equal(t, span.Context().TraceID(), entry[ext.LogKeyTraceID], b.String())
+	assert.Equal(t, strconv.FormatUint(span.Context().SpanID(), 10), entry[ext.LogKeySpanID], b.String())
 }
