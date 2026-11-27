@@ -8,6 +8,7 @@
 package provider
 
 import (
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	configtelemetry "github.com/DataDog/dd-trace-go/v2/internal/config/configtelemetry"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
 )
@@ -77,6 +79,9 @@ func getWithOrigin[T any](p *Provider, key string, def T, parse func(string) (T,
 			}
 			configtelemetry.ReportWithID(key, v, source.origin(), id)
 			if parsed, ok := parse(v); ok {
+				if allowed := env.AllowedConfigurationValues[key]; allowed != nil && !allowed.MatchString(fmt.Sprint(parsed)) {
+					continue
+				}
 				final = &parsed
 				winningOrigin = source.origin()
 			}

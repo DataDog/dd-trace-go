@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -41,7 +43,9 @@ func main() {
 	var err error
 	switch command {
 	case "generate":
-		err = generate(input, output)
+		err = generate(input, output, false)
+	case "generate-core":
+		err = generate(input, output, true)
 	case "check":
 		err = check(input)
 	case "add":
@@ -66,6 +70,7 @@ type configurationImplementation struct {
 	Implementation string   `json:"implementation"`
 	Type           string   `json:"type"`
 	Default        *string  `json:"default"`
+	Allowed        string   `json:"allowed,omitempty"`
 	Aliases        []string `json:"aliases,omitempty"`
 	// Sensitive marks a configuration whose value must not be reported in
 	// configuration telemetry. When set on any implementation of a key, that key
@@ -75,13 +80,23 @@ type configurationImplementation struct {
 
 // generate generates the supported configurations map from the supported configurations
 // JSON file.
-func generate(input, output string) error {
+func generate(input, output string, compileSchema bool) error {
 	cfg, err := getSupportedConfigurations(input)
 	if err != nil {
 		return fmt.Errorf("error getting supported configuration keys: %w", err)
 	}
 
 	keys := sortSupportedConfigurationsKeys(cfg)
+	if compileSchema {
+		keys, err = compileConfigSchema(input)
+		if err != nil {
+			return err
+		}
+	}
+	patterns, err := allowedPatterns(cfg)
+	if err != nil {
+		return err
+	}
 
 	slog.Info("supported configuration keys count", "count", len(keys))
 
@@ -136,6 +151,17 @@ func generate(input, output string) error {
 		}
 		g.Line()
 	})
+	f.Line()
+	f.Comment("AllowedConfigurationValues matches the complete parsed value for a configuration.")
+	f.Var().Id("AllowedConfigurationValues").Op("=").Map(jen.String()).Op("*").Qual("regexp", "Regexp").
+		ValuesFunc(func(g *jen.Group) {
+			for _, key := range keys {
+				if pattern, ok := patterns[key]; ok {
+					g.Add(jen.Line(), jen.Lit(key), jen.Op(":"), jen.Qual("regexp", "MustCompile").Call(jen.Lit(pattern)))
+				}
+			}
+			g.Line()
+		})
 
 	if err := f.Save(output + "/supported_configurations.gen.go"); err != nil {
 		return fmt.Errorf("error saving file: %w", err)
@@ -144,11 +170,29 @@ func generate(input, output string) error {
 	return nil
 }
 
+func compileConfigSchema(input string) ([]string, error) {
+	compiler := exec.Command("cargo", "run", "--locked", "--quiet",
+		"--manifest-path", "scripts/configinverter/core-schema/Cargo.toml", "--", input)
+	compiler.Stderr = os.Stderr
+	output, err := compiler.Output()
+	if err != nil {
+		return nil, fmt.Errorf("compile configuration schema: %w", err)
+	}
+
+	var keys []string
+	if err := json.Unmarshal(output, &keys); err != nil {
+		return nil, fmt.Errorf("read compiled configuration keys: %w", err)
+	}
+	sort.Strings(keys)
+	return keys, nil
+}
+
 // check verifies that there is no difference between the supported configurations
-// JSON file and the generated Go code. It validates four things:
+// JSON file and the generated Go code. It validates:
 //   - SupportedConfigurations: exact key-set match (no missing, no extra)
 //   - SensitiveConfigurations: exact key-set match (no missing, no extra)
 //   - keyAliases: exact alias-set match per key (no missing, no extra)
+//   - AllowedConfigurationValues: exact match of the anchored regexps
 //   - JSON sort order: the JSON file must be byte-identical to its canonical form
 func check(input string) error {
 	rawJSON, err := os.ReadFile(input)
@@ -162,6 +206,21 @@ func check(input string) error {
 	}
 
 	var failures []string
+	patterns, err := allowedPatterns(cfg)
+	if err != nil {
+		return err
+	}
+	for key, pattern := range patterns {
+		compiled := env.AllowedConfigurationValues[key]
+		if compiled == nil || compiled.String() != pattern {
+			failures = append(failures, fmt.Sprintf("AllowedConfigurationValues: %q differs from JSON", key))
+		}
+	}
+	for key := range env.AllowedConfigurationValues {
+		if _, ok := patterns[key]; !ok {
+			failures = append(failures, fmt.Sprintf("AllowedConfigurationValues: %q is missing from JSON", key))
+		}
+	}
 
 	// --- SupportedConfigurations: JSON ↔ generated ---
 	jsonKeys := sortSupportedConfigurationsKeys(cfg)
@@ -302,7 +361,7 @@ func add(input, output string, newKeys []string) error {
 		return fmt.Errorf("error adding supported configuration keys to file: %w", err)
 	}
 
-	if err := generate(input, output); err != nil {
+	if err := generate(input, output, false); err != nil {
 		return fmt.Errorf("error running generate command after adding supported configuration keys: %w", err)
 	}
 
@@ -343,6 +402,31 @@ func collectAliasMap(cfg *supportedConfiguration) map[string][]string {
 		}
 	}
 	return result
+}
+
+func allowedPatterns(cfg *supportedConfiguration) (map[string]string, error) {
+	patterns := make(map[string]string)
+	for name, implementations := range cfg.SupportedConfigurations {
+		for _, implementation := range implementations {
+			if implementation.Allowed == "" {
+				continue
+			}
+			switch implementation.Type {
+			case "string", "boolean", "int", "decimal":
+			default:
+				return nil, fmt.Errorf("allowed regexp requires a scalar setting for %q", name)
+			}
+			pattern := `\A(?:` + implementation.Allowed + `)\z`
+			if _, err := regexp.Compile(pattern); err != nil {
+				return nil, fmt.Errorf("invalid allowed regexp for %q: %w", name, err)
+			}
+			if previous, exists := patterns[name]; exists && previous != pattern {
+				return nil, fmt.Errorf("multiple allowed regexps for %q", name)
+			}
+			patterns[name] = pattern
+		}
+	}
+	return patterns, nil
 }
 
 // sensitiveConfigurationKeys returns the sorted list of configuration keys that have

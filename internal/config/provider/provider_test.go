@@ -29,6 +29,18 @@ type testConfigSource struct {
 	originValue telemetry.Origin
 }
 
+func TestAllowedConfigurationValuePreservesLowerPriority(t *testing.T) {
+	for _, key := range []string{"OTEL_BLRP_MAX_QUEUE_SIZE", "OTEL_BLRP_MAX_EXPORT_BATCH_SIZE"} {
+		t.Run(key, func(t *testing.T) {
+			provider := newTestProvider(
+				newTestConfigSource(map[string]string{key: "0"}, telemetry.OriginEnvVar),
+				newTestConfigSource(map[string]string{key: "+0008"}, telemetry.OriginLocalStableConfig),
+			)
+			require.Equal(t, 8, provider.GetInt(key, 10))
+		})
+	}
+}
+
 func newTestConfigSource(entries map[string]string, origin telemetry.Origin) *testConfigSource {
 	if entries == nil {
 		entries = make(map[string]string)

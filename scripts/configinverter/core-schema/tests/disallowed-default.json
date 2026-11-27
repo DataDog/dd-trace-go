@@ -1,0 +1,10 @@
+{
+  "version": "2",
+  "supportedConfigurations": {
+    "DD_POSITIVE_INTEGER": [{
+      "type": "int",
+      "default": "0",
+      "allowed": "[1-9][0-9]*"
+    }]
+  }
+}

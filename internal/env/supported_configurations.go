@@ -22,6 +22,7 @@ type configurationImplementation struct {
 	Implementation string   `json:"implementation"`
 	Type           string   `json:"type"`
 	Default        *string  `json:"default"`
+	Allowed        string   `json:"allowed,omitempty"`
 	Aliases        []string `json:"aliases,omitempty"`
 	// Sensitive marks a configuration whose value must not be reported in
 	// configuration telemetry.

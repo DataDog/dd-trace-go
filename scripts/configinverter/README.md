@@ -18,6 +18,14 @@ From the root of `dd-trace-go` run the following command to generate the file:
 go run ./scripts/configinverter/main.go generate
 ```
 
+Use `generate-core` to compile a finalized manifest with libdatadog before
+generating the Go tables. This requires Cargo on the development machine.
+The Go tracer reads the generated tables at runtime.
+
+```sh
+go run ./scripts/configinverter/main.go generate-core
+```
+
 ### Check for missing generated keys
 
 Keys are automatically added to the JSON file when detected in a `go test` scenario. After running test
