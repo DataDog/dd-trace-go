@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2/internal/grpcutil"
 	"github.com/DataDog/dd-trace-go/instrumentation/testutils/grpc/v2/fixturepb"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -1634,6 +1635,54 @@ func TestOTBaggageEnforcesLimitsOverGRPC(t *testing.T) {
 	}
 	assert.LessOrEqual(t, count, 64)
 	assert.LessOrEqual(t, totalBytes, 8192)
+}
+
+// TestW3COpaqueBaggageKeyDoesNotFailGRPC verifies that extracting a valid W3C
+// baggage key containing '%' (for example, "tenant%41") and making an outbound
+// instrumented gRPC call does not fail with codes.Internal. The legacy
+// ot-baggage-tenant%2541 metadata entry cannot be represented as a gRPC
+// metadata name, so MDCarrier omits it while preserving the opaque W3C key in
+// the "baggage" metadata header and still emitting valid legacy baggage keys.
+func TestW3COpaqueBaggageKeyDoesNotFailGRPC(t *testing.T) {
+	t.Setenv("DD_TRACE_PROPAGATION_STYLE", "datadog,tracecontext,baggage")
+
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	rig, err := newRig(true)
+	require.NoError(t, err)
+	defer func() { assert.NoError(t, rig.Close()) }()
+
+	extracted, err := tracer.Extract(tracer.TextMapCarrier{
+		tracer.DefaultTraceIDHeader:  "1234",
+		tracer.DefaultParentIDHeader: "5678",
+		tracer.DefaultBaggageHeader:  "tenant%41=v,normal_key=ok",
+	})
+	require.NoError(t, err)
+
+	span, ctx := tracer.StartSpanFromContext(context.Background(), "x", tracer.ChildOf(extracted))
+	_, err = rig.client.Ping(ctx, &fixturepb.FixtureRequest{Name: "pass"})
+	span.Finish()
+	require.NoError(t, err, "outbound gRPC call must not fail when baggage contains an opaque W3C key with '%'")
+
+	md := rig.fixtureServer.LastRequestMetadata.Load().(metadata.MD)
+	otBaggage := otBaggageEntries(md)
+	assert.NotContains(t, otBaggage, tracer.DefaultBaggageHeaderPrefix+"tenant%2541")
+	assert.Equal(t, []string{"ok"}, otBaggage[tracer.DefaultBaggageHeaderPrefix+"normal_key"])
+
+	baggageVals := md.Get(tracer.DefaultBaggageHeader)
+	require.NotEmpty(t, baggageVals)
+	assert.Contains(t, baggageVals[0], "tenant%41=v")
+
+	downstream, err := tracer.Extract(grpcutil.MDCarrier(md))
+	require.NoError(t, err)
+	got := map[string]string{}
+	downstream.ForeachBaggageItem(func(k, v string) bool {
+		got[k] = v
+		return true
+	})
+	assert.Equal(t, "v", got["tenant%41"], "W3C baggage key must remain opaque across the gRPC hop")
+	assert.Equal(t, "ok", got["normal_key"])
 }
 
 // TestUnknownServiceHandlerResourceName checks that calls served by

@@ -11,21 +11,34 @@ set -euo pipefail
 # failure, and can panic the binary after the test has completed. The handler
 # should record values, and the test goroutine should assert on them.
 #
+# Known limit: go-require only inspects testify require and assert calls. A
+# t.Fatal or t.FailNow call off the test goroutine is not flagged, so the same
+# review feedback still applies to it by hand. go vet's testinggoroutine
+# checker covers the `go func()`-body case; the blind spot is handlers and
+# other service goroutines.
+#
 # The check is diff-scoped (--new-from-rev) and testifylint is not in
 # `linters.enable` of .golangci.yml, because the full-repo golangci-lint steps
 # would then fail on the findings that predate it. This script turns it on with
 # --enable-only; .golangci.yml restricts it to the go-require checker.
+#
+# Long-term plan: the repo's convention is to fix a linter's backlog first and
+# then enable it in `linters.enable` (see the errorlint, loggercheck, and
+# unused TODOs there). Once the pre-existing go-require findings are fixed and
+# testifylint is enabled, this script can be deleted.
 #
 # Like scripts/lint_go_modules.sh, each changed module is linted from its own
 # directory, since `golangci-lint run ./...` stops at Go workspace module
 # boundaries. Unlike it, this script also covers the root module and
 # internal/orchestrion/_integration.
 #
-# Excluded modules (same reasons as scripts/lint_go_modules.sh):
+# Excluded modules (same reasons as scripts/lint_go_modules.sh, plus
+# non-workspace modules with no default-build Go packages):
 #   - .github/workflows/apps: its root files do not type-check as a whole.
 #   - tools/v2fix/_stage: analyzer test inputs with intentional findings.
-#   - orchestrion/all, otelc/all, scripts/fixmodules: every Go file is behind a
-#     build tag, so there is no package to lint.
+#   - orchestrion/all, otelc/all, scripts/fixmodules, _tools, .gitlab: every Go
+#     file is behind a build tag or no default-build package exists, so
+#     golangci-lint has no Go files to analyze.
 
 usage() {
   cat << EOF
@@ -50,6 +63,8 @@ shift
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
 base="$(git merge-base "$rev" HEAD)"
+# Shared module-discovery helpers.
+. "$root/scripts/lib_go_module_discovery.sh"
 
 excluded=(
   "$root/.github/workflows/apps"
@@ -57,68 +72,109 @@ excluded=(
   "$root/orchestrion/all"
   "$root/otelc/all"
   "$root/scripts/fixmodules"
+  "$root/_tools"
+  "$root/.gitlab"
 )
 
-is_excluded() {
-  local dir="$1" e
-  for e in "${excluded[@]}"; do
-    [[ $dir == "$e" ]] && return 0
-  done
-  return 1
-}
-
-modules=()
-while IFS= read -r dir; do
-  modules+=("$dir")
-done < <(go list -m -f '{{.Dir}}')
-if [[ ${#modules[@]} -eq 0 ]]; then
-  echo "go list -m returned no workspace modules" >&2
+module_list="$(lint_go_modules_workspace_dirs)"
+# The command substitution above fails the script under set -e when go list
+# fails, so a partial module list cannot slip through the empty check below.
+if [[ -z $module_list ]]; then
+  echo "go list -m failed or returned no workspace modules" >&2
   exit 1
 fi
 
-changed="$(
-  git diff --name-only --diff-filter=d "$base" -- '*.go'
-  git ls-files --others --exclude-standard -- '*.go'
-)"
+changed="$(lint_go_modules_changed_files "$base")"
 
-# A file belongs to the deepest module that contains it: modules nest, for
-# example contrib/google.golang.org/api/internal/gen_endpoints.
+# A file belongs to the deepest module that contains it; the rules live in
+# lib_go_module_discovery.sh.
 selected=()
-while IFS= read -r file; do
-  [[ -z $file ]] && continue
-  owner=""
-  for dir in "${modules[@]}"; do
-    if [[ "$root/$file" == "$dir"/* && ${#dir} -gt ${#owner} ]]; then
-      owner="$dir"
-    fi
-  done
-  if [[ -z $owner ]] || is_excluded "$owner"; then
+nonws_list=" "
+selection="$(lint_go_modules_select "$root" "$module_list" "$changed" "${excluded[@]}")"
+while IFS=$'\t' read -r owner kind; do
+  if [[ -z $owner ]]; then
     continue
   fi
   if [[ " ${selected[*]-} " != *" $owner "* ]]; then
     selected+=("$owner")
+    if [[ $kind == "nonws" ]]; then
+      nonws_list+="$owner "
+    fi
   fi
-done <<< "$changed"
+done <<< "$selection"
 
-if [[ ${#selected[@]} -eq 0 ]]; then
+# The .github/workflows/apps module is excluded above because its root files
+# do not type-check together. Its pr-triage-board subpackage does, so a
+# targeted run lints it, the way scripts/lint_go_modules.sh does.
+apps_dir=".github/workflows/apps"
+lint_pr_triage_board=false
+if grep -q "^$apps_dir/pr-triage-board/" <<< "$changed"; then
+  lint_pr_triage_board=true
+fi
+
+if [[ ${#selected[@]} -eq 0 && $lint_pr_triage_board == false ]]; then
   printf "> No Go changes since %s\n" "$base"
   exit 0
 fi
 
+# The caller (scripts/lint_go_modules.sh) lints these modules with testifylint
+# included, so a second pass here would repeat the same package loading and
+# type-checking. Skip what the caller covers; this script then only lints the
+# modules the caller does not reach.
+skip="${LINT_TESTIFYLINT_SKIP_MODULES:-}"
+if [[ -n $skip ]]; then
+  filtered=()
+  for dir in "${selected[@]+"${selected[@]}"}"; do
+    if [[ $skip != *" $dir "* ]]; then
+      filtered+=("$dir")
+    fi
+  done
+  selected=("${filtered[@]+"${filtered[@]}"}")
+fi
+
 failed=()
-for dir in "${selected[@]}"; do
+found_require_findings=false
+module_out="$(mktemp "${TMPDIR:-/tmp}/testifylint-lint-out.XXXXXX")"
+trap 'rm -f "$module_out"' EXIT
+
+for dir in "${selected[@]+"${selected[@]}"}"; do
   rel="${dir#"$root"}"
   rel="${rel#/}"
   printf "\n> testifylint go-require in %s\n" "${rel:-.}"
-  if ! (cd "$dir" && golangci-lint run --enable-only=testifylint --new-from-rev="$base" "$@" ./...); then
+  # A module outside go.work cannot be linted in workspace mode, because
+  # ./... never reaches it. Run it standalone with GOWORK=off instead.
+  run_cmd=(golangci-lint)
+  if [[ $nonws_list == *" $dir "* ]]; then
+    run_cmd=(env GOWORK=off golangci-lint)
+  fi
+  # tee keeps the findings visible as they print, and the copy lets the
+  # summary tell a require.* failure from any other golangci-lint failure.
+  if ! (cd "$dir" && "${run_cmd[@]+"${run_cmd[@]}"}" run --enable-only=testifylint --new-from-rev="$base" "$@" ./...) 2>&1 | tee "$module_out"; then
     failed+=("${rel:-.}")
+    if grep -q "go-require:" "$module_out"; then
+      found_require_findings=true
+    fi
   fi
 done
+
+if [[ $lint_pr_triage_board == true ]]; then
+  printf "\n> testifylint go-require in %s/pr-triage-board\n" "$apps_dir"
+  if ! (cd "$root/$apps_dir" && golangci-lint run --enable-only=testifylint --new-from-rev="$base" "$@" ./pr-triage-board) 2>&1 | tee "$module_out"; then
+    failed+=("$apps_dir/pr-triage-board")
+    if grep -q "go-require:" "$module_out"; then
+      found_require_findings=true
+    fi
+  fi
+fi
 
 if [[ ${#failed[@]} -gt 0 ]]; then
   printf "\n> testifylint go-require failed in %d module(s):\n" "${#failed[@]}"
   printf "  %s\n" "${failed[@]}"
-  printf "  Do not call require.* off the test goroutine (httptest handlers, go func bodies):\n"
-  printf "  record the values there and assert on the test goroutine, or use assert.* / t.Errorf.\n"
+  if [[ $found_require_findings == true ]]; then
+    printf "  Do not call require.* off the test goroutine (httptest handlers, go func bodies):\n"
+    printf "  record the values there and assert on the test goroutine, or use assert.* / t.Errorf.\n"
+  else
+    printf "  The failure cause is in the golangci-lint output above.\n"
+  fi
   exit 1
 fi

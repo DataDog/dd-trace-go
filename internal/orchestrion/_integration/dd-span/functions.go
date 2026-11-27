@@ -53,6 +53,21 @@ func spanWithContextAndRequest(ctx context.Context, r *http.Request) {
 	spanWithRenamedContext(r.Context())
 }
 
+//dd:span arg:nil-request
+func spanWithNilRequest(_ http.ResponseWriter, r *http.Request) bool {
+	return r == nil
+}
+
+//dd:span arg:nil-request-context
+func spanWithContextAndNilRequest(_ context.Context, r *http.Request) bool {
+	return r == nil
+}
+
+//dd:span arg:nil-context-request
+func spanWithNilContextAndRequest(ctx context.Context, r *http.Request) bool {
+	return r == nil
+}
+
 //dd:span result:named
 func errorNamed() (err error) {
 	return errors.New("named error")
