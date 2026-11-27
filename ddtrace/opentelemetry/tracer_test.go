@@ -253,7 +253,7 @@ func TestSpanContext(t *testing.T) {
 	assert.Equal("000000000000000000000000075bcd15", sctx.TraceID().String())
 	assert.Equal("0000000000000010", sctx.SpanID().String())
 	assert.Equal("dd=s:2;o:rum;p:0000000000000010;t.usr.id:baz64~~", sctx.TraceState().String())
-	assert.Equal(true, sctx.IsRemote())
+	assert.False(sctx.IsRemote())
 }
 
 func TestForceFlush(t *testing.T) {
