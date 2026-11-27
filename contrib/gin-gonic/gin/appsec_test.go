@@ -490,3 +490,27 @@ func TestBlocking(t *testing.T) {
 		}
 	})
 }
+
+func TestAppSecPanic(t *testing.T) {
+	testutils.StartAppSec(t)
+	mt := mocktracer.Start()
+	defer mt.Stop()
+
+	// With AppSec on the handler chain runs inside useAppSec, so a panic there
+	// must still be seen by the middleware and reported as a 500.
+	router := gin.New()
+	router.Use(gin.Recovery())
+	router.Use(Middleware("appsec"))
+	router.GET("/boom", func(*gin.Context) {
+		panic("boom")
+	})
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest("GET", "/boom", nil))
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+
+	spans := mt.FinishedSpans()
+	require.Len(t, spans, 1)
+	require.Equal(t, "500", spans[0].Tag(ext.HTTPCode))
+	require.Equal(t, "handler panicked", spans[0].Tag(ext.ErrorMsg))
+}

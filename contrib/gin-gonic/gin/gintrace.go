@@ -10,7 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"net/http"
+	"os"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -24,6 +27,10 @@ import (
 const componentName = "gin-gonic/gin"
 
 var instr *instrumentation.Instrumentation
+
+// errHandlerPanic is the span error when a handler panics. It does not contain
+// the panic value, because that value can contain request data or credentials.
+var errHandlerPanic = errors.New("handler panicked")
 
 func init() {
 	instr = instrumentation.Load(instrumentation.PackageGin)
@@ -55,22 +62,48 @@ func Middleware(service string, opts ...Option) gin.HandlerFunc {
 		opts = append(opts, cfg.routeTag(route, c.Request))
 		opts = append(opts, httptrace.HeaderTagsFromRequest(c.Request, cfg.headerTags))
 		span, ctx, finishSpans := httptrace.StartRequestSpan(c.Request, opts...)
+		var (
+			normal    bool
+			panicked  bool
+			recovered any
+		)
 		defer func() {
-			finishSpan(cfg, c, finishSpans)
+			// Reached on normal return, after a panic was recovered below, or
+			// while runtime.Goexit unwinds (panicked stays false there).
+			finishSpan(cfg, c, finishSpans, panicked, recovered)
+			if panicked {
+				// A recovery middleware earlier in the chain only runs once the
+				// span is finished, so the panic is re-raised after recording it.
+				panic(recovered)
+			}
 		}()
 
 		// pass the span through the request context
 		c.Request = c.Request.WithContext(ctx)
 
-		// Use AppSec if enabled by user
-		if instr.AppSecEnabled() {
-			useAppSec(c, httptrace.AppSecSpanTagSetter(span, cfg.otelEnabled))
-		}
-
 		// serve the request to the next middleware
-		c.Next()
+		func() {
+			defer func() {
+				if !normal {
+					// recover returns nil for runtime.Goexit and, with
+					// GODEBUG=panicnil=1, for panic(nil). Goexit keeps unwinding
+					// past this function, so the code below only runs for panics.
+					recovered = recover()
+				}
+			}()
+			// AppSec runs the rest of the chain itself, so it has to sit inside
+			// the recovery boundary too. c.Next is then a no-op.
+			if instr.AppSecEnabled() {
+				useAppSec(c, httptrace.AppSecSpanTagSetter(span, cfg.otelEnabled))
+			}
+			c.Next()
+			normal = true
+		}()
+		panicked = !normal
 
-		if len(c.Errors) > 0 {
+		// A panicking request never reached this tag before, and the errors the
+		// user opted into are recorded by finishSpan instead.
+		if !panicked && len(c.Errors) > 0 {
 			span.SetTag("gin.errors", c.Errors.String())
 		}
 	}
@@ -93,18 +126,41 @@ func (cfg *config) routeTag(route string, req *http.Request) tracer.StartSpanOpt
 	return tracer.Tag(ext.HTTPRoute, route)
 }
 
-func finishSpan(cfg *config, c *gin.Context, finishSpans httptrace.FinishSpanFunc) {
+func finishSpan(cfg *config, c *gin.Context, finishSpans httptrace.FinishSpanFunc, panicked bool, recovered any) {
 	status := c.Writer.Status()
-	if cfg.isStatusError == nil {
-		finishSpans(status, nil)
-		return
-	}
-	statusError := cfg.isStatusError(status)
 	var finishOpts []tracer.FinishOption
-	if cfg.useGinErrors && statusError && len(c.Errors) > 0 {
+	if panicked && recovered != http.ErrAbortHandler {
+		if !c.Writer.Written() && !isBrokenConnection(recovered) {
+			// Nothing has been sent yet, so the response is going to be a 500.
+			status = http.StatusInternalServerError
+		}
+		finishOpts = append(finishOpts, tracer.WithError(errHandlerPanic))
+	}
+	statusError := cfg.isStatusError != nil && cfg.isStatusError(status)
+	if cfg.useGinErrors && (statusError || len(finishOpts) > 0) && len(c.Errors) > 0 {
+		// Applied after the panic error so that the errors the user opted into win.
 		finishOpts = append(finishOpts, tracer.WithError(errors.New(c.Errors.String())))
 	}
+	if cfg.isStatusError == nil {
+		finishSpans(status, nil, finishOpts...)
+		return
+	}
 	finishSpans(status, func(int) bool { return statusError }, finishOpts...)
+}
+
+// isBrokenConnection reports whether v is a panic that gin.Recovery treats as a
+// dead connection, for which it aborts without writing a status.
+func isBrokenConnection(v any) bool {
+	ne, ok := v.(*net.OpError)
+	if !ok || ne == nil {
+		return false
+	}
+	var se *os.SyscallError
+	if !errors.As(ne, &se) || se == nil {
+		return false
+	}
+	msg := strings.ToLower(se.Error())
+	return strings.Contains(msg, "broken pipe") || strings.Contains(msg, "connection reset by peer")
 }
 
 // HTML will trace the rendering of the template as a child of the span in the given context.
