@@ -113,11 +113,19 @@ func (m *metrics) LoadOrStore(namespace Namespace, kind transport.MetricType, na
 
 	if !loaded && !m.skipAllowlist { // The metric is new: validate and log issues about it
 		if err := validateMetricKey(namespace, kind, name, tags); err != nil {
-			log.Warn("telemetry: %s", err.Error())
+			warnInvalidMetric(err)
 		}
 	}
 
 	return handle
+}
+
+// warnInvalidMetric contains a panicking Logger. The global metric constructor
+// calls LoadOrStore inside an xsync compute, and a panic unwinding through it
+// would leave that map's lock held.
+func warnInvalidMetric(err error) {
+	defer func() { _ = recover() }()
+	log.Warn("telemetry: %s", err.Error())
 }
 
 func (m *metrics) Payload() transport.Payload {

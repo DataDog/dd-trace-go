@@ -376,3 +376,37 @@ func TestPanickingLoggerReleasesLock(t *testing.T) {
 		t.Fatal("a panicking Logger left the logger lock held")
 	}
 }
+
+// boomLogger panics on messages containing "boom" and records the rest.
+type boomLogger struct{ testLogger }
+
+func (l *boomLogger) Log(msg string) {
+	if strings.Contains(msg, "boom") {
+		panic("logger failure")
+	}
+	l.testLogger.Log(msg)
+}
+
+// TestTimerFlushContainsPanickingLogger pins that a Logger panic during the
+// timer flush cannot crash the program, that the other reports still print, and
+// that the queue is reset so the next error schedules another flush.
+func TestTimerFlushContainsPanickingLogger(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := &boomLogger{}
+		defer UseLogger(l)()
+		defer func(old time.Duration) { errrate = old }(errrate)
+		errrate = time.Second
+
+		Error("boom %d", 1)
+		Error("kept %d", 1)
+		time.Sleep(2 * time.Second)
+		synctest.Wait()
+		assert.True(t, hasMsg("ERROR", "kept 1", l.Lines()), l.Lines())
+
+		Error("kept %d", 2)
+		time.Sleep(2 * time.Second)
+		synctest.Wait()
+		assert.True(t, hasMsg("ERROR", "kept 2", l.Lines()), l.Lines())
+		assert.Len(t, l.Lines(), 2)
+	})
+}
