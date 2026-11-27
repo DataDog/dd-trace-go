@@ -62,9 +62,9 @@ tags="$(jq -cn \
 # a cold miss, so the setup-go action adds a `restored` field
 # ("true" when the module cache is non-empty after the restore). With it,
 # a non-exact restore reports hit/partial when `restored` is "true" and
-# miss/miss when it is "false"; without it the result stays miss/miss, the
-# contract this series has always had, where `miss` means "not an exact
-# hit". The offline collector in scripts/citiming applies the same rule,
+# miss/miss when it is "false"; without it the result stays miss/miss,
+# where `miss` means "not an exact hit" (the series contract). The
+# offline collector in scripts/citiming applies the same rule,
 # reporting an absent `restored` as unknown.
 #
 # The setup-go action also adds restore_source (exact / default / branch /
@@ -72,7 +72,7 @@ tags="$(jq -cn \
 # to setup_go entries that ran the cloudx provider; both become tags on
 # that entry's series only, so the seed program can split restores by
 # source and by dependency match. Entries without the fields (github-cache
-# restores, the tools entry) keep the existing tag set.
+# restores, the tools entry) carry only the common tags.
 jq -cn \
   --argjson metrics "$CACHE_METRICS" \
   --argjson timestamp "$(date +%s)" \
@@ -81,7 +81,9 @@ jq -cn \
   def runtime_tags:
     ["runtime.name:" + $metrics.runtime.name,
      "runtime.version:" + (if $metrics.runtime.version == ""
-     then "unknown" else $metrics.runtime.version end)];
+     then "unknown" else $metrics.runtime.version end)]
+    + (if ($metrics.runtime | has("key")) and $metrics.runtime.key != null
+       then ["runtime.key:" + $metrics.runtime.key] else [] end);
   # The save post never reports its own outcome in these series: save
   # health is gauge-only (ci.cache.pool.*, scripts/citiming pool).
   def seed_tags($entry):

@@ -84,12 +84,12 @@ pubsub_v2_new_topic_admin_client:
   do:
     - wrap_call:
         append_args:
-          - "option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(pubsubv2admin.UnaryAdminInterceptor()))"
-        variadic_type: "option.ClientOption"
+          - "__dd_option.WithGRPCDialOption(__dd_grpc.WithChainUnaryInterceptor(__dd_pubsubv2admin.UnaryAdminInterceptor()))"
+        variadic_type: "__dd_option.ClientOption"
   imports:
-    option: google.golang.org/api/option
-    grpc: google.golang.org/grpc
-    pubsubv2admin: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2/admin
+    __dd_option: google.golang.org/api/option
+    __dd_grpc: google.golang.org/grpc
+    __dd_pubsubv2admin: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2/admin
 
 pubsub_v2_new_subscription_admin_client:
   target:
@@ -101,12 +101,12 @@ pubsub_v2_new_subscription_admin_client:
   do:
     - wrap_call:
         append_args:
-          - "option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(pubsubv2admin.UnaryAdminInterceptor()))"
-        variadic_type: "option.ClientOption"
+          - "__dd_option.WithGRPCDialOption(__dd_grpc.WithChainUnaryInterceptor(__dd_pubsubv2admin.UnaryAdminInterceptor()))"
+        variadic_type: "__dd_option.ClientOption"
   imports:
-    option: google.golang.org/api/option
-    grpc: google.golang.org/grpc
-    pubsubv2admin: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2/admin
+    __dd_option: google.golang.org/api/option
+    __dd_grpc: google.golang.org/grpc
+    __dd_pubsubv2admin: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2/admin
 
 pubsub_v2_new_schema_client:
   target:
@@ -118,9 +118,9 @@ pubsub_v2_new_schema_client:
   do:
     - wrap_call:
         append_args:
-          - "option.WithGRPCDialOption(grpc.WithChainUnaryInterceptor(pubsubv2admin.UnaryAdminInterceptor()))"
-        variadic_type: "option.ClientOption"
+          - "__dd_option.WithGRPCDialOption(__dd_grpc.WithChainUnaryInterceptor(__dd_pubsubv2admin.UnaryAdminInterceptor()))"
+        variadic_type: "__dd_option.ClientOption"
   imports:
-    option: google.golang.org/api/option
-    grpc: google.golang.org/grpc
-    pubsubv2admin: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2/admin
+    __dd_option: google.golang.org/api/option
+    __dd_grpc: google.golang.org/grpc
+    __dd_pubsubv2admin: github.com/DataDog/dd-trace-go/contrib/cloud.google.com/go/pubsub.v2/v2/admin

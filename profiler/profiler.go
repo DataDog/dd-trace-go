@@ -26,6 +26,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal"
 	appsecstatus "github.com/DataDog/dd-trace-go/v2/internal/appsec/status"
 	internalconfig "github.com/DataDog/dd-trace-go/v2/internal/config"
+	"github.com/DataDog/dd-trace-go/v2/internal/crashtrackerstate"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/traceprof"
@@ -74,6 +75,15 @@ func init() {
 // If DD_PROFILING_ENABLED=false is set in the process environment, it will
 // prevent the profiler from starting.
 func Start(opts ...Option) error {
+	if crashtrackerstate.SupervisorPending() {
+		log.Debug("profiler.Start deferred: this process becomes the crashtracker supervisor.")
+		crashtrackerstate.Defer(func() {
+			if err := Start(opts...); err != nil {
+				log.Error("Deferred profiler start failed: %s", err.Error())
+			}
+		})
+		return nil
+	}
 	internalconfig.RecordProductStart(internalconfig.ProductProfiler)
 
 	mu.Lock()

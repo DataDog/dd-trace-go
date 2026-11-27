@@ -17,18 +17,18 @@ open:
   do:
     - wrap_call:
         replace: |-
-          (func(db *gorm.DB, err error) (*gorm.DB, error) {
+          (func(db *__dd_gorm.DB, err error) (*__dd_gorm.DB, error) {
             if err != nil {
               return db, err
             }
             if _, ok := db.Plugins["DDTracePlugin"]; ok {
               return db, nil
             }
-            if err := db.Use(gormtrace.NewTracePlugin()); err != nil {
+            if err := db.Use(__dd_gormtrace.NewTracePlugin()); err != nil {
               return nil, err
             }
             return db, nil
           })({{ . }})
   imports:
-    gorm: gorm.io/gorm
-    gormtrace: github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2
+    __dd_gorm: gorm.io/gorm
+    __dd_gormtrace: github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2
