@@ -53,7 +53,7 @@ func normalizeRoute(framework string, matched httpsec.MatchedRoute) (string, boo
 	)
 	switch framework {
 	case "net/http":
-		parts, ok = parseServeMuxRoute(route, params, path)
+		parts, ok = parseServeMuxRoute(route, path)
 		escapes = true
 	case "github.com/gorilla/mux":
 		parts, ok = parseBraceRoute(route, params, false)
@@ -110,8 +110,9 @@ func hasValue(params map[string]string, key string, trimSlash bool) bool {
 // [HOST]/[PATH], where a segment of PATH is a literal, {name}, {name...} or
 // {$}. The host contributes nothing. A pattern that ends with "/" matches a
 // whole subtree: the rest of path, the escaped path that ServeMux matched, is
-// an unnamed catch-all.
-func parseServeMuxRoute(route string, params map[string]string, path string) ([]routePart, bool) {
+// an unnamed catch-all. A {name...} wildcard matches that rest too. Both are
+// present when the rest is not empty.
+func parseServeMuxRoute(route string, path string) ([]routePart, bool) {
 	i := strings.IndexByte(route, '/')
 	if i < 0 {
 		return nil, false
@@ -160,7 +161,7 @@ func parseServeMuxRoute(route string, params map[string]string, path string) ([]
 			if rest != "" || name == "" {
 				return nil, false
 			}
-			parts = append(parts, routePart{param: true, name: name, absent: !hasValue(params, name, false)})
+			parts = append(parts, routePart{param: true, name: name, absent: !hasServeMuxRemainder(route[:len(route)-len(seg)], path)})
 			break
 		}
 		if name == "" {
@@ -253,8 +254,9 @@ func appendCatchAll(parts []routePart, rest string) []routePart {
 	if isEmptyRemainder(rest) {
 		return parts
 	}
-	if strings.HasPrefix(rest, "/") {
-		// A prefix "/api" hit with "/api/x" is "/api/{param1}".
+	if last := parts[len(parts)-1]; strings.HasPrefix(rest, "/") && (last.param || !strings.HasSuffix(last.static, "/")) {
+		// A prefix "/api" hit with "/api/x" is "/api/{param1}", as a prefix
+		// "/api/" hit with "/api//x".
 		parts = append(parts, routePart{static: "/"})
 	}
 	return append(parts, routePart{param: true})

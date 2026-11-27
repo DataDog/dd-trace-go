@@ -8,6 +8,7 @@ package chi
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -69,13 +70,14 @@ func withAppsec(next http.Handler, span trace.TagSetter, cfg *config, cache *syn
 
 		tw, tr, afterHandle, handled := httpsec.BeforeHandle(tw, r, span, &appsecCfg)
 		defer afterHandle()
-		reportDeclaredRoute(tr.Context(), rctx, cache)
+		path := routingPath(r.URL)
+		reportDeclaredRoute(tr.Context(), rctx, path)
 		if handled {
 			return
 		}
 		// Deferred, so that the normalized route of a request whose handler panics
 		// is the route that chi selected.
-		defer reportDeclaredRoute(tr.Context(), rctx, cache)
+		defer reportDeclaredRoute(tr.Context(), rctx, path)
 		next.ServeHTTP(tw, tr)
 
 		if finalRoute := reportedRoute(rctx, cfg, cache); finalRoute != route {
@@ -88,23 +90,36 @@ func withAppsec(next http.Handler, span trace.TagSetter, cfg *config, cache *syn
 
 // reportDeclaredRoute reports the route that chi selected so far, as its patterns
 // declare it, with its parameters, to API Security only.
-func reportDeclaredRoute(ctx context.Context, rctx *chi.Context, cache *sync.Map) {
-	httpsec.ReportMatchedRoute(ctx, httpsec.MatchedRoute{Route: declaredRoute(rctx, cache), Params: selectedParams(rctx)})
+func reportDeclaredRoute(ctx context.Context, rctx *chi.Context, path string) {
+	route := declaredRoute(rctx)
+	httpsec.ReportMatchedRoute(ctx, httpsec.MatchedRoute{Route: route, Params: selectedParams(rctx, route, path)})
+}
+
+// routingPath returns the path that chi routes: URL.RawPath when net/http sets it,
+// otherwise URL.Path.
+func routingPath(u *url.URL) string {
+	if u.RawPath != "" {
+		return u.RawPath
+	}
+	return u.Path
 }
 
 // declaredRoute returns the route that chi selected, as its patterns declare it.
 // Unlike RoutePattern, it keeps a declared trailing "/": /users/{id}/. The root
 // route "/" of a router mounted without a trailing "/" adds none, as chi serves
-// it for the mount path with and without "/". It is empty when routing stopped at
-// a mounted chi router that has no route for the request.
-func declaredRoute(rctx *chi.Context, cache *sync.Map) string {
+// it for the mount path with and without "/". A mounted chi router that has no
+// route for the request leaves the route of its mount.
+func declaredRoute(rctx *chi.Context) string {
 	n := len(rctx.RoutePatterns)
-	if n == 0 || unmatchedSubrouter(rctx, cache) {
+	if n == 0 {
 		return ""
 	}
-	route := strings.Join(rctx.RoutePatterns, "")
-	for strings.Contains(route, "/*/") {
-		route = strings.ReplaceAll(route, "/*/", "/")
+	// A mount matches the patterns of the mounted router with its "*", from the
+	// "/" that starts them: /api/* and /users/{id} are /api/users/{id}, and
+	// /api/ and /* are /api/*.
+	var route string
+	for _, pattern := range rctx.RoutePatterns {
+		route = strings.TrimSuffix(strings.TrimSuffix(route, "*"), "/") + pattern
 	}
 	if n > 1 && rctx.RoutePatterns[n-1] == "/" && !strings.HasSuffix(rctx.RoutePatterns[n-2], "*") {
 		route = strings.TrimRight(route, "/")
@@ -115,16 +130,13 @@ func declaredRoute(rctx *chi.Context, cache *sync.Map) string {
 	return route
 }
 
-// selectedParams returns the parameters of the route that chi selected. The last
-// value of a name that is used at several levels wins: the catch-all of a route
-// in a mounted router is the last "*".
-//
-// chi clears the "*" of a mount before it calls the mounted handler, and gives the
-// handler the rest of the path in RoutePath. A mounted chi router matches
-// RoutePath with its own patterns, so RoutePath starts with what its last pattern
-// matched before the "*"; a mounted handler that is not a chi router leaves another
-// rest there, which is the value of the "*".
-func selectedParams(rctx *chi.Context) map[string]string {
+// selectedParams returns the parameters of route, the route that chi selected,
+// for path, the path that chi routed. The last value of a name that is used at
+// several levels wins: the catch-all of a route in a mounted router is the last
+// "*". chi clears the "*" of a mount before it calls the mounted handler, which
+// is also the "*" of route when that handler is not a chi router: the value of
+// the "*" of route is the rest of path after what route matched before it.
+func selectedParams(rctx *chi.Context, route, path string) map[string]string {
 	keys, values := rctx.URLParams.Keys, rctx.URLParams.Values
 	if len(keys) == 0 || len(keys) != len(values) {
 		return nil
@@ -133,9 +145,9 @@ func selectedParams(rctx *chi.Context) map[string]string {
 	for i, key := range keys {
 		params[key] = values[i]
 	}
-	if n := len(rctx.RoutePatterns); n > 0 && params["*"] == "" {
-		if prefix, ok := strings.CutSuffix(rctx.RoutePatterns[n-1], "*"); ok && rctx.RoutePath != "" && !strings.HasPrefix(rctx.RoutePath, expandPattern(prefix, params)) {
-			params["*"] = strings.TrimPrefix(rctx.RoutePath, "/")
+	if prefix, ok := strings.CutSuffix(route, "*"); ok {
+		if matched, ok := expandPattern(prefix, rctx.URLParams); ok && strings.HasPrefix(path, matched) {
+			params["*"] = path[len(matched):]
 		}
 	}
 	return params
@@ -158,10 +170,13 @@ func knownParams(rctx *chi.Context) map[string]string {
 	return params
 }
 
-// expandPattern returns the path that a chi pattern matches with params: each
-// {name} or {name:regexp} is replaced with the value of name.
-func expandPattern(pattern string, params map[string]string) string {
+// expandPattern returns the path that pattern matched with params, the values
+// that chi bound in order at each routing level: each {name} or {name:regexp}
+// is the value of the next parameter that is not a "*", the "*" of a mount. It
+// returns false when params has fewer values.
+func expandPattern(pattern string, params chi.RouteParams) (string, bool) {
 	var path strings.Builder
+	next := 0
 	for i := 0; i < len(pattern); i++ {
 		if pattern[i] != '{' {
 			path.WriteByte(pattern[i])
@@ -177,9 +192,15 @@ func expandPattern(pattern string, params map[string]string) string {
 				}
 			}
 		}
-		name, _, _ := strings.Cut(pattern[i+1:min(end, len(pattern))], ":")
-		path.WriteString(params[name])
+		for next < len(params.Keys) && params.Keys[next] == "*" {
+			next++
+		}
+		if next == len(params.Keys) {
+			return "", false
+		}
+		path.WriteString(params.Values[next])
+		next++
 		i = end
 	}
-	return path.String()
+	return path.String(), true
 }

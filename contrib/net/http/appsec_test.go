@@ -391,7 +391,8 @@ func TestAppsecHTTP30XRedirectChainKeepsFirstHop(t *testing.T) {
 // TestAppsecNormalizedRouteCatchAll checks that the normalized route has the
 // catch-all of a ServeMux route only when it has a value, also for a route that is
 // registered on a caller-provided *http.ServeMux, which reports no path parameters
-// to the WAF.
+// to the WAF. A redirect that ServeMux generates keeps the registered pattern,
+// but for CONNECT, whose pattern is then the redirect path.
 func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 	t.Setenv("DD_API_SECURITY_ENABLED", "true")
 	testutils.StartAppSec(t)
@@ -399,8 +400,12 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 	underlying := http.NewServeMux()
 	underlying.HandleFunc("/direct/{path...}", func(http.ResponseWriter, *http.Request) {})
 	underlying.HandleFunc("/panics/{path...}", func(http.ResponseWriter, *http.Request) { panic("handler") })
+	// The handler changes the path values after ServeMux matched the route.
+	clearPath := func(_ http.ResponseWriter, r *http.Request) { r.SetPathValue("path", "") }
+	underlying.HandleFunc("/uset/{path...}", clearPath)
 	mux := NewServeMux(WithServeMux(underlying))
 	mux.HandleFunc("/wrapped/{path...}", func(http.ResponseWriter, *http.Request) {})
+	mux.HandleFunc("/set/{path...}", clearPath)
 
 	mux.HandleFunc("/static/", func(http.ResponseWriter, *http.Request) {})
 	// The normalized route follows the path that the mux matched, not the path
@@ -409,6 +414,7 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 
 	mux.HandleFunc("/users/{id}/", func(http.ResponseWriter, *http.Request) {})
 	mux.HandleFunc("/x/{id}", func(http.ResponseWriter, *http.Request) {})
+	mux.HandleFunc("/pair/{a}/{b}/", func(http.ResponseWriter, *http.Request) {})
 	// A handler that redirects itself keeps its route.
 	mux.HandleFunc("/moved/{id}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, r.URL.Path+"/", http.StatusMovedPermanently)
@@ -417,23 +423,29 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 	for _, tc := range []struct {
 		method, target string
 		want           string // empty: no tag
+		redirect       bool
 	}{
-		{http.MethodGet, "/direct/a/b", "/direct/{path}"},
-		{http.MethodGet, "/direct/", "/direct/"},
-		{http.MethodGet, "/wrapped/a/b", "/wrapped/{path}"},
-		{http.MethodGet, "/wrapped/", "/wrapped/"},
-		{http.MethodGet, "/api/static/", "/static/"},
-		{http.MethodGet, "/api/static/a", "/static/{param1}"},
-		{http.MethodGet, "/api/wrapped/a", "/wrapped/{path}"},
-		{http.MethodGet, "/api/wrapped/", "/wrapped/"},
-		// Redirects that ServeMux generates: its pattern for them can be the path.
-		{http.MethodConnect, "/users/123", ""},
-		{http.MethodGet, "/users/123", ""},
-		{http.MethodGet, "/static/a/../", ""},
-		{http.MethodGet, "/a%2Fb/../x/42", ""},
-		{http.MethodGet, "/direct", ""},
-		{http.MethodGet, "/moved/42", "/moved/{id}"},
-		{http.MethodGet, "/panics/a/b", "/panics/{path}"},
+		{http.MethodGet, "/direct/a/b", "/direct/{path}", false},
+		{http.MethodGet, "/direct/", "/direct/", false},
+		{http.MethodGet, "/wrapped/a/b", "/wrapped/{path}", false},
+		{http.MethodGet, "/wrapped/", "/wrapped/", false},
+		{http.MethodGet, "/api/static/", "/static/", false},
+		{http.MethodGet, "/api/static/a", "/static/{param1}", false},
+		{http.MethodGet, "/api/wrapped/a", "/wrapped/{path}", false},
+		{http.MethodGet, "/api/wrapped/", "/wrapped/", false},
+		{http.MethodConnect, "/users/123", "", true},
+		{http.MethodConnect, "/users/s3cr3t%2Ftoken", "", true},
+		{http.MethodConnect, "/users/x%20%2Fadmin", "", true},
+		// ServeMux does not clean the path of a CONNECT request.
+		{http.MethodConnect, "/pair/../s3cr3t", "", true},
+		{http.MethodGet, "/users/123", "/users/{id}/", true},
+		{http.MethodGet, "/static/a/../", "/static/", true},
+		{http.MethodGet, "/a%2Fb/../x/42", "/x/{id}", true},
+		{http.MethodGet, "/direct", "/direct/", true},
+		{http.MethodGet, "/moved/42", "/moved/{id}", true},
+		{http.MethodGet, "/panics/a/b", "/panics/{path}", false},
+		{http.MethodGet, "/set/a/b", "/set/{path}", false},
+		{http.MethodGet, "/uset/a/b", "/uset/{path}", false},
 	} {
 		var handler http.Handler = mux
 		if strings.HasPrefix(tc.target, "/api/") {
@@ -446,14 +458,46 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 			})
 		}
 		mt := mocktracer.Start()
-		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(tc.method, tc.target, nil))
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.target, nil))
 		spans := mt.FinishedSpans()
 		mt.Stop()
+		assert.Equal(t, tc.redirect, rec.Code >= 300 && rec.Code < 400, "%s %s: status %d", tc.method, tc.target, rec.Code)
 		require.Len(t, spans, 1, tc.target)
 		if tc.want == "" {
 			assert.Nil(t, spans[0].Tag("_dd.appsec.normalized_route"), tc.method+" "+tc.target)
 		} else {
 			assert.Equal(t, tc.want, spans[0].Tag("_dd.appsec.normalized_route"), tc.target)
+		}
+	}
+}
+
+// TestAppsecNormalizedRouteBlocked checks the normalized route of a ServeMux
+// redirect that the WAF blocks before ServeMux serves it.
+func TestAppsecNormalizedRouteBlocked(t *testing.T) {
+	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
+	t.Setenv("DD_API_SECURITY_ENABLED", "true")
+	testutils.StartAppSec(t)
+
+	mux := NewServeMux()
+	mux.HandleFunc("/users/{id}/", func(http.ResponseWriter, *http.Request) {})
+	for _, tc := range []struct {
+		method, want string // want empty: no tag
+	}{
+		{http.MethodConnect, ""},
+		{http.MethodGet, "/users/{id}/"},
+	} {
+		mt := mocktracer.Start()
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(tc.method, "/users/s3cr3t-token?x=$globals", nil))
+		spans := mt.FinishedSpans()
+		mt.Stop()
+		require.Equal(t, http.StatusForbidden, rec.Code, tc.method)
+		require.Len(t, spans, 1, tc.method)
+		if tc.want == "" {
+			assert.Nil(t, spans[0].Tag("_dd.appsec.normalized_route"), tc.method)
+		} else {
+			assert.Equal(t, tc.want, spans[0].Tag("_dd.appsec.normalized_route"), tc.method)
 		}
 	}
 }

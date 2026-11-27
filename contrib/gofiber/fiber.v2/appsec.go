@@ -118,14 +118,7 @@ func useAppSec(c *fiber.Ctx, span trace.TagSetter, next func() error) (err error
 	}
 
 	err = next()
-
-	if !request.blocked.Load() {
-		reportRoute(ctx, c, request, err)
-	} else if request.route != nil {
-		// A route guard blocked on the parameters of its route: the route that
-		// fiber matched, without another WAF evaluation.
-		httpsec.ReportMatchedRoute(ctx, matchedRoute(c, request.route.Path, request.params))
-	}
+	reportRoute(ctx, c, request, err)
 
 	if err != nil && !request.blocked.Load() {
 		// Fiber normally renders errors after middleware returns. Render here
@@ -146,9 +139,11 @@ func useAppSec(c *fiber.Ctx, span trace.TagSetter, next func() error) (err error
 
 // reportRoute reports the route of the request after the handler chain ran.
 // Wrap's route guards already report parameters before user code: this is the
-// fallback for global Middleware users and routes without parameters. On a
-// router miss, the last route is a middleware: the WAF gets its parameters, but
-// API Security gets no route.
+// fallback for global Middleware users and routes without parameters. A blocked
+// request gets no WAF evaluation here. On a router miss, the last route is a
+// middleware: the WAF gets its parameters, but API Security gets no route.
+// Otherwise, API Security gets the last route that fiber ran, also when a route
+// guard or the handler blocked the request.
 func reportRoute(ctx context.Context, c *fiber.Ctx, request *appsecRequest, err error) {
 	route := c.Route()
 	if route == nil || route.Path == "" {
@@ -156,7 +151,7 @@ func reportRoute(ctx context.Context, c *fiber.Ctx, request *appsecRequest, err 
 		return
 	}
 	params := c.AllParams()
-	if route != request.route {
+	if route != request.route && !request.blocked.Load() {
 		if blockErr := httpsec.RouteMatched(ctx, route.Path, params); blockErr != nil {
 			instr.Logger().Debug("gofiber/fiber.v2: request blocked on route parameters: %s", blockErr.Error())
 		}
@@ -165,14 +160,9 @@ func reportRoute(ctx context.Context, c *fiber.Ctx, request *appsecRequest, err 
 		httpsec.ReportMatchedRoute(ctx, httpsec.MatchedRoute{})
 		return
 	}
-	httpsec.ReportMatchedRoute(ctx, matchedRoute(c, route.Path, params))
-}
-
-// matchedRoute returns the route that fiber matched, with the path that it matched
-// and whether it matches the unescaped path (UnescapePath), where the % of the
-// route is static text.
-func matchedRoute(c *fiber.Ctx, route string, params map[string]string) httpsec.MatchedRoute {
-	return httpsec.MatchedRoute{Route: route, Params: params, Path: c.Path(), LiteralPercent: c.App().Config().UnescapePath}
+	// fiber matches c.Path(), the unescaped path with UnescapePath, where the %
+	// of the route is static text.
+	httpsec.ReportMatchedRoute(ctx, httpsec.MatchedRoute{Route: route.Path, Params: params, Path: c.Path(), LiteralPercent: c.App().Config().UnescapePath})
 }
 
 // isNoRouteError reports whether err is the error that fiber's router returns

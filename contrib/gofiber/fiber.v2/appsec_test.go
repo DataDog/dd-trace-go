@@ -286,6 +286,7 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 		// A prefix handler that answers 405 itself keeps its route.
 		app.Use("/readonly", func(*fiber.Ctx) error { return fiber.ErrMethodNotAllowed })
 		app.Use("/api", func(c *fiber.Ctx) error { return c.SendString("ok") })
+		app.Use("/pre/", func(c *fiber.Ctx) error { return c.SendString("ok") })
 		app.Static("/static", static)
 		return app
 	}
@@ -323,6 +324,7 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 		// Without StrictRouting, fiber matches "/item" with "/item///".
 		{"GET", "/item///", http.StatusOK, "/item", nil},
 		{"GET", "/api/v1/x", http.StatusOK, "/api/{param1}", nil},
+		{"GET", "/pre//x", http.StatusOK, "/pre/{param1}", nil},
 		{"GET", "/w/x/fixed/rest", http.StatusOK, "/w/{param1}/fixed/{param2}", nil},
 		{"GET", "/static/app.css", http.StatusOK, "/static/{param1}", nil},
 		// fiber matches the escaped path, or the unescaped path with UnescapePath.
@@ -355,25 +357,56 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 	}
 }
 
-// TestAppSecNormalizedRouteBlocked checks that a request that a route guard of
-// Wrap blocks on its path parameters gets the normalized route that fiber
-// matched, with UnescapePath.
+// TestAppSecNormalizedRouteBlocked checks that a blocked request gets the
+// normalized route that fiber matched, with UnescapePath: when a route guard of
+// Wrap blocks on the path parameters, and when the AppSec SDK blocks in the
+// handler, on routes with and without parameters.
 func TestAppSecNormalizedRouteBlocked(t *testing.T) {
 	t.Setenv("DD_APPSEC_RULES", "../../../internal/appsec/testdata/blocking.json")
 	t.Setenv("DD_API_SECURITY_ENABLED", "true")
 	testutils.StartAppSec(t)
 
-	app := fiber.New(fiber.Config{UnescapePath: true})
-	Wrap(app)
-	app.Get("/a%2Fb/:id", func(c *fiber.Ctx) error { return c.SendString("ok") })
+	blockBody := func(c *fiber.Ctx) error {
+		if err := appsec.MonitorParsedHTTPBody(c.UserContext(), map[string]string{"name": "$globals"}); err != nil {
+			return err
+		}
+		return c.SendString("ok")
+	}
+	routes := func(app *fiber.App) *fiber.App {
+		app.Get("/a%2Fb/:id", func(c *fiber.Ctx) error { return c.SendString("ok") })
+		app.Get("/body/a%2Fb", blockBody)
+		app.Get("/body/a%2Fb/:id", blockBody)
+		return app
+	}
+	wrapped := fiber.New(fiber.Config{UnescapePath: true})
+	Wrap(wrapped)
+	middleware := fiber.New(fiber.Config{UnescapePath: true})
+	middleware.Use(Middleware())
+	apps := map[string]*fiber.App{"Wrap": routes(wrapped), "Middleware": routes(middleware)}
 
-	mt := mocktracer.Start()
-	defer mt.Stop()
-	res, err := app.Test(httptest.NewRequest("GET", "/a%252Fb/$globals", nil))
-	require.NoError(t, err)
-	defer res.Body.Close()
-	require.Equal(t, http.StatusForbidden, res.StatusCode)
-	spans := mt.FinishedSpans()
-	require.Len(t, spans, 1)
-	require.Equal(t, "/a%252Fb/{id}", spans[0].Tag("_dd.appsec.normalized_route"))
+	for _, tc := range []struct{ app, target, want string }{
+		{"Wrap", "/a%252Fb/$globals", "/a%252Fb/{id}"},
+		{"Wrap", "/body/a%252Fb", "/body/a%252Fb"},
+		{"Wrap", "/body/a%252Fb/1", "/body/a%252Fb/{id}"},
+		{"Middleware", "/body/a%252Fb", "/body/a%252Fb"},
+		{"Middleware", "/body/a%252Fb/1", "/body/a%252Fb/{id}"},
+		{"Middleware", "/body/a%252Fb/%3Cscript%3E", "/body/a%252Fb/{id}"},
+	} {
+		t.Run(tc.app+" "+tc.target, func(t *testing.T) {
+			mt := mocktracer.Start()
+			defer mt.Stop()
+			res, err := apps[tc.app].Test(httptest.NewRequest("GET", tc.target, nil))
+			require.NoError(t, err)
+			defer res.Body.Close()
+			require.Equal(t, http.StatusForbidden, res.StatusCode)
+			spans := mt.FinishedSpans()
+			require.Len(t, spans, 1)
+			require.Equal(t, tc.want, spans[0].Tag("_dd.appsec.normalized_route"))
+			if tc.app == "Middleware" {
+				// No WAF evaluation after the block: the path parameters would
+				// match crs-941-110.
+				require.NotContains(t, spans[0].Tag("_dd.appsec.json"), "crs-941-110")
+			}
+		})
+	}
 }

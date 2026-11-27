@@ -409,13 +409,18 @@ and the sampling key is unchanged. A report of no route gets no tag.
   parameters of the selected route. It reports the route that chi knows when the
   middleware starts, for an early block, and the selected route after the handler,
   also when it panics. A request that stops at a mounted chi router with no route
-  for it gets no route. chi clears the `*` of a mount before a mounted handler that
-  is not a chi router: its value is the rest of the path that chi gives it.
-- net/http reports the pattern and the path values of a route registered on a
-  caller-provided `*http.ServeMux`, which reports no path parameters to the WAF. A
-  redirect that ServeMux generates (to add a `/` or to clean the path) gets no
-  route: its pattern can be the request path.
-- fiber reports the path that it matched (`c.Path()`) and `UnescapePath`.
+  for it gets the route of the mount. chi clears the `*` of a mount, which is the
+  `*` of the route when the mounted handler is not a chi router: the value of the
+  last `*` is the rest of the routing path after what the patterns matched.
+- net/http reports the pattern that `ServeMux.Handler` returns and the path that
+  ServeMux matches, before AppSec can block the request, also for a route
+  registered on a caller-provided `*http.ServeMux`, which reports no path
+  parameters to the WAF. A `{name...}` wildcard is present when the rest of that
+  path is not empty. A redirect that ServeMux generates gets the pattern that it
+  leads to, but for the trailing-slash redirect of a CONNECT request, whose
+  pattern is the redirect path: it gets no route.
+- fiber reports the last route that it ran, also for a blocked request, with the
+  path that it matched (`c.Path()`) and `UnescapePath`.
 
 By default, the path that the router matched is the escaped path of the request
 URL that `httpsec.BeforeHandle` gets, as the router reads it (`URL.RawPath` when

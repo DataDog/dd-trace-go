@@ -545,7 +545,7 @@ func TestNormalizeRoute(t *testing.T) {
 		{name: "46 gin param name", framework: gin, route: "/files/:name.json", want: "/files/{name_json}"},
 		{name: "47 prefix route", framework: netmux, route: "/static/", path: "/static/css/app.css", want: "/static/{param1}"},
 		{name: "48 prefix route, empty remainder", framework: netmux, route: "/static/", path: "/static/", want: "/static/"},
-		{name: "49 empty catch-all", framework: netmux, route: "/files/{path...}", params: map[string]string{"path": ""}, want: "/files/"},
+		{name: "49 empty catch-all", framework: netmux, route: "/files/{path...}", path: "/files/", want: "/files/"},
 
 		// Regex constraints contribute nothing.
 		{name: "regex", framework: chi, route: "/r/{name:report-[a-z]+}", want: "/r/{name}"},
@@ -597,6 +597,7 @@ func TestNormalizeRoute(t *testing.T) {
 		{name: "gorilla prefix, encoded value", framework: mux, route: "/p/{v}", params: map[string]string{"v": "a%2Fb"}, path: "/p/a%2Fb/xyz", want: "/p/{v}/{param1}"},
 		{name: "gorilla prefix, unknown value", framework: mux, route: "/p/{v}", path: "/p/a/xyz", want: "/p/{v}"},
 		{name: "gorilla prefix, only slashes", framework: mux, route: "/api", path: "/api//", want: "/api"},
+		{name: "gorilla prefix with slash, double slash", framework: mux, route: "/api/", path: "/api//x", want: "/api/{param1}"},
 
 		// fiber wildcard with a literal suffix.
 		{name: "fiber wildcard, literal suffix", framework: fiber, route: "/files/*.txt", params: map[string]string{"*1": "report"}, path: "/files/report.txt", want: "/files/{param1}.txt"},
@@ -624,6 +625,8 @@ func TestNormalizeRoute(t *testing.T) {
 		{name: "fiber route, trailing slash", framework: fiber, route: "/api", path: "/api/", want: "/api"},
 		{name: "fiber prefix, other case", framework: fiber, route: "/api", path: "/API/x", want: "/api/{param1}"},
 		{name: "fiber root prefix", framework: fiber, route: "/", path: "/a/b", want: "/{param1}"},
+		{name: "fiber root prefix, double slash", framework: fiber, route: "/", path: "//x", want: "/{param1}"},
+		{name: "fiber prefix with slash, double slash", framework: fiber, route: "/api/", path: "/api//x", want: "/api/{param1}"},
 		{name: "fiber prefix with parameter", framework: fiber, route: "/t/:tenant", params: map[string]string{"tenant": "acme"}, path: "/t/acme/x", want: "/t/{tenant}/{param1}"},
 		{name: "fiber prefix, other value", framework: fiber, route: "/t/:tenant", params: map[string]string{"tenant": "other"}, path: "/t/acme/x", want: "/t/{tenant}"},
 		{name: "fiber prefix, unknown value", framework: fiber, route: "/t/:tenant", path: "/t/acme/x", want: "/t/{tenant}"},
@@ -645,7 +648,9 @@ func TestNormalizeRoute(t *testing.T) {
 		{name: "servemux prefix, only slashes", framework: netmux, route: "/static/", path: "/static//", want: "/static/"},
 		{name: "servemux prefix, escaped slash", framework: netmux, route: "/static/", path: "/static/%2F", want: "/static/"},
 		{name: "servemux prefix with param", framework: netmux, route: "/u/{id}/", path: "/u/1/x", want: "/u/{id}/{param1}"},
-		{name: "servemux catch-all", framework: netmux, route: "/files/{path...}", params: map[string]string{"path": "a/b"}, want: "/files/{path}"},
+		{name: "servemux catch-all", framework: netmux, route: "/files/{path...}", path: "/files/a/b", want: "/files/{path}"},
+		{name: "servemux catch-all, escaped slash", framework: netmux, route: "/files/{path...}", path: "/files/%2F", want: "/files/"},
+		{name: "servemux catch-all, redirect", framework: netmux, route: "/files/{path...}", path: "/files", want: "/files/"},
 		{name: "servemux escape", framework: netmux, route: "/caf%c3%a9", want: "/caf%C3%A9"},
 		{name: "servemux invalid escape", framework: netmux, route: "/100%", want: "/100%25"},
 		{name: "servemux partial wildcard", framework: netmux, route: "/users/user-{id}"},

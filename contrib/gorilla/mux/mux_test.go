@@ -919,6 +919,12 @@ func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
 	encoded.UseEncodedPath()
 	encoded.Handle("/u/{id}", okHandler())
 	encoded.Handle("/a%2Fb", okHandler())
+	// Without path cleaning, a prefix that ends with "/" matches a rest that
+	// starts with "/".
+	unclean := NewRouter()
+	unclean.SkipClean(true)
+	unclean.PathPrefix("/api/").Handler(okHandler())
+	unclean.PathPrefix("/").Handler(okHandler())
 	for _, tc := range []struct {
 		router       *Router
 		target, want string
@@ -937,6 +943,8 @@ func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
 		// what gorilla matched.
 		{encoded, "/u/a%2Fb", "/u/{id}"},
 		{encoded, "/a%2Fb", "/a%2Fb"},
+		{unclean, "/api//x", "/api/{param1}"},
+		{unclean, "//x", "/{param1}"},
 	} {
 		mt := mocktracer.Start()
 		rec := httptest.NewRecorder()

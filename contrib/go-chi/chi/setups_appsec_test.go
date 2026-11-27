@@ -508,22 +508,46 @@ func TestAppSecNormalizedRoute(t *testing.T) {
 	api.Get("/", okHandler)
 	api.Get("/static/*", okHandler)
 	api.Get("/users/{id}/*", okHandler)
+	api.Mount("/t/{tenant}", http.HandlerFunc(okHandler))
 	router.Mount("/api", api)
 	router.Mount("/opaque", http.HandlerFunc(okHandler))
+	wild := chi.NewRouter()
+	wild.Get("/*", okHandler)
+	router.Mount("/wild", wild)
 	for target, want := range map[string]string{
-		"/users/1":       "/users/{id}",
-		"/files/a/b.txt": "/files/{param1}",
-		"/files/":        "/files/",
-		"/api":           "/api",
-		"/api/":          "/api",
-		"/api/static/a":  "/api/static/{param1}",
-		"/api/static/":   "/api/static/",
-		"/api/users/1/":  "/api/users/{id}/",
-		"/api/users/1/a": "/api/users/{id}/{param1}",
-		"/opaque/x":      "/opaque/{param1}",
+		"/users/1":         "/users/{id}",
+		"/files/a/b.txt":   "/files/{param1}",
+		"/files/":          "/files/",
+		"/api":             "/api",
+		"/api/":            "/api",
+		"/api/static/a":    "/api/static/{param1}",
+		"/api/static/":     "/api/static/",
+		"/api/users/1/":    "/api/users/{id}/",
+		"/api/users/1/a":   "/api/users/{id}/{param1}",
+		"/api/t/acme/x":    "/api/t/{tenant}/{param1}",
+		"/opaque/x":        "/opaque/{param1}",
+		"/opaque/opaque/x": "/opaque/{param1}",
+		"/wild/":           "/wild/",
+		"/wild/a":          "/wild/{param1}",
+		// A mounted chi router without a route for the request: the mount.
+		"/api/nope": "/api/{param1}",
 	} {
 		assert.Equal(t, want, requestTags(t, router, target)["_dd.appsec.normalized_route"], target)
 	}
-	// A request that stops at a mounted chi router with no route for it.
-	assert.NotContains(t, requestTags(t, router, "/api/nope"), "_dd.appsec.normalized_route")
+
+	// A handler that is not a chi router mounted at the root.
+	root := chi.NewRouter()
+	root.Use(Middleware())
+	root.Mount("/", http.HandlerFunc(okHandler))
+	for target, want := range map[string]string{"/anything": "/{param1}", "/": "/"} {
+		assert.Equal(t, want, requestTags(t, root, target)["_dd.appsec.normalized_route"], target)
+	}
+
+	// An endpoint on the pattern of a mount serves its method instead of the
+	// mounted router.
+	shadowed := chi.NewRouter()
+	shadowed.Use(Middleware())
+	shadowed.Mount("/api", chi.NewRouter())
+	shadowed.Get("/api/*", okHandler)
+	assert.Equal(t, "/api/{param1}", requestTags(t, shadowed, "/api/x")["_dd.appsec.normalized_route"])
 }
