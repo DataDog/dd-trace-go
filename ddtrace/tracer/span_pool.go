@@ -18,16 +18,13 @@ var spanPool = sync.Pool{
 	New: func() any { return &Span{} },
 }
 
-// spanAlloc co-allocates a Span and its SpanContext in a single heap object
-// for non-pooled child spans.
-type spanAlloc struct {
-	span Span
-	ctx  SpanContext
-}
-
 // rootSpanAlloc co-allocates a Span, its SpanContext, and its trace in a single
-// heap object for non-pooled root spans. The trace already retains root via
-// trace.root, so all three share the same lifetime.
+// heap object for non-pooled root spans. All three share the same lifetime: the
+// context retains the trace, and the trace retains the root via trace.root, so
+// co-allocation adds no retention. Child spans are allocated separately: a
+// child's SpanContext must outlive the child span itself, because Context() is
+// valid after Finish(), and co-locating them would pin the finished span's
+// metadata, events, and links for as long as the context is retained.
 type rootSpanAlloc struct {
 	span Span
 	ctx  SpanContext
@@ -48,8 +45,7 @@ func acquireSpanWithContext(poolEnabled, needsNewTrace bool) (*Span, *SpanContex
 		a := new(rootSpanAlloc)
 		return &a.span, &a.ctx, &a.tr
 	}
-	a := new(spanAlloc)
-	return &a.span, &a.ctx, nil
+	return &Span{}, nil, nil
 }
 
 func releaseSpans(poolEnabled bool, spans []*Span) {
