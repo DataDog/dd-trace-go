@@ -218,6 +218,8 @@ jobs:
           ./scripts/fix_modules.sh
       - name: Check for changes
         run: git diff --exit-code
+      - name: Test fixmodules module
+        run: cd scripts/fixmodules && GOWORK=off go test -tags=scripts -race -count=1 ./...
       - name: Test errtrackaudit module
         # The root-module test suites never cross the nested-module boundary,
         # and the advisory errtrack-audit workflow is ignored by all-green,

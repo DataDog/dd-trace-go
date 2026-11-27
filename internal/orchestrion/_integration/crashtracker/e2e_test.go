@@ -18,7 +18,7 @@ import (
 // The orchestrion.yml join-point uses test-main:false, which deliberately
 // excludes test binaries' main() functions from injection. This subprocess role
 // calls crashtracker.Start() explicitly to validate the crash pipeline
-// (spawn → SetCrashOutput → panic → monitor → upload) under an orchestrion-built
+// (re-exec → SetCrashOutput → panic → supervisor → upload) under an orchestrion-built
 // test binary. TestCrashtrackerMainInjection validates injection into a real
 // non-test main function.
 func TestMain(m *testing.M) {

@@ -6,11 +6,15 @@
 package main
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -159,32 +163,118 @@ func expandImporters(set map[string]bool, importers map[string][]string, allowed
 	return out
 }
 
-// loadOtelcSuites reads OTELC_TEST_PACKAGES from .github/workflows/otelc.yml,
-// the single reviewable copy of the otelc lane's suite set. The folded scalar
-// decodes to one whitespace-separated string, so Fields splits it into names.
-func loadOtelcSuites(root string) (map[string]bool, error) {
-	path := filepath.Join(root, workflowDir, "otelc.yml")
+// loadOtelcSuitesOnly parses only the integration-suites section of
+// .github/ci-components.yml, skipping full classifier validation so the
+// fail-open ALL path in .github/workflows/otelc.yml still lists otelc suites
+// when an unrelated gate or component rule is invalid. The integration-suites
+// section itself is decoded with KnownFields(true) so a misspelled key such as
+// otelc-extra-suite fails loudly instead of silently dropping suites.
+func loadOtelcSuitesOnly(root string) (map[string]bool, error) {
+	path := filepath.Join(root, tableRelPath)
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var doc struct {
-		Env struct {
-			OtelcTestPackages string `yaml:"OTELC_TEST_PACKAGES"`
-		} `yaml:"env"`
+	var rootDoc struct {
+		IntegrationSuites yaml.Node `yaml:"integration-suites"`
 	}
-	if err := yaml.Unmarshal(raw, &doc); err != nil {
+	if err := yaml.Unmarshal(raw, &rootDoc); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
 	}
-	fields := strings.Fields(doc.Env.OtelcTestPackages)
-	if len(fields) == 0 {
-		return nil, fmt.Errorf("%s: OTELC_TEST_PACKAGES is empty", path)
+	if rootDoc.IntegrationSuites.Kind == 0 {
+		return nil, fmt.Errorf("%s: missing integration-suites section", path)
 	}
-	out := make(map[string]bool, len(fields))
-	for _, s := range fields {
+	rawSection, err := yaml.Marshal(&rootDoc.IntegrationSuites)
+	if err != nil {
+		return nil, fmt.Errorf("encode integration-suites in %s: %w", path, err)
+	}
+	t := &table{}
+	dec := yaml.NewDecoder(bytes.NewReader(rawSection))
+	dec.KnownFields(true)
+	if err := dec.Decode(&t.IntegrationSuites); err != nil {
+		return nil, fmt.Errorf("parse integration-suites in %s: %w", path, err)
+	}
+	return t.otelcSuites()
+}
+
+// otelcSuites returns the set of internal/orchestrion/_integration suite names
+// that the otelc lane runs. The set is the union of:
+//   - t.IntegrationSuites.OtelcExtraSuites (suites declared in
+//     .github/ci-components.yml under integration-suites.otelc-extra-suites), and
+//   - every suite listed in integration-suites.modules for a directory whose
+//     path ends with "/otelc" (the otelc harness modules).
+func (t *table) otelcSuites() (map[string]bool, error) {
+	out := make(map[string]bool)
+	for _, s := range t.IntegrationSuites.OtelcExtraSuites {
 		out[s] = true
 	}
+	for dir, suites := range t.IntegrationSuites.Modules {
+		if !strings.HasSuffix(dir, "/otelc") {
+			continue
+		}
+		for _, s := range suites {
+			out[s] = true
+		}
+	}
+	if len(out) == 0 {
+		return nil, errors.New(".github/ci-components.yml: otelc suite set is empty")
+	}
 	return out, nil
+}
+
+// discoverOtelcModules walks the repository for go.mod files inside a directory
+// named "otelc" (skipping dot-prefixed directories and testdata). For each such
+// directory it emits the otelc directory itself, its parent directory when the
+// parent has its own go.mod (skipping root-module directories such as contrib/os
+// that have no go.mod), and "otelc/all" (once). Returns a sorted, deduplicated
+// list.
+func discoverOtelcModules(root string) ([]string, error) {
+	// Verify otelc/all has a go.mod.
+	if _, err := os.Stat(filepath.Join(root, "otelc", "all", "go.mod")); err != nil {
+		return nil, fmt.Errorf("otelc/all/go.mod: %w", err)
+	}
+
+	set := map[string]bool{"otelc/all": true}
+	walkErr := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if p != root && (strings.HasPrefix(d.Name(), ".") || d.Name() == "testdata") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if d.Name() != "go.mod" {
+			return nil
+		}
+		otelcDir := filepath.ToSlash(filepath.Dir(p))
+		if filepath.Base(otelcDir) != "otelc" {
+			return nil
+		}
+		rel, err := filepath.Rel(root, otelcDir)
+		if err != nil {
+			return err
+		}
+		rel = filepath.ToSlash(rel)
+		if rel == "." {
+			return nil
+		}
+		set[rel] = true
+		parent := filepath.ToSlash(filepath.Dir(rel))
+		if parent != "." {
+			if _, err := os.Stat(filepath.Join(root, parent, "go.mod")); err == nil {
+				set[parent] = true
+			} else if !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("%s/go.mod: %w", parent, err)
+			}
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	return slices.Sorted(maps.Keys(set)), nil
 }
 
 // selectSuites narrows the orchestrion and otelc lanes to the
@@ -215,7 +305,7 @@ func (t *table) selectSuites(root string, res *result) error {
 		return nil
 	}
 
-	otelcSuite, err := loadOtelcSuites(root)
+	otelcSuite, err := t.otelcSuites()
 	if err != nil {
 		return err
 	}
