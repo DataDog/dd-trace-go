@@ -286,16 +286,17 @@ type Config struct {
 	otlpMetricsProtocol string
 
 	// OTel runtime metrics exporter and reader settings, resolved from the environment only.
-	runtimeMetricsProtocol       string
-	runtimeMetricsCompression    string
-	runtimeMetricsHTTPEndpoint   string
-	runtimeMetricsHTTPPath       string
-	runtimeMetricsGRPCEndpoint   string
-	runtimeMetricsInsecure       bool
-	runtimeMetricsHeaders        map[string]string
-	runtimeMetricsExportInterval time.Duration
-	runtimeMetricsExportTimeout  time.Duration
-	runtimeMetricsTemporality    string
+	runtimeMetricsProtocol             string
+	runtimeMetricsCompression          string
+	runtimeMetricsHTTPEndpoint         string
+	runtimeMetricsHTTPPath             string
+	runtimeMetricsGRPCEndpoint         string
+	runtimeMetricsInsecure             bool
+	runtimeMetricsHeaders              map[string]string
+	runtimeMetricsExportInterval       time.Duration
+	runtimeMetricsExportTimeout        time.Duration
+	runtimeMetricsTemporality          string
+	runtimeMetricsHistogramAggregation string
 
 	// traceID128BitEnabled controls if trace IDs are generated as 128-bits or 64-bits.
 	traceID128BitEnabled bool
@@ -586,6 +587,7 @@ func loadConfig() *Config {
 	cfg.runtimeMetricsTemporality = strings.ToLower(strings.TrimSpace(envP.GetStringWithValidator("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "delta", func(v string) bool {
 		return validateRuntimeMetricsTemporality(v, cfg.runtimeMetricsOtel)
 	})))
+	cfg.runtimeMetricsHistogramAggregation = strings.ToLower(strings.TrimSpace(envP.GetString("OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION", "explicit_bucket_histogram")))
 	logsEndpoint, genericEndpoint := resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT", otlpGenericEndpoints, isURL, cfg.logsOTelEnabled)
 	cfg.otlpLogsEndpoint = cmp.Or(logsEndpoint, genericEndpoint)
 	if cfg.otlpLogsEndpoint != "" {
@@ -2284,6 +2286,14 @@ func (c *Config) RuntimeMetricsTemporalityPreference() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.runtimeMetricsTemporality
+}
+
+// RuntimeMetricsHistogramAggregation returns the lowercased, unvalidated value of
+// OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION, "explicit_bucket_histogram" by default.
+func (c *Config) RuntimeMetricsHistogramAggregation() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.runtimeMetricsHistogramAggregation
 }
 
 func (c *Config) TraceID128BitEnabled() bool {

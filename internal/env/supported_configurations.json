@@ -2223,6 +2223,13 @@
         "default": "none"
       }
     ],
+    "OTEL_EXPORTER_OTLP_METRICS_DEFAULT_HISTOGRAM_AGGREGATION": [
+      {
+        "implementation": "A",
+        "type": "string",
+        "default": "explicit_bucket_histogram"
+      }
+    ],
     "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": [
       {
         "implementation": "B",
