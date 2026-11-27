@@ -16,6 +16,7 @@ on:
       - 'appsec/**'
       - 'contrib/**/appsec.go'
       - 'contrib/gofiber/fiber.v2/**'
+      - 'contrib/valyala/fasthttp/**'
       - '**/go.mod'
   push:
     branches:
@@ -47,6 +48,7 @@ env:
     ./contrib/99designs/gqlgen
     ./contrib/graphql-go/graphql
     ./contrib/graph-gophers/graphql-go
+    ./contrib/valyala/fasthttp
 
 concurrency:
   # Automatically cancel previous runs if a new one is triggered to conserve resources.

@@ -288,27 +288,56 @@ func (w *responseWriter) Committed() bool {
 }
 
 // discardHandlerResponse drops whatever the handler already wrote so that a
-// blocking response replaces it instead of being appended to it. It is a no-op
-// once the blocking response itself has been written, because httpsec runs the
-// OnBlock callbacks again after an early block it has already served.
+// blocking response replaces it instead of being appended to it. It also stops
+// the hijack handler of the application, so that the blocking response is the
+// last thing that the client gets.
+//
+// It does nothing when the block failed, because the response is committed:
+// another goroutine can still use the context, and fasthttp sends the timeout
+// response from a new context.
+//
+// It does not reset the response once the blocking response itself has been
+// written, because httpsec runs the OnBlock callbacks again after an early
+// block it has already served.
 func (w *responseWriter) discardHandlerResponse() {
-	if w.wroteHeader {
+	if w.Committed() {
 		return
 	}
-	w.fctx.Response.ResetBody()
-	// Reset would also clear fasthttp's connection and header-format settings,
-	// including its private noDefaultDate flag. Delete only the header values.
-	header := &w.fctx.Response.Header
-	closeConnection := header.ConnectionClose()
-	keys := make([]string, 0, header.Len())
-	for key := range header.All() {
-		keys = append(keys, string(key))
+	if !w.wroteHeader {
+		w.fctx.Response.ResetBody()
+		// Reset would also clear fasthttp's connection and header-format settings,
+		// including its private noDefaultDate flag. Delete only the header values.
+		header := &w.fctx.Response.Header
+		closeConnection := header.ConnectionClose()
+		keys := make([]string, 0, header.Len())
+		for key := range header.All() {
+			keys = append(keys, string(key))
+		}
+		for _, key := range keys {
+			header.Del(key)
+		}
+		header.SetStatusMessage(nil)
+		if closeConnection {
+			header.SetConnectionClose()
+		}
 	}
-	for _, key := range keys {
-		header.Del(key)
-	}
-	header.SetStatusMessage(nil)
-	if closeConnection {
-		header.SetConnectionClose()
+	stopHijack(w.fctx)
+}
+
+// stopHijack makes fasthttp send the blocking response before it can call a
+// hijack handler. With HijackSetNoResponse(true), fasthttp would not send the
+// blocking response at all. If the application set a hijack handler, the
+// blocking response closes the connection, so fasthttp does not call the
+// handler (see RequestCtx.Hijack). The handler stays set: fasthttpadaptor can
+// have given the live connection to a net/http handler, and fasthttp must not
+// read that connection again or reuse the context. fasthttp skips per-request
+// cleanup when it keeps the context out of the pool. This limitation can be
+// removed when fasthttp can distinguish a pending hijack callback from a
+// transferred connection and cancel only a pending callback through a public API.
+func stopHijack(ctx *fasthttp.RequestCtx) {
+	ctx.HijackSetNoResponse(false)
+	if ctx.Hijacked() && !ctx.Response.ConnectionClose() {
+		instr.Logger().Debug("gofiber/fiber.v2: AppSec blocked the request: the connection closes after the block response and the application hijack handler does not run")
+		ctx.Response.SetConnectionClose()
 	}
 }
