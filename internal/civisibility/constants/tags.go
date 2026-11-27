@@ -47,6 +47,17 @@ const (
 	// CodeCoveragePercentageOfTotalLines defines the percentage of total code coverage by a session.
 	// This constant is used to tag traces with the percentage of code lines covered during the test session.
 	CodeCoveragePercentageOfTotalLines string = "test.code_coverage.lines_pct"
+
+	// CodeCoverageMissingReasonTag tells why a test execution has no per-test line coverage record while line
+	// coverage runs. The lines it ran are then in the session's shared coverage.
+	CodeCoverageMissingReasonTag string = "test.code_coverage.missing_reason"
+
+	// CodeCoverageMissingReasonNoSlot is the reason of a test execution that found every line coverage slot held.
+	CodeCoverageMissingReasonNoSlot string = "no_slot"
+
+	// CodeCoverageTestsWithoutSlotTag is the number of test executions of a session that found every line
+	// coverage slot held, and so have no per-test line coverage record.
+	CodeCoverageTestsWithoutSlotTag string = "test.code_coverage.tests_without_slot"
 )
 
 // Capabilities

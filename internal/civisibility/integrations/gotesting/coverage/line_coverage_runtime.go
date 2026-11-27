@@ -34,13 +34,6 @@ var runtimeLineCoverageSetSlot func(slot uint32) uint32
 //go:linkname runtimeLineCoverageSlotRefs __dd_linecov_refs.V2
 var runtimeLineCoverageSlotRefs func(slot uint32) int32
 
-// runtimeLineCoverageRetarget moves the goroutines other than the caller that
-// carry slot from to slot 0. It returns how many moved, and whether one of them
-// was running, and so may still store into the rows of slot from.
-//
-//go:linkname runtimeLineCoverageRetarget __dd_linecov_retarget.V2
-var runtimeLineCoverageRetarget func(from uint32) (moved int, running bool)
-
 // runtimeLineCoveragePackage returns the counters of the i-th instrumented
 // package: lineCoverageLaneCount rows of rowSize bytes per slot, with one
 // counter per block, and
@@ -69,6 +62,5 @@ func lineCoverageRuntimeAvailable() bool {
 	return runtimeLineCoverageSlot != nil &&
 		runtimeLineCoverageSetSlot != nil &&
 		runtimeLineCoverageSlotRefs != nil &&
-		runtimeLineCoverageRetarget != nil &&
 		runtimeLineCoveragePackage != nil
 }

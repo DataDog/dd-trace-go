@@ -93,6 +93,10 @@ func instrumentTestingM(m *testing.M) func(exitCode int) {
 	return func(exitCode int) {
 		log.Debug("instrumentTestingM: finished with exit code: %d", exitCode)
 
+		if lineCoverageStarted {
+			session.SetTag(constants.CodeCoverageTestsWithoutSlotTag, coverage.LineCoverageTestsWithoutSlot())
+		}
+
 		// Check for code coverage if enabled.
 		if testing.CoverMode() != "" {
 			cov, corrected, publishCoverage := finalizeITRCoverageBackfill()
@@ -285,10 +289,12 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				return
 			}
 
+			var lineCoverageWindow *coverage.LineCoverageWindow
 			defer func() {
 				duration := time.Since(startTime)
 				runAndApplyTestCleanup(currentT, execMeta)
 				collectAndWriteLogs(currentT, test)
+				tagMissingLineCoverage(test, lineCoverageWindow)
 
 				if r := recover(); r != nil {
 					stacktrace := utils.GetStacktrace(1)
@@ -405,7 +411,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				}
 			}()
 
-			openLineCoverageWindow(currentT, suite, test)
+			lineCoverageWindow = openLineCoverageWindow(currentT, suite, test)
 			f(currentT)
 		}
 

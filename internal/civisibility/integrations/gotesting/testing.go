@@ -212,9 +212,20 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 
 // openLineCoverageWindow opens the line coverage window of the test execution
 // that t runs. The window closes in t's first cleanup, which runs last.
-func openLineCoverageWindow(t *testing.T, suite integrations.TestSuite, test integrations.Test) {
-	if window := coverage.OpenLineCoverageWindow(); window != nil {
+func openLineCoverageWindow(t *testing.T, suite integrations.TestSuite, test integrations.Test) *coverage.LineCoverageWindow {
+	window := coverage.OpenLineCoverageWindow()
+	if window != nil {
 		t.Cleanup(func() { window.Close(suite.SuiteID(), test.TestID()) })
+	}
+	return window
+}
+
+// tagMissingLineCoverage tags a test execution whose window ran without a line
+// coverage slot, and so will send no coverage record. Call it after the test
+// function returned, before the test closes.
+func tagMissingLineCoverage(test integrations.Test, window *coverage.LineCoverageWindow) {
+	if window.RanWithoutSlot() {
+		test.SetTag(constants.CodeCoverageMissingReasonTag, constants.CodeCoverageMissingReasonNoSlot)
 	}
 }
 
@@ -317,6 +328,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 		instrumentChattyPrinter(t)
 
 		startTime := time.Now()
+		var lineCoverageWindow *coverage.LineCoverageWindow
 		defer func() {
 			duration := time.Since(startTime)
 
@@ -340,6 +352,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 
 			// Collect and write logs
 			collectAndWriteLogs(t, test)
+			tagMissingLineCoverage(test, lineCoverageWindow)
 
 			if r := recover(); r != nil {
 				// Handle panic and set error information.
@@ -460,7 +473,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			tCoverage.CollectCoverageBeforeTestExecution()
 		}
 
-		openLineCoverageWindow(t, suite, test)
+		lineCoverageWindow = openLineCoverageWindow(t, suite, test)
 
 		// Execute the original test function.
 		testInfo.originalFunc(t)

@@ -12,7 +12,9 @@ import (
 	"maps"
 	"math"
 	"path/filepath"
+	"runtime"
 	"slices"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -156,15 +158,13 @@ type fakePackage struct {
 }
 
 // fakeRuntime stands in for the runtime accessors, for a single goroutine
-// and a number of other goroutines per slot that retarget moves.
+// and a number of other goroutines per slot.
 type fakeRuntime struct {
 	packages []fakePackage
 	slot     uint32
 	lane     uint32 // of the single goroutine
 	refs     [lineCoverageSlotCount]int32
 	others   map[uint32]int32
-	running  bool // retarget reports a running goroutine
-	sticky   bool // retarget moves nothing
 	// lines is the line table of the binary; without it, the runtime has no
 	// line table accessor.
 	lines []fakeLine
@@ -209,8 +209,8 @@ func installFakeRuntime(t *testing.T, rt *fakeRuntime) {
 	if rt.others == nil {
 		rt.others = map[uint32]int32{}
 	}
-	savedSlot, savedSetSlot, savedRefs, savedRetarget, savedPackage := runtimeLineCoverageSlot,
-		runtimeLineCoverageSetSlot, runtimeLineCoverageSlotRefs, runtimeLineCoverageRetarget, runtimeLineCoveragePackage
+	savedSlot, savedSetSlot, savedRefs, savedPackage := runtimeLineCoverageSlot,
+		runtimeLineCoverageSetSlot, runtimeLineCoverageSlotRefs, runtimeLineCoveragePackage
 	savedLines := runtimeLineCoverageLines
 	runtimeLineCoverageLines = nil
 	if rt.lines != nil {
@@ -235,15 +235,6 @@ func installFakeRuntime(t *testing.T, rt *fakeRuntime) {
 		return old
 	}
 	runtimeLineCoverageSlotRefs = func(slot uint32) int32 { return rt.refs[slot] }
-	runtimeLineCoverageRetarget = func(from uint32) (int, bool) {
-		if rt.sticky {
-			return 0, rt.running
-		}
-		moved := rt.others[from]
-		rt.refs[from] -= moved
-		delete(rt.others, from)
-		return int(moved), rt.running
-	}
 	runtimeLineCoveragePackage = func(i int) (*byte, int, int, string, string, bool) {
 		if i >= len(rt.packages) {
 			return nil, 0, 0, "", "", false
@@ -257,7 +248,7 @@ func installFakeRuntime(t *testing.T, rt *fakeRuntime) {
 	}
 	t.Cleanup(func() {
 		runtimeLineCoverageSlot, runtimeLineCoverageSetSlot, runtimeLineCoverageSlotRefs,
-			runtimeLineCoverageRetarget, runtimeLineCoveragePackage = savedSlot, savedSetSlot, savedRefs, savedRetarget, savedPackage
+			runtimeLineCoveragePackage = savedSlot, savedSetSlot, savedRefs, savedPackage
 		runtimeLineCoverageLines = savedLines
 		lineCoverage.Store(nil)
 	})
@@ -614,7 +605,6 @@ func TestLineCoverageKeptSlot(t *testing.T) {
 	assert.Equal(t, []uint32{slot}, c.kept)
 
 	c.stop()
-	assert.Zero(t, c.evicted)
 	records := (*sent)[0]
 	require.Len(t, records, 5)
 	assert.Equal(t, map[string][]int32{"a.go": {1}}, recordLines(t, records[0]))
@@ -697,8 +687,59 @@ func TestLineCoverageLanes(t *testing.T) {
 	}
 }
 
-// TestLineCoverageEviction checks what a window gets when no slot is free.
-func TestLineCoverageEviction(t *testing.T) {
+// TestLineCoverageNoFreeSlot checks that a window that finds every slot held
+// runs without one, sends no record and is counted, that what it ran goes to
+// Shared, and that a kept slot is reused only once its goroutines exit.
+func TestLineCoverageNoFreeSlot(t *testing.T) {
+	workspace := setTestWorkspace(t)
+	file := filepath.Join(workspace, "a.go")
+	rt := &fakeRuntime{packages: []fakePackage{
+		newFakePackage("example/a", []string{file}, []testBlock{{0, 1, 1, false}, {0, 2, 2, false}, {0, 3, 3, false}}, false),
+	}}
+	c, sent := startTestCollector(t, rt)
+	c.free = c.free[len(c.free)-1:] // only slot 1 is free
+
+	// A test whose goroutine outlives it keeps slot 1.
+	w := OpenLineCoverageWindow()
+	rt.startGoroutine()
+	rt.probe(0, 0)
+	w.Close(1, 1)
+	rt.packages[0].store(1, 3, 1) // a store of the goroutine after the window closed
+
+	w = OpenLineCoverageWindow()
+	assert.EqualValues(t, 0, rt.slot)
+	assert.True(t, w.RanWithoutSlot())
+	assert.Equal(t, 1, LineCoverageTestsWithoutSlot())
+	assert.Equal(t, []uint32{1}, c.kept)
+	assert.EqualValues(t, 1, rt.others[1], "the goroutine keeps its slot")
+	rt.probe(0, 2)
+	w.Close(1, 2)
+
+	// Once the goroutine exits, its slot is free again.
+	rt.refs[1]--
+	delete(rt.others, 1)
+	w = OpenLineCoverageWindow()
+	assert.EqualValues(t, 1, rt.slot)
+	assert.False(t, w.RanWithoutSlot())
+	rt.probe(0, 0)
+	w.Close(1, 3)
+	assert.Equal(t, 1, LineCoverageTestsWithoutSlot())
+
+	c.stop()
+	records := (*sent)[0]
+	require.Len(t, records, 3, "no record for the window without a slot")
+	assert.EqualValues(t, 1, records[0]["span_id"])
+	assert.Equal(t, map[string][]int32{"a.go": {1}}, recordLines(t, records[0]))
+	assert.EqualValues(t, 3, records[1]["span_id"])
+	assert.Equal(t, map[string][]int32{"a.go": {1}}, recordLines(t, records[1]))
+	assert.Equal(t, "unowned", records[2]["shared"])
+	assert.Equal(t, map[string][]int32{"a.go": {2, 3}}, recordLines(t, records[2]))
+}
+
+// TestLineCoverageResumeWithoutSlot checks that a window that finds every
+// slot held when its t.Parallel wait ends sends no record, and that what it ran
+// before the wait goes to Shared too.
+func TestLineCoverageResumeWithoutSlot(t *testing.T) {
 	workspace := setTestWorkspace(t)
 	file := filepath.Join(workspace, "a.go")
 	rt := &fakeRuntime{packages: []fakePackage{
@@ -708,42 +749,100 @@ func TestLineCoverageEviction(t *testing.T) {
 	c.free = c.free[len(c.free)-1:] // only slot 1 is free
 
 	w := OpenLineCoverageWindow()
-	rt.startGoroutine()
-	w.Close(1, 1)
-	rt.packages[0].store(1, 3, 1) // a store after the window closed
-
-	// The window takes back the kept slot, after its goroutines moved to slot
-	// 0 and its stores went to no test.
-	w = OpenLineCoverageWindow()
-	assert.EqualValues(t, 1, rt.slot)
-	assert.Equal(t, 1, c.evicted)
-	assert.Empty(t, rt.others)
-	assert.Empty(t, c.kept)
 	rt.probe(0, 0)
-	w.Close(1, 2)
-
-	// Goroutines that keep taking a slot poison it, and the window gets no
-	// slot.
-	w = OpenLineCoverageWindow()
-	rt.startGoroutine()
-	w.Close(1, 3)
-	rt.sticky = true
-	w = OpenLineCoverageWindow()
+	resume := PauseLineCoverageWindow()
 	assert.EqualValues(t, 0, rt.slot)
-	assert.Equal(t, []uint32{1}, c.poisoned)
-	assert.Equal(t, 1, c.evicted)
-	assert.Equal(t, 1, c.missed)
+
+	// Another test takes the slot while the first one waits.
+	other := OpenLineCoverageWindow()
+	assert.EqualValues(t, 1, rt.slot)
+	rt.probe(0, 1)
+
+	resume()
+	assert.EqualValues(t, 0, rt.slot)
+	assert.True(t, w.RanWithoutSlot())
+	assert.False(t, other.RanWithoutSlot())
 	rt.probe(0, 2)
-	w.Close(1, 4)
-	rt.packages[0].store(1, 0, 0) // the poisoned slot's goroutine
+	w.Close(1, 1)
+	other.Close(1, 2)
+	assert.Equal(t, 1, LineCoverageTestsWithoutSlot())
 
 	c.stop()
 	records := (*sent)[0]
-	require.Len(t, records, 4, "no record for the window without a slot")
-	assert.Equal(t, map[string][]int32{"a.go": {1}}, recordLines(t, records[1]))
-	assert.Empty(t, recordLines(t, records[2]))
-	assert.Equal(t, "unowned", records[3]["shared"])
-	assert.Equal(t, map[string][]int32{"a.go": {1, 2, 3}}, recordLines(t, records[3]))
+	require.Len(t, records, 2, "no record for the window that resumed without a slot")
+	assert.EqualValues(t, 2, records[0]["span_id"])
+	assert.Equal(t, map[string][]int32{"a.go": {2}}, recordLines(t, records[0]))
+	assert.Equal(t, "unowned", records[1]["shared"])
+	assert.Equal(t, map[string][]int32{"a.go": {1, 3}}, recordLines(t, records[1]))
+}
+
+// TestLineCoveragePauseInstrumentedCaller checks that a window keeps its slot
+// through a t.Parallel wait when a function of an instrumented file is on the
+// stack, or when the stack is too deep to read.
+func TestLineCoveragePauseInstrumentedCaller(t *testing.T) {
+	_, self, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	workspace := setTestWorkspace(t)
+	file := filepath.Join(workspace, "a.go")
+
+	t.Run("instrumented caller", func(t *testing.T) {
+		rt := &fakeRuntime{packages: []fakePackage{
+			newFakePackage("example/a", []string{self}, []testBlock{{0, 1, 1, false}}, false),
+		}}
+		c, _ := startTestCollector(t, rt)
+		w := OpenLineCoverageWindow()
+		resume := PauseLineCoverageWindow()
+		assert.EqualValues(t, 1, rt.slot, "this file is instrumented, and on the stack")
+		assert.NotContains(t, c.free, uint32(1))
+		resume()
+		assert.EqualValues(t, 1, rt.slot)
+		w.Close(1, 1)
+		c.stop()
+	})
+
+	t.Run("deep stack", func(t *testing.T) {
+		rt := &fakeRuntime{packages: []fakePackage{
+			newFakePackage("example/a", []string{file}, []testBlock{{0, 1, 1, false}}, false),
+		}}
+		c, _ := startTestCollector(t, rt)
+		w := OpenLineCoverageWindow()
+		resume := pauseAtDepth(maxStackDepth)
+		assert.EqualValues(t, 1, rt.slot, "the stack is too deep to read")
+		resume()
+		w.Close(1, 1)
+
+		w = OpenLineCoverageWindow()
+		resume = pauseAtDepth(1)
+		assert.EqualValues(t, 0, rt.slot)
+		assert.Contains(t, c.free, uint32(1))
+		resume()
+		w.Close(1, 2)
+		c.stop()
+	})
+}
+
+// pauseAtDepth pauses the window of the calling goroutine with depth more
+// frames on the stack.
+func pauseAtDepth(depth int) func() {
+	if depth > 0 {
+		return pauseAtDepth(depth - 1)
+	}
+	return PauseLineCoverageWindow()
+}
+
+// BenchmarkLineCoverageInstrumentedCaller measures the stack check of a window
+// that pauses in t.Parallel, with 500 instrumented files.
+func BenchmarkLineCoverageInstrumentedCaller(b *testing.B) {
+	c := &lineCoverageCollector{instrumentedFiles: map[string]struct{}{}}
+	for i := range 500 {
+		c.instrumentedFiles["/repo/pkg/file"+strconv.Itoa(i)+".go"] = struct{}{}
+	}
+	b.ResetTimer()
+	for range b.N {
+		if c.hasInstrumentedCaller() {
+			b.Fatal("no instrumented file is on the stack")
+		}
+	}
 }
 
 func TestLineCoveragePauseResume(t *testing.T) {
@@ -813,7 +912,7 @@ func TestLineCoverageUnalignedCounters(t *testing.T) {
 
 func TestLineCoverageOff(t *testing.T) {
 	installFakeRuntime(t, &fakeRuntime{})
-	runtimeLineCoverageRetarget = nil
+	runtimeLineCoverageSlotRefs = nil
 	assert.False(t, StartLineCoverage(1))
 	assert.Nil(t, OpenLineCoverageWindow())
 	PauseLineCoverageWindow()()

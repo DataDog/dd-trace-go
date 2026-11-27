@@ -36,9 +36,9 @@ const (
 	// Slot 0 collects the work of no test; windows lease the others.
 	lineCoverageSlotCount = lineCoverageRowCount / lineCoverageLaneCount
 
-	// maxDetachAttempts bounds the retargets of a slot that goroutines keep
-	// taking while it is evicted.
-	maxDetachAttempts = 100
+	// maxStackDepth is the number of frames that the stack check of a window
+	// that pauses reads. A deeper stack keeps the slot.
+	maxStackDepth = 64
 
 	// Parts of Shared: the lines a process ran outside the tests' own coverage.
 	sharedPartInit    = "init"
@@ -54,19 +54,23 @@ type (
 		sessionID uint64
 		packages  []lineCoveragePackage // read-only once started
 		files     []lineCoverageFile    // read-only once started
-		writer    *coverageWriter
+		// instrumentedFiles are the names, as the line table of the binary
+		// gives them, of the files with blocks; read-only once started.
+		instrumentedFiles map[string]struct{}
+		writer            *coverageWriter
 
 		mu   locking.Mutex
 		free []uint32 // clean slots, reused last in, first out
 		// kept are the slots of closed windows that goroutines of their tests
 		// still carry, oldest first; see Close.
-		kept     []uint32
-		poisoned []uint32 // slots that goroutines kept taking; never reused
-		windows  [lineCoverageSlotCount]*LineCoverageWindow
-		late     []blockRef // blocks that kept slots got after their windows closed
-		missed   int        // windows that ran without a slot for a while
-		evicted  int        // kept slots that windows took back
-		stopped  bool
+		kept    []uint32
+		windows [lineCoverageSlotCount]*LineCoverageWindow
+		// unowned are blocks for the unowned part of Shared: those that kept
+		// slots got after their windows closed, and those of windows that send
+		// no record.
+		unowned []blockRef
+		missed  int // windows that ran without a slot for a while
+		stopped bool
 		// requests are the in-flight requests that goroutines of open windows
 		// sent, by the span ID they carry; see line_coverage_propagation.go.
 		requests map[uint64]sentRequest
@@ -233,14 +237,22 @@ func newLineCoverageCollector(sessionID uint64) *lineCoverageCollector {
 	if len(c.files) == 0 {
 		return nil
 	}
+	withBlocks := map[int32]bool{}
 	for _, p := range c.packages {
 		for i := range p.blocks {
 			b := &p.blocks[i]
+			withBlocks[b.file] = true
 			f := &c.files[b.file]
 			f.maxLine = max(f.maxLine, b.endLine)
 			for _, line := range b.lines {
 				f.maxLine = max(f.maxLine, line)
 			}
+		}
+	}
+	c.instrumentedFiles = map[string]struct{}{}
+	for name, file := range metaNames {
+		if withBlocks[file] {
+			c.instrumentedFiles[name] = struct{}{}
 		}
 	}
 	for file := range withTable {
@@ -409,6 +421,27 @@ func (w *LineCoverageWindow) attach() {
 	runtimeLineCoverageSetSlot(w.slot)
 }
 
+// RanWithoutSlot reports whether the window ran without a slot for a while,
+// because every slot was held when it opened or when its t.Parallel wait
+// ended. Its test execution then has no coverage record, and what it ran is in
+// the unowned part of Shared.
+func (w *LineCoverageWindow) RanWithoutSlot() bool {
+	return w != nil && w.missed
+}
+
+// LineCoverageTestsWithoutSlot returns the number of test executions whose
+// window ran without a slot for a while, and so have no coverage record. It is
+// 0 when line coverage is off.
+func LineCoverageTestsWithoutSlot() int {
+	c := lineCoverage.Load()
+	if c == nil {
+		return 0
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.missed
+}
+
 // PauseLineCoverageWindow releases the slot of the calling goroutine's window
 // while its test waits in t.Parallel, so that waiting tests do not use up the
 // slots. It returns the function that takes a slot again when the wait ends.
@@ -437,10 +470,12 @@ func PauseLineCoverageWindow() (resume func()) {
 }
 
 // pause releases the window's slot. It keeps the slot, and returns false, when
-// other goroutines carry it.
+// other goroutines carry it, or when a function of an instrumented file is on
+// the calling goroutine's stack: a probe may keep the address of the row its
+// function started with until the function returns.
 func (w *LineCoverageWindow) pause() bool {
 	slot := w.slot
-	if w.closed || slot == 0 || runtimeLineCoverageSlot() != slot {
+	if w.closed || slot == 0 || runtimeLineCoverageSlot() != slot || w.collector.hasInstrumentedCaller() {
 		return false
 	}
 	// Under the mutex, so that no request handler moves into the slot between
@@ -459,6 +494,26 @@ func (w *LineCoverageWindow) pause() bool {
 	return true
 }
 
+// hasInstrumentedCaller reports whether a function of an instrumented file is
+// on the calling goroutine's stack, or the stack is too deep to tell.
+func (c *lineCoverageCollector) hasInstrumentedCaller() bool {
+	var pcs [maxStackDepth]uintptr
+	n := runtime.Callers(2, pcs[:])
+	if n == len(pcs) {
+		return true
+	}
+	frames := runtime.CallersFrames(pcs[:n])
+	for {
+		frame, more := frames.Next()
+		if _, ok := c.instrumentedFiles[frame.File]; ok {
+			return true
+		}
+		if !more {
+			return false
+		}
+	}
+}
+
 func (w *LineCoverageWindow) resume() {
 	defer func() {
 		if r := recover(); r != nil {
@@ -471,13 +526,14 @@ func (w *LineCoverageWindow) resume() {
 }
 
 // Close closes the window, and sends the coverage of the test execution with
-// the given suite and test IDs. Call it after the test's cleanups ran.
+// the given suite and test IDs. Call it after the test's cleanups ran. A window
+// that ran without a slot for a while sends no record; see RanWithoutSlot.
 //
 // Goroutines of the test that outlive it keep its slot, and what they run from
 // then on goes to no test. Moving them to slot 0 would not stop all their
 // stores into the slot's rows: a probe may keep the address of the row its
 // function started with until the function returns. So the slot is not reused
-// until none of them carries it, unless no other slot is free; see evict.
+// until none of them carries it.
 func (w *LineCoverageWindow) Close(suiteID, testID uint64) {
 	if w == nil || w.closed {
 		return
@@ -504,7 +560,12 @@ func (w *LineCoverageWindow) Close(suiteID, testID uint64) {
 		c.release(slot, carried)
 	}
 	if w.missed {
-		// A partial record would claim the test does not need lines it ran.
+		// A partial record would claim the test does not need lines it ran. What
+		// the window got before it lost its slot goes to Shared, with the rest of
+		// its work.
+		c.mu.Lock()
+		c.unowned = append(c.unowned, w.blocks...)
+		c.mu.Unlock()
 		return
 	}
 	c.send(&ciTestCoverageData{
@@ -515,23 +576,8 @@ func (w *LineCoverageWindow) Close(suiteID, testID uint64) {
 	})
 }
 
-// detachSlot moves the goroutines that still carry slot to slot 0, and reports
-// whether none carries it any more: it is false when goroutines kept taking the
-// slot.
-func detachSlot(slot uint32) bool {
-	for attempt := 0; attempt < maxDetachAttempts; attempt++ {
-		if runtimeLineCoverageSlotRefs(slot) <= 0 {
-			return true
-		}
-		if attempt > 0 {
-			runtime.Gosched()
-		}
-		runtimeLineCoverageRetarget(slot)
-	}
-	return runtimeLineCoverageSlotRefs(slot) <= 0
-}
-
-// lease takes a slot for w, or returns 0 when none is free.
+// lease takes a slot for w, or returns 0 when none is free: every slot is
+// leased by an open window or kept for goroutines of a closed one.
 func (c *lineCoverageCollector) lease(w *LineCoverageWindow) uint32 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -539,17 +585,13 @@ func (c *lineCoverageCollector) lease(w *LineCoverageWindow) uint32 {
 		return 0
 	}
 	c.releaseExited()
-	var slot uint32
-	if n := len(c.free); n > 0 {
-		slot = c.free[n-1]
-		c.free = c.free[:n-1]
-	} else {
-		slot = c.evict()
-	}
-	if slot == 0 {
+	n := len(c.free)
+	if n == 0 {
 		c.missed++
 		return 0
 	}
+	slot := c.free[n-1]
+	c.free = c.free[:n-1]
 	c.windows[slot] = w
 	w.closing = false
 	return slot
@@ -578,30 +620,10 @@ func (c *lineCoverageCollector) releaseExited() {
 			kept = append(kept, slot)
 			continue
 		}
-		c.late = c.collect(slot, true, c.late)
+		c.unowned = c.collect(slot, true, c.unowned)
 		c.free = append(c.free, slot)
 	}
 	c.kept = kept
-}
-
-// evict takes back the oldest kept slot, for a window that found no free slot,
-// and returns it, or 0 when no slot is kept. It moves the goroutines that carry
-// the slot to slot 0 first; the stores their running functions still make into
-// the slot's rows go to the window that takes it. The caller holds the mutex.
-func (c *lineCoverageCollector) evict() uint32 {
-	for len(c.kept) > 0 {
-		slot := c.kept[0]
-		c.kept = c.kept[1:]
-		detached := detachSlot(slot)
-		c.late = c.collect(slot, true, c.late)
-		if detached {
-			c.evicted++
-			return slot
-		}
-		log.Debug("civisibility.linecov: slot %d is still carried by goroutines; it will not be reused", slot)
-		c.poisoned = append(c.poisoned, slot)
-	}
-	return 0
 }
 
 // collect appends to dst the blocks stored in the rows of slot's lanes, once
@@ -815,20 +837,14 @@ func (c *lineCoverageCollector) stop() {
 	c.mu.Lock()
 	c.releaseExited()
 	unowned := c.collect(0, false, nil)
-	unowned = append(unowned, c.late...)
+	unowned = append(unowned, c.unowned...)
 	for _, slot := range c.kept {
 		unowned = c.collect(slot, false, unowned)
 	}
-	for _, slot := range c.poisoned {
-		unowned = c.collect(slot, false, unowned)
-	}
-	missed, evicted := c.missed, c.evicted
+	missed := c.missed
 	c.mu.Unlock()
 	if missed > 0 {
-		log.Warn("civisibility.linecov: %d test executions ran without a coverage slot, and have no coverage record", missed)
-	}
-	if evicted > 0 {
-		log.Warn("civisibility.linecov: %d test executions took the coverage slot of goroutines that outlived an earlier test, and may be credited with lines those goroutines ran", evicted)
+		log.Warn("civisibility.linecov: %d test executions ran without a coverage slot: they have no coverage record, and the lines they ran are in the session's shared coverage", missed)
 	}
 
 	initBitmaps := map[int32][]byte{}

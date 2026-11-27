@@ -88,8 +88,7 @@ func (c *lineCoverageCollector) Received(spanID uint64) (restore func()) {
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		if runtimeLineCoverageSlot() != req.slot {
-			// The slot was evicted, which moved the goroutine to slot 0, or this
-			// runs on another goroutine.
+			// The handler changed its slot, or this runs on another goroutine.
 			return
 		}
 		back := uint32(0)
