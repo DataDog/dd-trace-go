@@ -568,47 +568,61 @@ func TestLineCoverageSubtestWindows(t *testing.T) {
 	assert.Equal(t, map[string][]int32{"a.go": {1, 3}}, recordLines(t, records[1]))
 }
 
-func TestLineCoverageDetach(t *testing.T) {
+// TestLineCoverageKeptSlot checks that the slot of a window whose goroutines
+// outlive it is not reused while they carry it, and that what they run after
+// the window closed goes to no test.
+func TestLineCoverageKeptSlot(t *testing.T) {
 	workspace := setTestWorkspace(t)
 	file := filepath.Join(workspace, "a.go")
 	rt := &fakeRuntime{packages: []fakePackage{
-		newFakePackage("example/a", []string{file}, []testBlock{{0, 1, 1, false}, {0, 2, 2, false}}, false),
+		newFakePackage("example/a", []string{file}, []testBlock{{0, 1, 1, false}, {0, 2, 2, false}, {0, 3, 3, false}}, false),
 	}}
 	c, sent := startTestCollector(t, rt)
 
-	// A goroutine that outlives its test, and runs when the window closes.
 	w := OpenLineCoverageWindow()
 	rt.startGoroutine()
-	rt.running = true
 	rt.probe(0, 0)
 	w.Close(1, 1)
-	assert.Empty(t, rt.others)
-	assert.Equal(t, []uint32{1}, c.dirty)
+	assert.Equal(t, []uint32{1}, c.kept)
+	assert.EqualValues(t, 1, rt.others[1], "the goroutine keeps the slot")
+	assert.NotContains(t, c.free, uint32(1))
 
-	// The next window takes a clean slot; the dirty one is reused last.
-	w = OpenLineCoverageWindow()
-	assert.EqualValues(t, 2, rt.slot)
-	w.Close(1, 2)
-
-	// A late store of the goroutine of the first window goes to no test.
+	// A store of the goroutine after the window closed.
 	rt.packages[0].store(1, 5, 1)
 
-	// Goroutines that keep taking a slot poison it.
-	rt.running = false
-	rt.sticky = true
+	// The next window takes another slot.
+	w = OpenLineCoverageWindow()
+	assert.EqualValues(t, 2, rt.slot)
+	rt.probe(0, 2)
+	w.Close(1, 2)
+
+	// Once the goroutine exits, its slot is free again, without its stores.
+	rt.refs[1]--
+	delete(rt.others, 1)
+	w = OpenLineCoverageWindow()
+	assert.EqualValues(t, 1, rt.slot)
+	assert.Empty(t, c.kept)
+	rt.probe(0, 0)
+	w.Close(1, 3)
+
+	// A goroutine that runs until the process stops.
 	w = OpenLineCoverageWindow()
 	slot := rt.slot
 	rt.startGoroutine()
-	w.Close(1, 3)
-	assert.Equal(t, []uint32{slot}, c.poisoned)
-	assert.NotContains(t, c.free, slot)
+	w.Close(1, 4)
+	rt.packages[0].store(slot, 0, 2)
+	assert.Equal(t, []uint32{slot}, c.kept)
 
 	c.stop()
+	assert.Zero(t, c.evicted)
 	records := (*sent)[0]
-	require.Len(t, records, 4)
+	require.Len(t, records, 5)
 	assert.Equal(t, map[string][]int32{"a.go": {1}}, recordLines(t, records[0]))
-	assert.Equal(t, "unowned", records[3]["shared"])
-	assert.Equal(t, map[string][]int32{"a.go": {2}}, recordLines(t, records[3]))
+	assert.Equal(t, map[string][]int32{"a.go": {3}}, recordLines(t, records[1]))
+	assert.Equal(t, map[string][]int32{"a.go": {1}}, recordLines(t, records[2]))
+	assert.Empty(t, recordLines(t, records[3]))
+	assert.Equal(t, "unowned", records[4]["shared"])
+	assert.Equal(t, map[string][]int32{"a.go": {2, 3}}, recordLines(t, records[4]))
 }
 
 // TestLineCoverageWideCounters checks the uint32 counters of builds with the
@@ -683,42 +697,53 @@ func TestLineCoverageLanes(t *testing.T) {
 	}
 }
 
-func TestLineCoverageDirtySlotReuse(t *testing.T) {
+// TestLineCoverageEviction checks what a window gets when no slot is free.
+func TestLineCoverageEviction(t *testing.T) {
 	workspace := setTestWorkspace(t)
 	file := filepath.Join(workspace, "a.go")
 	rt := &fakeRuntime{packages: []fakePackage{
-		newFakePackage("example/a", []string{file}, []testBlock{{0, 1, 1, false}, {0, 2, 2, false}}, false),
+		newFakePackage("example/a", []string{file}, []testBlock{{0, 1, 1, false}, {0, 2, 2, false}, {0, 3, 3, false}}, false),
 	}}
 	c, sent := startTestCollector(t, rt)
-	c.free = c.free[len(c.free)-1:] // only slot 1 is clean
+	c.free = c.free[len(c.free)-1:] // only slot 1 is free
 
 	w := OpenLineCoverageWindow()
 	rt.startGoroutine()
-	rt.running = true
 	w.Close(1, 1)
-	rt.packages[0].store(1, 3, 1) // late store
+	rt.packages[0].store(1, 3, 1) // a store after the window closed
 
-	// With no clean slot left, the dirty one is reused, after its late stores
-	// went to no test.
-	rt.running = false
+	// The window takes back the kept slot, after its goroutines moved to slot
+	// 0 and its stores went to no test.
 	w = OpenLineCoverageWindow()
 	assert.EqualValues(t, 1, rt.slot)
+	assert.Equal(t, 1, c.evicted)
+	assert.Empty(t, rt.others)
+	assert.Empty(t, c.kept)
 	rt.probe(0, 0)
 	w.Close(1, 2)
 
-	// With no slot at all, a window sends no record.
-	c.dirty, c.free = nil, nil
+	// Goroutines that keep taking a slot poison it, and the window gets no
+	// slot.
+	w = OpenLineCoverageWindow()
+	rt.startGoroutine()
+	w.Close(1, 3)
+	rt.sticky = true
 	w = OpenLineCoverageWindow()
 	assert.EqualValues(t, 0, rt.slot)
-	rt.probe(0, 0)
-	w.Close(1, 3)
+	assert.Equal(t, []uint32{1}, c.poisoned)
+	assert.Equal(t, 1, c.evicted)
 	assert.Equal(t, 1, c.missed)
+	rt.probe(0, 2)
+	w.Close(1, 4)
+	rt.packages[0].store(1, 0, 0) // the poisoned slot's goroutine
 
 	c.stop()
 	records := (*sent)[0]
-	require.Len(t, records, 3)
+	require.Len(t, records, 4, "no record for the window without a slot")
 	assert.Equal(t, map[string][]int32{"a.go": {1}}, recordLines(t, records[1]))
-	assert.Equal(t, map[string][]int32{"a.go": {1, 2}}, recordLines(t, records[2]))
+	assert.Empty(t, recordLines(t, records[2]))
+	assert.Equal(t, "unowned", records[3]["shared"])
+	assert.Equal(t, map[string][]int32{"a.go": {1, 2, 3}}, recordLines(t, records[3]))
 }
 
 func TestLineCoveragePauseResume(t *testing.T) {
