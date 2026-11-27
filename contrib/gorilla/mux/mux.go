@@ -7,7 +7,10 @@
 package mux // import "github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2"
 
 import (
+	"errors"
 	"net/http"
+	"slices"
+	"sync"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
@@ -29,6 +32,8 @@ func init() {
 type Router struct {
 	*mux.Router
 	config *routerConfig
+	// subrouters caches whether a route has a subrouter: *mux.Route -> bool.
+	subrouters sync.Map
 }
 
 // StrictSlash defines the trailing slash behavior for new routes. The initial
@@ -146,11 +151,11 @@ func (r *Router) BeforeHandle(w http.ResponseWriter, req *http.Request) (tw http
 		IsStatusError:        r.config.isStatusError,
 		OTelSemanticsEnabled: &r.config.otelEnabled,
 	}, w, req)
-	if match.MatchErr != nil || match.Route != nil && match.Route.GetHandler() == nil {
-		// A subrouter without a route for the request matches it with the route
-		// of its prefix: its 404 handler answers with MatchErr, and its 405
-		// handler, for which gorilla clears MatchErr, answers for a prefix route
-		// without a handler. The request has no route.
+	if match.MatchErr != nil || match.Route != nil && r.hasSubrouter(match.Route) {
+		// A route of a subrouter that matches is the route of the request. A
+		// subrouter without a route for it matches it with its own route: its 404
+		// handler answers with MatchErr, and its 405 handler, for which gorilla
+		// clears MatchErr. The request has no route.
 		httpsec.ReportMatchedRoute(treq.Context(), httpsec.MatchedRoute{})
 	}
 	return tw, treq, afterHandle, handled
@@ -180,4 +185,25 @@ func defaultResourceNamer(router *Router, req *http.Request) string {
 		}
 	}
 	return req.Method + " unknown"
+}
+
+// errFound stops a walk of the routes.
+var errFound = errors.New("found")
+
+// hasSubrouter reports whether route has a subrouter with routes: gorilla does
+// not export it, but Walk lists the routes of a subrouter with route among their
+// ancestors. The answer is cached per route.
+func (r *Router) hasSubrouter(route *mux.Route) bool {
+	if found, ok := r.subrouters.Load(route); ok {
+		return found.(bool)
+	}
+	err := r.Router.Walk(func(_ *mux.Route, _ *mux.Router, ancestors []*mux.Route) error {
+		if slices.Contains(ancestors, route) {
+			return errFound
+		}
+		return nil
+	})
+	found := errors.Is(err, errFound)
+	r.subrouters.Store(route, found)
+	return found
 }

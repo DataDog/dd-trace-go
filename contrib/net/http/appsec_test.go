@@ -407,6 +407,7 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 	underlying.HandleFunc("/uset/{path...}", clearPath)
 	// A redirect handler registered for a pattern is not a redirect of ServeMux.
 	underlying.Handle("CONNECT /redir/{path...}", http.RedirectHandler("/next", http.StatusFound))
+	underlying.Handle("/rsub/", http.RedirectHandler("/next", http.StatusFound))
 	mux := NewServeMux(WithServeMux(underlying))
 	mux.HandleFunc("/wrapped/{path...}", func(http.ResponseWriter, *http.Request) {})
 	mux.HandleFunc("/set/{path...}", clearPath)
@@ -456,6 +457,8 @@ func TestAppsecNormalizedRouteCatchAll(t *testing.T) {
 		{http.MethodConnect, "/pair/../s3cr3t", "", true},
 		{http.MethodConnect, "/sub/x/..", "/sub/{param1}", false},
 		{http.MethodConnect, "/redir/a", "/redir/{path}", true},
+		{http.MethodConnect, "/rsub", "", true},
+		{http.MethodConnect, "/rsub/x/..", "/rsub/{param1}", true},
 		{http.MethodGet, "/users/123", "/users/{id}/", true},
 		{http.MethodGet, "/static/a/../", "/static/", true},
 		{http.MethodGet, "/a%2Fb/../x/42", "/x/{id}", true},

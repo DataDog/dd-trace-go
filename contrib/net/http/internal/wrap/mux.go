@@ -105,13 +105,32 @@ func matchedRoute(r *http.Request, h http.Handler, pttrn string) httpsec.Matched
 }
 
 // isConnectRedirect reports that ServeMux redirects a CONNECT request to its
-// path with a "/" added: its handler is a redirect, and its pattern is that path,
-// unescaped, and cleaned before Go 1.27. A redirect handler registered for a
-// pattern keeps its route.
+// path with a "/" added: its handler is a redirect to its pattern, which is that
+// unescaped path (http.Redirect cleans the location). A redirect handler
+// registered for a pattern redirects elsewhere and keeps its route.
 func isConnectRedirect(r *http.Request, h http.Handler, pttrn string) bool {
-	return r.Method == http.MethodConnect && reflect.TypeOf(h) == redirectHandlerType &&
-		(pttrn == r.URL.Path+"/" || pttrn == cleanPath(r.URL.Path)+"/")
+	if r.Method != http.MethodConnect || reflect.TypeOf(h) != redirectHandlerType {
+		return false
+	}
+	var w headerRecorder
+	h.ServeHTTP(&w, r)
+	location, err := url.Parse(w.Header().Get("Location"))
+	return err == nil && location.Path == cleanPath(pttrn)
 }
+
+// headerRecorder records the headers that a redirect handler writes.
+type headerRecorder struct{ header http.Header }
+
+func (w *headerRecorder) Header() http.Header {
+	if w.header == nil {
+		w.header = make(http.Header, 2)
+	}
+	return w.header
+}
+
+func (*headerRecorder) Write(b []byte) (int, error) { return len(b), nil }
+
+func (*headerRecorder) WriteHeader(int) {}
 
 // redirectHandlerType is the type of the handler of a redirect that ServeMux
 // generates.

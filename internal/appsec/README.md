@@ -436,9 +436,8 @@ and the sampling key is unchanged. A report of no route gets no tag.
   path that it matched (`c.Path()`) and `UnescapePath`. Without `StrictRouting`,
   a prefix route matches without its trailing `/`, as fiber matches it.
 - gorilla/mux reports no route when a subrouter's 404 or 405 handler answers:
-  gorilla matches the request with the prefix route of the subrouter. A route
-  without a handler whose matcher sets the handler itself cannot be told from
-  it, and gets no route either.
+  gorilla matches the request with the prefix route of the subrouter, which is
+  never the route of a request that a route of the subrouter matches.
 - echo marks the path of its router's 405 and OPTIONS answers as no route
   (`httpsec.Config.RouteInferred`): it is the path of a route for another method.
 

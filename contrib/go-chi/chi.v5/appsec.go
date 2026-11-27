@@ -202,7 +202,10 @@ func servedMount(rctx *chi.Context, mounts *sync.Map) mountServed {
 		if !ok {
 			break
 		}
-		if i == n-1 && isMountHandler(route.Handlers[rctx.RouteMethod]) {
+		// The route table lists the route of an alias of a mount (/api for
+		// /api/*), but not the handlers of the alias: Mount's handler served it,
+		// as it left "/" in RoutePath.
+		if i == n-1 && (!strings.HasSuffix(pattern, "*") || isMountHandler(route.Handlers[rctx.RouteMethod])) {
 			served = mountServed{mount: true, router: route.SubRoutes != nil}
 		}
 		routes = route.SubRoutes

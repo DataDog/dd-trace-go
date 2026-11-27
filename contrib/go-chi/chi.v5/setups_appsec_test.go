@@ -724,6 +724,10 @@ func TestAppSecNormalizedRouteOTel(t *testing.T) {
 	router.Mount("/shadowed", chi.NewRouter())
 	router.Get("/shadowed/*", okHandler)
 	assert.Equal(t, "/shadowed/{param1}", requestTags(t, router, "/shadowed/x")["_dd.appsec.normalized_route"])
+	// The aliases of the mount are its own.
+	for _, target := range []string{"/shadowed", "/shadowed/"} {
+		assert.NotContains(t, requestTags(t, router, target), "_dd.appsec.normalized_route", target)
+	}
 }
 
 // TestAppSecNormalizedRouteLifecycle checks that the normalized route is the route

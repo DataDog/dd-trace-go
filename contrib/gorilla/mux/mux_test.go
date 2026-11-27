@@ -970,8 +970,18 @@ func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
 	// not on a 404.
 	team := NewRouter()
 	parent := team.PathPrefix("/team/{t}")
-	parent.Subrouter().NotFoundHandler = http.NotFoundHandler()
+	teamSub := parent.Subrouter()
+	teamSub.Handle("/item/{id}", okHandler()).Methods(http.MethodGet)
+	teamSub.NotFoundHandler = http.NotFoundHandler()
+	teamSub.MethodNotAllowedHandler = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	})
 	parent.Handler(okHandler())
+	// A route without a handler whose matcher selects the handler.
+	team.Path("/selected/{id}").MatcherFunc(func(_ *http.Request, m *gorillamux.RouteMatch) bool {
+		m.Handler = okHandler()
+		return true
+	})
 	// StrictSlash redirects the escaped path to the route with its "/".
 	strict := NewRouter()
 	strict.UseEncodedPath()
@@ -987,6 +997,9 @@ func TestAppSecNormalizedRoutePathPrefix(t *testing.T) {
 		{org, http.MethodPost, "/org/1/item/3", http.StatusMethodNotAllowed, ""},
 		{org, http.MethodGet, "/org/1/missing", http.StatusNotFound, ""},
 		{team, http.MethodGet, "/team/1/missing", http.StatusNotFound, ""},
+		{team, http.MethodGet, "/team/1/item/3", http.StatusOK, "/team/{t}/item/{id}"},
+		{team, http.MethodPost, "/team/1/item/3", http.StatusMethodNotAllowed, ""},
+		{team, http.MethodGet, "/selected/1", http.StatusOK, "/selected/{id}"},
 		{strict, http.MethodGet, "/z%2Fy", http.StatusMovedPermanently, "/z%2Fy/"},
 	} {
 		mt := mocktracer.Start()
