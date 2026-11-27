@@ -37,8 +37,8 @@ func (s *Span) DistributedContext() DistributedContext {
 		WireTraceID:       s.WireTraceID(),
 		MLApp:             s.mlApp,
 		SessionID:         sessionID,
-		SampleRate:        s.sampleRate,
-		SamplingDecision:  s.samplingDecision,
+		SampleRate:        s.sampling.rate,
+		SamplingDecision:  s.sampling.decision,
 		ParentAgentSpanID: s.PropagatedParentAgentSpanID(),
 	}
 	if dc.ParentAgentSpanID != "" {

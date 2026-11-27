@@ -1445,7 +1445,7 @@ func setPropagatingParentAgentTags(spanCtx *SpanContext, parentAgentSpanID, name
 			spanCtx.trace.unsetPropagatingTag(keyPropagatedLLMObsParentAgentName)
 			return
 		}
-		// Only propagate the name when it fits within the x-datadog-tags and W3C tracestate budgets.
+		// Only propagate the name when it fits within the x-datadog-tags budget.
 		if fitsPropagatingTagBudget(spanCtx, keyPropagatedLLMObsParentAgentName, name) {
 			spanCtx.trace.setPropagatingTag(keyPropagatedLLMObsParentAgentName, name)
 		} else {
@@ -1456,25 +1456,27 @@ func setPropagatingParentAgentTags(spanCtx *SpanContext, parentAgentSpanID, name
 }
 
 // fitsPropagatingTagBudget reports whether setting key to value keeps the
-// propagating tags within the x-datadog-tags and W3C tracestate budgets. Over
-// either budget, the encoder drops every propagating tag, not only this one.
+// propagating tags within the x-datadog-tags budget. Over it, the encoder drops
+// every propagating tag, not only this one. The tag must also fit the W3C
+// tracestate dd= member on its own. The member's shared budget is not checked
+// here: composeTracestate fills it by priority (see llmobsTracestatePriority), so
+// a crowded dd= member doesn't cost x-datadog-tags a tag.
 func fitsPropagatingTagBudget(spanCtx *SpanContext, key, value string) bool {
-	used, tsUsed := spanCtx.trace.propagatingTagsByteLens()
+	if len(key)-len("_dd.p.")+len(value)+4+tracestateHeaderReserve > tracestateDDMaxSize {
+		return false
+	}
+	used := spanCtx.trace.propagatingTagsHeaderLen()
 	// _dd.p.tid is stamped during Inject, after this check — reserve its space on 128-bit traces.
 	if spanCtx.traceID.HasUpper() && spanCtx.trace.propagatingTag(keyTraceID128) == "" {
 		used += 27
-		tsUsed += 23
 	}
 	var xTagsLen int
 	if prior := spanCtx.trace.propagatingTag(key); prior != "" {
 		xTagsLen = used - len(prior) + len(value)
-		tsUsed -= len(key) - len("_dd.p.") + len(prior) + 4
 	} else {
 		xTagsLen = used + len(key) + len(value) + 2
 	}
-	tracestateLen := len(key) - len("_dd.p.") + len(value) + 4
-	return xTagsLen <= internalconfig.Get().MaxTagsHeaderLen() &&
-		tsUsed+tracestateLen+tracestateHeaderReserve <= tracestateDDMaxSize
+	return xTagsLen <= internalconfig.Get().MaxTagsHeaderLen()
 }
 
 // used in internal/civisibility/integrations/manual_api_common.go using linkname
@@ -1548,15 +1550,15 @@ const (
 	keyPropagatedLLMObsTraceID = "_dd.p.llmobs_trace_id"
 	// keyPropagatedLLMObsSessionID contains the propagated llmobs session ID.
 	keyPropagatedLLMObsSessionID = "_dd.p.llmobs_sid"
+	// keyPropagatedLLMObsSampleRate contains the rate the LLMObs trace was sampled at.
+	keyPropagatedLLMObsSampleRate = "_dd.p.llmobs_sr"
+	// keyPropagatedLLMObsSamplingDecision contains the LLMObs trace sampling decision ("1" keep, "0" drop).
+	keyPropagatedLLMObsSamplingDecision = "_dd.p.llmobs_sd"
 	// keyPropagatedLLMObsParentAgentSpanID contains the propagated parent-agent span ID.
 	// The wire key uses the abbreviated form "pagent" per the cross-SDK propagation protocol.
 	keyPropagatedLLMObsParentAgentSpanID = "_dd.p.llmobs_pagent_span_id"
 	// keyPropagatedLLMObsParentAgentName contains the propagated parent-agent name.
 	keyPropagatedLLMObsParentAgentName = "_dd.p.llmobs_pagent_name"
-	// keyPropagatedLLMObsSampleRate and keyPropagatedLLMObsSamplingDecision carry the
-	// LLMObs sampling values that dd-trace-py decides. This tracer only forwards them.
-	keyPropagatedLLMObsSampleRate       = "_dd.p.llmobs_sr"
-	keyPropagatedLLMObsSamplingDecision = "_dd.p.llmobs_sd"
 
 	// serviceSourceManual is the service source value used when the service name is set manually via SetTag.
 	serviceSourceManual = "m"

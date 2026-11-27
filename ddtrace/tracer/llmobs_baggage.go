@@ -264,23 +264,63 @@ func setLLMObsTagsForInjection(ctx *SpanContext) {
 	// One invalid or oversized value would make the encoder drop the whole
 	// x-datadog-tags header, so it is left out of the tags; baggage still carries it.
 	// A previous injection's values are cleared first, so they don't count against
-	// this request's budget. The agent name has the lowest priority and goes last.
+	// this request's budget. The sampling pair claims space before the agent
+	// attribution, and the agent name has the lowest priority and goes last.
+	sampling := [...][2]string{
+		{keyPropagatedLLMObsSampleRate, dc.SampleRate},
+		{keyPropagatedLLMObsSamplingDecision, dc.SamplingDecision},
+	}
 	optional := [...][2]string{
 		{keyPropagatedLLMObsMLAPP, dc.MLApp},
 		{keyPropagatedLLMObsSessionID, dc.SessionID},
-		{keyPropagatedLLMObsSampleRate, dc.SampleRate},
-		{keyPropagatedLLMObsSamplingDecision, dc.SamplingDecision},
+	}
+	for _, kv := range sampling {
+		t.unsetPropagatingTag(kv[0])
 	}
 	for _, kv := range optional {
 		t.unsetPropagatingTag(kv[0])
 	}
+	// The agent span ID is always written, so it is reserved before the sampling pair.
 	setPropagatingParentAgentTags(ctx, dc.ParentAgentSpanID, "")
+	setLLMObsSamplingTagsForInjection(ctx, sampling)
 	for _, kv := range optional {
-		if kv[1] != "" && isValidPropagatableTag(kv[0], kv[1]) == nil && fitsPropagatingTagBudget(ctx, kv[0], kv[1]) {
+		if fitsLLMObsOptionalTag(ctx, kv[0], kv[1]) {
 			t.setPropagatingTag(kv[0], kv[1])
 		}
 	}
 	setPropagatingParentAgentTags(ctx, dc.ParentAgentSpanID, dc.ParentAgentName)
+}
+
+// setLLMObsSamplingTagsForInjection writes the sampling rate and decision together or
+// not at all: a decision without its rate would give downstream spans different
+// sampling metadata from the root's. A decision that arrived without a rate is
+// forwarded alone, as received.
+func setLLMObsSamplingTagsForInjection(ctx *SpanContext, pair [2][2]string) {
+	rate, decision := pair[0], pair[1]
+	if decision[1] == "" {
+		return
+	}
+	if rate[1] == "" {
+		if fitsLLMObsOptionalTag(ctx, decision[0], decision[1]) {
+			ctx.trace.setPropagatingTag(decision[0], decision[1])
+		}
+		return
+	}
+	if !fitsLLMObsOptionalTag(ctx, rate[0], rate[1]) {
+		return
+	}
+	ctx.trace.setPropagatingTag(rate[0], rate[1])
+	if !fitsLLMObsOptionalTag(ctx, decision[0], decision[1]) {
+		ctx.trace.unsetPropagatingTag(rate[0])
+		return
+	}
+	ctx.trace.setPropagatingTag(decision[0], decision[1])
+}
+
+// fitsLLMObsOptionalTag reports whether an optional LLMObs tag is set, valid, and
+// within the propagating tag budgets.
+func fitsLLMObsOptionalTag(ctx *SpanContext, key, value string) bool {
+	return value != "" && isValidPropagatableTag(key, value) == nil && fitsPropagatingTagBudget(ctx, key, value)
 }
 
 // apmTraceID returns the APM trace ID of spanCtx in canonical form.

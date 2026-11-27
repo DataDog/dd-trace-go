@@ -92,6 +92,8 @@ func (r *rateSampler) SetRate(rate float64) {
 }
 
 // constants used for the Knuth hashing, same as agent.
+// Keep knuthFactor, sampledByRate, and formatKnuthSamplingRate in sync with their
+// twins in internal/llmobs/sampling.go.
 const knuthFactor = uint64(1111111111111111111)
 
 // Sample returns true if the given span should be sampled.

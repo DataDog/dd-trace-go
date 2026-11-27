@@ -52,6 +52,10 @@ type DDAttributes struct {
 	TraceID    string `json:"trace_id"`
 	APMTraceID string `json:"apm_trace_id"`
 	Scope      string `json:"scope,omitempty"`
+	// SampleRate is the rate the trace was sampled at, formatted with up to 6 decimal digits.
+	SampleRate string `json:"sample_rate,omitempty"`
+	// SamplingDecision is "1" to keep the trace's content and "0" to drop it.
+	SamplingDecision string `json:"sampling_decision,omitempty"`
 }
 
 type LLMObsSpanEvent struct {

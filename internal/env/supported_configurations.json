@@ -856,6 +856,13 @@
         ]
       }
     ],
+    "DD_LLMOBS_SAMPLE_RATE": [
+      {
+        "implementation": "A",
+        "type": "decimal",
+        "default": "1.0"
+      }
+    ],
     "DD_LOGGING_RATE": [
       {
         "implementation": "A",
