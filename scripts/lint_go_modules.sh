@@ -62,6 +62,8 @@ shift
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
 base="$(git merge-base "$rev" HEAD)"
+# Shared module-discovery helpers. $root must be set before this line.
+. "$root/scripts/lib_go_module_discovery.sh"
 
 excluded=(
   "$root"
@@ -73,49 +75,29 @@ excluded=(
   "$root/scripts/fixmodules"
 )
 
-is_excluded() {
-  local dir="$1" e
-  for e in "${excluded[@]}"; do
-    [[ $dir == "$e" ]] && return 0
-  done
-  return 1
-}
-
-module_list="$(go list -m -f '{{.Dir}}')"
+module_list="$(lint_go_modules_workspace_dirs)"
 # The command substitution above fails the script under set -e when go list
 # fails, so a partial module list cannot slip through the empty check below.
 if [[ -z $module_list ]]; then
   echo "go list -m failed or returned no workspace modules" >&2
   exit 1
 fi
-modules=()
-while IFS= read -r dir; do
-  modules+=("$dir")
-done <<< "$module_list"
 
-changed="$(
-  git diff --name-only --diff-filter=d "$base" -- '*.go'
-  git ls-files --others --exclude-standard -- '*.go'
-)"
+changed="$(lint_go_modules_changed_files "$base")"
 
-# A file belongs to the deepest module that contains it: modules nest, for
-# example contrib/google.golang.org/api/internal/gen_endpoints.
+# A file belongs to the deepest module that contains it; the rules live in
+# lib_go_module_discovery.sh. Modules outside go.work are reported as nonws
+# and skipped here: this script lints workspace modules only.
 selected=()
-while IFS= read -r file; do
-  [[ -z $file ]] && continue
-  owner=""
-  for dir in "${modules[@]}"; do
-    if [[ "$root/$file" == "$dir"/* && ${#dir} -gt ${#owner} ]]; then
-      owner="$dir"
-    fi
-  done
-  if [[ -z $owner ]] || is_excluded "$owner"; then
+selection="$(lint_go_modules_select "$base" "$module_list" "$changed" "${excluded[@]}")"
+while IFS=$'\t' read -r owner kind; do
+  if [[ -z $owner || $kind != "ws" ]]; then
     continue
   fi
   if [[ " ${selected[*]-} " != *" $owner "* ]]; then
     selected+=("$owner")
   fi
-done <<< "$changed"
+done <<< "$selection"
 
 # The .github/workflows/apps module is excluded above because its root files
 # do not type-check together. Its pr-triage-board subpackage does, so a
