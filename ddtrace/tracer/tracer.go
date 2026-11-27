@@ -960,10 +960,21 @@ func (c *chunk) releasableSpans() []*Span {
 	return c.spans
 }
 
+// clearSpans drops the chunk's span references. The payload and stats
+// pipelines keep their own references, so clearing here only lets finished
+// spans be collected once the chunk has been processed or dropped. Chunks
+// embedded in a trace (trace.inlineChunk) would otherwise retain every span
+// of the first full flush for the trace's lifetime.
+func (c *chunk) clearSpans() {
+	c.spans = nil
+	c.spansToRelease = nil
+}
+
 func (t *tracer) processOutChunk(trace *chunk) {
 	spansToRelease := trace.releasableSpans()
 	if trace.filterRejected {
 		releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
+		trace.clearSpans()
 		return
 	}
 	t.sampleChunk(trace)
@@ -971,6 +982,7 @@ func (t *tracer) processOutChunk(trace *chunk) {
 		t.traceWriter.add(trace.spans)
 	}
 	releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
+	trace.clearSpans()
 }
 
 // sampleChunk applies single-span sampling to the provided trace.
@@ -1024,7 +1036,10 @@ func (t *tracer) pushChunk(trace *chunk) {
 		// Do NOT call releaseSpans here: pushChunk is called from within
 		// finish() while s.mu is held. clear() acquires s.mu to serialize
 		// after finish(), so calling it here deadlocks the same goroutine.
-		// Dropped spans are GC'd instead.
+		// Dropped spans are GC'd instead. Dropping the slice references lets
+		// them be collected; a chunk embedded in a trace (trace.inlineChunk)
+		// would otherwise retain them for the trace's lifetime.
+		trace.clearSpans()
 	}
 	select {
 	case <-t.logDroppedTraces.C:

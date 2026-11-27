@@ -1512,6 +1512,10 @@ const (
 	// keyTopLevel is the key of top level metric indicating if a span is top level.
 	// A top level span is a local root (parent span of the local trace) or the first span of each service.
 	keyTopLevel = "_dd.top_level"
+	// keyTopLevelLegacy is the legacy top-level metric name. The Agent's
+	// HasTopLevelMetrics still accepts it, so stats eligibility checks must
+	// accept it too.
+	keyTopLevelLegacy = "_top_level"
 	// keyPropagationError holds any error from propagated trace tags (if any)
 	keyPropagationError = "_dd.propagation_error"
 	// keySpanSamplingMechanism specifies the sampling mechanism by which an individual span was sampled

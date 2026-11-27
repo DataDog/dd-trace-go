@@ -724,10 +724,6 @@ type trace struct {
 	// +checklocks:mu
 	otel *otelTraceState
 
-	// inlineSpans backs the initial spans slice for small traces so newTrace
-	// avoids a separate slice backing-array allocation.
-	inlineSpans [10]*Span
-
 	// inlineChunk avoids a separate &chunk{} heap allocation on the first
 	// (and almost always only) full flush of a trace.
 	inlineChunk chunk
@@ -881,13 +877,14 @@ func samplingPriorityPtr(p int) *float64 {
 
 // newTrace creates a new trace using the given callback which will be called
 // upon completion of the trace.
+// initSpans allocates the initial spans slice. It always allocates a
+// dedicated backing array: aliasing the slice into the trace struct would
+// keep finished spans reachable for the trace's lifetime after the slice
+// outgrows the embedded buffer, and submitted chunks may reference the array
+// until the payload worker processes them.
 // +checklocksignore — Initialization time, trace not yet shared.
 func (t *trace) initSpans() {
-	if traceStartSize <= len(t.inlineSpans) {
-		t.spans = t.inlineSpans[:0]
-	} else {
-		t.spans = make([]*Span, 0, traceStartSize)
-	}
+	t.spans = make([]*Span, 0, traceStartSize)
 }
 
 func newTrace() *trace {

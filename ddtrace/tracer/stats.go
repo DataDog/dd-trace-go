@@ -321,8 +321,20 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 
 // +checklocksignore — Post-finish: reads finished span fields during stats computation.
 func (c *concentrator) newTracerStatSpanPrealloc(s *Span, obfuscator *obfuscate.Obfuscator, prealloc *tracerStatSpan) (*tracerStatSpan, bool) {
-	spanMeta := s.meta.Map(false) // stats reads span.kind, _dd.svc_src, status codes, peer tags — no promoted keys needed
-	if len(spanMeta) == 0 && s.metrics[keyTopLevel] != 1 && s.metrics[keyMeasured] != 1 {
+	// Stats reads span.kind, _dd.svc_src, status codes and peer tags from the
+	// flat metadata map, so promoted keys are not needed here, with one
+	// exception: a promoted key configured as an additional stats tag would
+	// silently disappear from the emitted stats, because promoting a key
+	// removes it from the flat map (see SpanMeta.Map). runtime-id is promoted,
+	// so request the merged map when it is configured as an additional tag.
+	spanMeta := s.meta.Map(false)
+	for _, key := range c.cfg.internalConfig.StatsAdditionalTags() {
+		if key == ext.RuntimeID {
+			spanMeta = s.meta.Map(true)
+			break
+		}
+	}
+	if len(spanMeta) == 0 && s.metrics[keyTopLevel] != 1 && s.metrics[keyTopLevelLegacy] != 1 && s.metrics[keyMeasured] != 1 {
 		return nil, false
 	}
 	if spanMeta == nil {
