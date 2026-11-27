@@ -208,6 +208,7 @@ integration-suites:
     contrib/tidwall/buntdb: []
     contrib/twitchtv/twirp: [ twirp ]
     contrib/twmb/franz-go: [ twmb_franz_go ]
+    contrib/twmb/franz-go/otelc: [ twmb_franz_go ]
     contrib/uptrace/bun: []
     contrib/urfave/negroni: []
     contrib/valkey-io/valkey-go: [ valkey-go ]
@@ -546,6 +547,7 @@ components:
       - contrib/segmentio/kafka-go/**
       - contrib/rs/zerolog/**
       - contrib/redis/go-redis.v9/**
+      - contrib/twmb/franz-go/**
       - contrib/valyala/fasthttp/**
     module-scoped: true
     dependent-modules: []

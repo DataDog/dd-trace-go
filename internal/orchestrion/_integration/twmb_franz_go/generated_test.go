@@ -19,10 +19,30 @@ func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
 
+func TestAliasedImport(t *testing.T) {
+	harness.Run(t, new(TestCaseAliasedImport))
+}
+
+func TestContribTracing(t *testing.T) {
+	harness.Run(t, new(TestCaseContribTracing))
+}
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
 func TestEllipsis(t *testing.T) {
 	harness.Run(t, new(TestCaseEllipsis))
 }
 
+func TestGroupTransactSession(t *testing.T) {
+	harness.Run(t, new(TestCaseGroupTransactSession))
+}
+
 func TestNoArgs(t *testing.T) {
 	harness.Run(t, new(TestCaseNoArgs))
+}
+
+func TestPackageVar(t *testing.T) {
+	harness.Run(t, new(TestCasePackageVar))
 }

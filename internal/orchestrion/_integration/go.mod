@@ -15,6 +15,7 @@ require (
 	example.com/elasticsearchdep v0.0.0-00010101000000-000000000000
 	example.com/fasthttpdep v0.0.0-00010101000000-000000000000
 	example.com/fiberdep v0.0.0-00010101000000-000000000000
+	example.com/franzgodep v0.0.0-00010101000000-000000000000
 	example.com/gindep v0.0.0-00010101000000-000000000000
 	example.com/gocqldep v0.0.0-00010101000000-000000000000
 	example.com/goredisdep v0.0.0-00010101000000-000000000000
@@ -57,6 +58,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.14.0-dev
+	github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.14.0-dev
@@ -212,7 +214,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.14.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/go-runtime-metrics-internal v0.0.4-0.20260217080614-b0f4edc38a6d // indirect
@@ -481,6 +483,7 @@ replace (
 	example.com/elasticsearchdep => ./internal/elasticsearchdep
 	example.com/fasthttpdep => ./internal/fasthttpdep
 	example.com/fiberdep => ./internal/fiberdep
+	example.com/franzgodep => ./internal/franzgodep
 	example.com/gindep => ./internal/gindep
 	example.com/gocqldep => ./internal/gocqldep
 	example.com/goredisdep => ./internal/goredisdep
@@ -579,6 +582,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 => ../../../contrib/segmentio/kafka-go
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 => ../../../contrib/sirupsen/logrus
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 => ../../../contrib/twitchtv/twirp
+	github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/otelc/v2 => ../../../contrib/twmb/franz-go/otelc
 	github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2 => ../../../contrib/twmb/franz-go
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 => ../../../contrib/valkey-io/valkey-go
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 => ../../../contrib/valyala/fasthttp/otelc

@@ -55,6 +55,10 @@ type tracingHook struct {
 	// every record.
 	consumerSpanCfg *tracer.StartSpanConfig
 	producerSpanCfg *tracer.StartSpanConfig
+
+	// disabled is set when another tracing hook on the same client traces
+	// its records (see shadowed).
+	disabled atomic.Bool
 }
 
 func newTracingHook(opts ...Option) *tracingHook {
@@ -98,6 +102,10 @@ func (h *tracingHook) finishAndClearActiveSpans() {
 // to one client only. A hook attached to two clients logs a warning and
 // reports the group of the client created last for both clients.
 func (h *tracingHook) OnNewClient(c *kgo.Client) {
+	if shadowed(c, h) {
+		h.disabled.Store(true)
+		return
+	}
 	if !h.clientBound.CompareAndSwap(false, true) {
 		instr.Logger().Warn("contrib/twmb/franz-go: the result of a single WithTracing call was passed to more than one kgo.NewClient call; call WithTracing separately for each client, otherwise Data Streams Monitoring reports the consumer group of the most recently created client for all of them")
 	}
@@ -151,12 +159,18 @@ func groupName(c optValuer) (name string, isShareGroup bool) {
 // PollRecords call. It finishes the active consume spans from the previous poll
 // before the new ones are created via OnFetchRecordUnbuffered.
 func (h *tracingHook) OnPollStart(_ context.Context) {
+	if h.disabled.Load() {
+		return
+	}
 	h.finishAndClearActiveSpans()
 }
 
 // OnClientClosed is a kgo hook called when the client is closed.
 // It finishes any remaining active consume spans.
 func (h *tracingHook) OnClientClosed(*kgo.Client) {
+	if h.disabled.Load() {
+		return
+	}
 	h.finishAndClearActiveSpans()
 }
 
@@ -164,6 +178,9 @@ func (h *tracingHook) OnClientClosed(*kgo.Client) {
 // to the producer's buffer. It starts the produce span and injects it into the
 // record's headers.
 func (h *tracingHook) OnProduceRecordBuffered(r *kgo.Record) {
+	if h.disabled.Load() {
+		return
+	}
 	span := h.startProduceSpan(r.Context, r)
 	r.Context = tracer.ContextWithSpan(r.Context, span)
 	h.setProduceDSMCheckpoint(r)
@@ -172,6 +189,9 @@ func (h *tracingHook) OnProduceRecordBuffered(r *kgo.Record) {
 // OnProduceRecordUnbuffered is a kgo hook called when a produced record is
 // removed from the producer's buffer. It finishes the produce span.
 func (h *tracingHook) OnProduceRecordUnbuffered(r *kgo.Record, err error) {
+	if h.disabled.Load() {
+		return
+	}
 	span, ok := tracer.SpanFromContext(r.Context)
 	if !ok {
 		return
@@ -186,7 +206,7 @@ func (h *tracingHook) OnProduceRecordUnbuffered(r *kgo.Record, err error) {
 func (h *tracingHook) OnFetchRecordUnbuffered(r *kgo.Record, polled bool) {
 	// We shouldn't start a span if the record is not polled, because it
 	// means it was discarded in some way before reaching user code.
-	if !polled {
+	if !polled || h.disabled.Load() {
 		return
 	}
 
