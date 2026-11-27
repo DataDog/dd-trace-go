@@ -67,14 +67,20 @@ func TestDetachedChildForegroundHelper(t *testing.T) {
 	}
 }
 
-// recordTerminalLine reads one line from stdin and stores it in dir.
+// recordTerminalLine reads one line from stdin and stores it in dir. It renames
+// a temporary file into place because runOnTerminal polls for the file, and
+// os.WriteFile creates it empty before it writes the line.
 func recordTerminalLine(t *testing.T, dir string) {
 	t.Helper()
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "line"), []byte(line), 0600); err != nil {
+	tmp := filepath.Join(dir, "line.tmp")
+	if err := os.WriteFile(tmp, []byte(line), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(tmp, filepath.Join(dir, "line")); err != nil {
 		t.Fatal(err)
 	}
 }

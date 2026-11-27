@@ -55,6 +55,8 @@ func WrapHandler(h slog.Handler) slog.Handler {
 type handler struct {
 	wrapped slog.Handler
 	groups  []group
+	// rootIDs is set in otelc builds only. See markCorrelated.
+	rootIDs correlatedIDs
 }
 
 // Enabled calls the wrapped handler Enabled method.
@@ -71,7 +73,7 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 	// In case the user has created group loggers, we ignore those and
 	// set them at the root level.
 	span, ok := tracer.SpanFromContext(ctx)
-	if ok && span.Context().TraceID() != tracer.TraceIDZero {
+	if ok && span.Context().TraceID() != tracer.TraceIDZero && !h.correlatedByOuter(ctx) {
 		var traceID string
 		if cfg.log128bits {
 			traceID = span.Context().TraceID()
@@ -86,6 +88,7 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 			slog.String(ext.LogKeySpanID, spanID),
 		}
 		reqHandler = reqHandler.WithAttrs(attrs)
+		ctx = markCorrelated(ctx, correlatedIDs{traceID: traceID, spanID: spanID})
 	}
 	for _, g := range h.groups {
 		reqHandler = reqHandler.WithGroup(g.name)
@@ -100,9 +103,12 @@ func (h *handler) Handle(ctx context.Context, rec slog.Record) error {
 // If Group was not called for the logger, we just call WithAttrs for the wrapped handler.
 func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	if len(h.groups) == 0 {
+		// The wrapped handler owns attrs once it gets them, so read them first.
+		rootIDs := withRootIDs(h.rootIDs, attrs)
 		return &handler{
 			wrapped: h.wrapped.WithAttrs(attrs),
 			groups:  h.groups,
+			rootIDs: rootIDs,
 		}
 	}
 	groups := append([]group{}, h.groups...)
@@ -113,14 +119,20 @@ func (h *handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &handler{
 		wrapped: h.wrapped,
 		groups:  groups,
+		rootIDs: h.rootIDs,
 	}
 }
 
 // WithGroup saves the provided group to be used later in the Handle method.
+// An empty name returns h, as slog.Handler requires.
 func (h *handler) WithGroup(name string) slog.Handler {
+	if name == "" {
+		return h
+	}
 	return &handler{
 		wrapped: h.wrapped,
 		groups:  append(h.groups, group{name: name}),
+		rootIDs: h.rootIDs,
 	}
 }
 

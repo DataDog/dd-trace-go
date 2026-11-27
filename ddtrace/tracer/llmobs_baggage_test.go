@@ -325,8 +325,9 @@ func TestSpanContextSizeClass(t *testing.T) {
 }
 
 func TestLLMObsBaggageValuesRoundTrip(t *testing.T) {
-	// "+" and "%" are written escaped, so the extractor, which decodes "+" as a
-	// space, returns the value unchanged. Base64 session IDs contain "+".
+	// The injector escapes "%" as %25 and spaces as %20, and it keeps "+" literal.
+	// The extractor percent-decodes values and keeps "+" literal too.
+	// Base64 session IDs contain "+".
 	for _, v := range []string{"abc+def==", "app%41", "a b"} {
 		carrier := TextMapCarrier{}
 		sc := &SpanContext{trace: newTrace()}
@@ -336,6 +337,50 @@ func TestLLMObsBaggageValuesRoundTrip(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, v, extracted.baggageItem("v"), "header %q", carrier["baggage"])
 	}
+}
+
+func TestLLMObsMergeCallerBaggageOpaqueKeys(t *testing.T) {
+	// W3C baggage keys are opaque RFC 7230 tokens. Merging a caller header must
+	// keep "+" and "%" keys intact and deduplicate them without percent-decoding.
+	defer illmobs.SetEnabledForTesting(true)()
+
+	sc := &SpanContext{trace: newTrace()}
+	sc.setBaggageItem("k+1", "ctx-plus")
+	sc.setBaggageItem("k%2B", "ctx-pct")
+	sc.setBaggageItem("kA", "ctx-decoded")
+	sc.setLLMObsPropagated(&illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: testLLMObsHexTraceID}, true)
+
+	carrier := TextMapCarrier{
+		"baggage": "k+1=caller-plus,k%2B=caller-pct,k%41=caller-opaque,k+keep=v1,k%25=v2",
+	}
+	require.NoError(t, (&propagatorBaggage{}).Inject(sc, carrier))
+
+	members := strings.Split(carrier["baggage"], ",")
+	assert.ElementsMatch(t, []string{
+		"llmobs.parent_id=555",
+		"llmobs.trace_id=" + testLLMObsHexTraceID,
+		"k+1=ctx-plus",
+		"k%2B=ctx-pct",
+		"kA=ctx-decoded",
+		"k%41=caller-opaque",
+		"k+keep=v1",
+		"k%25=v2",
+	}, members)
+}
+
+func TestLLMObsInjectSkipsPaddedLLMObsBaggageKey(t *testing.T) {
+	// Whitespace-padded llmobs.* keys in baggage must not bypass the LLMObs filter
+	// and emit a duplicate member after encodeKey trims spaces.
+	defer illmobs.SetEnabledForTesting(true)()
+
+	sc := &SpanContext{trace: newTrace()}
+	sc.setBaggageItem(" llmobs.parent_id ", "stale")
+	sc.setLLMObsPropagated(&illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: testLLMObsHexTraceID}, true)
+
+	carrier := TextMapCarrier{}
+	require.NoError(t, (&propagatorBaggage{}).Inject(sc, carrier))
+
+	assert.Equal(t, "llmobs.parent_id=555,llmobs.trace_id="+testLLMObsHexTraceID, carrier["baggage"])
 }
 
 func TestLLMObsStaleOptionalTagsDoNotCountAgainstTheBudget(t *testing.T) {

@@ -244,7 +244,10 @@ dd_span:
             __dd_span_ctx = __dd_context.TODO()
           }
             {{- else if $req }}
-          __dd_span_ctx := {{ $req }}.Context()
+          __dd_span_ctx := __dd_context.TODO()
+          if {{ $req }} != nil {
+            __dd_span_ctx = {{ $req }}.Context()
+          }
             {{- else }}
           __dd_span_ctx := __dd_context.TODO()
             {{- end }}
@@ -267,7 +270,9 @@ dd_span:
           {{- end }}
           )
           {{- with $req }}
-          {{ . }} = {{ . }}.WithContext({{ $ctx }})
+          if {{ . }} != nil {
+            {{ . }} = {{ . }}.WithContext({{ $ctx }})
+          }
           {{- end }}
           {{- with .FuncReturnOfType "error" }}
           defer func() { __dd_span.Finish(__dd_tracer.WithError({{ . }})) }()

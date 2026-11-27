@@ -77,8 +77,10 @@ The harness suites never build a `package main`, and only exercise call sites in
 - **Call-site rules.** Add a harness test case for each constructor or call form the rules wrap,
   and one that calls the library under an import alias, in its own file where the library is only
   imported under the alias (`chi/alias.go`).
-- **A `target: main` rule.** It never fires under `go test`, which builds no `package main`. Check
-  it in `otelc-autostart`, the one test that builds an app with otelc.
+- **A `target: main` rule, or a rule that adds an import to the file that holds `main`.** The first
+  never fires under `go test`, which builds no `package main`. The second can clash with the
+  tracer start rule, which adds `tracer` to that file. Check both in `otelc-autostart`, the one
+  test that builds an app with otelc.
 - **Dependency modules**, when a call-site rule targets `**`. Such a rule exists to also rewrite
   call sites inside third-party dependencies, as orchestrion does. Every call site in the suites
   belongs to `_integration`, the module being built, so a rule that never reaches a dependency

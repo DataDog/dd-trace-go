@@ -50,9 +50,11 @@ import (
 	_ "github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/labstack/echo.v4/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/labstack/echo.v5/otelc/v2"
+	_ "github.com/DataDog/dd-trace-go/contrib/log/slog/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/net/http/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/redis/go-redis.v9/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2"
+	_ "github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/otelc/v2"
 	_ "github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2"
 )

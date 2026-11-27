@@ -16,6 +16,11 @@ set -euo pipefail
 #   - Formatters are not run: the check-format job already runs
 #     `golangci-lint fmt` on every Go file of the repository.
 #
+# It also runs scripts/lint_testifylint_new.sh, which applies the testifylint
+# go-require check to the added lines of every module, root module included.
+# That keeps the check in the CI lint job and in `make lint` without a second
+# workflow step.
+#
 # This script lints every module in go.work unless the list below names it.
 # An omitted entry fails loudly when the module has findings. A stale entry
 # silently stops the lint. Update the list when a module moves or changes
@@ -38,6 +43,8 @@ Usage: $(basename "${BASH_SOURCE[0]}") <git-revision> [golangci-lint run flags]
 
 Run golangci-lint in the nested Go workspace modules changed since the merge
 base of <git-revision> and HEAD, including uncommitted and untracked files.
+It also runs the testifylint go-require check on the changed lines of every
+Go module, root module included.
 
 Examples:
   $(basename "${BASH_SOURCE[0]}") origin/main
@@ -55,6 +62,8 @@ shift
 root="$(git rev-parse --show-toplevel)"
 cd "$root"
 base="$(git merge-base "$rev" HEAD)"
+# Shared module-discovery helpers.
+. "$root/scripts/lib_go_module_discovery.sh"
 
 excluded=(
   "$root"
@@ -66,46 +75,29 @@ excluded=(
   "$root/scripts/fixmodules"
 )
 
-is_excluded() {
-  local dir="$1" e
-  for e in "${excluded[@]}"; do
-    [[ $dir == "$e" ]] && return 0
-  done
-  return 1
-}
-
-modules=()
-while IFS= read -r dir; do
-  modules+=("$dir")
-done < <(go list -m -f '{{.Dir}}')
-if [[ ${#modules[@]} -eq 0 ]]; then
-  echo "go list -m returned no workspace modules" >&2
+module_list="$(lint_go_modules_workspace_dirs)"
+# The command substitution above fails the script under set -e when go list
+# fails, so a partial module list cannot slip through the empty check below.
+if [[ -z $module_list ]]; then
+  echo "go list -m failed or returned no workspace modules" >&2
   exit 1
 fi
 
-changed="$(
-  git diff --name-only --diff-filter=d "$base" -- '*.go'
-  git ls-files --others --exclude-standard -- '*.go'
-)"
+changed="$(lint_go_modules_changed_files "$base")"
 
-# A file belongs to the deepest module that contains it: modules nest, for
-# example contrib/google.golang.org/api/internal/gen_endpoints.
+# A file belongs to the deepest module that contains it; the rules live in
+# lib_go_module_discovery.sh. Modules outside go.work are reported as nonws
+# and skipped here: this script lints workspace modules only.
 selected=()
-while IFS= read -r file; do
-  [[ -z $file ]] && continue
-  owner=""
-  for dir in "${modules[@]}"; do
-    if [[ "$root/$file" == "$dir"/* && ${#dir} -gt ${#owner} ]]; then
-      owner="$dir"
-    fi
-  done
-  if [[ -z $owner ]] || is_excluded "$owner"; then
+selection="$(lint_go_modules_select "$root" "$module_list" "$changed" "${excluded[@]}")"
+while IFS=$'\t' read -r owner kind; do
+  if [[ -z $owner || $kind != "ws" ]]; then
     continue
   fi
   if [[ " ${selected[*]-} " != *" $owner "* ]]; then
     selected+=("$owner")
   fi
-done <<< "$changed"
+done <<< "$selection"
 
 # The .github/workflows/apps module is excluded above because its root files
 # do not type-check together. Its pr-triage-board subpackage does, so a
@@ -116,9 +108,18 @@ if grep -q "^$apps_dir/pr-triage-board/" <<< "$changed"; then
   lint_pr_triage_board=true
 fi
 
+# New code must not call require.* off the test goroutine. The check covers the
+# root module and internal/orchestrion/_integration, which the rest of this
+# script skips, so it must run even when no nested module changed. The check
+# runs after the selection above, and skips the modules the loop below lints
+# with testifylint included, so each changed nested module gets one lint pass
+# instead of two.
+testify_rc=0
+LINT_TESTIFYLINT_SKIP_MODULES=" ${selected[*]-} " bash "$root/scripts/lint_testifylint_new.sh" "$rev" "$@" || testify_rc=1
+
 if [[ ${#selected[@]} -eq 0 && $lint_pr_triage_board == false ]]; then
   printf "> No Go changes in nested modules since %s\n" "$base"
-  exit 0
+  exit "$testify_rc"
 fi
 
 linters="$(golangci-lint linters --color never | awk '/^Enabled by your configuration linters:/ { on = 1; next } /^$/ { on = 0 } on { sub(/:.*/, ""); print }' | paste -sd, -)"
@@ -128,10 +129,13 @@ if [[ -z $linters ]]; then
 fi
 
 failed=()
+# testifylint rides on the nested-module pass: the go-require settings are in
+# .golangci.yml, and the child script skips the modules this loop covers.
+nested_linters="$linters,testifylint"
 for dir in "${selected[@]+"${selected[@]}"}"; do
   rel="${dir#"$root"/}"
   printf "\n> Linting %s\n" "$rel"
-  if ! (cd "$dir" && golangci-lint run --enable-only="$linters" --new-from-rev="$base" "$@" ./...); then
+  if ! (cd "$dir" && golangci-lint run --enable-only="$nested_linters" --new-from-rev="$base" "$@" ./...); then
     failed+=("$rel")
   fi
 done
@@ -148,3 +152,4 @@ if [[ ${#failed[@]} -gt 0 ]]; then
   printf "  %s\n" "${failed[@]}"
   exit 1
 fi
+exit "$testify_rc"
