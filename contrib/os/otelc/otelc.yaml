@@ -1,0 +1,44 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# Hooks, not inject_code: code injected into os cannot import dyngo, which
+# imports os. The hooks are linked by name and add no import to os.
+#
+# A definition-side hook and not wrap_call: os.Open, os.Create, os.ReadFile and
+# the other helpers call OpenFile inside os, and os/exec calls StartProcess, so
+# no call-site rule sees those calls.
+os_open_file:
+  target: os
+  where:
+    func: OpenFile
+  do:
+    - inject_hooks:
+        before: BeforeOpenFile
+        after: AfterOpenFile
+        path: github.com/DataDog/dd-trace-go/contrib/os/otelc/v2
+
+# (*Root).OpenFile does not call os.OpenFile, and (*Root).Open, Create,
+# ReadFile and WriteFile call it. Shares AfterOpenFile with os_open_file, since
+# both have the same results.
+os_root_open_file:
+  target: os
+  where:
+    func: OpenFile
+    recv: "*Root"
+  do:
+    - inject_hooks:
+        before: BeforeRootOpenFile
+        after: AfterOpenFile
+        path: github.com/DataDog/dd-trace-go/contrib/os/otelc/v2
+
+os_start_process:
+  target: os
+  where:
+    func: StartProcess
+  do:
+    - inject_hooks:
+        before: BeforeStartProcess
+        after: AfterStartProcess
+        path: github.com/DataDog/dd-trace-go/contrib/os/otelc/v2

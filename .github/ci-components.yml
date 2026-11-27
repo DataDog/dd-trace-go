@@ -195,6 +195,7 @@ integration-suites:
     contrib/net/http/otelc: [ net_http ]
     contrib/olivere/elastic.v5: []
     contrib/opensearch-project/opensearch-go.v4: [ opensearch-go.v4 ]
+    contrib/os/otelc: [ os ]
     contrib/redis/go-redis.v9: [ go-redis.v9 ]
     contrib/redis/go-redis.v9/otelc: [ go-redis.v9 ]
     contrib/redis/rueidis: [ rueidis ]
@@ -543,6 +544,7 @@ components:
       - contrib/labstack/echo.v5/**
       - contrib/log/slog/**
       - contrib/net/http/**
+      - contrib/os/otelc/**
       - contrib/segmentio/kafka-go/**
       - contrib/rs/zerolog/**
       - contrib/redis/go-redis.v9/**
