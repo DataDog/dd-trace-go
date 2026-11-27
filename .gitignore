@@ -39,3 +39,6 @@ coverage-*.txt
 !/.claude/commands/
 !/.claude/settings.json
 !/.claude/skills/
+
+# Written in CI by .gitlab/generate_supported_versions.sh
+/supported_versions.json
