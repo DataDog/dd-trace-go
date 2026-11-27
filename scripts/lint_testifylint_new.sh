@@ -22,6 +22,11 @@ set -euo pipefail
 # would then fail on the findings that predate it. This script turns it on with
 # --enable-only; .golangci.yml restricts it to the go-require checker.
 #
+# Long-term plan: the repo's convention is to fix a linter's backlog first and
+# then enable it in `linters.enable` (see the errorlint, loggercheck, and
+# unused TODOs there). Once the pre-existing go-require findings are fixed and
+# testifylint is enabled, this script can be deleted.
+#
 # Like scripts/lint_go_modules.sh, each changed module is linted from its own
 # directory, since `golangci-lint run ./...` stops at Go workspace module
 # boundaries. Unlike it, this script also covers the root module and
