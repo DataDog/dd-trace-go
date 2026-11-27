@@ -12,8 +12,10 @@ func ResetForTest() {
 	rcState.Lock()
 	defer rcState.Unlock()
 	rcState.subscribed = false
-	rcState.callback = nil
+	rcState.callbacks = nil
+	rcState.nextID = 0
 	rcState.buffered = nil
+	rcState.capabilityUnregistered = false
 }
 
 // SetSubscribedForTest sets the subscribed flag without actually calling Subscribe.
@@ -35,4 +37,9 @@ func GetBufferedForTest() remoteconfig.ProductUpdate {
 	rcState.Lock()
 	defer rcState.Unlock()
 	return rcState.buffered
+}
+
+// ForwardForTest delivers an update as the RC client would.
+func ForwardForTest(u remoteconfig.ProductUpdate) {
+	forwardingCallback(u)
 }

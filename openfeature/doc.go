@@ -83,6 +83,59 @@
 //
 // The provider automatically looks for a targeting key "targetingKey" (OpenFeature standard)
 //
+// # Evaluation Telemetry and Exposures
+//
+// A provider has two independent ProviderConfig switches, each on by default
+// and set per provider in code:
+//
+//   - EvaluationTelemetryEnabled: when false, the provider sends no flag
+//     evaluation events, records no feature_flag.evaluations metric, and does
+//     not enrich spans.
+//   - ExposuresEnabled: when false, evaluations are not exposures. None is
+//     recorded, deduplicated, sent to Datadog, or reported as an exposure to an
+//     ExposureHook.
+//
+// Neither switch changes flag values, variants, or allocation selection. The
+// provider copies both at construction.
+//
+// To look up the variant a subject gets before the subject experiences it, for
+// example to decide which version of a notification to send, register a second
+// provider under its own OpenFeature domain with both switches off:
+//
+//	live, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{})
+//	// Handle err.
+//	peek, err := ddopenfeature.NewDatadogProvider(ddopenfeature.ProviderConfig{
+//	    EvaluationTelemetryEnabled: new(false),
+//	    ExposuresEnabled:           new(false),
+//	})
+//	// Handle err.
+//	if err := of.SetNamedProviderAndWait("live", live); err != nil {
+//	    log.Printf("live provider not ready: %v", err)
+//	}
+//	if err := of.SetNamedProviderAndWait("peek", peek); err != nil {
+//	    log.Printf("peek provider not ready: %v", err)
+//	}
+//
+//	evalCtx := of.NewEvaluationContext("user-123", nil)
+//	// At send time: the variant, with no exposure or evaluation telemetry.
+//	planned, err := of.NewClient("peek").StringValue(ctx, "digest-subject-line", "control", evalCtx)
+//	// When the subject opens the notification: the same variant, and the exposure.
+//	seen, err := of.NewClient("live").StringValue(ctx, "digest-subject-line", "control", evalCtx)
+//
+// For the same flag, targeting key, attributes, and configuration, both
+// providers return the same variant. An inspection does not mark the subject
+// as exposed, so the later live evaluation still sends the exposure. Hooks that
+// the application registers itself, at the API or client level, still run.
+//
+// With Remote Config, every provider receives the same configuration updates.
+// With the agentless source, each provider polls Datadog on its own schedule, so
+// right after a configuration change the two providers can briefly hold
+// different configurations.
+//
+// ExposuresEnabled differs from DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED=false,
+// which keeps exposures for ExposureHook and deduplication and only stops
+// sending them to Datadog.
+//
 // # Evaluation Telemetry Opt-Out
 //
 // Applications can enable a per-evaluation telemetry opt-out parameter:
@@ -554,13 +607,16 @@
 //
 //   - DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED: Default
 //     "false". Set to "true" to enable the dd_evaluation_telemetry_opt_out context
-//     parameter. This setting does not globally disable evaluation telemetry.
+//     parameter. This setting does not globally disable evaluation telemetry;
+//     see ProviderConfig.EvaluationTelemetryEnabled for one provider.
 //     An explicit ProviderConfig.EnableEvaluationTelemetryOptOutParameter overrides it.
 //
 //   - DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED: Default "true". Set to
 //     "false" to disable only Datadog exposure delivery. The provider snapshots
 //     this setting at construction. Customer hooks and exposure deduplication
 //     remain active. Evaluation telemetry and flag values are unchanged.
+//     To stop one provider's evaluations from being exposures, use
+//     ProviderConfig.ExposuresEnabled.
 //
 //   - DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE: Default "disabled". Set to
 //     "immediate" or "future_experiments_only" to enable the

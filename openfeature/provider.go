@@ -72,6 +72,37 @@ type ProviderConfig struct {
 	// The provider copies the value at construction.
 	EnableEvaluationTelemetryOptOutParameter *bool
 
+	// EvaluationTelemetryEnabled controls whether this provider produces
+	// evaluation telemetry: flag evaluation events, the feature_flag.evaluations
+	// metric, and span enrichment. Nil means enabled. The provider copies the
+	// value at construction. Flag results, assignment, exposures, application
+	// hooks, and ordinary tracing are unchanged; use ExposuresEnabled to control
+	// exposures. DD_FLAGGING_EVALUATION_COUNTS_ENABLED and
+	// DD_EXPERIMENTAL_FLAGGING_PROVIDER_SPAN_ENRICHMENT_ENABLED still apply to
+	// every provider.
+	EvaluationTelemetryEnabled *bool
+
+	// ExposuresEnabled controls whether evaluations through this provider are
+	// exposures. Nil means enabled. The provider copies the value at
+	// construction.
+	//
+	// When false, an evaluation is not recorded, deduplicated, sent to Datadog,
+	// or reported as an exposure to an ExposureHook (IsExposure and ShouldSend
+	// return false), and it does not suppress a later exposure of the same
+	// subject through a provider with exposures enabled. Flag results and
+	// assignment are unchanged, so such a provider can look up the variant a
+	// subject would get before the subject experiences it.
+	//
+	// With span enrichment on, spans for these evaluations record the flag but
+	// not the subject. When this provider is the default OpenFeature provider,
+	// LLM Observability prompt flags are evaluated through it and are not
+	// exposures either.
+	//
+	// This differs from DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED=false,
+	// which keeps exposures for ExposureHook and deduplication and only stops
+	// sending them to Datadog.
+	ExposuresEnabled *bool
+
 	// ExposureFlushInterval is the interval at which exposure events are flushed to the agent
 	// Default: 1 second
 	ExposureFlushInterval time.Duration
@@ -97,6 +128,10 @@ type ProviderConfig struct {
 // Agentless polling depending on the resolved delivery source.
 type DatadogProvider struct {
 	experimentationOptOutMode ExperimentationOptOutMode
+	// exposuresDisabled is resolved at construction. When true, evaluate
+	// reports every allocation as not logging exposures. The zero value keeps
+	// exposures enabled for providers built as struct literals.
+	exposuresDisabled bool
 
 	mu            sync.RWMutex
 	configuration *universalFlagsConfiguration
@@ -135,6 +170,8 @@ type DatadogProvider struct {
 	source internalffe.Source
 	// agentless stays nil unless tryRegisterAgentless registered a poller. // +checklocks:mu
 	agentless *agentlessSource
+	// rcDetach detaches this provider from Remote Config; nil unless attached. // +checklocks:mu
+	rcDetach func()
 	// shutdownCalled reports whether ShutdownWithContext has already run. // +checklocks:mu
 	shutdownCalled bool
 	// teardownDone is closed when the teardown goroutine started by
@@ -294,36 +331,50 @@ func newDatadogProviderWithSourceAndEVP(
 	if config.EnableEvaluationTelemetryOptOutParameter != nil {
 		telemetryOptOutEnabled = *config.EnableEvaluationTelemetryOptOutParameter
 	}
-
-	// Create exposure writer
-	writer := newExposureWriterWithEVP(config, evp)
-	if !writer.datadogLoggingEnabled {
-		log.Info("openfeature: Datadog exposure delivery is disabled; customer exposure hooks and deduplication remain active")
+	evaluationTelemetryEnabled := config.EvaluationTelemetryEnabled == nil || *config.EvaluationTelemetryEnabled
+	exposuresEnabled := config.ExposuresEnabled == nil || *config.ExposuresEnabled
+	if !evaluationTelemetryEnabled || !exposuresEnabled {
+		containLoggerPanic(func() {
+			log.Info("openfeature: %s provider created with evaluation telemetry %s and exposures %s (ProviderConfig)",
+				source.String(), enabledText(evaluationTelemetryEnabled), enabledText(exposuresEnabled))
+		})
 	}
 
-	// Create exposure hook
-	exposureLoggingHook := newExposureHook(writer)
+	// With exposures disabled, the provider has no exposure writer or hook, so
+	// its evaluations never consume a deduplication cache entry.
+	var writer *exposureWriter
+	var exposureLoggingHook *exposureHook
+	if exposuresEnabled {
+		writer = newExposureWriterWithEVP(config, evp)
+		if !writer.datadogLoggingEnabled {
+			log.Info("openfeature: Datadog exposure delivery is disabled; customer exposure hooks and deduplication remain active")
+		}
+		exposureLoggingHook = newExposureHook(writer)
+	}
 
 	// Create flag evaluation metrics (noop if DD_METRICS_OTEL_ENABLED != true)
-	metrics, err := newFlagEvalMetrics()
-	if err != nil {
-		handleFlagEvalMetricsCreationError(err)
+	var evalMetricsHook *flagEvalMetricsHook
+	if evaluationTelemetryEnabled {
+		metrics, err := newFlagEvalMetrics()
+		if err != nil {
+			handleFlagEvalMetricsCreationError(err)
+		}
+		evalMetricsHook = newFlagEvalMetricsHook(metrics)
 	}
-	evalMetricsHook := newFlagEvalMetricsHook(metrics)
 
 	// Conditionally construct the EVP flagevaluation writer + hook.
-	// Gated by DD_FLAGGING_EVALUATION_COUNTS_ENABLED (default true).
-	// When false, both fields are left nil and the EVP path is disabled.
-	// The OTel hook (flagEvalHook above) is registered unconditionally.
+	// Gated by evaluation telemetry and DD_FLAGGING_EVALUATION_COUNTS_ENABLED
+	// (default true). When either is off, both fields are left nil and the EVP
+	// path is disabled.
 	var evalWriter *flagEvalLoggingWriter
 	var evalLoggingHook *flagEvalLoggingHook
-	if internal.BoolEnv(flagEvalCountsEnabledEnvVar, true) {
+	if evaluationTelemetryEnabled && internal.BoolEnv(flagEvalCountsEnabledEnvVar, true) {
 		evalWriter = newFlagEvalLoggingWriterWithEVP(config, evp)
 		evalLoggingHook = newFlagEvalLoggingHook(evalWriter)
 	}
 
 	var spanEnrichmentHook *spanEnrichmentHook
-	if internal.BoolEnv(spanEnrichmentEnvVar, false) {
+	if evaluationTelemetryEnabled && internal.BoolEnv(spanEnrichmentEnvVar, false) {
 		spanEnrichmentHook = newSpanEnrichmentHook()
 		log.Debug("openfeature: span enrichment is enabled")
 	} else {
@@ -350,6 +401,7 @@ func newDatadogProviderWithSourceAndEVP(
 
 	p := &DatadogProvider{
 		experimentationOptOutMode: config.ExperimentationOptOutMode,
+		exposuresDisabled:         !exposuresEnabled,
 		metadata: openfeature.Metadata{
 			Name: datadogProviderName,
 		},
@@ -368,6 +420,13 @@ func newDatadogProviderWithSourceAndEVP(
 	}
 
 	return p
+}
+
+func enabledText(enabled bool) string {
+	if enabled {
+		return "enabled"
+	}
+	return "disabled"
 }
 
 // startWithAgentless registers an Agentless configuration source as the
@@ -633,7 +692,7 @@ func (p *DatadogProvider) ShutdownWithContext(ctx context.Context) error {
 		// An agentless provider never registered an RC capability, so it
 		// must not unregister one.
 		if source == internalffe.SourceRemoteConfig {
-			err = stopRemoteConfig()
+			containLoggerPanic(p.stopRemoteConfig)
 		}
 		if agentless != nil {
 			if stopErr := agentless.Stop(ctx); stopErr != nil {
@@ -964,7 +1023,16 @@ func (p *DatadogProvider) evaluate(
 	}
 
 	// Evaluate the flag, sharing the eval-time captured at entry.
-	return evaluateConfiguredFlag(config, flagKey, defaultValue, flatCtx, evalNow, exclusion)
+	res = evaluateConfiguredFlag(config, flagKey, defaultValue, flatCtx, evalNow, exclusion)
+	// A provider with exposures disabled reports every allocation as not logging
+	// exposures. The allocation and split were already selected, and the
+	// experimentation exclusion used the raw doLog, so assignment is unchanged.
+	if p.exposuresDisabled {
+		if _, ok := res.Metadata[metadataDoLogKey]; ok {
+			res.Metadata[metadataDoLogKey] = false
+		}
+	}
+	return res
 }
 
 // toResolutionError converts a Go error to an OpenFeature ResolutionError.

@@ -573,6 +573,7 @@ func TestNewDatadogProvider_DebugLogs(t *testing.T) {
 		// Attach to a simulated tracer subscription so no Agent is needed.
 		internalffe.ResetForTest()
 		internalffe.SetSubscribedForTest(true)
+		t.Cleanup(remoteconfig.Stop)
 		t.Cleanup(internalffe.ResetForTest)
 		t.Setenv("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "remote_config")
 
