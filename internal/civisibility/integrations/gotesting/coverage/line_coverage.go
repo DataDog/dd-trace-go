@@ -17,8 +17,22 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/coveragepropagation"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/integrations"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
+)
+
+// A diagnostic switch that turns parts of line coverage off, to measure what
+// each part costs. Unset, line coverage runs in full.
+const (
+	costModeVariable = "LINECOV_COST_MODE"
+	// costModeNoCollector does not start the collector. The probes still
+	// store into slot 0, and nothing reads what they store.
+	costModeNoCollector = "no-collector"
+	// costModeOneContext starts the collector but opens no test windows:
+	// every store lands in slot 0, which is collected once, as Shared, when
+	// the session ends.
+	costModeOneContext = "one-context"
 )
 
 const (
@@ -71,6 +85,9 @@ type (
 		unowned []blockRef
 		missed  int // windows that ran without a slot for a while
 		stopped bool
+		// oneContext is set by the cost switch: no window opens. Read-only once
+		// started.
+		oneContext bool
 		// requests are the in-flight requests that goroutines of open windows
 		// sent, by the span ID they carry; see line_coverage_propagation.go.
 		requests map[uint64]sentRequest
@@ -139,13 +156,27 @@ func StartLineCoverage(sessionID uint64) (started bool) {
 	if !lineCoverageRuntimeAvailable() || lineCoverage.Load() != nil {
 		return false
 	}
+	mode := env.Get(costModeVariable)
+	switch mode {
+	case "":
+	case costModeNoCollector:
+		log.Warn("civisibility.linecov: %s=%s: the collector does not start", costModeVariable, mode)
+		return false
+	case costModeOneContext:
+		log.Warn("civisibility.linecov: %s=%s: no test window opens", costModeVariable, mode)
+	default:
+		log.Error("civisibility.linecov: %s=%s is not a known mode: line coverage runs in full", costModeVariable, mode)
+	}
 	c := newLineCoverageCollector(sessionID)
 	if c == nil {
 		return false
 	}
+	c.oneContext = mode == costModeOneContext
 	c.writer = newCoverageWriter()
 	lineCoverage.Store(c)
-	coveragepropagation.Set(c)
+	if !c.oneContext {
+		coveragepropagation.Set(c)
+	}
 	integrations.PushCiVisibilityCloseAction(c.stop)
 	log.Debug("civisibility.linecov: started with %d packages and %d files", len(c.packages), len(c.files))
 	return true
@@ -402,7 +433,7 @@ func OpenLineCoverageWindow() (w *LineCoverageWindow) {
 		}
 	}()
 	c := lineCoverage.Load()
-	if c == nil {
+	if c == nil || c.oneContext {
 		return nil
 	}
 	w = &LineCoverageWindow{collector: c}

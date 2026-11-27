@@ -920,6 +920,42 @@ func TestLineCoverageOff(t *testing.T) {
 	w.Close(1, 1)
 }
 
+func TestLineCoverageCostModeNoCollector(t *testing.T) {
+	t.Setenv(costModeVariable, costModeNoCollector)
+	installFakeRuntime(t, &fakeRuntime{})
+	assert.False(t, StartLineCoverage(1))
+	assert.Nil(t, lineCoverage.Load())
+	assert.Nil(t, OpenLineCoverageWindow())
+}
+
+func TestLineCoverageCostModeOneContext(t *testing.T) {
+	workspace := setTestWorkspace(t)
+	calc := filepath.Join(workspace, "calc", "calc.go")
+	rt := &fakeRuntime{packages: []fakePackage{
+		newFakePackage("example/calc", []string{calc}, []testBlock{
+			{0, 5, 6, true}, // init
+			{0, 10, 12, false},
+		}, false),
+	}}
+	rt.probe(0, 0)
+	c, sent := startTestCollector(t, rt)
+	c.oneContext = true
+
+	// A test's work stays in slot 0, and reaches the unowned part of Shared.
+	assert.Nil(t, OpenLineCoverageWindow())
+	assert.EqualValues(t, 0, rt.slot)
+	rt.probe(0, 1)
+
+	c.stop()
+	require.Len(t, *sent, 1)
+	records := (*sent)[0]
+	require.Len(t, records, 2)
+	assert.Equal(t, "init", records[0]["shared"])
+	assert.Equal(t, map[string][]int32{"calc/calc.go": {5, 6}}, recordLines(t, records[0]))
+	assert.Equal(t, "unowned", records[1]["shared"])
+	assert.Equal(t, map[string][]int32{"calc/calc.go": {10, 11, 12}}, recordLines(t, records[1]))
+}
+
 func TestLineCoverageSharedRecordEncoding(t *testing.T) {
 	record := &ciTestCoverageSharedData{
 		SessionID: 3,
