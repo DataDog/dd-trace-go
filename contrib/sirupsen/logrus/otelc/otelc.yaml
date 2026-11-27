@@ -42,19 +42,19 @@ logrus_logger_literal:
         field:
           - name: Hooks
             wrap: |-
-              (func(hooks logrus.LevelHooks) logrus.LevelHooks {
+              (func(hooks __dd_logrus.LevelHooks) __dd_logrus.LevelHooks {
                 if hooks == nil {
-                  hooks = make(logrus.LevelHooks)
+                  hooks = make(__dd_logrus.LevelHooks)
                 }
-                hooks.Add(&logrustrace.DDContextLogHook{})
+                hooks.Add(&__dd_logrustrace.DDContextLogHook{})
                 return hooks
               })({{ . }})
             value: |-
-              (func() logrus.LevelHooks {
-                hooks := make(logrus.LevelHooks)
-                hooks.Add(&logrustrace.DDContextLogHook{})
+              (func() __dd_logrus.LevelHooks {
+                hooks := make(__dd_logrus.LevelHooks)
+                hooks.Add(&__dd_logrustrace.DDContextLogHook{})
                 return hooks
               })()
   imports:
-    logrus: github.com/sirupsen/logrus
-    logrustrace: github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2
+    __dd_logrus: github.com/sirupsen/logrus
+    __dd_logrustrace: github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2

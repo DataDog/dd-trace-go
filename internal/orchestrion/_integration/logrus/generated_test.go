@@ -41,6 +41,10 @@ func TestCorrelationPackageVar(t *testing.T) {
 	harness.Run(t, new(TestCaseCorrelationPackageVar))
 }
 
+func TestCorrelationShadowed(t *testing.T) {
+	harness.Run(t, new(TestCaseCorrelationShadowed))
+}
+
 func TestCorrelationStandard(t *testing.T) {
 	harness.Run(t, new(TestCaseCorrelationStandard))
 }
