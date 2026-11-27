@@ -22,14 +22,23 @@ func CreateTracedSession(cluster *gocql.ClusterConfig, opts ...WrapOption) (*goc
 
 	if cfg.traceQuery {
 		cluster.QueryObserver = obs
+	} else if automatic(cluster.QueryObserver) {
+		cluster.QueryObserver = nil
 	}
 	if cfg.traceBatch {
 		cluster.BatchObserver = obs
+	} else if automatic(cluster.BatchObserver) {
+		cluster.BatchObserver = nil
 	}
 	if cfg.traceConnect {
 		cluster.ConnectObserver = obs
+	} else if automatic(cluster.ConnectObserver) {
+		cluster.ConnectObserver = nil
 	}
-	return cluster.CreateSession()
+	// In an otelc build, a hook on gocql's CreateSession sets the observers
+	// this function left nil. Calling NewSession, which CreateSession only
+	// forwards to, keeps them unset.
+	return gocql.NewSession(*cluster)
 }
 
 // NewObserver creates a new Observer to trace gocql.
@@ -44,6 +53,19 @@ func NewObserver(cluster *gocql.ClusterConfig, opts ...WrapOption) *Observer {
 		cfg:                  cfg,
 		clusterContactPoints: strings.Join(cluster.Hosts, ","),
 	}
+}
+
+// automaticObserver is implemented by the observers that the otelc rules set,
+// in contrib/gocql/gocql/otelc. CreateTracedSession removes such an observer
+// for an operation its options leave untraced. The otelc module cannot see
+// this interface, so the integration tests check that both sides agree.
+type automaticObserver interface {
+	DDOtelcAutomatic()
+}
+
+func automatic(o any) bool {
+	_, ok := o.(automaticObserver)
+	return ok
 }
 
 var (

@@ -5,10 +5,9 @@
 # file. A Dev Drive (ReFS, tuned for developer workloads) gives the caches
 # their own volume: on standard windows-2025 runners the image already
 # ships D: as an ReFS Dev Drive, and the larger shared runners (no D:
-# volume) get one provisioned as a VHDX. Whether the placement lowers
-# job time is measured, not assumed: the windows-dev-drive-experiment
-# branch alternates default and redirected paths on cold builds, and its
-# numbers decide whether the redirect stays.
+# volume) get one provisioned as a VHDX. Keep the redirect only while
+# paired cold-build runs (default against redirected paths) show that it
+# lowers job time.
 #
 # Environment contract, all provided by the GitHub Actions runner unless
 # noted:
@@ -49,9 +48,9 @@ $script:CacheNames = @{
 }
 
 # Backing-file size for the provisioned VHDX. Dynamic: the file grows with
-# use, so this is headroom, not an upfront allocation. The unpacked Go
-# caches for one job stay well under 10 GiB today; the margin absorbs
-# cold-miss builds without nearing the runner's free space.
+# use, so this is headroom, not an upfront allocation. The size must stay
+# well above one job's unpacked Go caches, so cold-miss builds fit, and
+# well below the runner's free space.
 $script:VhdSizeBytes = 64GB
 
 function Test-DevDrive {
@@ -99,7 +98,7 @@ function New-DevDriveVhd {
 
 function Get-DevDrive {
     # windows-2025 runner images already ship D: as an ReFS Dev Drive
-    # (verified on 2026-11-17; see also actions/runner-images#15315), so the
+    # (see actions/runner-images#15315), so the
     # fast path reuses it. The VHDX path below stays for images without one
     # (for example older labels) and for any future image change.
     if ((Test-Path "D:\") -and (Test-DevDrive "D:")) {

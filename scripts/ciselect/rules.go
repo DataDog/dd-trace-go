@@ -33,6 +33,22 @@ type component struct {
 	patterns []pattern
 }
 
+// integrationSuites is the integration-suites section of the rule table.
+type integrationSuites struct {
+	// SharedModules are contrib modules so cross-cutting that a change
+	// affects suites which never import them; such a change escalates
+	// both lanes to every suite.
+	SharedModules []string `yaml:"shared-modules"`
+	// OtelcExtraSuites lists suites under internal/orchestrion/_integration
+	// that run with otelc without a */otelc entry in Modules (core suites
+	// and suites for code outside contrib/).
+	OtelcExtraSuites []string `yaml:"otelc-extra-suites"`
+	// Modules maps every contrib module directory to the suites that
+	// exercise it. An empty list means no information, so a change to the
+	// module fails its lanes open to every suite.
+	Modules map[string][]string `yaml:"modules"`
+}
+
 type table struct {
 	Version           int                 `yaml:"version"`
 	Gates             []string            `yaml:"gates"`
@@ -41,17 +57,8 @@ type table struct {
 	NativePathFilters []string            `yaml:"native-path-filters"`
 	// IntegrationSuites maps changed paths to the
 	// internal/orchestrion/_integration suites that exercise them, per lane.
-	IntegrationSuites struct {
-		// SharedModules are contrib modules so cross-cutting that a change
-		// affects suites which never import them; such a change escalates
-		// both lanes to every suite.
-		SharedModules []string `yaml:"shared-modules"`
-		// Modules maps every contrib module directory to the suites that
-		// exercise it. An empty list means no information, so a change to the
-		// module fails its lanes open to every suite.
-		Modules map[string][]string `yaml:"modules"`
-	} `yaml:"integration-suites"`
-	Components []component `yaml:"components"`
+	IntegrationSuites integrationSuites `yaml:"integration-suites"`
+	Components        []component       `yaml:"components"`
 
 	gateSet map[string]bool
 }

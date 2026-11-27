@@ -184,6 +184,10 @@ func WrapAsyncProducer(saramaConfig *sarama.Config, p sarama.AsyncProducer, opts
 			}
 			select {
 			case msg := <-inputFromCaller:
+				// Sarama ignores a nil message.
+				if msg == nil {
+					continue
+				}
 				span := startProducerSpan(cfg, spanCfg, saramaConfig.Version, msg)
 				setProduceCheckpoint(cfg.dataStreamsEnabled, cfg.ClusterID(), msg, saramaConfig.Version)
 				if saramaConfig.Producer.Return.Successes {

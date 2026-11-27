@@ -36,8 +36,8 @@ permissions:
 
 # Overlapping runs would double the seed writes: two run_id-keyed
 # entries per key. The group carries a literal prefix: group names are
-# repository-scoped (a bare ref group cancelled the main-branch-tests
-# nightly, 2026-10-30), and in a workflow_call run github.workflow
+# repository-scoped (a bare ref group can cancel another workflow's
+# nightly), and in a workflow_call run github.workflow
 # resolves to the caller's name, so the workflow-name form would join
 # a caller's own group and its cancel-in-progress could cancel that
 # caller.
