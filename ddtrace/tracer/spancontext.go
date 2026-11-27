@@ -1383,7 +1383,7 @@ const hexEncodingDigits = "0123456789abcdef"
 
 // hexEncodePadded writes u as lowercase hex, left-padded with '0' up to padding
 // digits, ending at the last byte of buf, and returns the index of the first
-// digit. buf must be large enough to hold both the digits of u and the padding.
+// digit. len(buf) must be at least max(padding, number of hex digits of u).
 func hexEncodePadded(buf []byte, u uint64, padding int) int {
 	// Because printing is easier right-to-left: format u into buf, ending at buf[i].
 	i := len(buf)

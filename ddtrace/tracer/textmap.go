@@ -1711,10 +1711,11 @@ func parseTracestate(ctx *SpanContext, header string) {
 		return
 	}
 	if len(header) > tracestateMaxSize {
-		// Only the dd= member is size-checked below; an oversized header is
-		// otherwise stored and re-propagated verbatim regardless of how many
-		// (or how large) non-dd vendors it carries. Treat it like an absent
-		// header rather than trying to selectively trim it.
+		// Only individual members are size-checked below (dd= and ot= at 256,
+		// other vendors at 512); an oversized header is otherwise stored and
+		// re-propagated verbatim regardless of how many members it carries.
+		// Treat it like an absent header rather than trying to selectively
+		// trim it.
 		log.Warn("tracestate header exceeds the maximum size (%d), dropping it", tracestateMaxSize) //errtrack:ignore incoming request header exceeds a documented limit
 		return
 	}

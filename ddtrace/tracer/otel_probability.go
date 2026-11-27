@@ -33,7 +33,7 @@ const otelRVHexLen = 14
 // is forwarded verbatim and never re-derived (see setOtelUpstream). All
 // dd-trace-* SDKs derive a local rv with this same Knuth hash and the same
 // one-step adjustment against th (see setOtelProbability), so a mixed-language
-// trace emits identical (rv, th) for the same trace ID.
+// trace emits identical (rv, th) for the same trace ID and sampling rate.
 func deriveOtelRV(traceIDLower uint64) uint64 {
 	h := traceIDLower * knuthFactor // wraps mod 2^64, same hash as sampledByRate
 	return (^h) >> 8
