@@ -7,6 +7,9 @@ package crashtracker
 
 import (
 	"bytes"
+	"math"
+	"os"
+	"runtime/debug"
 	"testing"
 )
 
@@ -66,5 +69,47 @@ func TestReadCrashDumpDetectsTruncationMidFrame(t *testing.T) {
 	}
 	if len(got) != maxCrashDumpSize {
 		t.Errorf("len(data) = %d, want %d", len(got), maxCrashDumpSize)
+	}
+}
+
+// TestBuildCrashReportMarksTruncatedDumpIncomplete pins the wiring from a
+// capped dump to the report's incomplete flag.
+func TestBuildCrashReportMarksTruncatedDumpIncomplete(t *testing.T) {
+	data, err := os.ReadFile("testdata/panic_simple.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, truncated := range []bool{false, true} {
+		report := buildCrashReport(&config{}, crashDump{data: data, truncated: truncated})
+		if report.Error.Stack == nil {
+			t.Fatal("report has no crashed stack")
+		}
+		if got := report.Error.Stack.Incomplete; got != truncated {
+			t.Errorf("truncated = %v: Stack.Incomplete = %v", truncated, got)
+		}
+		if got := reportIncomplete(report); got != truncated {
+			t.Errorf("truncated = %v: reportIncomplete = %v", truncated, got)
+		}
+		if report.DDTags == "" {
+			t.Error("report has no ddtags")
+		}
+	}
+}
+
+func TestApplySupervisorRuntimeLimitsOverridesHostileValues(t *testing.T) {
+	previousPercent := debug.SetGCPercent(-1)
+	previousLimit := debug.SetMemoryLimit(math.MaxInt64)
+	t.Cleanup(func() {
+		debug.SetGCPercent(previousPercent)
+		debug.SetMemoryLimit(previousLimit)
+	})
+
+	applySupervisorRuntimeLimits()
+
+	if got := debug.SetGCPercent(defaultGCPercent); got != defaultGCPercent {
+		t.Errorf("GC percent = %d, want %d", got, defaultGCPercent)
+	}
+	if got := debug.SetMemoryLimit(-1); got != supervisorMemoryLimit {
+		t.Errorf("memory limit = %d, want %d", got, supervisorMemoryLimit)
 	}
 }

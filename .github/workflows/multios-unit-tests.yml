@@ -68,21 +68,9 @@ jobs:
           variant: |-
             {"runner":${{ toJSON(inputs.runs-on) }},
              "modules":["core","contrib"]}
-          # Seed set: the four non-Windows multi-OS strata (both Go
-          # versions on Linux and macOS), about 2.5 GiB compressed each —
-          # roughly 10 GiB — against the 100 GiB cache quota (2026-10-28).
-          # Windows skips the isolated caches: restoring the combined
-          # build and module archive measured net-negative there
-          # (APMLP-2248 — the 1.4 GiB restore extracts for 2m38s with
-          # tar.exe while saving about 2m of build time), so that stratum
-          # neither seeds nor restores, and the freed quota pays for the
-          # newly seeded orchestrion, otelc and AppSec macOS strata. The
-          # nightly default-branch seeds total well under half that
-          # quota: these four, the unit-integration keys (the standard
-          # variant on both nightly Go versions, and the debug and
-          # deadlock families through the nightly dynamic-checks runs),
-          # the four smoke keys, and the four dynamic-locking matrix
-          # entries from the nightly dynamic-checks run. The
+          # Seed set: the non-Windows multi-OS strata. Windows skips the
+          # isolated caches (see .github/actions/setup-go/action.yml), so
+          # that stratum neither seeds nor restores. The
           # `ci.cache.pool.*` gauges watch the fill. Nightly schedules
           # and default-branch dispatches save these keys; every other
           # run of them, including all PR and merge-queue runs, restores

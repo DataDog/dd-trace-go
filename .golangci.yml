@@ -58,6 +58,15 @@ linters:
       exclude_godoc_examples: true
       analyze_types: true
     modernize:
+    # testifylint is intentionally NOT in `linters.enable`: findings that predate
+    # it would fail the full-repo run. scripts/lint_testifylint_new.sh runs it
+    # with --enable-only on changed lines. Only go-require is turned on, which
+    # forbids require.* off the test goroutine (httptest handlers, go func
+    # bodies), where a failing FailNow Goexits the wrong goroutine.
+    testifylint:
+      disable-all: true
+      enable:
+        - go-require
     govet:
       enable-all: true
       disable:
