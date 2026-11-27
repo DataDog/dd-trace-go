@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -32,8 +31,7 @@ var mockTracer mocktracer.Tracer
 
 func TestMain(m *testing.M) {
 	// Avoid any backend calls during tests
-	additionalFeaturesInitializationOnce = sync.Once{}
-	additionalFeaturesInitializationOnce.Do(func() {})
+	markAdditionalFeaturesInitializedForTesting()
 
 	// Initialize civisibility using the mocktracer for testing
 	mockTracer = InitializeCIVisibilityMock()
