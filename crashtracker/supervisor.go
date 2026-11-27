@@ -170,12 +170,12 @@ func supervise(cfg *config) error {
 		}
 		log.Warn("crashtracker: wait for application process failed: %s", reason)
 		// The child status is unknown, but a crash dump can already be in the pipe.
-		finishCrashReport(cfg, r, dumps, tee)
+		finishCrashReport(cfg, r, dumps, tee, nil)
 		stopReaping()
 		stopForwarding()
 		os.Exit(1)
 	}
-	finishCrashReport(cfg, r, dumps, tee)
+	finishCrashReport(cfg, r, dumps, tee, cmd.ProcessState)
 	stopReaping()
 	stopForwarding()
 	exitWithChildStatus(cmd.ProcessState)
@@ -186,7 +186,7 @@ func supervise(cfg *config) error {
 // finishCrashReport waits for the crash pipe and the stderr tee to reach EOF, then uploads the dump it read.
 // The two waits run at the same time. It takes up to pipeEOFTimeout plus uploadDeadline.
 // The upload ignores stop signals: the child is gone and the report is what the supervisor is for.
-func finishCrashReport(cfg *config, r *os.File, dumps <-chan crashDump, tee *stderrTee) {
+func finishCrashReport(cfg *config, r *os.File, dumps <-chan crashDump, tee *stderrTee, state *os.ProcessState) {
 	stderr := make(chan stderrCrashLines, 1)
 	go func() { stderr <- tee.finish(pipeEOFTimeout) }()
 	var dump crashDump
@@ -205,6 +205,8 @@ func finishCrashReport(cfg *config, r *os.File, dumps <-chan crashDump, tee *std
 			}
 		case <-time.After(100 * time.Millisecond):
 			log.Warn("crashtracker: discarded crash report: the reader did not return after closing the pipe")
+			<-stderr
+			return
 		}
 	}
 	_ = r.Close()
@@ -216,6 +218,9 @@ func finishCrashReport(cfg *config, r *os.File, dumps <-chan crashDump, tee *std
 		return
 	}
 	if len(dump.data) == 0 {
+		if state != nil && (crashedBySignal(state) || (state.ExitCode() == 2 && (dump.stderr.panicked || dump.stderr.fatal != ""))) {
+			log.Warn("crashtracker: the application crashed with empty crash output: another component may have called debug.SetCrashOutput, or the crash occurred outside the Go runtime")
+		}
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), uploadDeadline)

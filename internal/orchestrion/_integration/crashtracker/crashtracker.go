@@ -132,6 +132,7 @@ func filterOrchEnv(env []string) []string {
 		if strings.HasPrefix(kv, e2eRoleEnv+"=") ||
 			strings.HasPrefix(kv, "DD_TRACE_AGENT_URL=") ||
 			strings.HasPrefix(kv, "DD_CRASHTRACKING_ENABLED=") ||
+			strings.HasPrefix(kv, "_DD_CRASHTRACKING_ACTIVE=") ||
 			strings.HasPrefix(kv, "DD_API_KEY=") ||
 			strings.HasPrefix(kv, "DD-API-KEY=") ||
 			strings.HasPrefix(kv, "DD_SITE=") {

@@ -343,6 +343,7 @@ func filterInjectionEnv(env []string) []string {
 		if strings.HasPrefix(kv, "DD_TRACE_AGENT_URL=") ||
 			strings.HasPrefix(kv, "DD_CRASHTRACKING_ENABLED=") ||
 			strings.HasPrefix(kv, "_DD_CRASHTRACKING_SUPERVISED_FD=") ||
+			strings.HasPrefix(kv, "_DD_CRASHTRACKING_ACTIVE=") ||
 			strings.HasPrefix(kv, "DD_TRACE_ENABLED=") ||
 			strings.HasPrefix(kv, "DD_INSTRUMENTATION_TELEMETRY_ENABLED=") ||
 			strings.HasPrefix(kv, "DD_REMOTE_CONFIGURATION_ENABLED=") ||

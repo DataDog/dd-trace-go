@@ -68,6 +68,8 @@ func supervisorSignals(_ bool) (start func(*os.Process), stop func()) {
 	}
 }
 
+func crashedBySignal(_ *os.ProcessState) bool { return false }
+
 func exitWithChildStatus(state *os.ProcessState) {
 	os.Exit(state.ExitCode())
 }

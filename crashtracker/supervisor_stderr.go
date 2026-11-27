@@ -18,18 +18,22 @@ import (
 const (
 	stderrCopyBufferSize   = 32 * 1024
 	maxStderrLineSize      = 4 * 1024
+	stderrPanicPrefix      = "panic: "
 	stderrFatalPrefix      = "fatal error: "
 	stderrStackLimitPrefix = "runtime: goroutine stack exceeds "
 )
 
-// stderrCrashLines holds the last line of each kind for the crash report.
+// stderrCrashLines records crash evidence and the last fatal and stack limit lines.
 type stderrCrashLines struct {
+	panicked   bool
 	fatal      string
 	stackLimit string
 }
 
 func (l *stderrCrashLines) remember(line []byte) {
 	switch {
+	case bytes.HasPrefix(line, []byte(stderrPanicPrefix)):
+		l.panicked = true
 	case bytes.HasPrefix(line, []byte(stderrFatalPrefix)):
 		l.fatal = string(line)
 	case bytes.HasPrefix(line, []byte(stderrStackLimitPrefix)):

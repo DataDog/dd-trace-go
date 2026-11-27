@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	internal "github.com/DataDog/dd-trace-go/v2/internal"
+	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/version"
 )
 
@@ -136,6 +137,13 @@ func buildDDTags(cfg *config, r *Report) string {
 	writeTag("tracer_version", version.Tag)
 	for k, v := range internal.GetGitMetadataTags() {
 		writeTag(k, v)
+	}
+	if internal.BoolEnv(internal.EnvGitMetadataEnabledFlag, true) {
+		branch := env.Get("DD_GIT_BRANCH")
+		if branch == "" {
+			branch = internal.ParseTagString(env.Get(internal.EnvDDTags))["git.branch"]
+		}
+		writeTag("git.branch", strings.TrimPrefix(branch, "refs/heads/"))
 	}
 
 	writeTag("data_schema_version", dataSchemaVersion)

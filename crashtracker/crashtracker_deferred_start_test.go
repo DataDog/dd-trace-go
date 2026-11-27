@@ -8,6 +8,7 @@ package crashtracker
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"testing"
@@ -26,10 +27,16 @@ import (
 func TestSupervisorWillStart(t *testing.T) {
 	parent := strconv.Itoa(os.Getppid())
 	stray := strconv.Itoa(os.Getppid() + 1)
+	exe, err := os.Executable()
+	require.NoError(t, err)
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
 	tests := []struct {
 		name    string
-		enabled string // DD_CRASHTRACKING_ENABLED; empty means unset
-		marker  string // empty means absent
+		enabled string
+		marker  string
+		active  string
 		want    bool
 	}{
 		{name: "enabled by default, no marker", want: true},
@@ -38,6 +45,11 @@ func TestSupervisorWillStart(t *testing.T) {
 		{name: "enabled, marker names the parent", marker: parent + ":7", want: false},
 		{name: "disabled, marker names the parent", enabled: "false", marker: parent + ":7", want: false},
 		{name: "enabled, stray marker", marker: stray + ":7", want: true},
+		{name: "active marker matches parent and executable", active: parent + ":" + exe, want: runtime.GOOS == "windows"},
+		{name: "active marker names a different parent", active: stray + ":" + exe, want: true},
+		{name: "active marker names a different executable", active: parent + ":" + exe + ".other", want: true},
+		{name: "active marker has an invalid PID", active: "invalid:" + exe, want: true},
+		{name: "active marker has no executable", active: parent, want: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -48,6 +60,10 @@ func TestSupervisorWillStart(t *testing.T) {
 			t.Setenv(supervisedFDEnv, tt.marker)
 			if tt.marker == "" {
 				require.NoError(t, os.Unsetenv(supervisedFDEnv))
+			}
+			t.Setenv(crashTrackingActiveEnv, tt.active)
+			if tt.active == "" {
+				require.NoError(t, os.Unsetenv(crashTrackingActiveEnv))
 			}
 			assert.Equal(t, tt.want, supervisorWillStart())
 		})
@@ -139,6 +155,33 @@ func TestSupervisionFailureStartsTracerAndProfiler(t *testing.T) {
 
 	assert.True(t, tracerStarted(), "the tracer did not start after the supervision failed")
 	assert.True(t, profilerStarted(), "the profiler did not start after the supervision failed")
+	assert.False(t, crashtrackerstate.SupervisorPending())
+}
+
+func TestSkippedSupervisorReleasesDeferredTracerAndProfiler(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not skip supervision in subprocesses")
+	}
+	t.Setenv("DD_CRASHTRACKING_ENABLED", "true")
+	require.NoError(t, os.Unsetenv(supervisedFDEnv))
+	previous := superviseApplication
+	t.Cleanup(func() { superviseApplication = previous })
+	superviseApplication = func(*config) error {
+		return errors.New("unexpected supervision in an application subprocess")
+	}
+
+	require.True(t, markPendingLikeAspect())
+	startTracerAndProfiler(t)
+	require.False(t, tracerStarted())
+	require.False(t, profilerStarted())
+
+	exe, err := currentExecutable()
+	require.NoError(t, err)
+	t.Setenv(crashTrackingActiveEnv, strconv.Itoa(os.Getppid())+":"+exe)
+	assert.False(t, supervisorWillStart())
+	require.NoError(t, startAndRelease())
+	assert.True(t, tracerStarted())
+	assert.True(t, profilerStarted())
 	assert.False(t, crashtrackerstate.SupervisorPending())
 }
 

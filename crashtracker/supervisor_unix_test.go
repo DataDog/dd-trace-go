@@ -8,6 +8,7 @@
 package crashtracker_test
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -114,6 +116,16 @@ func TestSupervisorHelper(t *testing.T) {
 		fmt.Println("application continued after re-exec failure")
 		return
 	}
+	if mode == "crash-subprocess" {
+		probe, err := os.Create(filepath.Join(dir, "subprocess-crash-output"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := debug.SetCrashOutput(probe, debug.CrashOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		_ = probe.Close()
+	}
 	var pipeID string
 	if supervisedChild {
 		fd := markerFD
@@ -174,6 +186,39 @@ func TestSupervisorHelper(t *testing.T) {
 			t.Fatalf("probe: %v: %s", err, output)
 		}
 		return
+	}
+	if mode == "replace-crash-output" {
+		f, err := os.Create(filepath.Join(dir, "other-crash-output"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		if err := debug.SetCrashOutput(f, debug.CrashOptions{}); err != nil {
+			t.Fatal(err)
+		}
+		panic("replaced crash output")
+	}
+	if mode == "reexec" {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestSupervisorHelper$")
+		cmd.Env = append(os.Environ(), helperModeEnv+"=crash-subprocess")
+		var output bytes.Buffer
+		cmd.Stderr = &output
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		if err := waitForVictim(t, cmd, 5*time.Second); err == nil || cmd.ProcessState.ExitCode() != 2 {
+			t.Fatalf("skipped subprocess exit = %v: %s", err, &output)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "reexec-pid"), []byte(strconv.Itoa(cmd.Process.Pid)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		panic("original application crashed")
+	}
+	if mode == "crash-subprocess" {
+		if err := os.WriteFile(filepath.Join(dir, "subprocess-pid"), []byte(strconv.Itoa(os.Getpid())), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		panic("skipped subprocess crashed")
 	}
 	if mode == "panic" || mode == "held-pipe-panic" || mode == "ignored-sigchld-panic" {
 		panic("child options ignored")
@@ -533,6 +578,98 @@ func TestSupervisorPanicCrashDoesNotDumpSupervisor(t *testing.T) {
 	}
 	if strings.Contains(afterUpload, "SIGABRT: abort") {
 		t.Fatal("supervisor emitted a second SIGABRT dump after upload")
+	}
+}
+
+func TestSupervisorWarnsWhenCrashOutputIsMissing(t *testing.T) {
+	const warning = "crashtracker: the application crashed with empty crash output: another component may have called debug.SetCrashOutput, or the crash occurred outside the Go runtime"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+	for _, tt := range []struct {
+		name      string
+		mode      string
+		code      string
+		traceback string
+		signal    syscall.Signal
+		wantExit  int
+		wantCount int
+	}{
+		{name: "replaced pipe", mode: "replace-crash-output", wantExit: 2, wantCount: 1},
+		{name: "replaced pipe with SIGABRT", mode: "replace-crash-output", traceback: "crash", wantExit: 128 + int(syscall.SIGABRT), wantCount: 1},
+		{name: "SIGTERM", mode: "wait", signal: syscall.SIGTERM, wantExit: -1},
+		{name: "exit 2", mode: "exit", code: "2", wantExit: 2},
+		{name: "normal exit", mode: "exit", code: "0", wantExit: 0},
+		{name: "working crash pipe", mode: "panic", wantExit: 2},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			traceback := tt.traceback
+			if traceback == "" {
+				traceback = "single"
+			}
+			cmd, dir := startSupervisorHelper(t, tt.mode, "_CRASHTRACKER_EXIT_CODE="+tt.code, "DD_TRACE_AGENT_URL="+srv.URL, "GOTRACEBACK="+traceback)
+			if tt.signal != 0 {
+				waitForFile(t, filepath.Join(dir, "ready"))
+				if err := cmd.Process.Signal(tt.signal); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_ = waitForVictim(t, cmd, 15*time.Second)
+			if got := cmd.ProcessState.ExitCode(); got != tt.wantExit {
+				t.Fatalf("exit code = %d, want %d", got, tt.wantExit)
+			}
+			if tt.signal != 0 {
+				status := cmd.ProcessState.Sys().(syscall.WaitStatus)
+				if !status.Signaled() || status.Signal() != tt.signal {
+					t.Fatalf("supervisor status = %v, want signal %v", status, tt.signal)
+				}
+			}
+			output, err := os.ReadFile(filepath.Join(dir, "stderr"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Count(string(output), warning); got != tt.wantCount {
+				t.Fatalf("warning count = %d, want %d: %s", got, tt.wantCount, output)
+			}
+		})
+	}
+}
+
+func TestSupervisorSkipsApplicationSubprocess(t *testing.T) {
+	received := make(chan []byte, 2)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assertCanonicalAgentRequest(t, r)
+		body := decompressGzipBody(t, r)
+		select {
+		case received <- body:
+		default:
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+	cmd, dir := startSupervisorHelper(t, "reexec", "DD_TRACE_AGENT_URL="+srv.URL)
+	_ = waitForVictim(t, cmd, 5*time.Second)
+	if got := cmd.ProcessState.ExitCode(); got != 2 {
+		t.Fatalf("exit code = %d, want 2", got)
+	}
+	subprocessPID := waitForFile(t, filepath.Join(dir, "reexec-pid"))
+	pid := waitForFile(t, filepath.Join(dir, "subprocess-pid"))
+	if string(pid) != string(subprocessPID) {
+		t.Fatalf("Start returned in PID %s, want the subprocess PID %s", pid, subprocessPID)
+	}
+	// The probe must retain crash output after the skipped Start call.
+	if output, err := os.ReadFile(filepath.Join(dir, "subprocess-crash-output")); err != nil || !bytes.Contains(output, []byte("panic: skipped subprocess crashed")) {
+		t.Fatalf("skipped subprocess crash output = %q, error = %v", output, err)
+	}
+	select {
+	case body := <-received:
+		assertCrashReport(t, body, "panic", "original application crashed")
+	default:
+		t.Error("no report for the original application crash")
+	}
+	if len(received) != 0 {
+		t.Error("the skipped subprocess uploaded a crash report")
 	}
 }
 

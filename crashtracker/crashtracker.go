@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,8 +18,11 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/crashtrackerstate"
 	"github.com/DataDog/dd-trace-go/v2/internal/env"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/stableconfig"
 )
+
+const crashTrackingActiveEnv = "_DD_CRASHTRACKING_ACTIVE"
 
 var (
 	startOnce sync.Once
@@ -68,7 +72,35 @@ func supervisorWillStart() bool {
 	if _, ok := parseSupervisedMarker(marker); ok {
 		return false
 	}
-	return enabledFromEnvironment()
+	return !crashTrackingActive() && enabledFromEnvironment()
+}
+
+func crashTrackingActive() bool {
+	if runtime.GOOS == "windows" {
+		return false
+	}
+	marker, _ := env.Lookup(crashTrackingActiveEnv)
+	parent, executable, ok := strings.Cut(marker, ":")
+	if !ok {
+		return false
+	}
+	pid, err := strconv.Atoi(parent)
+	if err != nil || pid != os.Getppid() {
+		return false
+	}
+	current, err := currentExecutable()
+	return err == nil && executable == current
+}
+
+func currentExecutable() (string, error) {
+	path, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+		path = resolved
+	}
+	return path, nil
 }
 
 // enabledFromEnvironment resolves DD_CRASHTRACKING_ENABLED, which defaults to true.
@@ -86,7 +118,22 @@ func start(opts ...Option) error {
 		if err := takeOverServiceManagerPIDs(); err != nil {
 			return err
 		}
-		return registerCrashOutput(fd)
+		if err := registerCrashOutput(fd); err != nil || runtime.GOOS == "windows" {
+			return err
+		}
+		executable, err := currentExecutable()
+		if err != nil {
+			log.Debug("crashtracker: cannot get the executable path for the active marker: %s", err)
+			return nil
+		}
+		if err := os.Setenv(crashTrackingActiveEnv, strconv.Itoa(os.Getpid())+":"+executable); err != nil {
+			log.Debug("crashtracker: cannot set the active marker: %s", err)
+		}
+		return nil
+	}
+	if crashTrackingActive() {
+		log.Debug("crashtracker: skipped crash tracking in a direct subprocess of the same executable")
+		return nil
 	}
 
 	cfg := defaultConfig()
