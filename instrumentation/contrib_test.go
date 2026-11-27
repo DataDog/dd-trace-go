@@ -788,6 +788,14 @@ func (s *typedScopeStack) bind(name string, isPkg bool) {
 	s.scopes[len(s.scopes)-1][name] = isPkg
 }
 
+// current returns the innermost scope, or nil if no scope is open.
+func (s *typedScopeStack) current() map[string]bool {
+	if len(s.scopes) == 0 {
+		return nil
+	}
+	return s.scopes[len(s.scopes)-1]
+}
+
 func (s *typedScopeStack) lookup(name string) bool {
 	for _, scope := range slices.Backward(s.scopes) {
 		if val, ok := scope[name]; ok {
@@ -1053,6 +1061,14 @@ func (w *typedComponentWalker) visit(cur ast.Node) bool {
 			}
 			for i, lhs := range n.Lhs {
 				if ident, ok := lhs.(*ast.Ident); ok {
+					// A short declaration reuses a variable that is already declared
+					// in the same block, and the reused variable keeps its declared
+					// type. Only bind the RHS classification for new names.
+					if scope := w.scopes.current(); scope != nil {
+						if _, exists := scope[ident.Name]; exists {
+							continue
+						}
+					}
 					w.scopes.bind(ident.Name, vals[i])
 				}
 			}
@@ -1253,6 +1269,7 @@ func shadowPlainInBodyAndRedeclare(span interface{ SetTag(string, any) }) {
 			"contrib/foo/use.go:54",
 			"contrib/foo/use.go:55",
 			"contrib/foo/use.go:61",
+			"contrib/foo/use.go:65",
 		}
 		if !slices.Equal(report.offending, want) {
 			t.Fatalf("offending = %v, want %v", report.offending, want)
