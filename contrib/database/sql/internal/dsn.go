@@ -39,7 +39,7 @@ func ParseDSN(driverName, dsn string) (meta map[string]string, err error) {
 			instr.Logger().Debug("Error parsing DSN for postgres: %v", sanitizeError(err))
 			return
 		}
-	case "sqlserver":
+	case "sqlserver", "mssql", "azuresql":
 		meta, err = parseSQLServerDSN(dsn)
 		if err != nil {
 			instr.Logger().Debug("Error parsing DSN for sqlserver: %v", sanitizeError(err))
@@ -126,6 +126,12 @@ func parseSQLServerDSN(dsn string) (map[string]string, error) {
 	if strings.HasPrefix(dsn, "sqlserver://") {
 		// url form
 		meta, err = parseSQLServerURL(dsn)
+		if err != nil {
+			return nil, err
+		}
+	} else if rest, ok := strings.CutPrefix(dsn, "odbc:"); ok {
+		// odbc form
+		meta, err = parseSQLServerODBC(rest)
 		if err != nil {
 			return nil, err
 		}
