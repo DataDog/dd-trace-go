@@ -674,6 +674,16 @@ func TestTracerOptionsDefaults(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equal(t, log.LevelInfo, log.GetLevel())
 		})
+		t.Run("option-disables-env-debug-level", func(t *testing.T) {
+			// Loading the config applies DD_TRACE_DEBUG before options run, so
+			// WithDebugMode(false) must lower the threshold again.
+			defer log.SetLevel(log.GetLevel())
+			t.Setenv("DD_TRACE_DEBUG", "true")
+			c, err := newTestConfig(WithDebugMode(false))
+			assert.NoError(t, err)
+			assert.False(t, c.internalConfig.Debug())
+			assert.Equal(t, log.LevelInfo, log.GetLevel())
+		})
 		t.Run("override-chain", func(t *testing.T) {
 			assert := assert.New(t)
 			// option override otel
