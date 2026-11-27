@@ -33,7 +33,8 @@ type Router struct {
 	*mux.Router
 	config *routerConfig
 	// subrouters caches whether a route has a subrouter: *mux.Route -> bool.
-	subrouters sync.Map
+	// Copies of the router share it.
+	subrouters *sync.Map
 }
 
 // StrictSlash defines the trailing slash behavior for new routes. The initial
@@ -169,8 +170,9 @@ func WrapRouter(router *mux.Router, opts ...RouterOption) *Router {
 	cfg.spanOpts = append(cfg.spanOpts, tracer.Tag(ext.SpanKind, ext.SpanKindServer))
 	instr.Logger().Debug("contrib/gorilla/mux: Configuring Router: %#v", cfg)
 	return &Router{
-		Router: router,
-		config: cfg,
+		Router:     router,
+		config:     cfg,
+		subrouters: new(sync.Map),
 	}
 }
 
