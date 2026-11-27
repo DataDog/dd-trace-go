@@ -94,6 +94,42 @@ func TestSenderRetriesRetryableStatuses(t *testing.T) {
 	}
 }
 
+// writeTruncatedBody sends status and a body shorter than its Content-Length,
+// so the client fails to read it completely.
+func writeTruncatedBody(w http.ResponseWriter, status int) {
+	w.Header().Set("Content-Length", "100")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte("short"))
+}
+
+func TestSenderReturnsErrorWhenSuccessBodyCannotBeRead(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		writeTruncatedBody(w, http.StatusOK)
+	}))
+	defer srv.Close()
+
+	err := newTestSender(srv.URL).Send(context.Background(), []byte(`{}`))
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reading OTLP logs response")
+	assert.EqualValues(t, 1, calls.Load())
+}
+
+func TestSenderRetriesRetryableStatusesWhenBodyCannotBeRead(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			writeTruncatedBody(w, http.StatusServiceUnavailable)
+		}
+	}))
+	defer srv.Close()
+
+	require.NoError(t, newTestSender(srv.URL).Send(context.Background(), []byte(`{}`)))
+	assert.EqualValues(t, 2, calls.Load())
+}
+
 func TestSenderDoesNotRetryOtherErrors(t *testing.T) {
 	var calls atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

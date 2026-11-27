@@ -181,10 +181,15 @@ func (s *Sender) attempt(ctx context.Context, payload []byte) (retryAfter time.D
 		return 0, err
 	}
 	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 
 	switch {
 	case resp.StatusCode >= 200 && resp.StatusCode < 300:
+		// A truncated body means the connection broke before the response was complete,
+		// so the export cannot be reported as successful.
+		if readErr != nil {
+			return 0, fmt.Errorf("reading OTLP %s response: %w", s.cfg.Signal, readErr)
+		}
 		s.logPartialSuccess(respBody)
 		return 0, nil
 	case resp.StatusCode == http.StatusTooManyRequests,
@@ -194,6 +199,7 @@ func (s *Sender) attempt(ctx context.Context, payload []byte) (retryAfter time.D
 		err := fmt.Errorf("OTLP %s endpoint returned %s", s.cfg.Signal, resp.Status)
 		return parseRetryAfter(resp.Header.Get("Retry-After")), &retryableError{err}
 	default:
+		// The body only enriches the message, so a failed read is not reported.
 		return 0, fmt.Errorf("OTLP %s endpoint returned %s: %s", s.cfg.Signal, resp.Status, truncate(string(respBody), 256))
 	}
 }
