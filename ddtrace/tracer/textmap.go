@@ -1878,17 +1878,22 @@ const (
 	safeCharactersKey = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'*+-.^_`|~"
 	// legacySafeCharactersKey is the key set for the legacy
 	// ot-baggage-<key> prefix style. That style has no spec. Go encodes and
-	// decodes both sides itself. The legacy extractor percent-decodes keys,
-	// so '%' escapes to %25 there. Without this escape the decode step
-	// can misread a literal '%' as the start of an escape sequence.
-	legacySafeCharactersKey = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$&'*+-.^_`|~"
-	// safeCharactersValue omits '%'. A literal '%' escapes to %25, so the
-	// decode step cannot misread it as an escape prefix. For the three
-	// risky shapes (space %20, '+' literal, '%' %25) this encoding matches
-	// go.opentelemetry.io/otel/baggage and dd-trace-rb. dd-trace-js escapes
-	// a literal '+' as %2B. dd-trace-py keeps '%' verbatim in values, and
-	// its extract then mis-decodes a value such as "a%2Fb".
-	safeCharactersValue = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$&'()*+-./:<>?@[]^_`{|}~"
+	// decodes both sides itself. The legacy extractor percent-decodes keys
+	// (and older Go receivers query-decode them), so '%' escapes to %25 and
+	// '+' escapes to %2B. Without these escapes the decode step can misread
+	// a literal '%' as an escape sequence or turn '+' into a space during a
+	// rolling upgrade.
+	legacySafeCharactersKey = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$&'*-.^_`|~"
+	// safeCharactersValue omits '%' and '+'. A literal '%' escapes to %25, so
+	// the decode step cannot misread it as an escape prefix. A literal '+'
+	// escapes to %2B so older Go receivers that query-decode values do not
+	// turn it into a space during a rolling upgrade. For the three risky
+	// shapes (space %20, '+' %2B, '%' %25) this encoding matches dd-trace-js,
+	// and W3C percent-decoders (including go.opentelemetry.io/otel/baggage
+	// and this tracer's extractor) decode %2B back to '+'. dd-trace-rb leaves
+	// '+' literal. dd-trace-py keeps '%' verbatim in values, and its extract
+	// then mis-decodes a value such as "a%2Fb".
+	safeCharactersValue = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$&'()*-./:<>?@[]^_`{|}~"
 )
 
 // encodeKey encodes a key with the specified safe characters
@@ -1897,8 +1902,9 @@ func encodeKey(key string) string {
 }
 
 // encodeLegacyKey encodes a legacy ot-baggage-<key> key. It differs from
-// encodeKey in one character: '%' escapes to %25 because the legacy
-// extractor percent-decodes keys.
+// encodeKey in two characters: '%' escapes to %25 and '+' escapes to %2B
+// because the legacy extractor percent-decodes keys and older Go receivers
+// query-decode them.
 func encodeLegacyKey(key string) string {
 	return urlEncode(strings.TrimSpace(key), legacySafeCharactersKey)
 }
@@ -1909,9 +1915,7 @@ func encodeValue(value string) string {
 }
 
 // urlEncode percent-encodes input and writes the safe characters as-is.
-// The output matches the value encoding of
-// go.opentelemetry.io/otel/baggage. A space becomes %20, never '+', and
-// a literal '+' stays a plus sign. The W3C baggage specification requires
+// A space becomes %20, never '+'. The W3C baggage specification requires
 // percent-encoding, not HTML form encoding. Query-form encoding corrupts
 // values across tracers (issue #5181).
 func urlEncode(input string, safeCharacters string) string {

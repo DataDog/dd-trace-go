@@ -6,6 +6,7 @@
 package tracer
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 
@@ -105,12 +106,14 @@ func TestOTBaggageRoundTripsEncodedValues(t *testing.T) {
 }
 
 // TestBaggageWireFormatIsPercentEncoded pins the on-the-wire encoding for
-// both baggage styles. A space becomes %20. A literal '+' stays a plus
-// sign. A literal '%' escapes to %25, so a later hop cannot mistake it for
-// an escape sequence. go.opentelemetry.io/otel/baggage and dd-trace-rb
-// emit the same shapes for W3C values. dd-trace-js escapes a literal '+'
-// as %2B. dd-trace-py keeps '%' verbatim in values, so its extractor
-// mis-decodes a value such as "a%2Fb".
+// both baggage styles. A space becomes %20. A literal '+' escapes to %2B
+// so older Go receivers that query-decode values do not turn it into a
+// space during a rolling upgrade. A literal '%' escapes to %25, so a later
+// hop cannot mistake it for an escape sequence. For these three shapes
+// this encoding matches dd-trace-js, and W3C percent-decoders (including
+// go.opentelemetry.io/otel/baggage and this tracer's extractor) decode
+// %2B back to '+'. dd-trace-rb leaves '+' literal. dd-trace-py keeps '%'
+// verbatim in values, so its extractor mis-decodes a value such as "a%2Fb".
 func TestBaggageWireFormatIsPercentEncoded(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -129,12 +132,12 @@ func TestBaggageWireFormatIsPercentEncoded(t *testing.T) {
 			for _, v := range []struct {
 				in, wire string
 			}{
-				{"a+b", "a+b"},                       // '+' is a literal baggage token char
-				{"x y", "x%20y"},                     // space is %20, never '+'
-				{"100%", "100%25"},                   // '%' escapes to %25
-				{"a%2Fb", "a%252Fb"},                 // escape-looking text must survive a hop
-				{"a + b % c", "a%20+%20b%20%25%20c"}, // combination
-				{"Am\u00e9lie", "Am%C3%A9lie"},       // non-ASCII still percent-encoded
+				{"a+b", "a%2Bb"},                       // '+' escapes to %2B so older Go receivers do not decode it as space
+				{"x y", "x%20y"},                       // space is %20, never '+'
+				{"100%", "100%25"},                     // '%' escapes to %25
+				{"a%2Fb", "a%252Fb"},                   // escape-looking text must survive a hop
+				{"a + b % c", "a%20%2B%20b%20%25%20c"}, // combination
+				{"Am\u00e9lie", "Am%C3%A9lie"},         // non-ASCII still percent-encoded
 			} {
 				ctx := &SpanContext{traceID: traceIDFrom64Bits(1), spanID: 1}
 				ctx.setBaggageItem("k", v.in)
@@ -149,6 +152,12 @@ func TestBaggageWireFormatIsPercentEncoded(t *testing.T) {
 					got = strings.TrimPrefix(out[DefaultBaggageHeader], "k=")
 				}
 				assert.Equal(t, v.wire, got, "value %q", v.in)
+
+				// Simulate a Go receiver on the base revision (url.QueryUnescape):
+				// mixed-version rolling upgrades must preserve the original value.
+				legacyDecoded, err := url.QueryUnescape(got)
+				require.NoError(t, err, "wire value %q must query-unescape", got)
+				assert.Equal(t, v.in, legacyDecoded, "older Go receiver must preserve %q", v.in)
 			}
 		})
 	}
@@ -208,27 +217,32 @@ func TestBaggageKeyEncodingIsStyleSplit(t *testing.T) {
 		assert.Equal(t, map[string]string{"k%2Fx": "v+b"}, got)
 	})
 
-	t.Run("legacy_key_escapes_percent", func(t *testing.T) {
+	t.Run("legacy_key_escapes_percent_and_plus", func(t *testing.T) {
 		t.Setenv(envPropagationStyle, "datadog")
 		tr, err := newTracer()
 		require.NoError(t, err)
 		defer tr.Stop()
 
-		ctx := &SpanContext{traceID: traceIDFrom64Bits(1), spanID: 1}
-		ctx.setBaggageItem("key%percent", "v")
-		out := TextMapCarrier{}
-		require.NoError(t, tr.Inject(ctx, out))
-		assert.Equal(t, "v", out[DefaultBaggageHeaderPrefix+"key%25percent"])
+		for _, tc := range []struct{ key, wireKey string }{
+			{"key%percent", "key%25percent"},
+			{"key+plus", "key%2Bplus"},
+		} {
+			ctx := &SpanContext{traceID: traceIDFrom64Bits(1), spanID: 1}
+			ctx.setBaggageItem(tc.key, "v")
+			out := TextMapCarrier{}
+			require.NoError(t, tr.Inject(ctx, out))
+			assert.Equal(t, "v", out[DefaultBaggageHeaderPrefix+tc.wireKey], "key %q", tc.key)
 
-		sctx, err := tr.Extract(out)
-		require.NoError(t, err)
-		got := map[string]string{}
-		sctx.ForeachBaggageItem(func(k, v string) bool {
-			got[k] = v
-			return true
-		})
-		// The legacy extractor lowercases keys before decoding.
-		assert.Equal(t, "v", got["key%percent"])
+			sctx, err := tr.Extract(out)
+			require.NoError(t, err)
+			got := map[string]string{}
+			sctx.ForeachBaggageItem(func(k, v string) bool {
+				got[k] = v
+				return true
+			})
+			// The legacy extractor lowercases keys before decoding.
+			assert.Equal(t, "v", got[tc.key], "key %q must round-trip", tc.key)
+		}
 	})
 }
 
@@ -336,19 +350,19 @@ func TestBaggageRoundTripsPlusAndPercent(t *testing.T) {
 // TestGoInjectedBaggageParsesUnderOTel proves W3C wire-format parity with
 // the real reference parser. A header injected by this tracer's "baggage"
 // style must parse under go.opentelemetry.io/otel/baggage with the
-// identical key and the original value bytes. This covers literal '+' and
-// '%' and escape-looking text.
+// identical key and the original value bytes. Values escape '+' as %2B
+// for mixed-version Go compatibility while keys keep '+' and '%' verbatim.
 func TestGoInjectedBaggageParsesUnderOTel(t *testing.T) {
 	t.Setenv(envPropagationStyle, "baggage")
 	tr, err := newTracer()
 	require.NoError(t, err)
 	defer tr.Stop()
 
-	for _, tc := range []struct{ key, val string }{
-		{"key+plus", "val+plus"},
-		{"key%percent", "100%"},
-		{"key%2Flooking", "a%2Fb"}, // escape-looking text must not decode further
-		{"space", "val with + and space"},
+	for _, tc := range []struct{ key, val, wantWire string }{
+		{"key+plus", "val+plus", "key+plus=val%2Bplus"},
+		{"key%percent", "100%", "key%percent=100%25"},
+		{"key%2Flooking", "a%2Fb", "key%2Flooking=a%252Fb"}, // escape-looking text must not decode further
+		{"space", "val with + and space", "space=val%20with%20%2B%20and%20space"},
 	} {
 		t.Run(tc.key, func(t *testing.T) {
 			ctx := &SpanContext{traceID: traceIDFrom64Bits(1), spanID: 1}
@@ -357,6 +371,8 @@ func TestGoInjectedBaggageParsesUnderOTel(t *testing.T) {
 			require.NoError(t, tr.Inject(ctx, out))
 
 			header := out[DefaultBaggageHeader]
+			assert.Equal(t, tc.wantWire, header)
+
 			parsed, err := otelbaggage.Parse(header)
 			require.NoError(t, err, "header %q must parse under the OTel parser", header)
 
