@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -22,13 +23,14 @@ const tableRelPath = ".github/ci-components.yml"
 // component is one row of the table. Ordering is significant: the first
 // component with a matching pattern claims the path.
 type component struct {
-	ID               string   `yaml:"id"`
-	Why              string   `yaml:"why"`
-	Paths            []string `yaml:"paths"`
-	Gates            []string `yaml:"gates"`
-	DependentModules []string `yaml:"dependent-modules"`
-	ModuleScoped     bool     `yaml:"module-scoped"`
-	SelfReference    bool     `yaml:"self-reference"`
+	ID                        string   `yaml:"id"`
+	Why                       string   `yaml:"why"`
+	Paths                     []string `yaml:"paths"`
+	Gates                     []string `yaml:"gates"`
+	DependentModules          []string `yaml:"dependent-modules"`
+	ModuleScoped              bool     `yaml:"module-scoped"`
+	SelfReference             bool     `yaml:"self-reference"`
+	DiscoverOtelcIntegrations bool     `yaml:"discover-otelc-integrations"`
 
 	patterns []pattern
 }
@@ -93,6 +95,30 @@ func loadTable(root string) (*table, error) {
 	dec.KnownFields(true)
 	if err := dec.Decode(&t); err != nil {
 		return nil, fmt.Errorf("parse %s: %w", tableRelPath, err)
+	}
+	var (
+		otelcPaths      []string
+		otelcDiscovered bool
+	)
+	for i := range t.Components {
+		c := &t.Components[i]
+		if !c.DiscoverOtelcIntegrations {
+			continue
+		}
+		if !otelcDiscovered {
+			paths, err := discoverOtelcIntegrationPaths(root)
+			if err != nil {
+				return nil, fmt.Errorf("discover %s paths: %w", c.ID, err)
+			}
+			otelcPaths = paths
+			otelcDiscovered = true
+		}
+		c.Paths = append(c.Paths, otelcPaths...)
+		slices.Sort(c.Paths)
+		c.Paths = slices.Compact(c.Paths)
+	}
+	if err := expandOtelcModuleSuites(root, t.IntegrationSuites.Modules); err != nil {
+		return nil, fmt.Errorf("expand integration-suites in %s: %w", tableRelPath, err)
 	}
 	if err := t.compile(); err != nil {
 		return nil, fmt.Errorf("%s: %w", tableRelPath, err)

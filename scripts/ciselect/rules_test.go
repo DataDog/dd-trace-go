@@ -7,6 +7,7 @@ package main
 
 import (
 	"maps"
+	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -440,6 +441,78 @@ func TestTableRejectsUnknownGate(t *testing.T) {
 	}
 }
 
+func TestDiscoverOtelcIntegrationPathsSkipsRootModuleDirs(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel, content string) {
+		t.Helper()
+		path := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, dir := range []string{
+		"contrib/gin", "contrib/gin/otelc", "contrib/os/otelc", "contrib/fake/otelc",
+		"contrib/.hidden", "contrib/.hidden/otelc",
+		"contrib/testdata/example", "contrib/testdata/example/otelc",
+		"instrumentation/example", "instrumentation/example/otelc",
+	} {
+		write(dir+"/go.mod", "module example.com/"+dir+"\n")
+	}
+	write("contrib/os/os.go", "package os\n")
+	if err := os.MkdirAll(filepath.Join(root, "contrib/fake/go.mod"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	paths, err := discoverOtelcIntegrationPaths(root)
+	if err != nil {
+		t.Fatalf("discoverOtelcIntegrationPaths() = %v", err)
+	}
+	if want := []string{"contrib/fake/otelc/**", "contrib/gin/**", "contrib/os/otelc/**"}; !slices.Equal(paths, want) {
+		t.Errorf("discoverOtelcIntegrationPaths() = %v, want %v", paths, want)
+	}
+
+	write(tableRelPath, `
+version: 1
+gates: [otelc, pull-request-tests]
+groups:
+  everything: [otelc, pull-request-tests]
+components:
+  - id: otelc-integrations
+    discover-otelc-integrations: true
+    paths: ["manual/**", "contrib/gin/**"]
+    gates: [otelc]
+  - id: core
+    paths: ["contrib/os/**"]
+    gates: ["@everything"]
+`)
+	tab, err := loadTable(root)
+	if err != nil {
+		t.Fatalf("loadTable() = %v", err)
+	}
+	if want := []string{"contrib/fake/otelc/**", "contrib/gin/**", "contrib/os/otelc/**", "manual/**"}; !slices.Equal(tab.Components[0].Paths, want) {
+		t.Errorf("otelc-integrations paths = %v, want %v", tab.Components[0].Paths, want)
+	}
+	const osFile = "contrib/os/os.go"
+	res, err := tab.classify([]string{osFile}, nil)
+	if err != nil {
+		t.Fatalf("classify(%q) = %v", osFile, err)
+	}
+	if got := res.Explain[osFile]; got != "core" || !res.RunAll {
+		t.Errorf("classify(%q) = (component %q, RunAll %t), want (core, true)", osFile, got, res.RunAll)
+	}
+	const osOtelcFile = "contrib/os/otelc/hooks.go"
+	resOtelc, err := tab.classify([]string{osOtelcFile}, nil)
+	if err != nil {
+		t.Fatalf("classify(%q) = %v", osOtelcFile, err)
+	}
+	if got := resOtelc.Explain[osOtelcFile]; got != "otelc-integrations" || !resOtelc.Gates["otelc"] {
+		t.Errorf("classify(%q) = (component %q, otelc %t), want (otelc-integrations, true)", osOtelcFile, got, resOtelc.Gates["otelc"])
+	}
+}
+
 // TestComponentOrdering asserts no component is shadowed by an earlier, broader
 // one. Order is load-bearing: internal/orchestrion/_integration/** only works
 // because it precedes core's internal/**.
@@ -750,9 +823,8 @@ func TestEveryGoBearingComponentIsPinned(t *testing.T) {
 // TestOTelcModulesGateTheOTelcLane keeps the otelc-integrations entry honest.
 // The otelc lane reads and links every module discovered by discoverOtelcModules,
 // including the parent integrations its hooks attach to. A module on that list
-// whose paths do not turn on the otelc gate would break the lane on a later
-// pull request, with only the nightly run to catch it, so a migration that
-// forgets the table entry fails here first.
+// whose paths do not turn on the otelc gate would leave pull requests without
+// otelc coverage for that module.
 func TestOTelcModulesGateTheOTelcLane(t *testing.T) {
 	tab, graph, root := testTable(t)
 
@@ -768,7 +840,7 @@ func TestOTelcModulesGateTheOTelcLane(t *testing.T) {
 				t.Fatalf("classify() = %v", err)
 			}
 			if !res.Gates["otelc"] {
-				t.Errorf("%s does not enable the otelc gate (claimed by %q); add the module to the otelc-integrations entry in %s",
+				t.Errorf("%s does not enable the otelc gate (claimed by %q); check discovery and component order in %s",
 					probe, res.Explain[probe], tableRelPath)
 			}
 		})

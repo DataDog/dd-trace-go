@@ -72,11 +72,11 @@ groups:
 # turns that lane off for the path. `selectSuites` also rewrites both lanes'
 # gates: on when a lane has a selection, off when every gate-on path was
 # suppressed. The otelc suite set is derived from otelc-extra-suites below
-# plus every suite listed in modules whose key ends with /otelc.
+# plus every explicit or inherited */otelc entry in modules.
 integration-suites:
   # Suites under internal/orchestrion/_integration that run with otelc but are
-  # not mapped by a */otelc entry in modules below (core suites and suites for
-  # code outside contrib/, such as gls).
+  # not mapped by an explicit or inherited */otelc entry in modules below (core
+  # suites and suites for code outside contrib/, such as gls).
   otelc-extra-suites:
     - otelc
     - gls
@@ -95,79 +95,53 @@ integration-suites:
     - contrib/net/http/otelc
     - contrib/log/slog
     - contrib/log/slog/otelc
-  # Every directory under contrib/ or instrumentation/ with a go.mod must
-  # have an entry, even an empty list. Keys are module directories; values
-  # are the suite names that exercise the module. An empty list means no
-  # information, so a change to the module fails its lanes open to every
-  # suite. Every named suite must exist as a directory directly under
-  # internal/orchestrion/_integration (the `internal` helper tree is not a
-  # suite). suites_test.go enforces both rules against the real tree and
-  # derives the pairs from the suites' real imports.
+  # Every module under contrib/ or instrumentation/ needs a suite list.
+  # A contrib/<name>/otelc module inherits its parent's list unless an
+  # explicit entry overrides it. If the parent has no go.mod, add an explicit
+  # entry for the otelc module, such as contrib/os/otelc.
+  # An empty list means that a change to the module runs every suite in its
+  # lanes. Name only suites directly under internal/orchestrion/_integration.
+  # The internal helper directory is not a suite.
   modules:
     contrib/99designs/gqlgen: [ 99designs.gqlgen ]
-    contrib/99designs/gqlgen/otelc: [ 99designs.gqlgen ]
-    contrib/IBM/sarama/otelc: [ ibm_sarama ]
-    contrib/Shopify/sarama/otelc: [ shopify_sarama ]
     contrib/aerospike/aerospike-client-go.v7: [ aerospike.v7 ]
     contrib/aws/aws-sdk-go: [ aws.v1 ]
     contrib/aws/aws-sdk-go-v2: [ aws.v2 ]
-    contrib/aws/aws-sdk-go-v2/otelc: [ aws.v2 ]
-    contrib/aws/aws-sdk-go/otelc: [aws.v1]
     contrib/aws/datadog-lambda-go: [ aws_lambda ]
     contrib/aws/datadog-lambda-go/test/integration_tests/error: []
     contrib/aws/datadog-lambda-go/test/integration_tests/hello: []
     contrib/azure/apim-callout: []
     contrib/bradfitz/gomemcache: []
     contrib/cloud.google.com/go/pubsub.v1: [ gcp_pubsub.v1 ]
-    contrib/cloud.google.com/go/pubsub.v1/otelc: [ gcp_pubsub.v1 ]
     contrib/cloud.google.com/go/pubsub.v2: [ gcp_pubsub.v2 ]
-    contrib/cloud.google.com/go/pubsub.v2/otelc: [ gcp_pubsub.v2 ]
     contrib/cloudevents/sdk-go.v2: [ cloudevents ]
     contrib/confluentinc/confluent-kafka-go/kafka: [ confluent-kafka-go.v1 ]
     contrib/confluentinc/confluent-kafka-go/kafka.v2: [ confluent-kafka-go.v2 ]
-    contrib/confluentinc/confluent-kafka-go/kafka.v2/otelc: [ confluent-kafka-go.v2 ]
-    contrib/confluentinc/confluent-kafka-go/kafka/otelc: [ confluent-kafka-go.v1 ]
     contrib/connectrpc.com/connect: [ connectrpc ]
     contrib/database/sql: [ sql ]
-    contrib/database/sql/otelc: [ sql ]
     contrib/dimfeld/httptreemux.v5: []
     contrib/elastic/go-elasticsearch.v6: [ go-elasticsearch ]
-    contrib/elastic/go-elasticsearch.v6/otelc: [ go-elasticsearch ]
     contrib/emicklei/go-restful.v3: []
     contrib/envoyproxy/go-control-plane: []
     contrib/gin-gonic/gin: [ gin ]
-    contrib/gin-gonic/gin/otelc: [ gin ]
     contrib/globalsign/mgo: []
     contrib/go-chi/chi: [ chi ]
     contrib/go-chi/chi.v5: [ chi.v5 ]
-    contrib/go-chi/chi.v5/otelc: [ chi.v5 ]
-    contrib/go-chi/chi/otelc: [ chi ]
     contrib/go-pg/pg.v10: []
     contrib/go-redis/redis: [ go-redis.v0 ]
     contrib/go-redis/redis.v7: [ go-redis.v7 ]
-    contrib/go-redis/redis.v7/otelc: [ go-redis.v7 ]
     contrib/go-redis/redis.v8: [ go-redis.v8 ]
-    contrib/go-redis/redis.v8/otelc: [ go-redis.v8 ]
-    contrib/go-redis/redis/otelc: [ go-redis.v0 ]
     contrib/go.mongodb.org/mongo-driver: [ mongo ]
     contrib/go.mongodb.org/mongo-driver.v2: [mongo, mongo.v2]
-    contrib/go.mongodb.org/mongo-driver.v2/otelc: [mongo, mongo.v2]
-    contrib/go.mongodb.org/mongo-driver/otelc: [ mongo ]
     contrib/go.uber.org/zap: [ zap ]
     contrib/gocql/gocql: [ gocql ]
-    contrib/gocql/gocql/otelc: [ gocql ]
     contrib/gofiber/fiber.v2: [ fiber.v2 ]
-    contrib/gofiber/fiber.v2/otelc: [ fiber.v2 ]
     contrib/gomodule/redigo: [ redigo ]
-    contrib/gomodule/redigo/otelc: [ redigo ]
     contrib/google.golang.org/api: []
     contrib/google.golang.org/api/internal/gen_endpoints: []
     contrib/google.golang.org/grpc: [ grpc ]
-    contrib/google.golang.org/grpc/otelc: [ grpc ]
     contrib/gorilla/mux: [ gorilla_mux ]
-    contrib/gorilla/mux/otelc: [ gorilla_mux ]
     contrib/gorm.io/gorm.v1: [ gorm ]
-    contrib/gorm.io/gorm.v1/otelc: [ gorm ]
     contrib/graph-gophers/graphql-go: [ graph-gophers ]
     contrib/graphql-go/graphql: [ graphql-go ]
     contrib/haproxy/stream-processing-offload: []
@@ -175,36 +149,25 @@ integration-suites:
     contrib/hashicorp/vault: [ vault ]
     contrib/IBM/sarama: [ ibm_sarama ]
     contrib/jackc/pgx.v5: [ pgx ]
-    contrib/jackc/pgx.v5/otelc: [ pgx ]
     contrib/jmoiron/sqlx: []
     contrib/julienschmidt/httprouter: [ julienschmidt_httprouter ]
-    contrib/julienschmidt/httprouter/otelc: [ julienschmidt_httprouter ]
     contrib/k8s.io/client-go: [ k8s_client_go ]
-    contrib/k8s.io/client-go/otelc: [ k8s_client_go ]
     contrib/k8s.io/gateway-api: []
     contrib/labstack/echo.v4: [ echo.v4 ]
-    contrib/labstack/echo.v4/otelc: [ echo.v4 ]
     contrib/labstack/echo.v5: [ echo.v5 ]
-    contrib/labstack/echo.v5/otelc: [ echo.v5 ]
     contrib/log/slog: [ slog ]
-    contrib/log/slog/otelc: [ slog ]
     contrib/mark3labs/mcp-go: []
     contrib/miekg/dns: []
     contrib/modelcontextprotocol/go-sdk: []
     contrib/net/http: [ net_http ]
-    contrib/net/http/otelc: [ net_http ]
     contrib/olivere/elastic.v5: []
     contrib/opensearch-project/opensearch-go.v4: [ opensearch-go.v4 ]
     contrib/redis/go-redis.v9: [ go-redis.v9 ]
-    contrib/redis/go-redis.v9/otelc: [ go-redis.v9 ]
     contrib/redis/rueidis: [ rueidis ]
     contrib/rs/zerolog: [ zerolog ]
-    contrib/rs/zerolog/otelc: [ zerolog ]
     contrib/segmentio/kafka-go: [ segmentio_kafka.v0 ]
-    contrib/segmentio/kafka-go/otelc: [ segmentio_kafka.v0 ]
     contrib/Shopify/sarama: [ shopify_sarama ]
     contrib/sirupsen/logrus: [ logrus ]
-    contrib/sirupsen/logrus/otelc: [ logrus ]
     contrib/syndtr/goleveldb: []
     contrib/tidwall/buntdb: []
     contrib/twitchtv/twirp: [ twirp ]
@@ -213,7 +176,6 @@ integration-suites:
     contrib/urfave/negroni: []
     contrib/valkey-io/valkey-go: [ valkey-go ]
     contrib/valyala/fasthttp: [ valyala_fasthttp ]
-    contrib/valyala/fasthttp/otelc: [ valyala_fasthttp ]
     instrumentation/internal/namingschematest: []
     instrumentation/internal/validationtest: []
     instrumentation/testutils/containers:
@@ -504,51 +466,12 @@ components:
 
   - id: otelc-integrations
     why: >-
-      The integrations otelc has migrated. Their otelc hook modules blank-import
-      the contrib packages and link against the parent module's internals
-      (contrib/net/http/otelc uses go:linkname into contrib/net/http), so a
-      change anywhere in the parent module needs the otelc lane. One subtree per
-      integration claims the parent module, its otelc/ submodule, and the
-      otelc*.go hook files that live directly in the parent, before the broad
-      contrib entry claims them without the gate.
-    paths:
-      - contrib/99designs/gqlgen/**
-      - contrib/IBM/sarama/**
-      - contrib/Shopify/sarama/**
-      - contrib/aws/aws-sdk-go-v2/**
-      - contrib/aws/aws-sdk-go/**
-      - contrib/cloud.google.com/go/pubsub.v1/**
-      - contrib/cloud.google.com/go/pubsub.v2/**
-      - contrib/confluentinc/confluent-kafka-go/kafka/**
-      - contrib/confluentinc/confluent-kafka-go/kafka.v2/**
-      - contrib/database/sql/**
-      - contrib/elastic/go-elasticsearch.v6/**
-      - contrib/gin-gonic/gin/**
-      - contrib/go-chi/chi/**
-      - contrib/go-chi/chi.v5/**
-      - contrib/go-redis/redis.v7/**
-      - contrib/go-redis/redis.v8/**
-      - contrib/go-redis/redis/**
-      - contrib/gofiber/fiber.v2/**
-      - contrib/go.mongodb.org/mongo-driver/**
-      - contrib/go.mongodb.org/mongo-driver.v2/**
-      - contrib/gocql/gocql/**
-      - contrib/gomodule/redigo/**
-      - contrib/google.golang.org/grpc/**
-      - contrib/gorilla/mux/**
-      - contrib/gorm.io/gorm.v1/**
-      - contrib/jackc/pgx.v5/**
-      - contrib/julienschmidt/httprouter/**
-      - contrib/k8s.io/client-go/**
-      - contrib/labstack/echo.v4/**
-      - contrib/labstack/echo.v5/**
-      - contrib/log/slog/**
-      - contrib/net/http/**
-      - contrib/sirupsen/logrus/**
-      - contrib/segmentio/kafka-go/**
-      - contrib/rs/zerolog/**
-      - contrib/redis/go-redis.v9/**
-      - contrib/valyala/fasthttp/**
+      The otelc lane tests the hook module and the parent module it uses.
+      For each contrib/**/otelc/go.mod, CI claims the parent subtree when the
+      parent has its own go.mod, or only the hook submodule (contrib/<x>/otelc/**)
+      when the parent is root-module code without a go.mod so root-module paths
+      such as contrib/os/** stay claimed by core.
+    discover-otelc-integrations: true
     module-scoped: true
     dependent-modules: []
     gates: [ "@go-hygiene", pull-request-tests, orchestrion, benchmark-apps, system-tests, otelc ]

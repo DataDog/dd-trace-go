@@ -14,6 +14,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // TestOtelcSuiteSetCoversRealSuites reads the otelc lane's suite set from
@@ -41,14 +43,41 @@ func TestOtelcSuiteSetCoversRealSuites(t *testing.T) {
 	}
 }
 
-// TestEveryContribModuleHasASuitesEntry walks the real contrib and
-// instrumentation trees: every go.mod directory needs an entry, even an
-// empty one, and no entry may name a directory without a go.mod.
+// TestNoRedundantOtelcModuleEntries checks the YAML before inheritance so
+// contributors do not need to edit the table for standard otelc modules.
+func TestNoRedundantOtelcModuleEntries(t *testing.T) {
+	root, err := repoRoot(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, tableRelPath))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tab table
+	if err := yaml.Unmarshal(raw, &tab); err != nil {
+		t.Fatal(err)
+	}
+	modules := tab.IntegrationSuites.Modules
+	for dir, suites := range modules {
+		parent, ok := strings.CutSuffix(dir, "/otelc")
+		if !ok {
+			continue
+		}
+		if parentSuites, ok := modules[parent]; ok && slices.Equal(sorted(suites), sorted(parentSuites)) {
+			t.Errorf("%s repeats the suites of %s in %s; remove the redundant entry", dir, parent, tableRelPath)
+		}
+	}
+}
+
+// TestEveryContribModuleHasASuitesEntry checks the resolved map against the
+// contrib and instrumentation trees. Each module needs an explicit or
+// inherited entry, even if its suite list is empty.
 func TestEveryContribModuleHasASuitesEntry(t *testing.T) {
 	tab, _, root := testTable(t)
 
 	want := map[string]bool{}
-	for _, tree := range []string{"contrib", "instrumentation"} {
+	for _, tree := range []string{contribTree, "instrumentation"} {
 		err := filepath.WalkDir(filepath.Join(root, tree), func(p string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
@@ -547,6 +576,32 @@ integration-suites:
 		t.Errorf("loadOtelcSuitesOnly() = %v, want %v", got, want)
 	}
 
+	t.Run("inherits suites from parent modules", func(t *testing.T) {
+		for _, module := range []string{"contrib/gin", "contrib/gin/otelc", "contrib/mux", "contrib/mux/otelc"} {
+			path := filepath.Join(dir, module, "go.mod")
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("module example.com/"+module+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		inheritedTable := strings.Replace(brokenTable, "    contrib/gin-gonic/gin/otelc: [ gin ]", `    contrib/gin: [ gin ]
+    contrib/mux: [ parent-suite ]
+    contrib/mux/otelc: [ override-suite ]`, 1)
+		if err := os.WriteFile(filepath.Join(dir, tableRelPath), []byte(inheritedTable), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		got, err := loadOtelcSuitesOnly(dir)
+		if err != nil {
+			t.Fatalf("loadOtelcSuitesOnly() = %v", err)
+		}
+		want := map[string]bool{"otelc": true, "gls": true, "gin": true, "override-suite": true}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("loadOtelcSuitesOnly() = %v, want %v", got, want)
+		}
+	})
+
 	t.Run("rejects misspelled key inside integration-suites", func(t *testing.T) {
 		typoTable := `
 integration-suites:
@@ -650,8 +705,8 @@ func TestDiscoverOtelcModulesEdgeCases(t *testing.T) {
 	})
 }
 
-// TestEveryOtelcModuleMapsToASuite prevents a contrib/**/otelc entry with an
-// empty list [] from silently dropping its integration suite from the otelc lane.
+// TestEveryOtelcModuleMapsToASuite prevents an empty suite list, explicit or
+// inherited, from dropping a suite from the otelc lane.
 func TestEveryOtelcModuleMapsToASuite(t *testing.T) {
 	tab, _, _ := testTable(t)
 	var count int
@@ -661,7 +716,7 @@ func TestEveryOtelcModuleMapsToASuite(t *testing.T) {
 		}
 		count++
 		if len(suites) == 0 {
-			t.Errorf("%s has an empty suite list in %s; map it to at least one suite so the otelc lane runs it", dir, tableRelPath)
+			t.Errorf("%s resolves to an empty suite list in %s; map it or its parent to at least one suite", dir, tableRelPath)
 		}
 	}
 	if count == 0 {

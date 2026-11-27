@@ -110,6 +110,7 @@ on `PATH`, or the app is built with whatever older binary is there.
 ## Build enough context first
 
 From the sources in `references.md`, learn:
+
 - Orchestrion: the full set of join points and advice, and what advice templates can read (the `.`
   accessors).
 - otelc: every rule kind, the `where` and `where.file` selectors, the target forms and `version`
@@ -172,12 +173,14 @@ wrap its call sites with `wrap_call` instead (see "Rules" under "Design rules").
      `otelc/all` tidies before `internal/apps/otelc-external-app` and
      `internal/orchestrion/_integration`, and re-syncs replace blocks afterward. Brand-new local
      requires receive `v2.0.0-00010101000000-000000000000` until release tagging.
-   - In `.github/ci-components.yml`, map the contrib and its `otelc` module to the suite (the
-     module to suites table), and add `contrib/<name>/**` to the `otelc-integrations` component
-     so a change to the contrib runs the OTelc lane. For a suite covering code outside `contrib/`
-     (or without a `*/otelc` module entry, such as `gls`), add the suite to
-     `integration-suites.otelc-extra-suites`. CI discovers `**/otelc` modules and their suites
-     automatically via `scripts/ciselect`, so `.github/workflows/otelc.yml` needs no edit.
+   - If `contrib/<name>` has a `go.mod` and a non-empty `integration-suites.modules` entry, do not
+     edit `.github/ci-components.yml`. CI derives the `otelc-integrations` path from
+     `contrib/<name>/otelc/go.mod`, and the hook module inherits the parent's suite list. If the
+     parent module has no suite list, add a non-empty list for the parent module. If the
+     parent has no `go.mod`, add an explicit hook module entry, such as `contrib/os/otelc`. Add an
+     explicit entry if the hook module needs a different suite list. For suites outside `contrib/`
+     without a `*/otelc` entry, use `integration-suites.otelc-extra-suites`. Do not edit
+     `.github/workflows/otelc.yml`. See [Wiring the module in](../../../contrib/OTELC.md#wiring-the-module-in).
 6. Run the validation steps, plus the main app and dependency tests your rules need, and diff the
    otelc spans against the orchestrion ones.
 7. From the repository root, in a shell **without** `GOWORK=off`:

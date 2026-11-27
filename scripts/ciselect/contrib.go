@@ -58,7 +58,7 @@ func loadModules(root string) (byPath map[string]repoModule, byDir map[string]re
 	if err := add("."); err != nil {
 		return nil, nil, err
 	}
-	for _, tree := range []string{"contrib", "instrumentation"} {
+	for _, tree := range []string{contribTree, "instrumentation"} {
 		walkErr := filepath.WalkDir(filepath.Join(root, tree), func(p string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err

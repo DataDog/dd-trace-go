@@ -423,10 +423,11 @@ Run these in order and commit every change they produce. CI fails on a non-clean
 
    Use the otelc CLI at `OTELC_VERSION` from `.github/workflows/otelc.yml`.
 
-6. Register the integration with the otelc lane. Add the parent subtree to the `otelc-integrations`
-   component in `.github/ci-components.yml`, and add the module and its `contrib/<name>/otelc`
-   entry to the same file's `integration-suites.modules` mapping (non-empty for `contrib/<name>/otelc`).
-   For a suite covering code outside `contrib/` (without a `*/otelc` module entry), add the suite
-   to `integration-suites.otelc-extra-suites`. CI discovers `**/otelc` modules and their suites
-   automatically via `scripts/ciselect`, so `.github/workflows/otelc.yml` needs no edit, and
-   `make lint/misc` fails until the mapping covers every module.
+6. Check the suite list for `contrib/<name>` in `.github/ci-components.yml` under
+   `integration-suites.modules`. If the parent module has no suites, add a non-empty list there.
+   For a standard `contrib/<name>/otelc` with a non-empty parent list, do not edit the file.
+   CI derives the `otelc-integrations` path from `contrib/<name>/otelc/go.mod`, and the hook module
+   inherits the parent's suite list. Add an explicit entry for a hook module without a parent
+   `go.mod`, such as `contrib/os/otelc`, or to override the inherited list. Add suites outside
+   `contrib/` without a `*/otelc` entry to `integration-suites.otelc-extra-suites`. Do not edit
+   `.github/workflows/otelc.yml`. See [Wiring the module in](./OTELC.md#wiring-the-module-in).

@@ -115,12 +115,15 @@ fallback works and where it stops.
 - Blank-import the module from `otelc/all/otel.instrumentation.go`.
 - Add the module to `go.work`, then run `make fix-modules`. It wires local `replace` directives into
   sorted `replace (...)` blocks and tidies modules in dependency order.
-- In `.github/ci-components.yml`, map both modules to the suite (a non-empty suite list for
-  `contrib/<name>/otelc` registers the suite in the OTelc lane), and add `contrib/<name>/**` to the
-  `otelc-integrations` component. For a suite covering code outside `contrib/` (or without a
-  `*/otelc` module entry, such as `otelc-autostart` or `gls`), add the suite to
-  `integration-suites.otelc-extra-suites`. CI discovers `**/otelc` modules and their suites
-  automatically via `scripts/ciselect`, so `.github/workflows/otelc.yml` needs no edit.
+- If `contrib/<name>` has a `go.mod` and a non-empty `integration-suites.modules` entry, do not
+  edit `.github/ci-components.yml`. CI derives the `otelc-integrations` path from the hook module's
+  `go.mod`, and the hook module inherits the parent's suite list.
+  - If the parent module has no suite list, add a non-empty list for the parent module.
+  - If the parent has no `go.mod`, add a suite list for the hook module, such as `contrib/os/otelc`.
+    The `core` component still claims the parent subtree (such as `contrib/os/**`).
+  - If the hook module needs a different suite list, add an explicit override.
+  - For suites outside `contrib/` without a `*/otelc` entry, add the suite to
+    `integration-suites.otelc-extra-suites`. Do not edit `.github/workflows/otelc.yml`.
 - When a rule adds an import of the contrib, or the hooks use it, add a new `lib_<name>.go` file in
   `internal/apps/otelc-external-app` that calls `registerLibrary` from `init()` with a call that
   needs no network. The External Application Build job then checks that the
