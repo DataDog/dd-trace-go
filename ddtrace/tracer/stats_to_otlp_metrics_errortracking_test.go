@@ -51,7 +51,7 @@ func TestSketchDecodeErrorsAreReportedOncePerFlushOutsideRetries(t *testing.T) {
 		{Resource: "valid-summary", OkSummary: encodeSketch(t, 50e6)},
 	})
 
-	require.NoError(t, sender.send(payload, 1, time.Nanosecond))
+	require.NoError(t, sender.send(payload, 0, 1, time.Nanosecond))
 	assert.Equal(t, int32(2), attempts.Load(), "the failed transport attempt must be retried")
 	assert.Contains(t, string(exportedBody), spanDurationMetricName)
 	assert.Contains(t, string(exportedBody), "valid-summary")

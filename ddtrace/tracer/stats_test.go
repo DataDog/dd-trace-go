@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"github.com/DataDog/datadog-go/v5/statsd"
 	otlpcommon "go.opentelemetry.io/proto/otlp/common/v1"
@@ -550,7 +549,8 @@ func TestShouldObfuscate(t *testing.T) {
 			c := newConcentrator(cfg, bucketSize, &statsd.NoOpClientDirect{})
 			defer func(oldVersion int) { tracerObfuscationVersion = oldVersion }(tracerObfuscationVersion)
 			tracerObfuscationVersion = params.tracerVersion
-			assert.Equal(t, params.expectedShouldObfuscate, c.sender.shouldObfuscate())
+			af := cfg.agent.load()
+			assert.Equal(t, params.expectedShouldObfuscate, c.sender.obfuscationVersion(&af) > 0)
 		})
 	}
 }
@@ -580,7 +580,7 @@ func TestObfuscation(t *testing.T) {
 	tracerObfuscationVersion = 2
 
 	assert.Len(t, tsp.Stats(), 0)
-	ss1, ok := c.newTracerStatSpan(&s1, obfuscate.NewObfuscator(obfuscate.Config{}))
+	ss1, ok := c.newTracerStatSpan(&s1, &statsObfuscator{})
 	assert.True(t, ok)
 	c.Start()
 	c.In <- []*tracerStatSpan{ss1}
@@ -1028,7 +1028,7 @@ func TestNoopConcentrator(t *testing.T) {
 			start:    time.Now().UnixNano(),
 			duration: 1,
 		}
-		ss, ok := c.newTracerStatSpan(s, obfuscate.NewObfuscator(obfuscate.Config{}))
+		ss, ok := c.newTracerStatSpan(s, &statsObfuscator{})
 		assert.Nil(t, ss)
 		assert.False(t, ok)
 	})

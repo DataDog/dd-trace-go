@@ -7,11 +7,11 @@ package tracer
 
 import (
 	"errors"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/DataDog/datadog-agent/pkg/obfuscate"
 	pb "github.com/DataDog/datadog-agent/pkg/proto/pbgo/trace"
 	"github.com/DataDog/datadog-agent/pkg/trace/stats"
 
@@ -20,6 +20,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/constants"
 	"github.com/DataDog/dd-trace-go/v2/internal/civisibility/utils"
 	"github.com/DataDog/dd-trace-go/v2/internal/globalconfig"
+	"github.com/DataDog/dd-trace-go/v2/internal/locking"
 	"github.com/DataDog/dd-trace-go/v2/internal/log"
 	"github.com/DataDog/dd-trace-go/v2/internal/processtags"
 	"github.com/DataDog/dd-trace-go/v2/internal/telemetry"
@@ -28,9 +29,10 @@ import (
 	"github.com/DataDog/datadog-go/v5/statsd"
 )
 
-// tracerObfuscationVersion indicates which version of stats obfuscation logic we implement
-// In the future this can be pulled directly from our obfuscation import.
-var tracerObfuscationVersion = 1
+// tracerObfuscationVersion is the newest trace-agent obfuscation version whose
+// stats obfuscation the tracer reproduces. Version 2 agents run a non-default
+// SQL obfuscation config, which the tracer reads from /info and applies.
+var tracerObfuscationVersion = 2
 
 // defaultStatsBucketSize specifies the default span of time that will be
 // covered in one stats bucket.
@@ -42,7 +44,7 @@ type statsConcentrator interface {
 	Start()
 	Stop()
 	flushAndSend(now time.Time, includeCurrent bool)
-	newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool)
+	newTracerStatSpan(s *Span, obfuscator *statsObfuscator) (*tracerStatSpan, bool)
 	trySendSpan(s *tracerStatSpan)
 	trySendSpans(spans []*tracerStatSpan)
 }
@@ -59,7 +61,24 @@ type concentrator struct {
 	// stopped reports whether the concentrator is stopped (when non-zero)
 	stopped uint32 // +checkatomic
 
+	// spanConcentrator creates stat spans. They are aggregated in policyBuckets.
 	spanConcentrator *stats.SpanConcentrator
+	// policyMu guards policyBuckets. The constant spanConcentratorConfig and
+	// created are only needed to create them.
+	policyMu locking.Mutex
+	// spanConcentratorConfig configures the SpanConcentrators of policyBuckets.
+	spanConcentratorConfig *stats.SpanConcentratorConfig // +checklocks:policyMu
+	// created is when the concentrator was created.
+	created time.Time // +checklocks:policyMu
+	// policyBuckets aggregates stat spans separately for each obfuscation
+	// policy they were obfuscated under, in order of first use. A payload
+	// reports one obfuscation version, so spans obfuscated differently never
+	// share one: when the agent's /info changes mid-trace, spans of both
+	// policies can keep arriving in any order without forcing a flush.
+	policyBuckets []*policyBuckets // +checklocks:policyMu
+	// lastFlush is the latest time policyBuckets were flushed at, in Unix
+	// nanoseconds, or 0 before the first flush.
+	lastFlush int64 // +checklocks:policyMu
 
 	aggregationKey stats.PayloadAggregationKey
 
@@ -109,8 +128,13 @@ func reportStatsSendError(err error) {
 // statsSender abstracts a concentrator's stats destination: how a flushed
 // payload is sent, and the obfuscation/peer-tags policy for that destination.
 type statsSender interface {
-	send(csp *pb.ClientStatsPayload, retries int, interval time.Duration) error
-	shouldObfuscate() bool
+	// send sends csp, whose resources were obfuscated with obfuscation version
+	// obfVersion (0 when left to the destination).
+	send(csp *pb.ClientStatsPayload, obfVersion int, retries int, interval time.Duration) error
+	// obfuscationVersion returns the obfuscation version the tracer obfuscates
+	// stats with for an agent with features af, or 0 when it must leave
+	// obfuscation to the destination.
+	obfuscationVersion(af *agentFeatures) int
 	// peerTags returns the peer tags to use for a stat span, given the
 	// agent-advertised peer tags.
 	peerTags(agentPeerTags []string) []string
@@ -127,10 +151,14 @@ type ddStatsSender struct {
 	cfg *config
 }
 
-func (s *ddStatsSender) shouldObfuscate() bool {
-	// Obfuscate if agent reports an obfuscation version AND our version is at least as new.
-	agentObfVersion := s.cfg.agent.load().obfuscationVersion
-	return agentObfVersion > 0 && agentObfVersion <= tracerObfuscationVersion
+func (s *ddStatsSender) obfuscationVersion(af *agentFeatures) int {
+	// Obfuscate if agent reports an obfuscation version AND our version is at
+	// least as new. The stats are then obfuscated with the logic of the agent's
+	// version, which may be older than the newest one we support.
+	if af.obfuscationVersion > 0 && af.obfuscationVersion <= tracerObfuscationVersion && !af.statsSQLObfuscationUnsupported {
+		return af.obfuscationVersion
+	}
+	return 0
 }
 
 func (s *ddStatsSender) peerTags(agentPeerTags []string) []string {
@@ -141,11 +169,8 @@ func (s *ddStatsSender) httpRouteFallback() bool {
 	return false
 }
 
-func (s *ddStatsSender) send(csp *pb.ClientStatsPayload, retries int, interval time.Duration) error {
-	obfVersion := 0
-	if s.shouldObfuscate() {
-		obfVersion = tracerObfuscationVersion
-	} else {
+func (s *ddStatsSender) send(csp *pb.ClientStatsPayload, obfVersion int, retries int, interval time.Duration) error {
+	if obfVersion == 0 {
 		log.Debug("Stats Obfuscation was skipped, agent will obfuscate (tracer %d, agent %d)", tracerObfuscationVersion, s.cfg.agent.load().obfuscationVersion)
 	}
 	return sendWithRetry(retries, interval, func() error {
@@ -158,10 +183,10 @@ type otlpStatsSender struct {
 	exporter *otlpMetricsExporter
 }
 
-func (s *otlpStatsSender) shouldObfuscate() bool {
+func (s *otlpStatsSender) obfuscationVersion(_ *agentFeatures) int {
 	// There is no Datadog Agent downstream of an OTLP concentrator to apply
 	// obfuscation, so the tracer must always obfuscate locally.
-	return true
+	return tracerObfuscationVersion
 }
 
 func (s *otlpStatsSender) peerTags(agentPeerTags []string) []string {
@@ -172,7 +197,7 @@ func (s *otlpStatsSender) httpRouteFallback() bool {
 	return true
 }
 
-func (s *otlpStatsSender) send(csp *pb.ClientStatsPayload, retries int, interval time.Duration) error {
+func (s *otlpStatsSender) send(csp *pb.ClientStatsPayload, _ int, retries int, interval time.Duration) error {
 	rms, sketchDecodeErr := buildOTLPMetricsRequest(csp, s.exporter.cfg)
 	if sketchDecodeErr != nil {
 		// Report once per flushed payload, before the transport retry loop. The
@@ -184,10 +209,26 @@ func (s *otlpStatsSender) send(csp *pb.ClientStatsPayload, retries int, interval
 	})
 }
 
+// policyBuckets holds the stats buckets of the stat spans obfuscated under one
+// obfuscation policy.
+type policyBuckets struct {
+	policy  statsObfuscationPolicy
+	sc      *stats.SpanConcentrator
+	lastAdd int64 // the latest end of a span added, in Unix nanoseconds
+}
+
+// idlePolicyBuckets is how many bucket intervals past the end of their latest
+// span the buckets of an obfuscation policy stay before they are dropped. By then regular
+// flushes have sent everything they held; dropping them also flushes any
+// remainder.
+const idlePolicyBuckets = 4
+
 type tracerStatSpan struct {
-	statSpan *stats.StatSpan
-	origin   string
-	version  string // per-span version tag; "" means use global aggKey version
+	statSpan    *stats.StatSpan
+	end         int64 // span end, in Unix nanoseconds
+	origin      string
+	version     string                 // per-span version tag; "" means use global aggKey version
+	obfuscation statsObfuscationPolicy // how the resource was obfuscated
 }
 
 // newConcentrator creates a new concentrator using the given tracer
@@ -231,15 +272,17 @@ func newConcentrator(c *config, bucketSize int64, statsdClient internal.StatsdCl
 	}
 	spanConcentrator := stats.NewSpanConcentrator(sCfg, time.Now())
 	return &concentrator{
-		In:               make(chan []*tracerStatSpan, 10000),
-		bucketSize:       bucketSize,
-		stopped:          1,
-		cfg:              c,
-		aggregationKey:   aggKey,
-		spanConcentrator: spanConcentrator,
-		statsdClient:     statsdClient,
-		otelSemantics:    c.internalConfig.OTelSemanticsEnabled(),
-		sender:           &ddStatsSender{cfg: c},
+		In:                     make(chan []*tracerStatSpan, 10000),
+		bucketSize:             bucketSize,
+		stopped:                1,
+		cfg:                    c,
+		aggregationKey:         aggKey,
+		spanConcentrator:       spanConcentrator,
+		spanConcentratorConfig: sCfg,
+		created:                time.Now(),
+		statsdClient:           statsdClient,
+		otelSemantics:          c.internalConfig.OTelSemanticsEnabled(),
+		sender:                 &ddStatsSender{cfg: c},
 	}
 }
 
@@ -303,11 +346,13 @@ func (c *concentrator) runIngester() {
 }
 
 // +checklocksignore — Post-finish: reads finished span fields during stats computation.
-func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
+func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *statsObfuscator) (*tracerStatSpan, bool) {
 	agentInfo := c.cfg.agent.load()
 	resource := s.resource
-	if c.sender.shouldObfuscate() {
-		resource = obfuscatedResource(obfuscator, s.spanType, s.resource)
+	policy := statsObfuscationPolicy{version: c.sender.obfuscationVersion(&agentInfo)}
+	if policy.version > 0 {
+		policy.sql = agentInfo.statsSQLObfuscation
+		resource = obfuscatedResource(obfuscator.forConfig(policy.sql), s.spanType, s.resource)
 		c.spanConcentrator.SetObfuscationEnabled(true, agentInfo.HasFlag("big_resource"))
 	} else {
 		c.spanConcentrator.SetObfuscationEnabled(false, false)
@@ -353,9 +398,11 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 	origin, _ := s.meta.Get(keyOrigin)
 	version, _ := s.meta.Version()
 	return &tracerStatSpan{
-		statSpan: statSpan,
-		origin:   origin,
-		version:  version,
+		statSpan:    statSpan,
+		end:         s.start + s.duration,
+		origin:      origin,
+		version:     version,
+		obfuscation: policy,
 	}, true
 }
 
@@ -365,7 +412,75 @@ func (c *concentrator) add(s *tracerStatSpan) {
 	if s.version != "" {
 		aggKey.Version = s.version
 	}
-	c.spanConcentrator.AddSpan(s.statSpan, aggKey, "", nil, s.origin)
+	c.policyMu.Lock()
+	b := c.bucketsFor(s.obfuscation)
+	b.lastAdd = max(b.lastAdd, s.end)
+	b.sc.AddSpan(s.statSpan, aggKey, "", nil, s.origin)
+	c.policyMu.Unlock()
+}
+
+// bucketsFor returns the buckets of policy, creating them if needed.
+// +checklocks:c.policyMu
+func (c *concentrator) bucketsFor(policy statsObfuscationPolicy) *policyBuckets {
+	// The newest policy is the likeliest match.
+	for _, b := range slices.Backward(c.policyBuckets) {
+		if b.policy == policy {
+			return b
+		}
+	}
+	sc := stats.NewSpanConcentrator(c.spanConcentratorConfig, c.created)
+	if c.lastFlush > 0 {
+		// A flush moves forward the oldest bucket that accepts spans, and
+		// spans ending before it are counted in it. Flushing the empty
+		// concentrator at the latest flush time gives it the oldest bucket of
+		// a concentrator that was flushed at every flush so far, so late spans
+		// land in the same bucket whichever policy buckets exist.
+		sc.Flush(c.lastFlush, false)
+	}
+	b := &policyBuckets{policy: policy, sc: sc}
+	c.policyBuckets = append(c.policyBuckets, b)
+	return b
+}
+
+// flushedStats is a set of flushed stats payloads whose resources were
+// obfuscated with obfuscation version obfVersion.
+type flushedStats struct {
+	csps       []*pb.ClientStatsPayload
+	obfVersion int
+}
+
+// flushPolicyBuckets flushes the buckets of every obfuscation policy, and
+// drops the buckets of policies that have been idle long enough; they are
+// recreated, from the same oldest bucket, when spans obfuscated under their
+// policy arrive again.
+func (c *concentrator) flushPolicyBuckets(now int64, includeCurrent bool) (flushed []flushedStats, bc stats.BlockCounts) {
+	c.policyMu.Lock()
+	defer c.policyMu.Unlock()
+	c.lastFlush = max(c.lastFlush, now)
+	kept := c.policyBuckets[:0]
+	for _, b := range c.policyBuckets {
+		drop := now-b.lastAdd > idlePolicyBuckets*c.bucketSize
+		if csps := b.sc.Flush(now, includeCurrent || drop); len(csps) > 0 {
+			flushed = append(flushed, flushedStats{csps: csps, obfVersion: b.policy.version})
+		}
+		addBlockCounts(&bc, b.sc.DrainBlockCounts())
+		if !drop {
+			kept = append(kept, b)
+		}
+	}
+	clear(c.policyBuckets[len(kept):])
+	c.policyBuckets = kept
+	return flushed, bc
+}
+
+func addBlockCounts(dst *stats.BlockCounts, src stats.BlockCounts) {
+	dst.LengthBlocks += src.LengthBlocks
+	dst.CapBlocks += src.CapBlocks
+	dst.WholeKeyCollapses += src.WholeKeyCollapses
+	dst.ResourceCollapses += src.ResourceCollapses
+	dst.HTTPEndpointCollapses += src.HTTPEndpointCollapses
+	dst.PeerTagsCollapses += src.PeerTagsCollapses
+	dst.OriginCollapses += src.OriginCollapses
 }
 
 // Stop stops the concentrator and blocks until the operation completes.
@@ -422,9 +537,18 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 	if includeCurrent {
 		c.drainIn()
 	}
-	csps := c.spanConcentrator.Flush(timenow.UnixNano(), includeCurrent)
-	bc := c.spanConcentrator.DrainBlockCounts()
+	flushed, bc := c.flushPolicyBuckets(timenow.UnixNano(), includeCurrent)
+	// Length blocks are counted when stat spans are created.
+	addBlockCounts(&bc, c.spanConcentrator.DrainBlockCounts())
 	c.emitCollapseMetrics(bc)
+	for _, f := range flushed {
+		c.sendPayloads(f.csps, f.obfVersion)
+	}
+}
+
+// sendPayloads sends flushed stats payloads, whose resources were obfuscated
+// with obfuscation version obfVersion.
+func (c *concentrator) sendPayloads(csps []*pb.ClientStatsPayload, obfVersion int) {
 	if len(csps) == 0 {
 		// nothing to flush
 		return
@@ -440,7 +564,7 @@ func (c *concentrator) flushAndSend(timenow time.Time, includeCurrent bool) {
 		csp.Service = c.cfg.internalConfig.ServiceName()
 		csp.ProcessTags = processtags.GlobalTags().String()
 		flushedBuckets += len(csp.Stats)
-		err := c.sender.send(csp, sendRetries, retryInterval)
+		err := c.sender.send(csp, obfVersion, sendRetries, retryInterval)
 		if err != nil {
 			c.statsd().Incr("datadog.tracer.stats.flush_errors", nil, 1)
 			reportStatsSendError(err)
@@ -517,7 +641,7 @@ type noopConcentrator struct{}
 func (c *noopConcentrator) Start()                           {}
 func (c *noopConcentrator) Stop()                            {}
 func (c *noopConcentrator) flushAndSend(_ time.Time, _ bool) {}
-func (c *noopConcentrator) newTracerStatSpan(_ *Span, _ *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
+func (c *noopConcentrator) newTracerStatSpan(_ *Span, _ *statsObfuscator) (*tracerStatSpan, bool) {
 	return nil, false
 }
 func (c *noopConcentrator) trySendSpan(_ *tracerStatSpan)    {}
