@@ -147,6 +147,13 @@ func TestParseOtelTracestateMalformed(t *testing.T) {
 	// non-hex is rejected.
 	_, _, _, thOK, _ := parseOtelTracestate("th:zzzz")
 	assert.False(t, thOK)
+	// uppercase and mixed-case hex is rejected: the spec requires lowercase.
+	_, rvOK, _, _, _ = parseOtelTracestate("rv:EF284ACE7A91E1")
+	assert.False(t, rvOK)
+	_, rvOK, _, _, _ = parseOtelTracestate("rv:Ef284ace7a91e1")
+	assert.False(t, rvOK)
+	_, _, _, thOK, _ = parseOtelTracestate("th:E666")
+	assert.False(t, thOK)
 	// a bad rv doesn't poison a good th and vice versa.
 	rv, rvOK, th, thOK, _ := parseOtelTracestate("rv:nothex;th:e6666666666668")
 	assert.False(t, rvOK)

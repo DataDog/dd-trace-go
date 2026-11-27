@@ -209,3 +209,28 @@ func TestOtelMalformedTreatedAsAbsent(t *testing.T) {
 	assert.Contains(t, ts, "othervendor=abc")
 	assert.NotContains(t, ts, "ot=")
 }
+
+// Uppercase rv/th are not valid per spec (lowercase only), so the ot= is treated
+// as absent like a malformed one: trace not rejected, other members preserved.
+func TestOtelUppercaseTreatedAsAbsent(t *testing.T) {
+	t.Setenv(envPropagationStyle, "tracecontext")
+	tr, err := newTracer()
+	assert.NoError(t, err)
+	defer tr.Stop()
+
+	headers := TextMapCarrier(map[string]string{
+		traceparentHeader: "00-4bf92f3577b34da6a3ce929d0e0e4736-2222222222222222-01",
+		tracestateHeader:  "dd=s:1,ot=rv:EF284ACE7A91E1;th:E6666666666666,othervendor=abc",
+	})
+	sctx, err := tr.Extract(headers)
+	assert.NoError(t, err)
+
+	rv, th, _ := sctx.trace.otelTracestate()
+	assert.Nil(t, rv)
+	assert.Nil(t, th)
+	assert.Nil(t, sctx.trace.otel)
+
+	ts := injectTracestate(t, sctx)
+	assert.Contains(t, ts, "othervendor=abc")
+	assert.NotContains(t, ts, "ot=")
+}
