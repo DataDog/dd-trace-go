@@ -603,6 +603,30 @@ func (p *payloadV1) encodeTraceChunks(bm bitmap, fieldID int, tc []traceChunk, s
 	return true, nil
 }
 
+// encodePromotedStringAttrs encodes promoted attributes that live in the V1
+// attributes array (language and runtime-id). Kept out of line from encodeSpans
+// so spans with nil promotedAttrs avoid extra register pressure in the loop.
+//
+// +checklocksignore — Post-finish: reads finished span fields during payload encoding.
+//
+//go:noinline
+func (p *payloadV1) encodePromotedStringAttrs(span *Span, st *stringTable) int {
+	count := 0
+	if lang, ok := span.meta.Language(); ok {
+		count++
+		p.buf = st.serialize("language", p.buf)
+		p.buf = append(p.buf, byte(StringValueType))
+		p.buf = st.serialize(lang, p.buf)
+	}
+	if rid, ok := span.meta.RuntimeID(); ok {
+		count++
+		p.buf = st.serialize(ext.RuntimeID, p.buf)
+		p.buf = append(p.buf, byte(StringValueType))
+		p.buf = st.serialize(rid, p.buf)
+	}
+	return count
+}
+
 // encodeSpans encodes a list of spans associated with fieldID into p.buf in msgp format.
 // +checklocksignore — Post-finish: reads finished span fields during payload encoding.
 func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stringTable) (bool, error) {
@@ -651,18 +675,15 @@ func (p *payloadV1) encodeSpans(bm bitmap, fieldID int, spans spanList, st *stri
 		// To avoid increased allocations, we serialize attributes immediately without
 		// creating an intermediate map. We write a placeholder for the array header
 		// and write the actual count after writing all attributes.
-		// Promoted attrs (env, version, language) are encoded separately
-		// as fields 13-16 and must not appear in the attributes array.
+		// Promoted env and version are encoded separately as V1 fields 13-14.
+		// Promoted language and runtime-id are encoded in the attributes array below.
 		p.buf = append(p.buf, 9) // attributes fieldID (msgp fixint)
 		off := len(p.buf)
 		count := 0
 		p.buf = append(p.buf, msgpackArray32, 0, 0, 0, 0)
 
-		if lang, ok := span.meta.Language(); ok {
-			count++
-			p.buf = st.serialize("language", p.buf)
-			p.buf = append(p.buf, byte(StringValueType))
-			p.buf = st.serialize(lang, p.buf)
+		if span.meta.HasPromoted() {
+			count += p.encodePromotedStringAttrs(span, st)
 		}
 
 		// Map(false) returns the underlying flat map directly (no copy, no promoted attrs).

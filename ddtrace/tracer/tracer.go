@@ -673,7 +673,7 @@ func newUnstartedTracer(opts ...StartOption) (t *tracer, err error) {
 }
 
 // buildSharedAttrs populates the tracer's two shared SpanAttributes instances
-// with process-level values (language, env, version) and marks them read-only.
+// with process-level values (language, runtime-id, env, version) and marks them read-only.
 // Every new span starts with a pointer to one of these; the copy-on-write
 // mechanism in SpanAttributes.Clone() creates a span-specific copy only when
 // a per-span override is needed.
@@ -682,6 +682,10 @@ func buildSharedAttrs(c *config, base, mainSvc *traceinternal.SpanAttributes) {
 	// COW clone on the setMetaInit("language", "go") call in spanStart.
 	base.Set(traceinternal.AttrLanguage, "go")
 	mainSvc.Set(traceinternal.AttrLanguage, "go")
+	if rid, ok := c.internalConfig.GlobalTags()[ext.RuntimeID].(string); ok {
+		base.Set(traceinternal.AttrRuntimeID, rid)
+		mainSvc.Set(traceinternal.AttrRuntimeID, rid)
+	}
 	if env := c.internalConfig.Env(); env != "" {
 		base.Set(traceinternal.AttrEnv, env)
 		mainSvc.Set(traceinternal.AttrEnv, env)
@@ -966,10 +970,21 @@ func (c *chunk) releasableSpans() []*Span {
 	return c.spans
 }
 
+// clearSpans drops the chunk's span references. The payload and stats
+// pipelines keep their own references, so clearing here only lets finished
+// spans be collected once the chunk has been processed or dropped. Chunks
+// embedded in a trace (trace.inlineChunk) would otherwise retain every span
+// of the first full flush for the trace's lifetime.
+func (c *chunk) clearSpans() {
+	c.spans = nil
+	c.spansToRelease = nil
+}
+
 func (t *tracer) processOutChunk(trace *chunk) {
 	spansToRelease := trace.releasableSpans()
 	if trace.filterRejected {
 		releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
+		trace.clearSpans()
 		return
 	}
 	t.sampleChunk(trace)
@@ -977,6 +992,7 @@ func (t *tracer) processOutChunk(trace *chunk) {
 		t.traceWriter.add(trace.spans)
 	}
 	releaseSpans(t.config.internalConfig.SpanPoolEnabled(), spansToRelease)
+	trace.clearSpans()
 }
 
 // sampleChunk applies single-span sampling to the provided trace.
@@ -1013,6 +1029,10 @@ func (t *tracer) pushChunk(trace *chunk) {
 	tracerstats.Signal(tracerstats.SpansFinished, uint32(len(trace.spans)))
 	select {
 	case <-t.stop:
+		// The tracer stopped, so no worker will process this chunk. Drop the
+		// span references here; a chunk embedded in a trace (trace.inlineChunk)
+		// would otherwise retain them for the trace's lifetime.
+		trace.clearSpans()
 		return
 	default:
 	}
@@ -1030,7 +1050,10 @@ func (t *tracer) pushChunk(trace *chunk) {
 		// Do NOT call releaseSpans here: pushChunk is called from within
 		// finish() while s.mu is held. clear() acquires s.mu to serialize
 		// after finish(), so calling it here deadlocks the same goroutine.
-		// Dropped spans are GC'd instead.
+		// Dropped spans are GC'd instead. Dropping the slice references lets
+		// them be collected; a chunk embedded in a trace (trace.inlineChunk)
+		// would otherwise retain them for the trace's lifetime.
+		trace.clearSpans()
 	}
 	select {
 	case <-t.logDroppedTraces.C:
@@ -1041,10 +1064,12 @@ func (t *tracer) pushChunk(trace *chunk) {
 	}
 }
 
-// +checklocksignore — Initialization time, span not yet shared.
-// It returns the started span, whether the span is the root of its trace, and
-// the service name of the parent span ("" when there is no parent).
-func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, poolEnabled bool, options ...StartSpanOption) (*Span, bool, string) {
+// parseStartSpanOptions runs StartSpanOption closures against a StartSpanConfig.
+// Kept out of line from spanStartWithContext so the zero-options path does not
+// heap-allocate a StartSpanConfig.
+//
+//go:noinline
+func parseStartSpanOptions(options []StartSpanOption) StartSpanConfig {
 	var opts StartSpanConfig
 	// A caller passing N options is our best cheap signal for how many
 	// Tag-family options it might include; Tag uses this to size Tags on
@@ -1057,24 +1082,56 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 		}
 		fn(&opts)
 	}
-	var startTime int64
-	if opts.StartTime.IsZero() {
+	return opts
+}
+
+// +checklocksignore — Initialization time, span not yet shared.
+// It returns the started span, whether the span is the root of its trace, and
+// the service name of the parent span ("" when there is no parent).
+func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, poolEnabled bool, options ...StartSpanOption) (*Span, bool, string) {
+	return spanStartWithContext(operationName, sharedAttrs, poolEnabled, nil, nil, false, options...)
+}
+
+// +checklocksignore — Initialization time, span not yet shared.
+func spanStartWithContext(operationName string, sharedAttrs *traceinternal.SpanAttributes, poolEnabled bool, ctx gocontext.Context, ctxParent *SpanContext, overrideParent bool, options ...StartSpanOption) (*Span, bool, string) {
+	var (
+		startTime    int64
+		hasStartTime bool
+		context      *SpanContext
+		pprofContext = ctx
+		id           uint64
+		tags         map[string]any
+		spanLinks    []SpanLink
+	)
+	if len(options) > 0 {
+		opts := parseStartSpanOptions(options)
+		if !opts.StartTime.IsZero() {
+			startTime = opts.StartTime.UnixNano()
+			hasStartTime = true
+		}
+		context = opts.Parent
+		if opts.Context != nil && pprofContext == nil {
+			pprofContext = opts.Context
+		}
+		id = opts.SpanID
+		tags = opts.Tags
+		spanLinks = opts.SpanLinks
+	}
+	if overrideParent {
+		context = ctxParent
+	} else if ctxParent != nil && context == nil {
+		context = ctxParent
+	}
+	if !hasStartTime {
 		startTime = now()
-	} else {
-		startTime = opts.StartTime.UnixNano()
 	}
 
 	var (
-		context             *SpanContext
 		parentService       string
 		parentServiceSource string
-		// The default pprof context is taken from the start options and is
-		// not nil when using StartSpanFromContext()
-		pprofContext = opts.Context
 	)
 
-	if opts.Parent != nil {
-		context = opts.Parent
+	if context != nil {
 		// Batch read service and pprofContext from parent span under single lock
 		// to minimize lock contention on the parent span during child creation.
 		spanSnapshot := context.getSpanSnapshot()
@@ -1098,11 +1155,11 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 		// to properly document this for users.
 		pprofContext = gocontext.Background()
 	}
-	id := opts.SpanID
 	if id == 0 {
 		id = generateSpanID(startTime)
 	}
-	span := acquireSpan(poolEnabled)
+	needsNewTrace := context == nil || context.baggageOnly || context.trace == nil
+	span := acquireSpanForContext(poolEnabled, needsNewTrace)
 	span.name = operationName
 	span.service = parentService // inherit from parent if available
 	span.serviceSource = parentServiceSource
@@ -1112,9 +1169,11 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	span.start = startTime
 	span.integration = "manual"
 	span.meta.SwapSharedAttrs(sharedAttrs) // COW: shared until a per-span field is set
-	span.meta.ReserveIfLargeEnough(len(opts.Tags))
+	span.meta.ReserveIfLargeEnough(len(tags))
 
-	span.spanLinks = append(span.spanLinks, opts.SpanLinks...)
+	if len(spanLinks) > 0 {
+		span.spanLinks = append(span.spanLinks, spanLinks...)
+	}
 
 	if context != nil && !context.baggageOnly { // +checklocksignore - Read-only after init.
 		// this is a child span
@@ -1142,13 +1201,15 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	if pprofContext != nil {
 		setLLMObsPropagatingTags(pprofContext, span.context)
 	}
-	span.setMetaInit("language", "go")
+	if sharedAttrs == nil {
+		span.setMetaInit("language", "go")
+	}
 	pprofContext, span.taskEnd = startExecutionTracerTask(pprofContext, span)
 	span.pprofCtxRestore = pprofContext
 	// setTags takes s.mu internally. Tags may override the service name
 	// (ServiceName option), so the span service must not be compared with the
 	// parent service until every mutation has been applied.
-	span.setTags(opts.Tags)
+	span.setTags(tags)
 	// The span snapshot is populated by tracer.StartSpan once all
 	// env/version/service-mapping mutations have been applied, so we
 	// don't take the SpanContext lock here. setSpanSnapshotMeta calls
@@ -1195,13 +1256,18 @@ func (t *tracer) StartSpan(operationName string, options ...StartSpanOption) *Sp
 
 // +checklocksignore — Initialization time, span not yet returned to caller.
 func (t *tracer) startSpan(operationName, ciVisibilityTracerType string, options ...StartSpanOption) *Span {
+	return t.startSpanWithContext(operationName, ciVisibilityTracerType, nil, nil, false, options...)
+}
+
+// +checklocksignore — Initialization time, span not yet returned to caller.
+func (t *tracer) startSpanWithContext(operationName, ciVisibilityTracerType string, ctx gocontext.Context, ctxParent *SpanContext, overrideParent bool, options ...StartSpanOption) *Span {
 	if !t.config.internalConfig.TracingEnabled() {
 		return nil
 	}
 	// Snapshot all internal config fields needed below under a single RLock to avoid
 	// reader-counter contention on Config.mu when many goroutines call StartSpan.
 	cSnap := t.config.internalConfig.SpanStartSnapshot()
-	span, isRootSpan, parentService := spanStart(operationName, &t.sharedAttrs, cSnap.SpanPoolEnabled, options...)
+	span, isRootSpan, parentService := spanStartWithContext(operationName, &t.sharedAttrs, cSnap.SpanPoolEnabled, ctx, ctxParent, overrideParent, options...)
 	if ciVisibilityTracerType != "" {
 		setCIVisibilityTracerType(span, ciVisibilityTracerType)
 	}
@@ -1223,8 +1289,19 @@ func (t *tracer) startSpan(operationName, ciVisibilityTracerType string, options
 	}
 	span.supportsEvents = t.config.agent.load().spanEventsAvailable || t.otlpExportMode
 
-	// add global tags
-	span.setTags(cSnap.GlobalTags)
+	// add global tags (fast-path when GlobalTags only carries the process
+	// runtime-id already set on the span).
+	if len(cSnap.GlobalTags) == 1 {
+		if rid, ok := cSnap.GlobalTags[ext.RuntimeID].(string); ok {
+			if cur, has := span.meta.RuntimeID(); !has || cur != rid {
+				span.setTags(cSnap.GlobalTags)
+			}
+		} else {
+			span.setTags(cSnap.GlobalTags)
+		}
+	} else {
+		span.setTags(cSnap.GlobalTags)
+	}
 
 	if newSvc, ok := t.config.internalConfig.ServiceMapping(span.service); ok {
 		span.service = newSvc
@@ -1530,6 +1607,10 @@ func (t *tracer) TracerConf() TracerConf {
 // +checklocks:trace.mu
 func (t *tracer) computeSpanStats(trace *trace, span *Span) {
 	agentFeatures := t.config.agent.load()
+	// statSpan may hold a pre-allocated tracerStatSpan fused into the span's
+	// allocation block (span pooling disabled, brand-new trace). Capture it
+	// before clearing, so newTracerStatSpanPrealloc can reuse it.
+	preallocStatSpan := span.statSpan
 	span.statSpan = nil
 	// A capable agent and OTLP span metrics are independent paths to stats
 	// computation: don't let the agent-capability check gate out OTLP-only mode.
@@ -1540,7 +1621,7 @@ func (t *tracer) computeSpanStats(trace *trace, span *Span) {
 		}
 		return
 	}
-	span.statSpan, _ = t.stats.newTracerStatSpan(span, t.obfuscator)
+	span.statSpan, _ = t.stats.newTracerStatSpanPrealloc(span, t.obfuscator, preallocStatSpan)
 	if span == trace.root {
 		trace.filterReject = agentFeatures.traceFilters != nil && agentFeatures.traceFilters.reject(span)
 	}
@@ -1549,6 +1630,8 @@ func (t *tracer) computeSpanStats(trace *trace, span *Span) {
 // +checklocks:span.mu
 func (t *tracer) computeOversizedSpanStats(span *Span) {
 	agentFeatures := t.config.agent.load()
+	// See computeSpanStats: capture the fused pre-allocation, if any.
+	preallocStatSpan := span.statSpan
 	span.statSpan = nil
 	// A capable agent and OTLP span metrics are independent paths to stats
 	// computation: don't let the agent-capability check gate out OTLP-only mode.
@@ -1558,7 +1641,7 @@ func (t *tracer) computeOversizedSpanStats(span *Span) {
 	}
 	// The oversized-trace path sends the stat span immediately and never
 	// assembles a chunk, so there is no need to retain it on the span.
-	statSpan, _ := t.stats.newTracerStatSpan(span, t.obfuscator)
+	statSpan, _ := t.stats.newTracerStatSpanPrealloc(span, t.obfuscator, preallocStatSpan)
 	if statSpan != nil {
 		t.stats.trySendSpan(statSpan)
 	}
@@ -1578,14 +1661,28 @@ func (t *tracer) submitChunk(c *chunk) {
 	if c.filterRejected {
 		t.emitFilterDrop(len(c.spans))
 	} else {
-		stats := make([]*tracerStatSpan, 0, len(c.spans))
+		var first *tracerStatSpan
+		var stats []*tracerStatSpan
 		for _, span := range c.spans {
-			if span != nil && span.statSpan != nil {
-				stats = append(stats, span.statSpan)
+			if span == nil || span.statSpan == nil {
+				continue
+			}
+			ss := span.statSpan
+			if first == nil {
+				first = ss
+			} else {
+				if stats == nil {
+					stats = make([]*tracerStatSpan, 0, len(c.spans))
+					stats = append(stats, first)
+				}
+				stats = append(stats, ss)
 			}
 		}
-		if len(stats) > 0 {
+		if stats != nil {
 			t.stats.trySendSpans(stats)
+		} else if first != nil {
+			first.single[0] = first
+			t.stats.trySendSpans(first.single[:])
 		}
 	}
 	t.pushChunk(c)

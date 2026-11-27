@@ -14,7 +14,7 @@ import (
 
 func TestSpanAttributesZeroValue(t *testing.T) {
 	var a SpanAttributes
-	for _, key := range []AttrKey{AttrEnv, AttrVersion, AttrLanguage} {
+	for _, key := range []AttrKey{AttrEnv, AttrVersion, AttrLanguage, AttrRuntimeID} {
 		if v, ok := a.Get(key); ok || v != "" {
 			t.Errorf("key %d: expected absent zero value, got (%q, %v)", key, v, ok)
 		}
@@ -29,6 +29,7 @@ func TestSpanAttributesSetAndGet(t *testing.T) {
 		{AttrEnv, "prod"},
 		{AttrVersion, "1.2.3"},
 		{AttrLanguage, "go"},
+		{AttrRuntimeID, "rid-123"},
 	}
 	var a SpanAttributes
 	for _, tt := range tests {
@@ -137,6 +138,7 @@ func TestAttrKeyForTag(t *testing.T) {
 		{"env", AttrEnv, true},
 		{"version", AttrVersion, true},
 		{"language", AttrLanguage, true},
+		{"runtime-id", AttrRuntimeID, true},
 		{"component", AttrUnknown, false},
 		{"span.kind", AttrUnknown, false},
 		{"unknown", AttrUnknown, false},
@@ -332,4 +334,24 @@ func TestSpanMetaReserveIfLargeEnough(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSpanMetaRuntimeIDAndHasPromoted(t *testing.T) {
+	var sm SpanMeta
+	assert.False(t, sm.HasPromoted())
+	v, ok := sm.RuntimeID()
+	assert.False(t, ok)
+	assert.Empty(t, v)
+
+	sm.Set("runtime-id", "rid-42")
+	assert.True(t, sm.HasPromoted())
+	v, ok = sm.RuntimeID()
+	assert.True(t, ok)
+	assert.Equal(t, "rid-42", v)
+	assert.Nil(t, sm.Map(false))
+
+	sm.Delete("runtime-id")
+	v, ok = sm.RuntimeID()
+	assert.False(t, ok)
+	assert.Empty(t, v)
 }

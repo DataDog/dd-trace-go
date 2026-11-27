@@ -110,7 +110,32 @@ func (t *traceID) HasUpper() bool {
 	return false
 }
 
-func (t *traceID) UpperHex() string { return t.HexEncoded()[:16] }
+type upperHexEntry struct {
+	sec uint32
+	hex string
+}
+
+var upperHexCache atomic.Pointer[upperHexEntry]
+
+func (t *traceID) UpperHex() string {
+	if t.hexEncoded != "" {
+		return t.hexEncoded[:16]
+	}
+	// Locally generated 128-bit trace IDs encode <32-bit unix seconds><32 zero bits>
+	// in the upper 64 bits, so the upper hex string changes at most once per second.
+	if t.value[4]|t.value[5]|t.value[6]|t.value[7] == 0 {
+		sec := binary.BigEndian.Uint32(t.value[:4])
+		if cached := upperHexCache.Load(); cached != nil && cached.sec == sec {
+			return cached.hex
+		}
+		var buf [16]byte
+		hex.Encode(buf[:], t.value[:8])
+		s := string(buf[:])
+		upperHexCache.Store(&upperHexEntry{sec: sec, hex: s})
+		return s
+	}
+	return t.HexEncoded()[:16]
+}
 
 // cacheHex populates the hexEncoded cache. It must be called at traceID
 // construction finalization, before the enclosing SpanContext is shared with
@@ -295,15 +320,19 @@ func FromGenericCtx(c ddtrace.SpanContext) *SpanContext {
 // for the same span.
 // +checklocksignore — Initialization time, context not yet shared.
 func newSpanContext(span *Span, parent *SpanContext) *SpanContext {
-	context := &SpanContext{
-		spanID: span.spanID,
+	context := span.context
+	if context == nil {
+		context = &SpanContext{}
 	}
+	context.spanID = span.spanID
 
 	context.traceID.SetLower(span.traceID)
 	if parent != nil {
 		if !parent.baggageOnly { // +checklocksignore - Read-only after init.
 			context.traceID.SetUpper(parent.traceID.Upper())
-			context.trace = parent.trace
+			if parent.trace != nil {
+				context.trace = parent.trace
+			}
 			context.origin = parent.origin // +checklocksignore - Initialization time, not shared yet. Parent origin is read-only after init.
 			context.errors.Store(parent.errors.Load())
 			inheritLLMObsSpan(context, parent)
@@ -678,10 +707,26 @@ type trace struct {
 	// +checklocks:mu
 	filterReject bool
 
+	// propagatingTagsReadOnly is true when propagatingTags holds a shared
+	// read-only cached map (e.g. from dmPropagatingTagMaps) that must not be
+	// mutated in place.
+	// +checklocks:mu
+	propagatingTagsReadOnly bool
+
+	// inlineChunkUsed is true once inlineChunk has been handed off to
+	// submitChunkWithTracer on a full flush, so any subsequent flush allocates
+	// a fresh chunk instead of racing with the worker reading inlineChunk.
+	// +checklocks:mu
+	inlineChunkUsed bool
+
 	// otel holds the OpenTelemetry consistent probability sampling state, or nil
 	// when the trace carries none. See otelTraceState.
 	// +checklocks:mu
 	otel *otelTraceState
+
+	// inlineChunk avoids a separate &chunk{} heap allocation on the first
+	// (and almost always only) full flush of a trace.
+	inlineChunk chunk
 }
 
 // otelTraceState is the OpenTelemetry consistent probability sampling state
@@ -832,8 +877,20 @@ func samplingPriorityPtr(p int) *float64 {
 
 // newTrace creates a new trace using the given callback which will be called
 // upon completion of the trace.
+// initSpans allocates the initial spans slice. It always allocates a
+// dedicated backing array: aliasing the slice into the trace struct would
+// keep finished spans reachable for the trace's lifetime after the slice
+// outgrows the embedded buffer, and submitted chunks may reference the array
+// until the payload worker processes them.
+// +checklocksignore — Initialization time, trace not yet shared.
+func (t *trace) initSpans() {
+	t.spans = make([]*Span, 0, traceStartSize)
+}
+
 func newTrace() *trace {
-	return &trace{spans: make([]*Span, 0, traceStartSize)}
+	t := &trace{}
+	t.initSpans()
+	return t
 }
 
 // samplingPriority returns the sampling priority of the trace, if set.
@@ -1111,8 +1168,16 @@ func (t *trace) finishedOneLocked(s *Span) {
 		filterRejected := t.filterReject
 		t.spans = nil
 		t.finished = 0 // important, because a buffer can be used for several flushes
+		var c *chunk
+		if !t.inlineChunkUsed {
+			t.inlineChunkUsed = true
+			t.inlineChunk = chunk{spans: spans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected}
+			c = &t.inlineChunk
+		} else {
+			c = &chunk{spans: spans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected}
+		}
 		t.mu.Unlock()
-		submitChunkWithTracer(tr, &chunk{spans: spans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected})
+		submitChunkWithTracer(tr, c)
 		return
 	}
 
@@ -1201,9 +1266,10 @@ func (t *trace) finishedOneLocked(s *Span) {
 		t.mu.RLock()
 		t.setTraceTagsLocked(fSpan)
 		t.mu.RUnlock()
-		// recompute stats after trace tags propagation
+		// recompute stats after trace tags propagation; reuse the stat span
+		// already stored on the span (it may be the fused pre-allocation).
 		if realTracer, ok := tr.(*tracer); ok && fSpan.statSpan != nil {
-			fSpan.statSpan, _ = realTracer.stats.newTracerStatSpan(fSpan, realTracer.obfuscator)
+			fSpan.statSpan, _ = realTracer.stats.newTracerStatSpanPrealloc(fSpan, realTracer.obfuscator, fSpan.statSpan)
 		}
 	}
 	if !finishingSpanIsFirstInChunk {
@@ -1214,11 +1280,18 @@ func (t *trace) finishedOneLocked(s *Span) {
 	submitChunkWithTracer(tr, &chunk{spans: finishedSpans, willSend: willSend, spansToRelease: spansToRelease, filterRejected: filterRejected})
 }
 
-// submitChunkWithTracer submits a finished chunk when tr is backed by the real tracer.
+// submitChunkWithTracer submits a finished chunk when tr is backed by the real
+// tracer. Tracers that do not consume chunks (mocktracer, noopTracer, or a
+// tracer stopped after t.stop) leave the chunk unprocessed, so its span
+// references are dropped here. A chunk embedded in a trace (trace.inlineChunk)
+// would otherwise retain every span of the first full flush for the trace's
+// lifetime.
 func submitChunkWithTracer(tr Tracer, c *chunk) {
 	if t, ok := tr.(*tracer); ok {
 		t.submitChunk(c)
+		return
 	}
+	c.clearSpans()
 }
 
 // setPeerService sets the peer.service, _dd.peer.service.source, and _dd.peer.service.remapped_from

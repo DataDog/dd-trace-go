@@ -1927,3 +1927,82 @@ func TestSpanSnapshotFieldsConcurrentAccess(t *testing.T) {
 		assert.NoError(t, err)
 	}
 }
+
+func TestTraceIDUpperHexCache(t *testing.T) {
+	var id1 traceID
+	id1.SetUpper(uint64(0x67452301) << 32)
+	id1.SetLower(0x0102030405060708)
+	assert.Equal(t, "6745230100000000", id1.UpperHex())
+	// Second call hits the per-second cache.
+	assert.Equal(t, "6745230100000000", id1.UpperHex())
+
+	// Next second updates the cache.
+	var id2 traceID
+	id2.SetUpper(uint64(0x67452302) << 32)
+	id2.SetLower(0x1112131415161718)
+	assert.Equal(t, "6745230200000000", id2.UpperHex())
+
+	// Non-zero lower 32 bits of upper falls back to full hex encoding.
+	var id3 traceID
+	id3.SetUpper(0x67452301deadbeef)
+	id3.SetLower(0x0102030405060708)
+	assert.Equal(t, "67452301deadbeef", id3.UpperHex())
+}
+
+func TestPropagatingTagsCachedDMImmutability(t *testing.T) {
+	tr1 := newTrace()
+	tr1.mu.Lock()
+	tr1.copyOnWriteSet(keyDecisionMaker, "-1")
+	tr1.mu.Unlock()
+
+	// Mutating via setPropagatingTagUnsafe must clone the cached map instead of
+	// modifying the shared entry in dmPropagatingTagMaps.
+	tr1.setPropagatingTagUnsafe("_dd.p.custom", "val")
+	assert.Equal(t, "-1", tr1.propagatingTag(keyDecisionMaker))
+	assert.Equal(t, "val", tr1.propagatingTag("_dd.p.custom"))
+
+	// A separate trace using the same cached "-1" entry must not see "_dd.p.custom".
+	tr2 := newTrace()
+	tr2.mu.Lock()
+	tr2.copyOnWriteSet(keyDecisionMaker, "-1")
+	tr2.mu.Unlock()
+	assert.Equal(t, "-1", tr2.propagatingTag(keyDecisionMaker))
+	assert.Equal(t, "", tr2.propagatingTag("_dd.p.custom"))
+
+	// replacePropagatingTags must clear propagatingTagsReadOnly.
+	tr2.replacePropagatingTags(map[string]string{"_dd.p.a": "1"})
+	tr2.mu.RLock()
+	assert.False(t, tr2.propagatingTagsReadOnly)
+	tr2.mu.RUnlock()
+}
+
+func TestNewSpanContextPreservesFusedTraceForExtractedParent(t *testing.T) {
+	parent := &SpanContext{spanID: 42}
+	parent.traceID.SetLower(99)
+	span := acquireSpanForContext(false, true)
+	fusedTrace := span.context.trace
+	require.NotNil(t, fusedTrace)
+
+	sc := newSpanContext(span, parent)
+	assert.Same(t, fusedTrace, sc.trace)
+}
+
+func TestStartSpanUnixEpochAndRuntimeIDGlobalTag(t *testing.T) {
+	tr, _, _, stop, err := startTestTracer(t)
+	require.NoError(t, err)
+	defer stop()
+
+	// StartTime(time.Unix(0, 0)) must keep start == 0 rather than falling back to now().
+	s1 := tr.StartSpan("epoch", StartTime(time.Unix(0, 0)))
+	assert.Equal(t, int64(0), s1.start)
+	s1.Finish()
+
+	// GlobalTags runtime-id must still override a per-span runtime-id tag when len(GlobalTags) == 1.
+	wantRID, _ := tr.config.internalConfig.GlobalTags()[ext.RuntimeID].(string)
+	require.NotEmpty(t, wantRID)
+	s2 := tr.StartSpan("override-rid", Tag(ext.RuntimeID, "custom-rid"))
+	gotRID, ok := s2.meta.RuntimeID()
+	assert.True(t, ok)
+	assert.Equal(t, wantRID, gotRID)
+	s2.Finish()
+}

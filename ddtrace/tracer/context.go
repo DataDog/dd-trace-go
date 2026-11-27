@@ -206,25 +206,43 @@ func spanContextSnapshot(ctx context.Context) *SpanContext {
 // [Extract] returns when propagation is disabled. Such a call still gets the discovered parent.
 // +checklocksignore — Initialization time, span just created by StartSpan, not yet shared.
 func StartSpanFromContext(ctx context.Context, operationName string, opts ...StartSpanOption) (*Span, context.Context) {
-	// copy opts in case the caller reuses the slice in parallel
-	// we will add at least 1, at most 2 items
-	optsLocal := options.Expand(opts, 0, 2)
+	var (
+		parent         *SpanContext
+		overrideParent bool
+	)
 	if ctx == nil {
 		// default to context.Background() to avoid panics on Go >= 1.15
 		ctx = context.Background()
 	} else if sc, ok := ctx.Value(activeSpanContextKey{}).(*SpanContext); ok && sc != nil {
 		// Prefer the snapshotted SpanContext to handle span pool recycling.
-		optsLocal = append(optsLocal, ChildOf(sc))
+		parent = sc
+		overrideParent = true
 	} else if s, ok := SpanFromContext(ctx); ok {
 		// Reached only when the context chain carries no span snapshot, i.e. the
 		// span came from somewhere other than ContextWithSpan. In practice that
 		// is Orchestrion's GLS fallback, which is an inference about the current
 		// scope rather than a parent the caller named, so it must not override an
 		// explicit ChildOf. See childOfIfUnset.
-		optsLocal = append(optsLocal, childOfIfUnset(s.Context()))
+		parent = s.Context()
 	}
-	optsLocal = append(optsLocal, withContext(ctx))
-	s := StartSpan(operationName, optsLocal...)
+
+	var s *Span
+	if tr, ok := getGlobalTracer().(*tracer); ok {
+		s = tr.startSpanWithContext(operationName, "", ctx, parent, overrideParent, opts...)
+	} else {
+		// Fallback for mocktracer, noopTracer, or custom Tracer implementations.
+		// Copy opts in case the caller reuses the slice in parallel.
+		optsLocal := options.Expand(opts, 0, 2)
+		if parent != nil {
+			if overrideParent {
+				optsLocal = append(optsLocal, ChildOf(parent))
+			} else {
+				optsLocal = append(optsLocal, childOfIfUnset(parent))
+			}
+		}
+		optsLocal = append(optsLocal, withContext(ctx))
+		s = StartSpan(operationName, optsLocal...)
+	}
 	if s != nil && s.pprofCtxActive != nil {
 		ctx = s.pprofCtxActive
 	}

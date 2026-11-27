@@ -16,10 +16,11 @@ import (
 type AttrKey uint8
 
 const (
-	AttrEnv      AttrKey = 0
-	AttrVersion  AttrKey = 1
-	AttrLanguage AttrKey = 2
-	numAttrs     AttrKey = 3
+	AttrEnv       AttrKey = 0
+	AttrVersion   AttrKey = 1
+	AttrLanguage  AttrKey = 2
+	AttrRuntimeID AttrKey = 3
+	numAttrs      AttrKey = 4
 
 	// AttrUnknown is returned by AttrKeyForTag when no promoted tag matches.
 	// Its value is intentionally out of range for vals[] so misuse panics immediately.
@@ -30,10 +31,11 @@ const (
 // they index both vals[] and setMask bit positions. If any value drifts (e.g. via
 // iota + reorder), the expression below produces a compile error.
 var (
-	_ = [1]byte{}[AttrEnv]        // AttrEnv must be 0
-	_ = [1]byte{}[AttrVersion-1]  // AttrVersion must be 1
-	_ = [1]byte{}[AttrLanguage-2] // AttrLanguage must be 2
-	_ = [1]byte{}[numAttrs-3]     // numAttrs must be 3 (update when adding attributes)
+	_ = [1]byte{}[AttrEnv]         // AttrEnv must be 0
+	_ = [1]byte{}[AttrVersion-1]   // AttrVersion must be 1
+	_ = [1]byte{}[AttrLanguage-2]  // AttrLanguage must be 2
+	_ = [1]byte{}[AttrRuntimeID-3] // AttrRuntimeID must be 3
+	_ = [1]byte{}[numAttrs-4]      // numAttrs must be 4 (update when adding attributes)
 )
 
 // SpanAttributes holds the V1-protocol promoted span fields.
@@ -144,15 +146,16 @@ var Defs = [numAttrs]AttrDef{
 	{AttrEnv, "env"},
 	{AttrVersion, "version"},
 	{AttrLanguage, "language"},
+	{AttrRuntimeID, "runtime-id"},
 }
 
 // IsPromotedKeyLen reports whether n matches the length of any promoted attribute name.
-// Promoted keys: "env"(3), "version"(7), "language"(8).
+// Promoted keys: "env"(3), "version"(7), "language"(8), "runtime-id"(10).
 // This must stay in sync with the Defs table; the init check below enforces
 // this at program start.
 func IsPromotedKeyLen(n int) bool {
 	switch n {
-	case 3, 7, 8:
+	case 3, 7, 8, 10:
 		return true
 	}
 	return false
@@ -195,6 +198,8 @@ func AttrKeyForTag(tag string) (AttrKey, bool) {
 		return AttrVersion, true
 	case "language":
 		return AttrLanguage, true
+	case "runtime-id":
+		return AttrRuntimeID, true
 	}
 	return AttrUnknown, false
 }

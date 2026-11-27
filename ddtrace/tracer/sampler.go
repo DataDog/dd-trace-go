@@ -306,7 +306,7 @@ func (ps *prioritySampler) apply(spn *Span) {
 	} else {
 		spn.setSamplingPriority(ext.PriorityAutoReject, samplernames.AgentRate)
 	}
-	spn.SetTag(keySamplingPriorityRate, rate)
+	spn.setMetric(keySamplingPriorityRate, rate)
 	// Only set the Knuth sampling rate tag when actual agent rates have been
 	// received. The initial default rate (1.0) is a client-side fallback that
 	// does not represent an agent-configured rate, so it must not propagate

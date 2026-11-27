@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"errors"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -43,6 +44,10 @@ type statsConcentrator interface {
 	Stop()
 	flushAndSend(now time.Time, includeCurrent bool)
 	newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool)
+	// newTracerStatSpanPrealloc behaves like newTracerStatSpan, but reuses a
+	// pre-allocated tracerStatSpan (for example one fused into a span's
+	// allocation block) instead of allocating a new one. Pass nil to allocate.
+	newTracerStatSpanPrealloc(s *Span, obfuscator *obfuscate.Obfuscator, prealloc *tracerStatSpan) (*tracerStatSpan, bool)
 	trySendSpan(s *tracerStatSpan)
 	trySendSpans(spans []*tracerStatSpan)
 }
@@ -188,6 +193,7 @@ type tracerStatSpan struct {
 	statSpan *stats.StatSpan
 	origin   string
 	version  string // per-span version tag; "" means use global aggKey version
+	single   [1]*tracerStatSpan
 }
 
 // newConcentrator creates a new concentrator using the given tracer
@@ -302,9 +308,43 @@ func (c *concentrator) runIngester() {
 	}
 }
 
-// +checklocksignore — Post-finish: reads finished span fields during stats computation.
+var (
+	// emptyStatsMeta and emptyStatsMetrics are shared read-only empty maps passed
+	// to stats.SpanConcentrator.NewStatSpanWithConfig so it does not allocate fresh
+	// maps when a span has no flat meta tags or no metrics.
+	emptyStatsMeta    = map[string]string{}
+	emptyStatsMetrics = map[string]float64{}
+)
+
 func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
+	return c.newTracerStatSpanPrealloc(s, obfuscator, nil)
+}
+
+// +checklocksignore — Post-finish: reads finished span fields during stats computation.
+func (c *concentrator) newTracerStatSpanPrealloc(s *Span, obfuscator *obfuscate.Obfuscator, prealloc *tracerStatSpan) (*tracerStatSpan, bool) {
+	// Stats reads span.kind, _dd.svc_src, status codes and peer tags from the
+	// flat metadata map, so promoted keys are not needed here, with two
+	// exceptions: promoting a key removes it from the flat map (see
+	// SpanMeta.Map), so a promoted runtime-id would silently disappear from
+	// the emitted stats when the key is requested as an additional stats tag
+	// or as a peer tag by the agent. Both consumers read this same map, so
+	// request the merged map in those cases.
 	agentInfo := c.cfg.agent.load()
+	spanMeta := s.meta.Map(false)
+	if slices.Contains(c.cfg.internalConfig.StatsAdditionalTags(), ext.RuntimeID) ||
+		slices.Contains(agentInfo.peerTags, ext.RuntimeID) {
+		spanMeta = s.meta.Map(true)
+	}
+	if len(spanMeta) == 0 && s.metrics[keyTopLevel] != 1 && s.metrics[keyTopLevelLegacy] != 1 && s.metrics[keyMeasured] != 1 {
+		return nil, false
+	}
+	if spanMeta == nil {
+		spanMeta = emptyStatsMeta
+	}
+	spanMetrics := s.metrics
+	if spanMetrics == nil {
+		spanMetrics = emptyStatsMetrics
+	}
 	resource := s.resource
 	if c.sender.shouldObfuscate() {
 		resource = obfuscatedResource(obfuscator, s.spanType, s.resource)
@@ -330,7 +370,6 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 	}
 
 	peerTags := c.sender.peerTags(agentInfo.peerTags)
-	spanMeta := s.meta.Map(false) // stats reads span.kind, _dd.svc_src, status codes, peer tags — no promoted keys needed
 	statSpan, ok := c.spanConcentrator.NewStatSpanWithConfig(stats.StatSpanConfig{
 		Service:                 s.service,
 		Resource:                resource,
@@ -341,7 +380,7 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 		Duration:                s.duration,
 		Error:                   s.error,
 		Meta:                    spanMeta,
-		Metrics:                 s.metrics,
+		Metrics:                 spanMetrics,
 		PeerTags:                peerTags,
 		AdditionalMetricTagKeys: c.cfg.internalConfig.StatsAdditionalTags(),
 		HTTPMethod:              httpMethod,
@@ -352,6 +391,12 @@ func (c *concentrator) newTracerStatSpan(s *Span, obfuscator *obfuscate.Obfuscat
 	}
 	origin, _ := s.meta.Get(keyOrigin)
 	version, _ := s.meta.Version()
+	if prealloc != nil {
+		prealloc.statSpan = statSpan
+		prealloc.origin = origin
+		prealloc.version = version
+		return prealloc, true
+	}
 	return &tracerStatSpan{
 		statSpan: statSpan,
 		origin:   origin,
@@ -518,6 +563,9 @@ func (c *noopConcentrator) Start()                           {}
 func (c *noopConcentrator) Stop()                            {}
 func (c *noopConcentrator) flushAndSend(_ time.Time, _ bool) {}
 func (c *noopConcentrator) newTracerStatSpan(_ *Span, _ *obfuscate.Obfuscator) (*tracerStatSpan, bool) {
+	return nil, false
+}
+func (c *noopConcentrator) newTracerStatSpanPrealloc(_ *Span, _ *obfuscate.Obfuscator, _ *tracerStatSpan) (*tracerStatSpan, bool) {
 	return nil, false
 }
 func (c *noopConcentrator) trySendSpan(_ *tracerStatSpan)    {}
