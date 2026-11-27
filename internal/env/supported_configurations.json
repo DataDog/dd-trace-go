@@ -591,6 +591,16 @@
         "default": "true"
       }
     ],
+    "DD_FEATURE_FLAGS_EVALUATION_COUNTS_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "true",
+        "aliases": [
+          "DD_FLAGGING_EVALUATION_COUNTS_ENABLED"
+        ]
+      }
+    ],
     "DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED": [
       {
         "implementation": "A",
@@ -606,13 +616,6 @@
       }
     ],
     "DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED": [
-      {
-        "implementation": "A",
-        "type": "boolean",
-        "default": "true"
-      }
-    ],
-    "DD_FLAGGING_EVALUATION_COUNTS_ENABLED": [
       {
         "implementation": "A",
         "type": "boolean",
