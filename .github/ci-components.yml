@@ -208,6 +208,7 @@ integration-suites:
     contrib/syndtr/goleveldb: []
     contrib/tidwall/buntdb: []
     contrib/twitchtv/twirp: [ twirp ]
+    contrib/twitchtv/twirp/otelc: [ twirp, twirp_quantize ]
     contrib/twmb/franz-go: [ twmb_franz_go ]
     contrib/uptrace/bun: []
     contrib/urfave/negroni: []
@@ -546,6 +547,7 @@ components:
       - contrib/net/http/**
       - contrib/sirupsen/logrus/**
       - contrib/segmentio/kafka-go/**
+      - contrib/twitchtv/twirp/**
       - contrib/rs/zerolog/**
       - contrib/redis/go-redis.v9/**
       - contrib/valyala/fasthttp/**

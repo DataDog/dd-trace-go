@@ -29,6 +29,7 @@ require (
 	example.com/pgxdep v0.0.0-00010101000000-000000000000
 	example.com/pubsubdep v0.0.0-00010101000000-000000000000
 	example.com/saramadep v0.0.0-00010101000000-000000000000
+	example.com/twirpdep v0.0.0-00010101000000-000000000000
 	example.com/zerologdep v0.0.0-00010101000000-000000000000
 	github.com/99designs/gqlgen v0.17.97
 	github.com/DataDog/dd-trace-go/contrib/IBM/sarama/v2 v2.14.0-dev
@@ -58,6 +59,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 v2.14.0-dev
+	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/instrumentation/testutils/containers/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/orchestrion/all/v2 v2.14.0-dev
@@ -211,7 +213,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/redis/rueidis/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/rs/zerolog/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/otelc/v2 v2.14.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/valyala/fasthttp/otelc/v2 v2.14.0-dev // indirect
@@ -502,6 +504,7 @@ replace (
 	example.com/pubsubdep => ./internal/pubsubdep
 	example.com/saramadep => ./internal/saramadep
 	example.com/slogdep => ./internal/slogdep
+	example.com/twirpdep => ./internal/twirpdep
 	example.com/zerologdep => ./internal/zerologdep
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/otelc/v2 => ../../../contrib/99designs/gqlgen/otelc
 	github.com/DataDog/dd-trace-go/contrib/99designs/gqlgen/v2 => ../../../contrib/99designs/gqlgen
@@ -585,6 +588,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/segmentio/kafka-go/v2 => ../../../contrib/segmentio/kafka-go
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/otelc/v2 => ../../../contrib/sirupsen/logrus/otelc
 	github.com/DataDog/dd-trace-go/contrib/sirupsen/logrus/v2 => ../../../contrib/sirupsen/logrus
+	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/otelc/v2 => ../../../contrib/twitchtv/twirp/otelc
 	github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2 => ../../../contrib/twitchtv/twirp
 	github.com/DataDog/dd-trace-go/contrib/twmb/franz-go/v2 => ../../../contrib/twmb/franz-go
 	github.com/DataDog/dd-trace-go/contrib/valkey-io/valkey-go/v2 => ../../../contrib/valkey-io/valkey-go

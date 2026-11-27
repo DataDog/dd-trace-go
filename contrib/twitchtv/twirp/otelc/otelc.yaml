@@ -1,0 +1,26 @@
+# Unless explicitly stated otherwise all files in this repository are licensed
+# under the Apache License Version 2.0.
+# This product includes software developed at Datadog (https://www.datadoghq.com/).
+# Copyright 2026-present Datadog, Inc.
+---
+# A literal rule, not a hook: protoc-gen-twirp writes the ServerOptions literal
+# into each generated package, in the application or in a dependency, and the
+# rewritten package imports the contrib, so it is initialized first. The twirp
+# module is not excluded, because github.com/twitchtv/twirp/example is generated
+# code too. A twirp.WithServerHooks option applied after the literal replaces
+# these hooks, so a server built with the contrib's hooks gets one span.
+server_options:
+  target:
+    - "**"
+    - not: "github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/**"
+  where:
+    struct_literal: github.com/twitchtv/twirp.ServerOptions
+  do:
+    - set_fields:
+        field:
+          - name: Hooks
+            wrap: __dd_twirp.ChainHooks(__dd_twirptrace.NewServerHooks(), {{ . }})
+            value: __dd_twirptrace.NewServerHooks()
+  imports:
+    __dd_twirp: github.com/twitchtv/twirp
+    __dd_twirptrace: github.com/DataDog/dd-trace-go/contrib/twitchtv/twirp/v2

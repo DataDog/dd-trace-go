@@ -16,3 +16,27 @@ import (
 func Test(t *testing.T) {
 	harness.Run(t, new(TestCase))
 }
+
+func TestAliasedImport(t *testing.T) {
+	harness.Run(t, new(TestCaseAliasedImport))
+}
+
+func TestContribHooks(t *testing.T) {
+	harness.Run(t, new(TestCaseContribHooks))
+}
+
+func TestDependency(t *testing.T) {
+	harness.Run(t, new(TestCaseDependency))
+}
+
+func TestHooksField(t *testing.T) {
+	harness.Run(t, new(TestCaseHooksField))
+}
+
+func TestPackageLevelOptions(t *testing.T) {
+	harness.Run(t, new(TestCasePackageLevelOptions))
+}
+
+func TestSpanCount(t *testing.T) {
+	harness.Run(t, new(TestCaseSpanCount))
+}
