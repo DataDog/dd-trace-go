@@ -26,6 +26,9 @@ func (tc *TestCaseNewCluster) Setup(ctx context.Context, t *testing.T) {
 
 	var err error
 	cluster := gocql.NewCluster(tc.hostPort)
+	// Checked here because the CreateSession hook would trace the session even
+	// if the NewCluster call were not rewritten.
+	require.NotNil(t, cluster.QueryObserver)
 	tc.session, err = cluster.CreateSession()
 	require.NoError(t, err)
 	t.Cleanup(func() { tc.session.Close() })

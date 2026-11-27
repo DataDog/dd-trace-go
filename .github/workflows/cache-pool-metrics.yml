@@ -1,6 +1,6 @@
 # Hourly snapshot of the repository's shared Actions cache pool, submitted
 # as ci.cache.pool.* gauges to Datadog. The Go build-cache program uses it
-# to watch pool pressure: total bytes against the 10 GiB quota, bytes per
+# to watch pool pressure: total bytes against the quota, bytes per
 # cache kind/workload/ref, the eviction horizon, and the presence and age
 # of default-branch seed entries. A snapshot in the job log doubles as
 # the record when submission is unavailable.
