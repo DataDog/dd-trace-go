@@ -31,6 +31,9 @@ lint_go_modules_select() {
   local file dir owner kind walk excluded_dir
   while IFS= read -r file; do
     [[ -z $file ]] && continue
+    # Match Go tooling: ignore testdata trees, which hold fixtures that may
+    # fail to compile on purpose.
+    [[ "/$file" == */testdata/* ]] && continue
     owner=""
     while IFS= read -r dir; do
       if [[ "$root/$file" == "$dir"/* && ${#dir} -gt ${#owner} ]]; then

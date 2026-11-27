@@ -32,11 +32,13 @@ set -euo pipefail
 # boundaries. Unlike it, this script also covers the root module and
 # internal/orchestrion/_integration.
 #
-# Excluded modules (same reasons as scripts/lint_go_modules.sh):
+# Excluded modules (same reasons as scripts/lint_go_modules.sh, plus
+# non-workspace modules with no default-build Go packages):
 #   - .github/workflows/apps: its root files do not type-check as a whole.
 #   - tools/v2fix/_stage: analyzer test inputs with intentional findings.
-#   - orchestrion/all, otelc/all, scripts/fixmodules: every Go file is behind a
-#     build tag, so there is no package to lint.
+#   - orchestrion/all, otelc/all, scripts/fixmodules, _tools, .gitlab: every Go
+#     file is behind a build tag or no default-build package exists, so
+#     golangci-lint has no Go files to analyze.
 
 usage() {
   cat << EOF
@@ -70,6 +72,8 @@ excluded=(
   "$root/orchestrion/all"
   "$root/otelc/all"
   "$root/scripts/fixmodules"
+  "$root/_tools"
+  "$root/.gitlab"
 )
 
 module_list="$(lint_go_modules_workspace_dirs)"
