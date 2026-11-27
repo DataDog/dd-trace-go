@@ -28,6 +28,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/otelc/v2 v2.14.0-dev
+	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/otelc/v2 v2.14.0-dev
@@ -85,6 +86,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 v2.14.0-dev // indirect
@@ -165,6 +167,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.3.14 // indirect
 	github.com/googleapis/gax-go/v2 v2.20.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
+	github.com/graph-gophers/graphql-go v1.5.0 // indirect
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
@@ -329,6 +332,8 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 => ../../contrib/gorilla/mux
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/otelc/v2 => ../../contrib/gorm.io/gorm.v1/otelc
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 => ../../contrib/gorm.io/gorm.v1
+	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/otelc/v2 => ../../contrib/graph-gophers/graphql-go/otelc
+	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 => ../../contrib/graph-gophers/graphql-go
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/otelc/v2 => ../../contrib/jackc/pgx.v5/otelc
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 => ../../contrib/jackc/pgx.v5
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2 => ../../contrib/julienschmidt/httprouter/otelc

@@ -21,6 +21,7 @@ require (
 	example.com/gorillamuxdep v0.0.0-00010101000000-000000000000
 	example.com/gormdep v0.0.0-00010101000000-000000000000
 	example.com/gqlgendep v0.0.0-00010101000000-000000000000
+	example.com/graphgophersdep v0.0.0-00010101000000-000000000000
 	example.com/grpcdep v0.0.0-00010101000000-000000000000
 	example.com/httpdep v0.0.0-00010101000000-000000000000
 	example.com/httprouterdep v0.0.0-00010101000000-000000000000
@@ -49,6 +50,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gocql/gocql/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 v2.14.0-dev
+	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/v2 v2.14.0-dev
 	github.com/DataDog/dd-trace-go/contrib/k8s.io/client-go/v2 v2.14.0-dev
@@ -194,7 +196,7 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/google.golang.org/grpc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/otelc/v2 v2.14.0-dev // indirect
-	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/otelc/v2 v2.14.0-dev // indirect
@@ -487,6 +489,7 @@ replace (
 	example.com/gorillamuxdep => ./internal/gorillamuxdep
 	example.com/gormdep => ./internal/gormdep
 	example.com/gqlgendep => ./internal/gqlgendep
+	example.com/graphgophersdep => ./internal/graphgophersdep
 	example.com/grpcdep => ./internal/grpcdep
 	example.com/httpdep => ./internal/httpdep
 	example.com/httprouterdep => ./internal/httprouterdep
@@ -552,6 +555,7 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 => ../../../contrib/gorilla/mux
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/otelc/v2 => ../../../contrib/gorm.io/gorm.v1/otelc
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 => ../../../contrib/gorm.io/gorm.v1
+	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/otelc/v2 => ../../../contrib/graph-gophers/graphql-go/otelc
 	github.com/DataDog/dd-trace-go/contrib/graph-gophers/graphql-go/v2 => ../../../contrib/graph-gophers/graphql-go
 	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 => ../../../contrib/graphql-go/graphql
 	github.com/DataDog/dd-trace-go/contrib/hashicorp/vault/v2 => ../../../contrib/hashicorp/vault
