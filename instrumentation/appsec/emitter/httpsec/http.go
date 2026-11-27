@@ -349,14 +349,12 @@ func RouteMatched(ctx context.Context, route string, routeParams map[string]stri
 // request has. Nothing is sent to the WAF: the call causes no WAF evaluation,
 // and the route of the operation, its API Security sampling key, is unchanged.
 // It must be called before the operation finishes, and the parameters must not
-// change after.
+// change after. It does nothing for a request without an AppSec operation, as
+// when AppSec is disabled, so a router integration can call it for every request.
 func ReportMatchedRoute(ctx context.Context, route MatchedRoute) {
-	op, ok := dyngo.FindOperation[HandlerOperation](ctx)
-	if !ok {
-		log.Debug("appsec: ReportMatchedRoute called without an active HandlerOperation in the context, ignoring")
-		return
+	if op, ok := dyngo.FindOperation[HandlerOperation](ctx); ok {
+		op.matchedRoute, op.matchedRouteReported = route, true
 	}
-	op.matchedRoute, op.matchedRouteReported = route, true
 }
 
 // requestPath returns the escaped path that routers read: go-chi and echo read

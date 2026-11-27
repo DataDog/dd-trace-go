@@ -53,7 +53,7 @@ func normalizeRoute(framework string, matched httpsec.MatchedRoute) (string, boo
 	)
 	switch framework {
 	case "net/http":
-		parts, ok = parseServeMuxRoute(route, path)
+		parts, ok = parseServeMuxRoute(route, params, path)
 		escapes = true
 	case "github.com/gorilla/mux":
 		parts, ok = parseBraceRoute(route, params, false)
@@ -110,9 +110,10 @@ func hasValue(params map[string]string, key string, trimSlash bool) bool {
 // [HOST]/[PATH], where a segment of PATH is a literal, {name}, {name...} or
 // {$}. The host contributes nothing. A pattern that ends with "/" matches a
 // whole subtree: the rest of path, the escaped path that ServeMux matched, is
-// an unnamed catch-all. A {name...} wildcard matches that rest too. Both are
-// present when the rest is not empty.
-func parseServeMuxRoute(route string, path string) ([]routePart, bool) {
+// an unnamed catch-all, present when the rest is not empty. A {name...} wildcard
+// is present when its parameter has a value. Without its parameter, as the
+// ServeMux integration reports none, it is present when the rest is not empty.
+func parseServeMuxRoute(route string, params map[string]string, path string) ([]routePart, bool) {
 	i := strings.IndexByte(route, '/')
 	if i < 0 {
 		return nil, false
@@ -138,7 +139,7 @@ func parseServeMuxRoute(route string, path string) ([]routePart, bool) {
 			break
 		}
 		if !strings.HasPrefix(seg, "{") {
-			if strings.ContainsAny(seg, "{}") {
+			if strings.ContainsRune(seg, '{') {
 				return nil, false
 			}
 			parts = append(parts, routePart{static: "/" + seg})
@@ -161,7 +162,11 @@ func parseServeMuxRoute(route string, path string) ([]routePart, bool) {
 			if rest != "" || name == "" {
 				return nil, false
 			}
-			parts = append(parts, routePart{param: true, name: name, absent: !hasServeMuxRemainder(route[:len(route)-len(seg)], path)})
+			present := hasValue(params, name, false)
+			if _, bound := params[name]; !bound {
+				present = hasServeMuxRemainder(route[:len(route)-len(seg)], path)
+			}
+			parts = append(parts, routePart{param: true, name: name, absent: !present})
 			break
 		}
 		if name == "" {
@@ -183,16 +188,17 @@ func hasServeMuxRemainder(pattern string, path string) bool {
 		}
 		path = path[i+1:]
 	}
+	// ServeMux matches the unescaped segments of the escaped path: %2F is a "/".
+	// CONNECT requests are not cleaned.
+	if unescaped, err := url.PathUnescape(path); err == nil {
+		path = unescaped
+	}
 	return !isEmptyRemainder(path)
 }
 
-// isEmptyRemainder reports that the rest of a path is empty or only "/": an
-// absent catch-all. CONNECT requests are not cleaned, and %2F is a "/" in the
-// value that the router gives.
+// isEmptyRemainder reports that the rest of a path, in the form that the router
+// matched, is empty or only "/": an absent catch-all.
 func isEmptyRemainder(rest string) bool {
-	if unescaped, err := url.PathUnescape(rest); err == nil {
-		rest = unescaped
-	}
 	return strings.Trim(rest, "/") == ""
 }
 
@@ -229,8 +235,6 @@ func parseBraceRoute(route string, params map[string]string, chiWildcard bool) (
 			parts = append(parts, routePart{param: true, name: name})
 			i = end
 			start = end + 1
-		case '}':
-			return nil, false
 		case '*':
 			if !chiWildcard || i != len(route)-1 {
 				continue
@@ -285,6 +289,10 @@ func appendGorillaRemainder(parts []routePart, params map[string]string, escaped
 	}
 	if strings.HasPrefix(escaped, matched) {
 		return appendCatchAll(parts, escaped[len(matched):]), true
+	}
+	if strings.TrimSuffix(matched, "/") == escaped {
+		// StrictSlash redirects the escaped path without the "/" of the route.
+		return parts, true
 	}
 	return parts, false
 }
@@ -356,6 +364,12 @@ func parseColonRoute(route string, params map[string]string, gin bool) ([]routeP
 			name := route[i+1 : end]
 			if name == "" {
 				return nil, false
+			}
+			if _, bound := params[name]; gin && params != nil && !bound {
+				// gin (v1.11+) reports an escaped colon (\:) as ":", and binds
+				// every parameter of its route.
+				static.WriteByte(':')
+				continue
 			}
 			flushStatic()
 			parts = append(parts, routePart{param: true, name: name})
@@ -451,6 +465,7 @@ func parseFiberRoute(route string, params map[string]string) ([]routePart, strin
 			return static.Len() > 0 && strings.HasSuffix(static.String(), "/")
 		}
 		unknownValue, endsWithWildcard bool
+		repeated                       = make(map[string]bool)
 		matchParam                     = func(key string, absent, slash bool) {
 			v, found := params[key]
 			unknownValue = unknownValue || !found
@@ -474,6 +489,10 @@ func parseFiberRoute(route string, params map[string]string) ([]routePart, strin
 		}
 		switch c {
 		case '\\':
+			if i+1 < len(route) && route[i+1] == '\\' {
+				// fiber reads an escaped "\" otherwise.
+				return nil, "", false
+			}
 			if i+1 < len(route) {
 				i++
 				matchStatic(route[i])
@@ -487,7 +506,7 @@ func parseFiberRoute(route string, params map[string]string) ([]routePart, strin
 				pluses++
 				key = "+" + strconv.Itoa(pluses)
 			}
-			slash := c == '*' && optionalSlashAllowed()
+			slash := c == '*' && optionalSlashAllowed() && endsSegment(route, i+1)
 			absent := !hasValue(params, key, false)
 			flushStatic()
 			parts = append(parts, routePart{param: true, absent: absent, optionalSlash: slash})
@@ -502,19 +521,34 @@ func parseFiberRoute(route string, params map[string]string) ([]routePart, strin
 			if name == "" {
 				return nil, "", false
 			}
+			if _, bound := params[name]; params != nil && !bound {
+				// A prefix that fiber does not parse (Static) binds nothing.
+				matchStatic(c)
+				continue
+			}
 			if end < len(route) && route[end] == '<' {
 				close := fiberConstraintEnd(route[i+1:])
 				if close < 0 {
 					return nil, "", false
 				}
 				end = i + 1 + close + 1
+				if end < len(route) && strings.IndexByte("/-.:?\\", route[end]) < 0 {
+					// fiber reads the text after the constraint otherwise.
+					return nil, "", false
+				}
 			}
 			optional := end < len(route) && route[end] == '?'
 			if optional {
 				end++
 			}
-			slash := optional && optionalSlashAllowed()
+			slash := optional && optionalSlashAllowed() && endsSegment(route, end)
 			absent := optional && !hasValue(params, name, false)
+			if repeated[name] {
+				// fiber binds one value per name: the value of a repeated name
+				// is unknown.
+				absent, unknownValue = optional, true
+			}
+			repeated[name] = true
 			flushStatic()
 			parts = append(parts, routePart{param: true, name: name, absent: absent, optionalSlash: slash})
 			matchParam(name, absent, slash)
@@ -529,6 +563,13 @@ func parseFiberRoute(route string, params map[string]string) ([]routePart, strin
 		return parts, "", true
 	}
 	return parts, string(matched), true
+}
+
+// endsSegment reports that the route part that ends at end in route ends its
+// segment: fiber matches the "/" before an optional part that ends it only with
+// the part.
+func endsSegment(route string, end int) bool {
+	return end == len(route) || route[end] == '/'
 }
 
 // fiberConstraintEnd returns the index of the ">" that ends the constraint of
@@ -606,46 +647,43 @@ func assembleRoute(parts []routePart, escapes bool, trailingSlash bool) (string,
 }
 
 // paramNames returns the names of the parameters of parts, by index. Names
-// keep only A-Z a-z 0-9 _: other characters (each code point) become "_". A
-// replaced name that is already used in the route gets the smallest free
+// keep only A-Z a-z 0-9 _: other characters (each code point) become "_". A name
+// that is already used in the route, also a repeated one, gets the smallest free
 // numeric suffix (_2, _3, ...). Unnamed catch-alls get param<N>.
 func paramNames(parts []routePart) []string {
-	used := make(map[string]struct{}, len(parts))
+	reserved := make(map[string]bool, len(parts))
 	for _, part := range parts {
 		if part.param && part.name != "" && isValidParamName(part.name) {
-			used[part.name] = struct{}{}
+			reserved[part.name] = true
 		}
 	}
+	taken := make(map[string]bool, len(parts))
+	free := func(name string) bool { return !reserved[name] && !taken[name] }
 	names := make([]string, len(parts))
 	unnamed := 0
 	for i, part := range parts {
 		if !part.param {
 			continue
 		}
+		name := part.name
 		switch {
-		case part.name == "":
+		case name == "":
 			for {
 				unnamed++
-				name := "param" + strconv.Itoa(unnamed)
-				if _, found := used[name]; !found {
-					names[i] = name
+				if name = "param" + strconv.Itoa(unnamed); free(name) {
 					break
 				}
 			}
-		case isValidParamName(part.name):
-			names[i] = part.name
-			continue
+		case isValidParamName(name) && !taken[name]:
 		default:
-			name := sanitizeParamName(part.name)
-			for n := 2; ; n++ {
-				if _, found := used[name]; !found {
-					break
-				}
-				name = sanitizeParamName(part.name) + "_" + strconv.Itoa(n)
+			base := sanitizeParamName(name)
+			name = base
+			for n := 2; !free(name); n++ {
+				name = base + "_" + strconv.Itoa(n)
 			}
-			names[i] = name
 		}
-		used[names[i]] = struct{}{}
+		taken[name] = true
+		names[i] = name
 	}
 	return names
 }
