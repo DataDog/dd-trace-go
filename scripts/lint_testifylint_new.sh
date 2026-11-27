@@ -103,7 +103,16 @@ while IFS= read -r file; do
   fi
 done <<< "$changed"
 
-if [[ ${#selected[@]} -eq 0 ]]; then
+# The .github/workflows/apps module is excluded above because its root files
+# do not type-check together. Its pr-triage-board subpackage does, so a
+# targeted run lints it, the way scripts/lint_go_modules.sh does.
+apps_dir=".github/workflows/apps"
+lint_pr_triage_board=false
+if grep -q "^$apps_dir/pr-triage-board/" <<< "$changed"; then
+  lint_pr_triage_board=true
+fi
+
+if [[ ${#selected[@]} -eq 0 && $lint_pr_triage_board == false ]]; then
   printf "> No Go changes since %s\n" "$base"
   exit 0
 fi
@@ -113,7 +122,7 @@ found_require_findings=false
 module_out="$(mktemp "${TMPDIR:-/tmp}/testifylint-lint-out.XXXXXX")"
 trap 'rm -f "$module_out"' EXIT
 
-for dir in "${selected[@]}"; do
+for dir in "${selected[@]+"${selected[@]}"}"; do
   rel="${dir#"$root"}"
   rel="${rel#/}"
   printf "\n> testifylint go-require in %s\n" "${rel:-.}"
@@ -126,6 +135,16 @@ for dir in "${selected[@]}"; do
     fi
   fi
 done
+
+if [[ $lint_pr_triage_board == true ]]; then
+  printf "\n> testifylint go-require in %s/pr-triage-board\n" "$apps_dir"
+  if ! (cd "$root/$apps_dir" && golangci-lint run --enable-only=testifylint --new-from-rev="$base" "$@" ./pr-triage-board) 2>&1 | tee "$module_out"; then
+    failed+=("$apps_dir/pr-triage-board")
+    if grep -q "go-require:" "$module_out"; then
+      found_require_findings=true
+    fi
+  fi
+fi
 
 if [[ ${#failed[@]} -gt 0 ]]; then
   printf "\n> testifylint go-require failed in %d module(s):\n" "${#failed[@]}"
