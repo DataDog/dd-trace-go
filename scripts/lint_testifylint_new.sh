@@ -109,19 +109,32 @@ if [[ ${#selected[@]} -eq 0 ]]; then
 fi
 
 failed=()
+found_require_findings=false
+module_out="$(mktemp "${TMPDIR:-/tmp}/testifylint-lint-out.XXXXXX")"
+trap 'rm -f "$module_out"' EXIT
+
 for dir in "${selected[@]}"; do
   rel="${dir#"$root"}"
   rel="${rel#/}"
   printf "\n> testifylint go-require in %s\n" "${rel:-.}"
-  if ! (cd "$dir" && golangci-lint run --enable-only=testifylint --new-from-rev="$base" "$@" ./...); then
+  # tee keeps the findings visible as they print, and the copy lets the
+  # summary tell a require.* failure from any other golangci-lint failure.
+  if ! (cd "$dir" && golangci-lint run --enable-only=testifylint --new-from-rev="$base" "$@" ./...) 2>&1 | tee "$module_out"; then
     failed+=("${rel:-.}")
+    if grep -q "go-require:" "$module_out"; then
+      found_require_findings=true
+    fi
   fi
 done
 
 if [[ ${#failed[@]} -gt 0 ]]; then
   printf "\n> testifylint go-require failed in %d module(s):\n" "${#failed[@]}"
   printf "  %s\n" "${failed[@]}"
-  printf "  Do not call require.* off the test goroutine (httptest handlers, go func bodies):\n"
-  printf "  record the values there and assert on the test goroutine, or use assert.* / t.Errorf.\n"
+  if [[ $found_require_findings == true ]]; then
+    printf "  Do not call require.* off the test goroutine (httptest handlers, go func bodies):\n"
+    printf "  record the values there and assert on the test goroutine, or use assert.* / t.Errorf.\n"
+  else
+    printf "  The failure cause is in the golangci-lint output above.\n"
+  fi
   exit 1
 fi
