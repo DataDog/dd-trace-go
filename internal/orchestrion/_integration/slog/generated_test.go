@@ -48,3 +48,7 @@ func TestNew(t *testing.T) {
 func TestSetDefault(t *testing.T) {
 	harness.Run(t, new(TestCaseSetDefault))
 }
+
+func TestShadowedNames(t *testing.T) {
+	harness.Run(t, new(TestCaseShadowedNames))
+}

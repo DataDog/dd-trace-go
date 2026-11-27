@@ -95,10 +95,12 @@ func (*TestCaseDefaultHandler) Run(_ context.Context, t *testing.T) {
 			log.SetOutput(&logs)
 
 			done := make(chan struct{})
-			go withDefault(t, slog.New(handler()), func() {
+			go func(l *slog.Logger) {
 				defer close(done)
-				log.Print("log-package")
-			})
+				withDefault(t, l, func() {
+					log.Print("log-package")
+				})
+			}(slog.New(handler()))
 			select {
 			case <-done:
 			case <-time.After(5 * time.Second):

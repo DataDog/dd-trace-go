@@ -32,14 +32,14 @@ new:
   do:
     - wrap_call:
         replace: |-
-          (func(l *slog.Logger) *slog.Logger {
+          (func(l *__dd_slog.Logger) *__dd_slog.Logger {
             h := l.Handler()
-            if slogtrace.IsAlreadyWrapped(h) || __dd_reflect.TypeOf(h).String() == "*slog.defaultHandler" {
+            if __dd_slogtrace.IsAlreadyWrapped(h) || __dd_reflect.TypeOf(h).String() == "*slog.defaultHandler" {
               return l
             }
-            return slog.New(slogtrace.WrapHandler(h))
+            return __dd_slog.New(__dd_slogtrace.WrapHandler(h))
           })({{ . }})
   imports:
     __dd_reflect: reflect
-    slog: log/slog
-    slogtrace: github.com/DataDog/dd-trace-go/contrib/log/slog/v2
+    __dd_slog: log/slog
+    __dd_slogtrace: github.com/DataDog/dd-trace-go/contrib/log/slog/v2
