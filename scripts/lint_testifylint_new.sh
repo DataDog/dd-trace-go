@@ -67,14 +67,17 @@ is_excluded() {
   return 1
 }
 
+module_list="$(go list -m -f '{{.Dir}}')"
+# The command substitution above fails the script under set -e when go list
+# fails, so a partial module list cannot slip through the empty check below.
+if [[ -z $module_list ]]; then
+  echo "go list -m failed or returned no workspace modules" >&2
+  exit 1
+fi
 modules=()
 while IFS= read -r dir; do
   modules+=("$dir")
-done < <(go list -m -f '{{.Dir}}')
-if [[ ${#modules[@]} -eq 0 ]]; then
-  echo "go list -m returned no workspace modules" >&2
-  exit 1
-fi
+done <<< "$module_list"
 
 changed="$(
   git diff --name-only --diff-filter=d "$base" -- '*.go'
