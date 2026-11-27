@@ -1122,7 +1122,7 @@ func spanStart(operationName string, sharedAttrs *traceinternal.SpanAttributes, 
 	metaHint := len(opts.Tags)
 	if needsNewTrace && metaHint > 0 {
 		// Root spans also receive trace-level tags on finish (_dd.p.dm, _dd.p.tid,
-		// _dd.otlp.export, git metadata), so include them in the map sizing hint
+		// _dd.sdk.otlp_export, git metadata), so include them in the map sizing hint
 		// to avoid allocating a small map and immediately rehashing it.
 		metaHint += 4
 	}

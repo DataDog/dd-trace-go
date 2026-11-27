@@ -732,6 +732,10 @@ type trace struct {
 	finalChunk chunk
 	// +checklocks:mu
 	finalChunkUsed bool
+	// prebuiltDM reports whether propagatingTags currently holds a shared
+	// prebuilt decision-maker snapshot that must be copied before mutation.
+	// +checklocks:mu
+	prebuiltDM bool
 }
 
 // otelTraceState is the OpenTelemetry consistent probability sampling state

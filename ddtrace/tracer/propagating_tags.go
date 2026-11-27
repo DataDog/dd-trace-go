@@ -80,10 +80,12 @@ func (t *trace) copyOnWriteSet(key, value string) {
 	if oldMap == nil {
 		if key == keyDecisionMaker {
 			if pre := prebuiltDMSnap(value); pre != nil {
+				t.prebuiltDM = true
 				t.propagatingTags.Store(pre)
 				return
 			}
 		}
+		t.prebuiltDM = false
 		t.propagatingTags.Store(map[string]string{key: value})
 		return
 	}
@@ -94,6 +96,7 @@ func (t *trace) copyOnWriteSet(key, value string) {
 	m := make(map[string]string, n)
 	maps.Copy(m, oldMap)
 	m[key] = value
+	t.prebuiltDM = false
 	t.propagatingTags.Store(m)
 }
 
@@ -115,6 +118,7 @@ func (t *trace) copyOnWriteDelete(key string) {
 			m[k] = v
 		}
 	}
+	t.prebuiltDM = false
 	t.propagatingTags.Store(m)
 }
 
@@ -158,14 +162,12 @@ func (t *trace) setPropagatingTagUnsafe(key, value string) {
 	if m == nil {
 		m = make(map[string]string, 4)
 		t.propagatingTags.Store(m)
-	} else if len(m) == 1 {
-		// Copy if m could be a shared prebuilt DM snapshot.
-		if dm, ok := m[keyDecisionMaker]; ok && prebuiltDMSnap(dm) != nil {
-			cp := make(map[string]string, 4)
-			cp[keyDecisionMaker] = dm
-			m = cp
-			t.propagatingTags.Store(m)
-		}
+	} else if t.prebuiltDM {
+		cp := make(map[string]string, 4)
+		maps.Copy(cp, m)
+		m = cp
+		t.prebuiltDM = false
+		t.propagatingTags.Store(m)
 	}
 	m[key] = value
 	if key == keyDecisionMaker {
@@ -237,6 +239,7 @@ func (t *trace) unsetPropagatingTagLocked(key string) {
 func (t *trace) replacePropagatingTags(tags map[string]string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.prebuiltDM = false
 	if len(tags) == 0 {
 		// Typed nil keeps the atomic.Value type consistent across all stores
 		// (Store(nil) would panic; a typed nil is a valid same-type value).

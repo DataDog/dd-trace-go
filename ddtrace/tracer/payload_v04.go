@@ -117,10 +117,11 @@ func (p *payloadV04) push(t spanList) (stats payloadStats, err error) {
 	growTo := max(len(t)*pushSizeHintPerSpan, p.sizeHint)
 	p.sizeHint = 0
 	p.buf.Grow(growTo)
-	// msgp.Encode serializes all of t into p.buf synchronously before push
-	// returns, so tracer.processOutChunk's traceWriter.add(...) call always
-	// completes encoding before releaseSpans clears and recycles these spans.
-	// This is what makes push safe with the span pool, mirroring payloadV1.push's
+	// spanList.EncodeMsg (flushed into p.buf through the pooled msgp.Writer)
+	// serializes all of t synchronously before push returns, so
+	// tracer.processOutChunk's traceWriter.add(...) call always completes
+	// encoding before releaseSpans clears and recycles these spans. This is
+	// what makes push safe with the span pool, mirroring payloadV1.push's
 	// incremental chunk encoding.
 	en := msgpWriterPool.Get().(*msgp.Writer)
 	en.Reset(&p.buf)

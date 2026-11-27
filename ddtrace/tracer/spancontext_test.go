@@ -7,9 +7,11 @@ package tracer
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -1375,6 +1377,9 @@ func TestSpanContextPushFull(t *testing.T) {
 	buffer.push(span3)
 	log.Flush()
 	assert.Contains(tp.Logs()[0], "ERROR: trace buffer full (2 spans)")
+	for i, sp := range buffer.initialSpans {
+		assert.Nil(sp, "initialSpans[%d] should be cleared after pre-flush overflow", i)
+	}
 }
 
 func TestSpanContextBaggage(t *testing.T) {
@@ -1954,13 +1959,15 @@ func TestRetainedSpanContextDoesNotKeepChildSpansAlive(t *testing.T) {
 			assert.Nil(t, sp, "initialSpans[%d] should be cleared after full flush", i)
 		}
 
-		for range 10 {
-			runtime.GC()
-			if weakChild.Value() == nil {
-				break
+		if !deadlockBuildEnabled {
+			for range 10 {
+				runtime.GC()
+				if weakChild.Value() == nil {
+					break
+				}
 			}
+			assert.Nil(t, weakChild.Value(), "retained SpanContext kept child span alive after full flush")
 		}
-		assert.Nil(t, weakChild.Value(), "retained SpanContext kept child span alive after full flush")
 		runtime.KeepAlive(rootCtx)
 	})
 
@@ -1993,13 +2000,15 @@ func TestRetainedSpanContextDoesNotKeepChildSpansAlive(t *testing.T) {
 			assert.Nil(t, sp, "initialSpans[%d] should be cleared after dropped flush", i)
 		}
 
-		for range 10 {
-			runtime.GC()
-			if weakChild.Value() == nil {
-				break
+		if !deadlockBuildEnabled {
+			for range 10 {
+				runtime.GC()
+				if weakChild.Value() == nil {
+					break
+				}
 			}
+			assert.Nil(t, weakChild.Value(), "retained SpanContext kept child span alive after dropped flush")
 		}
-		assert.Nil(t, weakChild.Value(), "retained SpanContext kept child span alive after dropped flush")
 		runtime.KeepAlive(rootCtx)
 	})
 
@@ -2065,5 +2074,48 @@ func TestRetainedSpanContextDoesNotKeepChildSpansAlive(t *testing.T) {
 		for i, sp := range tr.initialSpans {
 			assert.Nil(t, sp, "initialSpans[%d] should be cleared after worker processes finalChunk", i)
 		}
+	})
+}
+
+func TestTraceIDUpperHexCacheHit(t *testing.T) {
+	var tid traceID
+	binary.BigEndian.PutUint32(tid.value[:4], 123456)
+	tid.value[15] = 0xab
+	want := tid.HexEncoded()[:16]
+	assert.Equal(t, want, tid.UpperHex()) // store branch
+	assert.Equal(t, want, tid.UpperHex()) // hit branch (cached.sec == sec)
+}
+
+func TestSetPropagatingTagUnsafePrebuiltDMImmutability(t *testing.T) {
+	prebuiltPtr := reflect.ValueOf(prebuiltDM0.(map[string]string)).Pointer()
+
+	t.Run("direct", func(t *testing.T) {
+		t1 := newTrace()
+		t1.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Default)
+		require.Equal(t, prebuiltPtr, reflect.ValueOf(t1.loadPropagatingTags()).Pointer())
+
+		t1.setPropagatingTagUnsafe("_dd.p.usr.id", "leaked")
+
+		assert.NotEqual(t, prebuiltPtr, reflect.ValueOf(t1.loadPropagatingTags()).Pointer())
+		assert.Equal(t, map[string]string{keyDecisionMaker: "-0"}, prebuiltDM0.(map[string]string))
+
+		t2 := newTrace()
+		t2.setSamplingPriority(ext.PriorityAutoKeep, samplernames.Default)
+		assert.Equal(t, map[string]string{keyDecisionMaker: "-0"}, t2.loadPropagatingTags())
+	})
+
+	t.Run("w3c_extract", func(t *testing.T) {
+		t.Setenv(envPropagationStyleExtract, "tracecontext")
+		propagator := NewPropagator(nil)
+		carrier := TextMapCarrier{
+			traceparentHeader: "00-00000000000000001111111111111111-2222222222222222-01",
+			tracestateHeader:  "dd=s:0;t.usr.id:leaked",
+		}
+		ctx, err := propagator.Extract(carrier)
+		require.NoError(t, err)
+
+		assert.NotEqual(t, prebuiltPtr, reflect.ValueOf(ctx.trace.loadPropagatingTags()).Pointer())
+		assert.Equal(t, map[string]string{keyDecisionMaker: "-0"}, prebuiltDM0.(map[string]string))
+		assert.Equal(t, "leaked", ctx.trace.propagatingTag("_dd.p.usr.id"))
 	})
 }
