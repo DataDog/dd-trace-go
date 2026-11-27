@@ -18,6 +18,9 @@ variables:
   # Disable one-pipeline shared pipeline (packaging/publish/system-test) as dd-trace-go runs those in its own way.
   SKIP_SHARED_PIPELINE: "true"
   REPO_NOTIFICATION_CHANNEL: "#guild-dd-trace-go-notifications"
+  # Turns on the one-pipeline jobs that generate, validate, and upload supported_versions.json
+  # to the APM Integrations Portal. SKIP_SHARED_PIPELINE doesn't turn them off.
+  SUPPORTED_VERSIONS_GENERATOR: ".gitlab/generate_supported_versions.sh"
 
 workflow:
   auto_cancel:
@@ -39,6 +42,10 @@ update_central_configurations_version_range_v2:
     LOCAL_JSON_PATH: "internal/env/supported_configurations.json"
     LANGUAGE_NAME: "golang"
     SEND_ALIASES: "true"
+
+# The one-pipeline packaging image has no Go toolchain.
+generate-supported-versions:
+  image: registry.ddbuild.io/images/mirror/golang:1.27@sha256:2920bb124f1a2e12a1d39f0cab756ae0068441ee1da7655dec7f5e374944095b
 
 include:
   - local: ".gitlab/benchmarks/macro/gitlab-ci.yml"
