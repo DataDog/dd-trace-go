@@ -195,12 +195,14 @@ type subscription struct {
 }
 
 var (
-	// client is a RC client singleton that can be accessed by multiple products (tracing, ASM, profiling etc.).
+	// clientSingleton is a RC client singleton that can be accessed by multiple products (tracing, ASM, profiling etc.).
 	// Using a single RC client instance in the tracer is a requirement for remote configuration.
-	client    *Client
-	clientMux sync.Mutex
-	started   bool
-	activeEnv atomic.Pointer[string]
+	// Atomic reads let each helper capture one client without taking clientMux,
+	// including when called from a product callback during shutdown.
+	clientSingleton atomic.Pointer[Client]
+	clientMux       sync.Mutex
+	started         bool
+	activeEnv       atomic.Pointer[string]
 )
 
 // ActiveEnv returns the environment reported by the running Remote Config client.
@@ -251,23 +253,21 @@ func Start(config ClientConfig) error {
 		// Return early if already started.
 		return nil
 	}
-	var err error
-	client, err = newClient(config)
+	client, err := newClient(config)
 	if err != nil {
 		return err
 	}
+	clientSingleton.Store(client)
 	started = true
 	activeEnv.Store(&client.Env)
 
-	// Capture client locally; the goroutine must not read the global (Stop/Reset mutate it).
 	var (
-		c            = client
-		pollInterval = c.PollInterval
-		stop         = c.stop
-		pollNow      = c.pollNow
+		pollInterval = client.PollInterval
+		stop         = client.stop
+		pollNow      = client.pollNow
 	)
 	go func() {
-		defer close(c.done)
+		defer close(client.done)
 		ticker := time.NewTicker(pollInterval)
 		defer ticker.Stop()
 
@@ -284,34 +284,43 @@ func Start(config ClientConfig) error {
 				return
 			default:
 			}
-			c.Lock()
-			c.updateState()
-			c.Unlock()
+			client.Lock()
+			client.updateState()
+			client.Unlock()
 		}
 	}()
 	return nil
 }
 
-// Stop ends the poll loop, waits for the goroutine to exit (up to the HTTP
-// timeout, since a poll may be in flight), then clears the singleton so a later
-// Start() is fresh. On wait timeout it clears anyway (a restart could briefly
-// overlap the in-flight poll). Noop if not running.
+// Stop clears the singleton and ends the poll loop, waiting for the goroutine
+// to exit (up to the HTTP timeout, since a poll may be in flight). A later Start
+// gets a fresh client and may overlap the draining poll. Noop if not running.
 func Stop() {
 	clientMux.Lock()
-	defer clientMux.Unlock()
-
+	client := clientSingleton.Load()
 	if client == nil {
 		// In case Stop() is called before Start()
+		clientMux.Unlock()
 		return
 	}
 	if !started {
 		// Return early if already stopped.
+		clientMux.Unlock()
 		return
 	}
 	log.Debug("remoteconfig: gracefully stopping the client")
 	client.stopOnce.Do(func() { close(client.stop) })
+	// Clear the singleton before draining so new callers see a stopped client.
+	// Poll callbacks can still finish using their captured client.
+	clientSingleton.Store(nil)
+	started = false
+	activeEnv.Store(nil)
+	clientMux.Unlock()
+
 	// Wait for the goroutine, up to the HTTP timeout (+1s grace so done wins) since
 	// a poll may be in flight. Floored at 1s; bounded so we don't block forever.
+	// A Start() during this window overlaps the draining poll until it exits,
+	// the same brief overlap the wait-timeout path has always allowed.
 	wait := time.Second
 	if client.HTTP != nil && client.HTTP.Timeout > 0 {
 		wait = client.HTTP.Timeout + time.Second
@@ -322,9 +331,6 @@ func Stop() {
 	case <-time.After(wait):
 		log.Debug("remoteconfig: client stopping timeout")
 	}
-	client = nil
-	started = false
-	activeEnv.Store(nil)
 }
 
 // Reset destroys the client instance.
@@ -334,10 +340,10 @@ func Reset() {
 	defer clientMux.Unlock()
 
 	// Signal the goroutine to exit (safe even if never started); Reset doesn't wait.
-	if client != nil {
+	if client := clientSingleton.Load(); client != nil {
 		client.stopOnce.Do(func() { close(client.stop) })
 	}
-	client = nil
+	clientSingleton.Store(nil)
 	started = false
 	activeEnv.Store(nil)
 }
@@ -345,8 +351,7 @@ func Reset() {
 // ClientID returns the client ID of the RC singleton, or an empty string if the
 // client has not been started yet.
 func ClientID() string {
-	clientMux.Lock()
-	defer clientMux.Unlock()
+	client := clientSingleton.Load()
 	if client == nil {
 		return ""
 	}
@@ -451,7 +456,7 @@ type SubscriptionToken int
 func Subscribe(product string, callback ProductCallback, capabilities ...Capability) (SubscriptionToken, error) {
 	// Capture the singleton once so a concurrent Stop/Reset (which nils the
 	// global) can't cause a nil deref mid-function.
-	c := client
+	c := clientSingleton.Load()
 	if c == nil {
 		return 0, ErrClientNotStarted
 	}
@@ -489,6 +494,7 @@ func Subscribe(product string, callback ProductCallback, capabilities ...Capabil
 // capabilities associated with that subscription will no longer be reported to
 // RC.
 func Unsubscribe(token SubscriptionToken) error {
+	client := clientSingleton.Load()
 	if client == nil {
 		return ErrClientNotStarted
 	}
@@ -507,6 +513,7 @@ func Unsubscribe(token SubscriptionToken) error {
 // receives configuration updates. It is up to that callback to then decide what to do
 // depending on the product related to the configuration update.
 func RegisterCallback(f Callback) error {
+	client := clientSingleton.Load()
 	if client == nil {
 		return ErrClientNotStarted
 	}
@@ -519,6 +526,7 @@ func RegisterCallback(f Callback) error {
 // UnregisterCallback removes a previously registered callback from the active callbacks list
 // This remove operation preserves ordering
 func UnregisterCallback(f Callback) error {
+	client := clientSingleton.Load()
 	if client == nil {
 		return ErrClientNotStarted
 	}
@@ -534,6 +542,7 @@ func UnregisterCallback(f Callback) error {
 
 // RegisterProduct adds a product to the list of products listened by the client
 func RegisterProduct(p string) error {
+	client := clientSingleton.Load()
 	if client == nil {
 		return ErrClientNotStarted
 	}
@@ -555,6 +564,7 @@ func RegisterProduct(p string) error {
 
 // UnregisterProduct removes a product from the list of products listened by the client
 func UnregisterProduct(p string) error {
+	client := clientSingleton.Load()
 	if client == nil {
 		return ErrClientNotStarted
 	}
@@ -566,6 +576,7 @@ func UnregisterProduct(p string) error {
 
 // HasProduct returns whether a given product was registered
 func HasProduct(p string) (bool, error) {
+	client := clientSingleton.Load()
 	if client == nil {
 		return false, ErrClientNotStarted
 	}
@@ -591,6 +602,7 @@ func HasProduct(p string) (bool, error) {
 // RegisterCapability adds a capability to the list of capabilities exposed by the client when requesting
 // configuration updates
 func RegisterCapability(cpb Capability) error {
+	client := clientSingleton.Load()
 	if client == nil {
 		return ErrClientNotStarted
 	}
@@ -604,6 +616,7 @@ func RegisterCapability(cpb Capability) error {
 // UnregisterCapability removes a capability from the list of capabilities exposed by the client when requesting
 // configuration updates
 func UnregisterCapability(cpb Capability) error {
+	client := clientSingleton.Load()
 	if client == nil {
 		return ErrClientNotStarted
 	}
@@ -615,6 +628,7 @@ func UnregisterCapability(cpb Capability) error {
 
 // HasCapability returns whether a given capability was registered
 func HasCapability(cpb Capability) (bool, error) {
+	client := clientSingleton.Load()
 	if client == nil {
 		return false, ErrClientNotStarted
 	}
@@ -694,7 +708,8 @@ func (c *Client) applyUpdate(pbUpdate *clientGetConfigsResponse) error {
 	for _, f := range pbUpdate.TargetFiles {
 		path, valid := ParsePath(f.Path)
 		if !valid {
-			log.Warn("remoteconfig: ignoring invalid target file path: %s", f.Path)
+			log.Warn("remoteconfig: ignoring invalid target file path: %s", f.Path) //errtrack:ignore reported by ReportError below
+			telemetrylog.ReportError("remoteconfig: invalid target file path", nil)
 			continue
 		}
 

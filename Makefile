@@ -33,7 +33,7 @@ tools-install/checkmake: ## Install checkmake binary for Makefile linting
 		if [ "$$ARCH" = "x86_64" ]; then ARCH="amd64"; fi; \
 		if [ "$$ARCH" = "aarch64" ]; then ARCH="arm64"; fi; \
 		BINARY="checkmake-$$CHECKMAKE_VERSION.$$OS.$$ARCH"; \
-		if curl -sSfL --retry 5 --retry-delay 2 --retry-connrefused -o $(BIN)/checkmake "https://github.com/checkmake/checkmake/releases/download/$$CHECKMAKE_VERSION/$$BINARY" 2>/dev/null; then \
+		if curl -sSfL --retry 5 --retry-all-errors --retry-delay 2 --retry-connrefused --connect-timeout 10 --max-time 60 -o $(BIN)/checkmake "https://github.com/checkmake/checkmake/releases/download/$$CHECKMAKE_VERSION/$$BINARY" 2>/dev/null; then \
 			chmod +x $(BIN)/checkmake; \
 			echo "checkmake $$CHECKMAKE_VERSION installed from pre-built binary"; \
 		else \
@@ -176,7 +176,8 @@ docs: tools-install tmp/make-help.txt tmp/test-help.txt ## Generate and Update e
 	$(BIN_PATH) embedmd -w README.md scripts/README.md
 
 ORCHESTRION_VERSION := latest
-ORCHESTRION_DIRS := internal/orchestrion/_integration orchestrion/all internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion
+ORCHESTRION_DIRS := internal/orchestrion/_integration orchestrion/all \
+	internal/civisibility/integrations/gotesting/fixtures/itrbackfill/orchestrion
 
 .PHONY: upgrade/orchestrion
 upgrade/orchestrion: ## Upgrade Orchestrion and fix modules
@@ -185,3 +186,7 @@ upgrade/orchestrion: ## Upgrade Orchestrion and fix modules
 .PHONY: config-audit
 config-audit: ## Report which DD_* configs are migrated to internal/config
 	@cd scripts/configaudit && GOWORK=off go run . -root ../.. -format table
+
+.PHONY: errtrack-audit
+errtrack-audit: ## Report internal/log Error/Warn sites that may adopt Error Tracking reporting
+	@cd scripts/errtrackaudit && GOWORK=off go run . -root ../.. -format table

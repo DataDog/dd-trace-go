@@ -170,10 +170,10 @@ func startInspectableTracer(tb testing.TB, agent agenttest.Agent, opts ...StartO
 		for {
 			select {
 			case trace := <-tracer.out:
-				tracer.sampleChunk(trace)
-				if len(trace.spans) > 0 {
-					tracer.traceWriter.add(trace.spans)
-				}
+				// processOutChunk samples, adds, and releases the chunk like the
+				// worker, so the release does not depend on which goroutine wins
+				// the race for the chunk.
+				tracer.processOutChunk(trace)
 			default:
 				goto drained
 			}

@@ -1325,6 +1325,13 @@
         "default": "false"
       }
     ],
+    "DD_TRACE_AWS_LAMBDA_STRIP_CONTEXT_ENABLED": [
+      {
+        "implementation": "A",
+        "type": "boolean",
+        "default": "false"
+      }
+    ],
     "DD_TRACE_BAGGAGE_TAG_KEYS": [
       {
         "implementation": "A",
@@ -1393,13 +1400,6 @@
         "implementation": "A",
         "type": "boolean",
         "default": "false"
-      }
-    ],
-    "DD_TRACE_DEBUG_SEELOG_WORKAROUND": [
-      {
-        "implementation": "A",
-        "type": "boolean",
-        "default": "true"
       }
     ],
     "DD_TRACE_DEBUG_STACK": [

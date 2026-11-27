@@ -9,20 +9,48 @@
 # Compatibility layer between the repository's cache policy and the
 # isolated-cache provider.
 #
-# Cache provider policy (input `cache-provider`; caching is ON everywhere):
+# Cache policy — this header is the normative statement; the workflows
+# and scripts/README.md restate it for their context and defer here.
+# One tier per job (input `cache-provider`, plus `cache` for OFF):
 #   - cloudx (default): compile-heavy workloads, where the provider's
 #     trimming of GOCACHE to the job's working set pays for its restore cost.
-#   - github-cache: light jobs that compile little (matrix computation, small
-#     `go run` scripts). Every cloudx job saves a new run_id-keyed entry into
-#     the repository's shared 10 GB pool, so jobs that gain nothing from it
-#     must not add entries. This uses actions/setup-go's built-in cache with
-#     its default dependency path, as the base branch did.
-# Moving a job between providers: after a measurement window, compare the
-# job's stratum in `go run ./scripts/citiming compare`. If cloudx does not
-# lower its p50, or saves less time than it adds in restore, trim and save
-# (post p50), move the job to github-cache.
+#   - github-cache: light jobs that compile little (matrix computation,
+#     small `go run` scripts); it keeps actions/setup-go's built-in cache
+#     with its default dependency path, as the base branch did.
+#   - OFF (`cache: "false"`): jobs that read no Go cache at all; the
+#     `static-lint` job set the precedent.
+# Moving a job between the three tiers needs the same evidence: a
+# `go run ./scripts/citiming compare` window in which the destination
+# tier lowers the job's p50, or costs less in restore than it saves in
+# trim and save (post p50).
+# One shared pool: every tier that writes shares the repository's
+# Actions cache quota, so each tier must fit its entries inside it.
 #
-# Contract (mirrors the semantics the tools wrapper had before the migration):
+# Save policy (input `seed`): per-run entries would churn the shared pool
+# many times per day and evict every durable seed, so ONLY seeding runs
+# save. A seeding run is a seed-set key on the nightly schedule or a
+# workflow_dispatch on the default branch; the nightly run is the regular
+# seed (it also rewrites each entry with the current Go patch, so the
+# content stays fresh under a stable minor key), and the manual dispatch
+# re-seeds immediately after a change that renames keys, such as a
+# cache-key scheme bump. Every other event — pull requests, the merge
+# queue, releases, pushes — restores only, which also removes the trim and
+# the cache-save post steps from those jobs. The seed set is every caller
+# that passes `seed`; search the workflows for it rather than keeping a
+# list here. The pool is bounded, so seed only the strata that pay for
+# their size, and widen a lane's seed gate only with a citiming window as
+# evidence; the pool gauges (ci.cache.pool.*), tagged per variant digest,
+# watch the fill and the seed presence.
+#
+# Windows skips the isolated Go build/module caches (cache: "false"):
+# on multios's windows-latest runners, extracting the cache with tar.exe
+# costs more than the build time it saves (APMLP-2248 holds the
+# measurements). The integration lanes' shared runners are not measured,
+# so the skip there is the conservative default, not a measured
+# conclusion. The AppSec module-only archive is separate and stays.
+# Revisit with paired runs on the shared fleet.
+#
+# Contract:
 #   1. Select the Go toolchain with the repository's pinned official
 #      actions/setup-go. With cache-provider cloudx, caching is disabled there
 #      (the provider owns the build/module cache instead); with github-cache
@@ -30,25 +58,45 @@
 #   2. Align GOROOT with the selected toolchain BEFORE any step asks `go env`
 #      for cache paths, so stale GOROOT values exported by earlier tools
 #      cannot redirect GOCACHE/GOMODCACHE.
-#   3. With caching enabled, hand the RESOLVED, exact Go version to the
-#      isolated-cache provider (cloudx-io/setup-go, pinned). Its nested
-#      installer must find that exact version already on disk; if it ever
-#      downloads one, that is a bug to investigate, not normal behaviour.
+#   3. With caching enabled, hand the resolved version class (`1.N`,
+#      from resolve-version.sh) to the isolated-cache provider
+#      (cloudx-io/setup-go, pinned), never the caller's input string. The
+#      resolved minor keeps the key stable across Go patch releases AND
+#      rotates it the day a minor release lands, so every spelling that
+#      resolves to one minor (`stable`, `oldstable`, `1.N`) shares that
+#      minor's key and the pool holds one entry per (family, variant,
+#      minor) instead of one per spelling.
+#      Fully-specified requests (`1.N.P`) are the deliberate exception:
+#      check-latest never upgrades a full version, so the exact patch
+#      goes to the provider instead — its nested installer resolves a
+#      minor as a range and would otherwise select a different patch than
+#      the select-go step installed, so the exact request keys on its
+#      patch. The provider's nested installer resolves
+#      the version and finds the exact binary the select-go step already
+#      installed on disk; if it ever downloads one, that is a bug to
+#      investigate, not normal behaviour.
 #   4. With caching disabled, or with cache-provider github-cache, the cloudx
 #      provider is never invoked: no restore, no trimming, no save.
+#   5. Before toolchain selection on Windows, try to provision a Dev
+#      Drive (ReFS) and point GOCACHE and GOMODCACHE at it, so every
+#      restore and later compile lands on the fast volume. Best effort:
+#      when no Dev Drive is available, restore and build on the default
+#      volume.
 #
-# Cache key shape: ddtg-cx1-<family>-<variant digest>. The digest is the first
+# Cache key shape: <marker>-<family>-<variant digest>, built by
+# cache-key-prefix.sh, which owns the marker. The digest is the first
 # 16 hex characters of SHA-256 over the caller's variant description,
 # canonicalized by this action (object keys and the `modules` list sorted).
 # Callers must describe the workload itself — runner class, module selection,
 # build tags, workspace/instrumentation/coverage mode — and never the workflow
 # title, SHA, run ID, or branch: the provider already keys on branch/run
-# identity, OS/architecture and Go version. Identical nightly and PR workloads
-# must therefore pass identical family+variant so default-branch seeding
-# stays possible.
+# identity, OS/architecture and the resolved version class. Identical
+# nightly and PR
+# workloads must therefore pass identical family+variant so
+# default-branch seeding stays possible.
 #
-# Observability: emits the same structured `cache-observation:` record as the
-# pre-migration action, so scripts/citiming keeps working unchanged. The
+# Observability: emits a structured `cache-observation:` record, which
+# scripts/citiming parses from the job log. The
 # provider's raw cache-hit boolean is recorded but NOT exposed as an output:
 # its save key ends in the run ID, so it is `true` only on the near
 # impossible exact-key hit. The restore entry instead carries, from the
@@ -75,8 +123,7 @@ inputs:
     default: "false"
     description: >-
       Whether to check for the latest available patch release matching the
-      requested version. The tools wrapper passes "true" (its historical
-      behaviour); direct callers keep the setup-go default.
+      requested version.
   workload:
     required: false
     default: ""
@@ -101,10 +148,29 @@ inputs:
       either form is canonicalized (sorted) and hashed by this action into the
       cache-key digest. Omit for jobs whose family alone identifies the
       workload.
+  seed:
+    required: false
+    default: "false"
+    description: >-
+      Whether this job's cache key belongs to the default-branch seed set.
+      Seed keys are the only keys the shared cache pool holds durably; the
+      wrapper still saves only when the event allows seeding (schedule, or
+      workflow_dispatch on the default branch), so PR and merge-queue runs
+      of a seeded job restore only. Accepts exactly "true": any other
+      spelling, including "TRUE" or "1", leaves the job restore-only.
+      Ignored unless cache-provider is cloudx: the policy step is
+      cloudx-gated, and github-cache keeps actions/setup-go's own per-run
+      save.
 outputs:
   go-version:
     description: The resolved, exact Go version installed.
     value: ${{ steps.select-go.outputs.go-version }}
+  go-version-key:
+    description: >-
+      The resolved Go minor the cache keys carry (`1.N`); derived
+      from the toolchain that ran, not from the caller's input. Pass this,
+      not the exact version, wherever a cache key needs the Go version.
+    value: ${{ steps.resolve-version.outputs.go-version-key }}
   cache-key-prefix:
     description: The computed provider cache-key prefix (evidence only).
     value: ${{ steps.cache-key.outputs.prefix }}
@@ -118,6 +184,13 @@ outputs:
       Where the restore came from: exact, default (a default-branch
       fallback), branch, or none (cold miss).
     value: ${{ steps.restore-source.outputs.restore-source }}
+  save:
+    description: >-
+      The resolved save policy: true only for a seeding run (seed key and
+      a schedule or default-branch workflow_dispatch event). Empty when
+      the policy step is skipped, which happens for the github-cache
+      provider or when caching is disabled.
+    value: ${{ steps.save-policy.outputs.save }}
   cache-metrics:
     description: Raw cache observations and cache paths as JSON.
     value: ${{ steps.cache-metrics.outputs.cache-metrics }}
@@ -136,6 +209,23 @@ runs:
             exit 1
             ;;
         esac
+
+    # Windows runners keep the Go caches in the default locations under
+    # the user profile on the C: volume, which also carries the OS and the
+    # page file. Provision a Dev Drive (ReFS) and move GOCACHE and
+    # GOMODCACHE onto it. This runs BEFORE the toolchain selection below,
+    # so both cache tiers (the cloudx provider and actions/setup-go's
+    # built-in cache) resolve, restore and extract onto the fast volume,
+    # and every later compile writes there too. Best effort: when no Dev
+    # Drive can be provisioned the caches stay on the default volume, the
+    # job continues, and the cache-observation record (which reports
+    # `go env` cache paths) shows the fallback.
+    # The script is invoked by path, not through a nested local action
+    # reference; see windows-dev-drive/action.yml for the full rationale.
+    - name: Provision Windows Dev Drive for Go caches
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: '& "$env:GITHUB_ACTION_PATH\..\windows-dev-drive\dev-drive.ps1"'
 
     # Make transient module-proxy failures survivable for every step that
     # follows in the job. The separator is load-bearing: with a comma the go
@@ -172,6 +262,19 @@ runs:
         echo "GOROOT=${goroot}" >> "$GITHUB_ENV"
         echo "goroot=${goroot}" >> "$GITHUB_OUTPUT"
 
+    # The cache-key version is the resolved version class of the
+    # toolchain that actually ran, not the caller's input: every spelling
+    # that resolves to one minor keys on that minor. setup-go pins
+    # GOTOOLCHAIN=local, so GOVERSION reports the toolchain the request
+    # resolved to on this runner. Writes go-version-key (the class) and
+    # go-version-provider (what cloudx receives).
+    - name: Resolve cache-key version
+      id: resolve-version
+      shell: bash
+      env:
+        REQUESTED_VERSION: ${{ inputs.go-version }}
+      run: bash "${GITHUB_ACTION_PATH}/resolve-version.sh"
+
     - name: Compute cache key prefix
       id: cache-key
       shell: bash
@@ -182,6 +285,66 @@ runs:
       # can exercise them without a workflow run.
       run: bash "${GITHUB_ACTION_PATH}/cache-key-prefix.sh"
 
+    # Save policy: the repository's shared cache pool cannot hold a
+    # per-run entry for every job, so only seeding runs save. A seeding run
+    # is a seed-set key (the `seed` input) on an event that produces
+    # default-branch scope: the nightly schedule, or a manual
+    # workflow_dispatch on the default branch (used to re-seed right
+    # away instead of waiting for the nightly). Everything else — every
+    # pull request, merge queue, release and push run — restores only.
+    - name: Resolve save policy
+      id: save-policy
+      if: ${{ inputs.cache == 'true' && inputs.cache-provider == 'cloudx' }}
+      shell: bash
+      env:
+        SEED: ${{ inputs.seed }}
+        EVENT: ${{ github.event_name }}
+        REF: ${{ github.ref }}
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+        KEY_VERSION: ${{ steps.resolve-version.outputs.go-version-key }}
+      run: |
+        set -euo pipefail
+
+        save="false"
+        if [[ "$SEED" == "true" ]]; then
+          case "$EVENT" in
+            schedule)
+              save="true"
+              ;;
+            workflow_dispatch)
+              if [[ "$REF" == "refs/heads/$DEFAULT_BRANCH" ]]; then
+                save="true"
+              fi
+              ;;
+          esac
+        fi
+
+        # Floor guard: a resolved minor below the go.mod `go` directive
+        # cannot seed. setup-go exports GOTOOLCHAIN=local, so nothing in
+        # this action rejects such a request — later builds fail on
+        # go.mod. The guard keeps a stale pinned caller from writing a
+        # seed that no supported job can use. A missing or malformed
+        # go.mod (bootstrap jobs before checkout) skips the guard: it is
+        # not the seed policy's signal.
+        ver_num() {
+          # "1.27" or "1.26.4" -> a comparable number (major*1000+minor).
+          local v="$1" major minor
+          major="${v%%.*}"
+          v="${v#*.}"
+          minor="${v%%.*}"
+          printf '%d%03d' "$major" "$minor"
+        }
+        if [[ "$save" == "true" && -f go.mod ]]; then
+          directive="$(awk '$1 == "go" { print $2; exit }' go.mod)"
+          if [[ -n "$directive" && "$directive" == 1.* ]] \
+             && (( $(ver_num "$KEY_VERSION") < $(ver_num "$directive") )); then
+            echo "::warning::resolved toolchain ${KEY_VERSION} is below the" \
+                 "go.mod directive ${directive}; seeding disabled for this run"
+            save="false"
+          fi
+        fi
+        printf 'save=%s\n' "$save" >> "$GITHUB_OUTPUT"
+
     # The provider caches GOCACHE and GOMODCACHE together, trims GOCACHE to
     # the job's working set before saving, and restores branch-aware with a
     # default-branch fallback. max-staleness-hours keeps the documented
@@ -189,18 +352,33 @@ runs:
     - name: Isolate and refresh Go build caches
       id: cloudx
       if: ${{ inputs.cache == 'true' && inputs.cache-provider == 'cloudx' }}
-      # main (includes cloudx-io/setup-go#8). No tag contains #8 yet: the
-      # newest tag v1.0.0 predates it. #8 adds the `save` input (restore-only
-      # mode) and the `cache-matched-key` output this action consumes.
-      # Dependabot ignores cloudx-io/setup-go versions <= 1.0.0.
+      # Pinned to a main-branch commit: this action needs the provider's
+      # `save` input (restore-only mode) and `cache-matched-key` output,
+      # which the tagged releases lack. The Dependabot config ignores those
+      # older tags.
       uses: cloudx-io/setup-go@0bbd76c0381c065220668df9b6694845b937aaa0 # main (includes cloudx-io/setup-go#8)
       with:
-        go-version: ${{ steps.select-go.outputs.go-version }}
+        # The resolved version class (`1.N`), never the caller's
+        # input string: the provider keys on the literal input, so the
+        # resolved minor keeps the key stable across patch releases,
+        # rotates it the day a minor release lands, and collapses every
+        # spelling of one minor into one entry. A fully-specified
+        # request (`1.N.P`) passes its exact
+        # patch instead (go-version-provider): the nested installer
+        # resolves a minor as a range and would otherwise select the
+        # latest patch instead of the one select-go installed.
+        go-version: ${{ steps.resolve-version.outputs.go-version-provider }}
         cache-key-prefix: ${{ steps.cache-key.outputs.prefix }}
         max-staleness-hours: "2"
         # Verified to expand to go.mod, go.sum and go.work files only in this
         # repository; a single glob is the provider's supported form.
         cache-dependency-path: "**/go.*"
+        # Restore-only unless this is a seeding run: every PR, merge-queue
+        # and release run must stop writing run_id-keyed entries into the
+        # shared pool, and the provider skips both the trim and the post
+        # save when save is false.
+        save: ${{ steps.save-policy.outputs.save }}
+
 
     # The provider's cache-hit is `true` only on an exact primary-key hit,
     # which its run_id-terminated save key makes near impossible on a
@@ -220,10 +398,15 @@ runs:
         # The branch this run is on (the PR source branch for pull
         # requests), to tell a same-branch restore from a fallback.
         CURRENT_BRANCH: ${{ github.head_ref || github.ref_name }}
-        # The resolved toolchain and this job's cache-key prefix: both are
-        # embedded verbatim in every key the provider can match, so the
-        # branch is what follows them and no regex guessing is needed.
-        GO_VERSION: ${{ steps.select-go.outputs.go-version }}
+        # The go version the cloudx provider keys on (the resolved
+        # version class, or the exact patch for fully-specified requests
+        # — resolve-version.sh's go-version-provider output) and this
+        # job's cache-key prefix: both are embedded verbatim in every key
+        # the provider can match, so the branch is what follows them and
+        # no regex guessing is needed. It must stay the same expression
+        # the provider receives, or the branch parsing reintroduces the
+        # misclassification this wiring exists to prevent.
+        GO_VERSION: ${{ steps.resolve-version.outputs.go-version-provider }}
         CACHE_KEY_PREFIX: ${{ steps.cache-key.outputs.prefix }}
       run: |
         set -euo pipefail
@@ -232,11 +415,12 @@ runs:
         dep_match="false"
         # Save-key layout, verified against the pinned provider revision:
         # go-cache-<os>-<arch>-<CACHE_KEY_PREFIX>-<GO_VERSION>-<branch>-
-        # <dep-hash>-<run_id>. The prefix and the resolved Go version are
+        # <dep-hash>-<run_id>. The prefix and the resolved version are
         # known here and appear verbatim (every restore-key tier pins
         # both), so the branch is parsed by stripping them literally. A
-        # generic regex cannot split the version from a hyphenated branch:
-        # 1.27.2-feature-main parses either way.
+        # generic regex cannot split the version from a hyphenated branch
+        # or a prerelease version: 1.28.0-rc.1-feature-main parses either
+        # way.
         if [[ "$CACHE_HIT" == "true" ]]; then
           source="exact"
         elif [[ -n "$MATCHED_KEY" ]]; then
@@ -302,7 +486,7 @@ runs:
           exit 1
         fi
 
-    # Mirror the pre-migration observation record. The restore entry carries
+    # Record the cache observation. The restore entry carries
     # the cache step's outcome and its raw cache-hit boolean. With cloudx a
     # `false` cache-hit is ambiguous between a prefix restore and a cold miss,
     # so the entry also carries the matched key, the derived restore source
@@ -318,6 +502,7 @@ runs:
         WORKLOAD: ${{ inputs.workload || github.job }}
         REQUESTED_VERSION: ${{ inputs.go-version }}
         RESOLVED_VERSION: ${{ steps.select-go.outputs.go-version }}
+        KEY_VERSION: ${{ steps.resolve-version.outputs.go-version-key }}
         CACHE_ENABLED: ${{ inputs.cache }}
         SETUP_OUTCOME: ${{ inputs.cache-provider == 'github-cache' && steps.select-go.outcome || steps.cloudx.outcome }}
         SETUP_CACHE_HIT: ${{ inputs.cache-provider == 'github-cache' && steps.select-go.outputs.cache-hit || steps.cloudx.outputs.cache-hit }}
@@ -325,6 +510,8 @@ runs:
         MATCHED_KEY: ${{ steps.restore-source.outputs.cache-matched-key }}
         RESTORE_SOURCE: ${{ steps.restore-source.outputs.restore-source }}
         DEP_MATCH: ${{ steps.restore-source.outputs.dep-match }}
+        SEED_KEY: ${{ inputs.seed }}
+        SAVE_RESOLVED: ${{ steps.save-policy.outputs.save }}
       run: |
         set -euo pipefail
 
@@ -337,24 +524,30 @@ runs:
           --arg workload "$WORKLOAD" \
           --arg requested "$REQUESTED_VERSION" \
           --arg version "$RESOLVED_VERSION" \
+          --arg keyver "$KEY_VERSION" \
           --arg enabled "$CACHE_ENABLED" \
           --arg outcome "$SETUP_OUTCOME" \
           --arg hit "$SETUP_CACHE_HIT" \
           --arg restored "$RESTORED" \
           --arg matched "$MATCHED_KEY" \
           --arg source "$RESTORE_SOURCE" \
-          --arg dep "$DEP_MATCH" '
+          --arg dep "$DEP_MATCH" \
+          --arg seed "$SEED_KEY" \
+          --arg save "$SAVE_RESOLVED" '
           {
             provider: $provider,
             workload: $workload,
-            runtime: {name: "go", requested: $requested, version: $version},
+            runtime: {name: "go", requested: $requested, version: $version,
+                      key: (if $keyver == "" then null else $keyver end)},
             restores: [
               {name: "setup_go", enabled: $enabled, outcome: $outcome, cache_hit: $hit}
               + (if $restored != "" then
                    {restored: $restored,
                     cache_matched_key: $matched,
                     restore_source: $source,
-                    dep_match: $dep}
+                    dep_match: $dep,
+                    seed_key: $seed,
+                    save: $save}
                  else {} end)
             ],
             cache_paths: [

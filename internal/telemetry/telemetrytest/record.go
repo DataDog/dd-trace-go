@@ -36,6 +36,8 @@ type RecordClient struct {
 	mu            sync.Mutex
 	Started       bool
 	Stopped       bool
+	Flushes       int
+	Closed        bool
 	Configuration []telemetry.Configuration
 	Logs          []LogLine
 	Integrations  []telemetry.Integration
@@ -46,6 +48,9 @@ type RecordClient struct {
 }
 
 func (r *RecordClient) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.Closed = true
 	return nil
 }
 
@@ -209,7 +214,11 @@ func (r *RecordClient) RegisterAppEndpoint(opName string, resName string, attrs 
 	r.AppEndpoints[opName][resName] = append(r.AppEndpoints[opName][resName], attrs)
 }
 
-func (r *RecordClient) Flush() {}
+func (r *RecordClient) Flush() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.Flushes++
+}
 
 func (r *RecordClient) AppStart() {
 	r.mu.Lock()

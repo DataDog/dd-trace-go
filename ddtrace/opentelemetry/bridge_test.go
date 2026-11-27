@@ -8,12 +8,17 @@ package opentelemetry
 import (
 	"context"
 	"errors"
+	"net/http"
+	"sort"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 	_ "unsafe" // for go:linkname
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/httpmem"
 	sharedinternal "github.com/DataDog/dd-trace-go/v2/internal"
 
 	"github.com/stretchr/testify/assert"
@@ -430,7 +435,83 @@ func TestBorrowedSpanSetStatusOkClearsError(t *testing.T) {
 
 	spans := flushedSpans(t, payloads)
 	require.Len(t, spans["dd.op"], 1)
-	assert.Equal(t, 0.0, spans["dd.op"][0]["error"])
+	s := spans["dd.op"][0]
+	assert.Equal(t, 0.0, s["error"])
+	meta, ok := s["meta"].(map[string]any)
+	require.True(t, ok)
+	assert.NotContains(t, meta, "error.message")
+}
+
+// The status precedence covers SetStatus only. An error tag that SetAttributes writes after Ok
+// still marks the span as an error.
+func TestBorrowedSpanErrorTagAfterOk(t *testing.T) {
+	_, payloads, cleanup := mockTracerProvider(t)
+	defer cleanup()
+
+	ddSpan, _, b := borrowDatadogSpan(t)
+	b.SetStatus(otelcodes.Ok, "")
+	b.SetAttributes(attribute.Bool("error", true))
+	ddSpan.Finish()
+
+	spans := flushedSpans(t, payloads)
+	require.Len(t, spans["dd.op"], 1)
+	assert.Equal(t, 1.0, spans["dd.op"][0]["error"])
+}
+
+func TestBorrowedSpanStatusOkWinsAcrossViews(t *testing.T) {
+	_, payloads, cleanup := mockTracerProvider(t)
+	defer cleanup()
+
+	ddSpan, ctx, b1 := borrowDatadogSpan(t)
+	// Each trace.SpanFromContext call creates a new view of the same Datadog span.
+	b2, ok := bridgeSpanFromContext(ctx, nil)
+	require.True(t, ok)
+	require.NotSame(t, b1, b2)
+	b1.SetStatus(otelcodes.Ok, "")
+	b2.SetStatus(otelcodes.Error, "boom")
+	ddSpan.Finish()
+
+	spans := flushedSpans(t, payloads)
+	require.Len(t, spans["dd.op"], 1)
+	s := spans["dd.op"][0]
+	meta, ok := s["meta"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, 0.0, s["error"])
+	assert.NotContains(t, meta, "error.message")
+}
+
+func TestBorrowedSpanStatusConcurrentOkWins(t *testing.T) {
+	_, payloads, cleanup := mockTracerProvider(t)
+	defer cleanup()
+
+	for range 200 {
+		ddSpan, ctx, b := borrowDatadogSpan(t)
+		// Each trace.SpanFromContext call creates a new view of the same Datadog span.
+		b2, ok := bridgeSpanFromContext(ctx, nil)
+		require.True(t, ok)
+		require.NotSame(t, b, b2)
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			b.SetStatus(otelcodes.Error, "boom")
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			b2.SetStatus(otelcodes.Ok, "")
+		}()
+		close(start)
+		wg.Wait()
+		ddSpan.Finish()
+
+		// flushedSpans reads one payload. Flush in each iteration so that each payload holds one span.
+		spans := flushedSpans(t, payloads)
+		require.Len(t, spans["dd.op"], 1)
+		assert.Equal(t, 0.0, spans["dd.op"][0]["error"])
+	}
 }
 
 func TestBorrowedSpanTracerProviderIsGlobal(t *testing.T) {
@@ -525,4 +606,135 @@ func TestBorrowedSpanEndTimestamp(t *testing.T) {
 	assert.Greater(t, duration, float64(0))
 	// The msgp JSON numbers lose nanosecond precision at these magnitudes.
 	assert.InDelta(t, float64(end.UnixNano()), start+duration, 1000)
+}
+
+func TestSpanContextStableAfterEndWithReuse(t *testing.T) {
+	tp, _, cleanup := mockTracerProvider(t, tracer.WithSpanPool(true))
+	defer cleanup()
+
+	_, sp := tp.Tracer("").Start(context.Background(), "otel.op")
+	want := sp.SpanContext()
+	sp.End()
+	other, _ := tracer.StartSpanFromContext(context.Background(), "dd.other")
+	defer other.Finish()
+	// Simulate the span pool reusing the ended span's Datadog span.
+	sp.(*span).mu.Lock()
+	sp.(*span).DD = other
+	sp.(*span).mu.Unlock()
+
+	got := sp.SpanContext()
+	assert.Equal(t, want.TraceID(), got.TraceID())
+	assert.Equal(t, want.SpanID(), got.SpanID())
+	assert.Equal(t, want.TraceFlags(), got.TraceFlags())
+	// Compare trace states by member, ignoring the order of the ";"-separated
+	// fields in each value, which the Datadog propagator does not fix.
+	wantTS, gotTS := want.TraceState(), got.TraceState()
+	require.Equal(t, wantTS.Len(), gotTS.Len())
+	fields := func(v string) []string {
+		f := strings.Split(v, ";")
+		sort.Strings(f)
+		return f
+	}
+	wantTS.Walk(func(k, v string) bool {
+		assert.Equal(t, fields(v), fields(gotTS.Get(k)), "tracestate key %q", k)
+		return true
+	})
+}
+
+func TestSpanContextFromFinishOptionDuringEnd(t *testing.T) {
+	tp, _, cleanup := mockTracerProvider(t, tracer.WithSpanPool(true))
+	defer cleanup()
+
+	_, sp := tp.Tracer("").Start(context.Background(), "otel.op")
+	want := sp.SpanContext()
+	var got oteltrace.SpanContext
+	EndOptions(sp, func(*tracer.FinishConfig) {
+		// End holds the span mutex while it runs finish options.
+		got = sp.SpanContext()
+	})
+	done := make(chan struct{})
+	go func() {
+		sp.End()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("End deadlocked when a FinishOption called SpanContext")
+	}
+	assert.Equal(t, want.TraceID(), got.TraceID())
+	assert.Equal(t, want.SpanID(), got.SpanID())
+}
+
+func TestSpanContextConcurrentWithEnd(t *testing.T) {
+	tp, _, cleanup := mockTracerProvider(t, tracer.WithSpanPool(true))
+	defer cleanup()
+
+	_, sp := tp.Tracer("").Start(context.Background(), "otel.op")
+	want := sp.SpanContext()
+	other, _ := tracer.StartSpanFromContext(context.Background(), "dd.other")
+	defer other.Finish()
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Go(func() {
+			<-start
+			for range 200 {
+				got := sp.SpanContext()
+				assert.Equal(t, want.TraceID(), got.TraceID())
+				assert.Equal(t, want.SpanID(), got.SpanID())
+			}
+		})
+	}
+	close(start)
+	sp.End()
+	// Simulate the span pool reusing the Datadog span while readers still run.
+	sp.(*span).mu.Lock()
+	sp.(*span).DD = other
+	sp.(*span).mu.Unlock()
+	wg.Wait()
+}
+
+func TestSpanContextStableAfterRealPoolReuse(t *testing.T) {
+	// This test does not read payloads, so its agent only answers 200. A handler
+	// that sends on a channel could block after cleanup if a flush is still in flight.
+	srv, c := httpmem.ServerAndClient(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	tp := NewTracerProvider(tracer.WithHTTPClient(c), tracer.WithSpanPool(true))
+	otel.SetTracerProvider(tp)
+	defer func() {
+		assert.NoError(t, tp.Shutdown())
+		assert.NoError(t, srv.Close())
+	}()
+	tr := tp.Tracer("")
+
+	_, sp := tr.Start(context.Background(), "otel.op")
+	want := sp.SpanContext()
+	ended := sp.(*span).DD
+	sp.End()
+
+	// The tracer worker returns the spans of a finished trace to the pool on its
+	// own goroutine, without waiting for an upload. sync.Pool gives no promise about
+	// which item Get returns (and the race detector drops some Puts), so retry a
+	// bounded number of times until a new span reuses the ended span's *tracer.Span.
+	const maxTries = 1000
+	reused := false
+	for range maxTries {
+		time.Sleep(time.Millisecond)
+		_, next := tr.Start(context.Background(), "otel.next")
+		reused = next.(*span).DD == ended
+		next.End()
+		if reused {
+			break
+		}
+	}
+	if !reused {
+		t.Skipf("span pool did not reuse the ended span after %d tries", maxTries)
+	}
+
+	got := sp.SpanContext()
+	assert.Equal(t, want.TraceID(), got.TraceID())
+	assert.Equal(t, want.SpanID(), got.SpanID())
+	assert.Equal(t, want.TraceFlags(), got.TraceFlags())
 }

@@ -17,6 +17,11 @@ func SetProfilerEnabled(val bool) bool {
 	return profiler.enabled.Swap(boolToUint32(val)) != 0
 }
 
+// ProfilerEnabled reports whether the continuous profiler is currently running.
+func ProfilerEnabled() bool {
+	return profiler.enabled.Load() != 0
+}
+
 func profilerEnabled() int {
 	return int(profiler.enabled.Load())
 }

@@ -106,6 +106,9 @@ func spanFinished(s *tracer.Span) bool
 //go:linkname borrowSpanFromContext github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.borrowSpanFromContext
 func borrowSpanFromContext(ctx context.Context, exclude *tracer.Span) (*tracer.Span, *tracer.SpanContext)
 
+//go:linkname setBorrowedStatus github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.setBorrowedStatus
+func setBorrowedStatus(sc *tracer.SpanContext, ok bool, description string)
+
 // bridgeSpanFromContext returns the span that trace.SpanFromContext must return when ctx
 // carries a Datadog span that the OpenTelemetry span key does not show. current is the
 // value of the OpenTelemetry span key in ctx. The function returns false when
@@ -147,11 +150,11 @@ func bridgeSpanFromContext(ctx context.Context, current any) (oteltrace.Span, bo
 		// starts take the Datadog span in ctx as parent, not this span.
 		return nil, false
 	}
-	ddSpan, _ := borrowSpanFromContext(ctx, exclude)
+	ddSpan, sc := borrowSpanFromContext(ctx, exclude)
 	if ddSpan == nil {
 		return nil, false
 	}
-	return &borrowedSpan{ddSpan: ddSpan, tracer: bridgeOTelTracer()}, true
+	return &borrowedSpan{ddSpan: ddSpan, sc: sc, tracer: bridgeOTelTracer()}, true
 }
 
 // borrowedSpan is the OpenTelemetry view of a span that a Datadog integration started and
@@ -160,7 +163,10 @@ func bridgeSpanFromContext(ctx context.Context, current any) (oteltrace.Span, bo
 type borrowedSpan struct {
 	noop.Span // https://pkg.go.dev/go.opentelemetry.io/otel/trace#hdr-API_Implementations
 	ddSpan    *tracer.Span
-	tracer    *oteltracer
+	// sc is the span context that the view pinned. The span pool does not reuse a pinned span,
+	// so the context stays valid for the lifetime of the view.
+	sc     *tracer.SpanContext
+	tracer *oteltracer
 }
 
 var _ oteltrace.Span = (*borrowedSpan)(nil)
@@ -194,21 +200,21 @@ func (s *borrowedSpan) SetAttributes(kv ...attribute.KeyValue) {
 	}
 }
 
-// SetStatus sets the error state of the Datadog span. otelcodes.Ok clears it, as Ok has the
-// highest precedence in OpenTelemetry. borrowedSpan keeps no status state: a later
-// otelcodes.Error sets the error again.
+// SetStatus sets the error state of the Datadog span. Ok has the highest precedence in
+// OpenTelemetry: it clears the error, and a later Error does not change the span. The
+// precedence also holds across separate views of the span and for concurrent calls. Unset
+// does not change the span.
+// The precedence covers status writes through this method. An error tag that SetAttributes
+// or SetTag writes is not intercepted.
 func (s *borrowedSpan) SetStatus(code otelcodes.Code, description string) {
 	if !s.live() {
 		return
 	}
 	switch code {
 	case otelcodes.Error:
-		if description != "" {
-			s.ddSpan.SetTag(ext.ErrorMsg, description)
-		}
-		s.ddSpan.SetTag(ext.Error, true)
+		setBorrowedStatus(s.sc, false, description)
 	case otelcodes.Ok:
-		s.ddSpan.SetTag(ext.Error, false)
+		setBorrowedStatus(s.sc, true, "")
 	}
 }
 

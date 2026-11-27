@@ -35,7 +35,7 @@ permissions:
   packages: write
 
 env:
-  SYSTEM_TESTS_REF: f95c57973421d121c6a7163955aa714b18524f03 # Automated: Updated by .github/workflows/update-system-tests.yml.
+  SYSTEM_TESTS_REF: e18688b80101005987adfa1f1cb8098a1f40437e # Automated: Updated by .github/workflows/update-system-tests.yml.
 
 jobs:
   # Classifies the PR diff against .github/ci-components.yml. Fails open: every
@@ -142,7 +142,7 @@ jobs:
         run: ./build.sh golang -i weblog -w ${{ matrix.weblog-variant }} --save-to-binaries
 
       - name: Upload weblog image artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: weblog-image-${{ matrix.weblog-variant }}
           path: binaries/golang-${{ matrix.weblog-variant }}-weblog.tar.zst
@@ -356,7 +356,7 @@ jobs:
 
       - name: Download pre-built weblog image
         if: ${{ matrix.weblog-variant != 'envoy' && matrix.weblog-variant != 'haproxy' && matrix.weblog-variant != 'apim' }}
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: weblog-image-${{ matrix.weblog-variant }}
           path: binaries/
@@ -372,7 +372,7 @@ jobs:
 
       - name: Download ${{ matrix.weblog-variant }} artifacts
         if: ${{ github.ref != 'refs/heads/main'  && (matrix.weblog-variant == 'envoy' || matrix.weblog-variant == 'haproxy' || matrix.weblog-variant == 'apim') }}
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ matrix.image_artifact }}
 
@@ -394,7 +394,9 @@ jobs:
 
       - name: Upload test results to Test Optimization
         if: ${{ always() }}
-        uses: DataDog/system-tests/.github/actions/push_to_test_optim@23eaea61e7aa7547c7e16097026cbdccd7ad4cec
+        uses: DataDog/system-tests/.github/actions/datadog_ci@24a28b649fb74c109ee0401f5051ef89c8009ff9
+        with:
+          push_to_test_optimization: true
 
       - name: Compress artifact
         if: ${{ always() }}
@@ -406,7 +408,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ always() }}
         with:
           name: logs_${{ matrix.weblog-variant }}_${{ matrix.scenario }}
@@ -472,19 +474,55 @@ jobs:
       push: ${{ github.ref == 'refs/heads/main' }}
       platforms: '["linux/amd64"]'
 
+  build-system-tests-binaries:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout dd-trace-go
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          path: 'binaries/dd-trace-go'
+
+      - name: Pin agent and callout image names
+        run: |
+          # Keep testing against the agent's main branch, as dev mode did.
+          echo "datadog/agent-dev:master-py3" > binaries/agent-image
+          echo "ghcr.io/datadog/dd-trace-go/service-extensions-callout:dev" > binaries/golang-service-extensions-callout-image
+          echo "ghcr.io/datadog/dd-trace-go/haproxy-spoa:dev" > binaries/golang-haproxy-spoa-image
+          echo "ghcr.io/datadog/dd-trace-go/apim-callout:dev" > binaries/golang-apim-callout-image
+
+      - name: Upload binaries artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: system_tests_binaries
+          path: binaries/
+          if-no-files-found: error
+          retention-days: 1
+
   tracer-release:
     if: github.event_name == 'schedule'
-    uses: DataDog/system-tests/.github/workflows/system-tests.yml@f95c57973421d121c6a7163955aa714b18524f03 # Automated: Updated by .github/workflows/update-system-tests.yml.
+    needs:
+      - build-system-tests-binaries
+      # The callout images are pulled through the :dev tags these jobs push.
+      - build-service-extensions-callout
+      - build-haproxy
+      - build-apim-callout
+    uses: DataDog/system-tests/.github/workflows/system-tests.yml@e18688b80101005987adfa1f1cb8098a1f40437e # Automated: Updated by .github/workflows/update-system-tests.yml.
     permissions:
       contents: read
       id-token: write
     with:
       library: golang
       scenarios_groups: tracer-release
-      _system_tests_dev_mode: true
+      binaries_artifact: system_tests_binaries
       push_to_test_optimization: true
       desired_execution_time: 300
-      ref: f95c57973421d121c6a7163955aa714b18524f03 # Automated: Updated by .github/workflows/update-system-tests.yml.
+      ref: e18688b80101005987adfa1f1cb8098a1f40437e # Automated: Updated by .github/workflows/update-system-tests.yml.
 
   system-tests-done:
     name: System Tests
@@ -496,6 +534,7 @@ jobs:
       - build-haproxy
       - build-apim-callout
       - system-tests
+      - build-system-tests-binaries
       - tracer-release
     runs-on: ubuntu-latest
     if: '!cancelled()'
@@ -507,8 +546,9 @@ jobs:
       # carry this gate green. Every image build is therefore a dependency here,
       # and when the gate is on the system-tests job must have really succeeded.
       #
-      # tracer-release needs no strict clause -- it is schedule-only, so its
-      # skip is legitimate and the allowlist below is enough.
+      # build-system-tests-binaries and tracer-release need no strict clause
+      # -- they are schedule-only, so their skip is legitimate and the
+      # allowlist below is enough.
       - name: Failure
         if: >-
           needs.changes.result != 'success'
@@ -518,6 +558,7 @@ jobs:
           || contains(fromJSON('["failure", "cancelled"]'), needs.build-haproxy.result)
           || contains(fromJSON('["failure", "cancelled"]'), needs.build-apim-callout.result)
           || contains(fromJSON('["failure", "cancelled"]'), needs.system-tests.result)
+          || contains(fromJSON('["failure", "cancelled"]'), needs.build-system-tests-binaries.result)
           || contains(fromJSON('["failure", "cancelled"]'), needs.tracer-release.result)
           || (needs.changes.outputs.system-tests == 'true'
               && needs.system-tests.result != 'success')

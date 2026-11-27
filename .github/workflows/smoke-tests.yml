@@ -34,6 +34,17 @@ permissions:
   id-token: write
   contents: read
 
+# Overlapping runs would double the seed writes: two run_id-keyed
+# entries per key. The group carries a literal prefix: group names are
+# repository-scoped (a bare ref group can cancel another workflow's
+# nightly), and in a workflow_call run github.workflow
+# resolves to the caller's name, so the workflow-name form would join
+# a caller's own group and its cancel-in-progress could cancel that
+# caller.
+concurrency:
+  group: smoke-tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   setup-env:
     runs-on: ubuntu-latest
@@ -54,15 +65,20 @@ jobs:
         id: setup-go
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.27"
+          go-version: stable
           check-latest: "true"
           workload: smoke-setup
+          # Default-branch seed set: only the nightly schedule and a
+          # workflow_dispatch on the default branch save these keys.
+          # Every other event restores only: branch and tag pushes,
+          # dispatches from other branches, and workflow_call runs.
+          seed: "true"
 
       - name: Restore and install development tools
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Compile dd-trace-go with updated dependencies (sandboxed)
@@ -135,15 +151,16 @@ jobs:
         id: setup-go
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.27"
+          go-version: stable
           check-latest: "true"
           workload: smoke-deps-update
+          seed: "true"
 
       - name: Restore and install development tools
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Capture trusted commit SHA
@@ -231,7 +248,7 @@ jobs:
         with:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULTS }}
-          tags: go:stable,arch:${{ runner.arch }},os:${{ runner.os }}
+          tags: go:${{ steps.setup-go.outputs.go-version-key }},arch:${{ runner.arch }},os:${{ runner.os }}
 
       - name: Merge contrib coverage files
         if: always() && steps.restore.outcome == 'success'
@@ -279,17 +296,26 @@ jobs:
         id: setup-go
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.26"
+          go-version: oldstable
           check-latest: "true"
           workload: smoke-tracer
+          seed: "true"
 
       - name: Restore and install development tools
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
+      # The gotesting fixture tests resolve orchestrion through their `go run`
+      # fallback on this leg, deliberately: unlike the multios and unit-integration
+      # workflows, no install-orchestrion step runs here. The fallback resolves
+      # the version and dependencies the fixture module's go.mod pins, the same
+      # resolution as the exported binary — only the per-test build cost
+      # differs. The cold-cache download flake that motivated the prebuilt
+      # binary was macOS/Windows only (see .github/actions/install-orchestrion);
+      # this leg runs on Linux.
       - name: Run tests
         run: |
           export PATH="${{ github.workspace }}/bin:${PATH}"
@@ -313,7 +339,7 @@ jobs:
         with:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULTS }}
-          tags: go:1.26,arch:${{ runner.arch }},os:${{ runner.os }}
+          tags: go:${{ steps.setup-go.outputs.go-version-key }},arch:${{ runner.arch }},os:${{ runner.os }}
 
       - name: Report cache metrics to Datadog
         if: always()
@@ -343,15 +369,16 @@ jobs:
         id: setup-go
         uses: ./.github/actions/setup-go
         with:
-          go-version: "1.26"
+          go-version: oldstable
           check-latest: "true"
           workload: smoke-gen
+          seed: "true"
 
       - name: Restore and install development tools
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
 
       - name: Run generate scripts and check diff

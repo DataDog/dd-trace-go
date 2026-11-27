@@ -20,9 +20,10 @@ import (
 const setupGoAction = "../../.github/actions/setup-go/action.yml"
 
 type actionStep struct {
-	Name string `yaml:"name"`
-	If   string `yaml:"if"`
-	Run  string `yaml:"run"`
+	Name string            `yaml:"name"`
+	If   string            `yaml:"if"`
+	Run  string            `yaml:"run"`
+	Env  map[string]string `yaml:"env"`
 }
 
 func setupGoStep(t *testing.T, name string) actionStep {
@@ -53,6 +54,14 @@ func setupGoStep(t *testing.T, name string) actionStep {
 // the exit error.
 func runSetupGoStep(t *testing.T, step actionStep, env map[string]string) (string, string, error) {
 	t.Helper()
+	return runSetupGoStepInDir(t, step, env, "")
+}
+
+// runSetupGoStepInDir is runSetupGoStep with a working directory, so tests
+// can supply repository files (go.mod) a step reads. An empty dir keeps the
+// test process's working directory.
+func runSetupGoStepInDir(t *testing.T, step actionStep, env map[string]string, dir string) (string, string, error) {
+	t.Helper()
 	for _, tool := range []string{"bash", "jq"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Skipf("%s not found: %v", tool, err)
@@ -61,16 +70,19 @@ func runSetupGoStep(t *testing.T, step actionStep, env map[string]string) (strin
 	if strings.Contains(step.Run, "${{") {
 		t.Fatalf("step %q interpolates expressions in its script; pass them through env", step.Name)
 	}
-	dir := t.TempDir()
-	output := filepath.Join(dir, "github_output")
+	work := t.TempDir()
+	output := filepath.Join(work, "github_output")
 	if err := os.WriteFile(output, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	script := filepath.Join(dir, "step.sh")
+	script := filepath.Join(work, "step.sh")
 	if err := os.WriteFile(script, []byte(step.Run), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	cmd := exec.CommandContext(t.Context(), "bash", script)
+	if dir != "" {
+		cmd.Dir = dir
+	}
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "GITHUB_OUTPUT=" + output}
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, k+"="+v)
@@ -116,6 +128,11 @@ func TestSetupGoCloudxStepsSkippedForGitHubCache(t *testing.T) {
 
 func observationRecord(t *testing.T, env map[string]string) map[string]any {
 	t.Helper()
+	// The action always exports KEY_VERSION (the resolve step runs before
+	// the observation step); tests that do not care keep the default.
+	if _, ok := env["KEY_VERSION"]; !ok {
+		env["KEY_VERSION"] = "1.27"
+	}
 	written, out, err := runSetupGoStep(t, setupGoStep(t, "Record cache observations"), env)
 	if err != nil {
 		t.Fatalf("observation step failed: %v\n%s", err, out)
@@ -160,6 +177,8 @@ func TestSetupGoObservationGitHubCache(t *testing.T) {
 		"MATCHED_KEY":       "",
 		"RESTORE_SOURCE":    "",
 		"DEP_MATCH":         "",
+		"SEED_KEY":          "",
+		"SAVE_RESOLVED":     "",
 	})
 	if record["provider"] != "github-cache" {
 		t.Errorf("provider = %v, want github-cache", record["provider"])
@@ -188,6 +207,8 @@ func TestSetupGoObservationCloudxRestored(t *testing.T) {
 		"MATCHED_KEY":    "",
 		"RESTORE_SOURCE": "",
 		"DEP_MATCH":      "",
+		"SEED_KEY":       "",
+		"SAVE_RESOLVED":  "",
 	}
 	for _, restored := range []string{"true", "false"} {
 		env := map[string]string{"RESTORED": restored}

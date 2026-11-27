@@ -191,6 +191,7 @@ func (c *orchestrionRetryProcessControlTransport) close() {
 
 type orchestrionRetryProcessParentHarness struct {
 	server                     *httptest.Server
+	readCacheRoot              string
 	tracer                     mocktracer.Tracer
 	settingsRequests           atomic.Int32
 	knownTestsRequests         atomic.Int32
@@ -596,7 +597,16 @@ func newOrchestrionRetryProcessParentHarnessWithConfig(
 	settingsID, apiKey string,
 	config orchestrionRetryProcessHarnessConfig,
 ) *orchestrionRetryProcessParentHarness {
+	// httptest ports can be reused between scenario subprocesses, so keep mock
+	// CI Visibility responses out of the shared short-lived read cache. Falling
+	// back to the shared cache would let a scenario read another one's settings.
+	readCacheRoot, err := os.MkdirTemp("", "dd-trace-go-orchestrion-retryprocess-read-cache-*")
+	if err != nil {
+		panic(fmt.Sprintf("isolate CI Visibility read cache for retry process harness: %v", err))
+	}
+	civisibilitynet.SetReadCacheHooksForTesting(readCacheRoot, nil, nil, nil, nil)
 	harness := &orchestrionRetryProcessParentHarness{
+		readCacheRoot:              readCacheRoot,
 		expectedManagementRequests: config.managementData != nil,
 		expectedKnownTestsRequests: config.efdRetries > 0,
 	}
@@ -698,6 +708,8 @@ func newOrchestrionRetryProcessParentHarnessWithConfig(
 
 func (h *orchestrionRetryProcessParentHarness) close() {
 	h.server.Close()
+	civisibilitynet.ResetReadCacheHooksForTesting()
+	_ = os.RemoveAll(h.readCacheRoot)
 }
 
 func (h *orchestrionRetryProcessParentHarness) assertRequests(name string) {

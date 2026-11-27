@@ -11,6 +11,15 @@ package otelmetricsinstall
 
 import "context"
 
+// RuntimeRegistrationError identifies a failure to create the tracer's fixed
+// runtime instruments or register their callback.
+type RuntimeRegistrationError struct {
+	Err error
+}
+
+func (e *RuntimeRegistrationError) Error() string { return e.Err.Error() }
+func (e *RuntimeRegistrationError) Unwrap() error { return e.Err }
+
 // StartHook is called by tracer.Start() to install the global OTel meter
 // provider and begin collecting Go runtime metrics. It reports whether the
 // provider in use is the one it installed.

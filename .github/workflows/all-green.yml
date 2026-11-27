@@ -16,13 +16,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Run Ensure CI Success
-        uses: DataDog/ensure-ci-success@cccc70e01e12f746739ac9ad158b93439fac4821
+        uses: DataDog/ensure-ci-success@c81123e3564e2474642c8c7337372b304d731c1b
         with:
           # The action evaluates only the checks that exist when it polls.
           # The delay must outlast the GitHub fan-out of the trigger event.
-          # max-retries holds the ceiling near 70 minutes.
+          # max-retries holds the ceiling near 3 hours: the OTelc
+          # integration matrix runs about 2.5 hours, so a 70-minute
+          # ceiling failed the check while those jobs were still running.
           initial-delay-seconds: "300"
-          max-retries: "65"
+          max-retries: "180"
           # A fork PR and its shadow PR share the head commit, so both report
           # check runs with equal names. The action keeps one run per name and
           # can keep the fork run, which fails on permission-gated steps
@@ -36,6 +38,7 @@ jobs:
             check-title
             dd-gitlab/.*
             DDCI Status
+            errtrack-audit
 
 # Reason for ignored-name-patterns:
 #
@@ -48,3 +51,7 @@ jobs:
 # * dd-gitlab/.* and DDCI Status: internal GitLab statuses. GitHub cannot
 #   re-run them, and DDCI Status is "Not required to merge". Reporting them
 #   as failures of this workflow sends people to the wrong place.
+# * errtrack-audit: advisory job. A run failure (infra, a broken package
+#   graph) must not block the PR; the PR comment reports the findings. The
+#   tool's own tests run in the gated check-modules job in static-checks, so
+#   a regression in the tool still blocks.

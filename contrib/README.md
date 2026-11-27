@@ -30,8 +30,9 @@ and the [godoc reference](https://pkg.go.dev/github.com/DataDog/dd-trace-go/v2/c
 ### Contributing a new integration
 
 See [INTEGRATIONS.md](./INTEGRATIONS.md) for the full authoring guide, and
-[ORCHESTRION.md](./ORCHESTRION.md) for auto-instrumentation support via
-[Orchestrion](https://github.com/DataDog/orchestrion).
+[ORCHESTRION.md](./ORCHESTRION.md) and [OTELC.md](./OTELC.md) for auto-instrumentation support via
+[Orchestrion](https://github.com/DataDog/orchestrion) and
+[otelc](https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation).
 
 ### Version pinning
 

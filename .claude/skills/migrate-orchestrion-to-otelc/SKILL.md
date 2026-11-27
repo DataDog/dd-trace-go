@@ -43,11 +43,7 @@ Check that each test fails when you break what it guards.
 Run from `internal/orchestrion/_integration`:
 
 1. `otelc go test ./<name>`, and the same suite with `orchestrion go test`. Name the bare package,
-   as CI does, not `./<name>/...`: once `<name>/mainapp/` exists, both it and the test main compile
-   as `-p main` and the build fails with `cannot replace .../mainapp/<file>.go`. Test one package
-   per invocation: naming two packages where one imports the other fails the link with
-   `duplicated definition of symbol ... OtelGetStackImpl`, an open otelc bug
-   (https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1361).
+   as CI does, not `./<name>/...`.
 2. Check what otelc did. A passing suite does not prove the rules are right: it matches spans by
    subset, so it misses extra spans and double wrapping.
    - `.otelc-build/matched.json` lists the rules that apply to each package. A rule with an exact
@@ -58,14 +54,15 @@ Run from `internal/orchestrion/_integration`:
    - `.otelc-build/debug/<pkg>/` holds every file otelc rewrote, with slashes and dots in the
      package path turned into underscores (`net/http` becomes `debug/net_http/`). It is the only
      record of which call sites a `**` rule rewrote. Read each injection and check it is the code
-     you meant.
+     you meant. With `otelc --debug`, the same directory also gets a `.diff` per file, with one
+     section per rule.
    - While a build runs, otelc rewrites the `go.mod`, `go.sum` and tool file of each module it
      reads, and restores them when the build ends. Do not read `git diff` or run
      `make fix-modules` during a run.
 
 Before believing a green run, scan for **skipped** tests and check for a silent failure (see
-"Green runs with nothing instrumented"). `harness.Run` fails loudly on an unwoven build, but the GLS
-and foundation suites skip themselves.
+"Green runs with nothing instrumented" in `gotchas.md`). `harness.Run` fails loudly on an unwoven
+build, but the GLS and foundation suites skip themselves.
 
 Before believing a red one, check who owns the missing spans. A suite often asserts spans produced
 by another contrib; grep the expected trace for `"component"` values that are not yours. That is a
@@ -77,30 +74,36 @@ until the suite is green.
 The harness suites never build a `package main`, and only exercise call sites inside the
 `_integration` module. Add a test for each case your rules reach:
 
-- **Package main**, when a `target:` includes `main` or `**`. Under `go test` the package under
-  test compiles as `-p <import path>`, so these rules never fire there. Add
-  `_integration/<name>/mainapp/`, a `package main` that calls the library and returns normally so
-  the injected `defer tracer.Stop()` flushes. Add a `main_test.go` that runs it with
-  `maintest.Run(t, "./<name>/mainapp")` and asserts spans with `agent.RequireSpan`
-  (`chi/main_test.go`). To assert an exact span count, read the spans through
-  `agent.Agent.(agenttest.SpanLister)`. For a call-site rule, also call the library under an import
-  alias (`chi/mainapp/alias.go`).
-- **Package main, for code injected into the library that calls the contrib through
-  `//go:linkname`.** The suites import the contrib themselves, so they still link it when the
-  rules module fails to. Only an app that does not import the contrib catches that.
+- **Call-site rules.** Add a harness test case for each constructor or call form the rules wrap,
+  and one that calls the library under an import alias, in its own file where the library is only
+  imported under the alias (`chi/alias.go`).
+- **A `target: main` rule.** It never fires under `go test`, which builds no `package main`. Check
+  it in `otelc-autostart`, the one test that builds an app with otelc.
 - **Dependency modules**, when a call-site rule targets `**`. Such a rule exists to also rewrite
   call sites inside third-party dependencies, as orchestrion does. Every call site in the suites
   belongs to `_integration`, the module being built, so a rule that never reaches a dependency
   passes them anyway. Add a small module under `_integration/internal/<lib>dep/` (module path
-  `example.com/<lib>dep`) that calls the library, `require` and `replace` it in
-  `_integration/go.mod`, and add a `TestCaseDependency` that calls it (`chi/dependency.go`). It has
-  to be a separate module, not a package of `_integration`, to count as a dependency.
+  `example.com/<lib>dep`) that calls the library. Add a `TestCaseDependency` that imports and
+  calls the module (`chi/dependency.go`). Then run `make fix-modules` to update `_integration/go.mod`.
+  Use a separate module, not a package of `_integration`, so the test exercises a dependency.
+- **The rules module bringing its contrib into an application**, when a rule adds an import of the
+  contrib (`imports:`) or the hook package uses it. The suites can't check this, because
+  `_integration/go.mod` requires every contrib. Add a new `lib_<name>.go` file in
+  `internal/apps/otelc-external-app`. In `init`, use `registerLibrary` to register the check.
+  Make the library a direct requirement in that module (`GOWORK=off go mod tidy` in that
+  directory). The External Application Build job fails if the rules module does not supply its
+  contrib. Use one call that a rule matches and that needs no network: a constructor for a call rule
+  (`gin.New()`, `options.Client()`), or one in-process use of the hooked type for a hook rule (an
+  `httptest` request, `fasthttp.ServeConn` on a closed `net.Pipe`). Never import the contrib in the
+  app, or the build passes either way. Skip it when:
+  - the rules reach no contrib package;
+  - building the library needs cgo or a system library, or it can't be linked into the same binary
+    as a library the app already uses;
+  - even constructing the library needs a server or the network.
 
-`maintest` builds the app with otelc and runs it against `maintest.Agent`, the harness test agent
-served on a local port so that another process can report to it. It runs the first `otelc` on
-`PATH`, even under `orchestrion go test`, and skips when there is none. Put the CLI at
-`OTELC_VERSION` first on `PATH`, or the app is built with whatever older binary is there. To compare against a plain `go build`, or to count the requests that reach the agent, use
-`maintest.Build`, `NewAgent` and `Exec` directly (`otelc-autostart/autostart_test.go`).
+`otelc-autostart` builds its app with `maintest`, which runs the first `otelc` on `PATH`, even
+under `orchestrion go test`, and skips when there is none. Put the CLI at `OTELC_VERSION` first
+on `PATH`, or the app is built with whatever older binary is there.
 
 ## Build enough context first
 
@@ -114,7 +117,7 @@ Orchestrion renders Go code templates into the matched AST node. otelc calls ext
 through a trampoline and `//go:linkname`, and can also inject raw code in-package (`inject_code`).
 Prefer hooks; inject raw code only when it must run inside the target package. The exception is a
 constructor whose result the instrumentation changes, such as a router that gets a middleware:
-wrap its call sites with `wrap_call` instead (see "Rules" under "Cautions").
+wrap its call sites with `wrap_call` instead (see "Rules" under "Design rules").
 
 ## Workflow
 
@@ -138,9 +141,10 @@ wrap its call sites with `wrap_call` instead (see "Rules" under "Cautions").
      it.
    - Rule files live in this directory, named `otelc.yaml` or `*.otelc.yaml` (`.yml` works too).
      Each rule's `path:` is this package.
-   - Comment each rule, or the first rule of a group of similar ones, with what it does and why:
-     what it targets and excludes, and why it uses this rule kind when another looks more natural.
-     Do not add a file header that restates the rules or says the file ports `orchestrion.yml`.
+   - Comment a rule, or the first rule of a group of similar ones, only with what a reader would
+     not expect: why it uses this rule kind and not a hook, a non-obvious exclusion, a known gap
+     (`FIXME`, `TODO`). Keep it to a few lines, directly above the rule, never in a file header.
+     Do not explain what otelc or the rule kind does, and do not mention Orchestrion.
    - Do not add the file-level `version:` key. It rejects pseudo-versions, and `OTELC_VERSION` is
      a `main` commit, so there is nothing valid to declare.
    - Not under `internal/`. otelc blank-imports the packages it reads rules from into the
@@ -152,23 +156,30 @@ wrap its call sites with `wrap_call` instead (see "Rules" under "Cautions").
      puts into the target package can import it.
    - Keep the hook layer thin. It is the only code that needs otelc to compile; everything else goes
      in normal sub-packages and stays unit-testable.
+   - Require the published `go.opentelemetry.io/otelc/pkg` tag that the other hook modules use, not
+     a pseudo-version (`OTELC_VERSION` is a commit on upstream `main`, `pkg` is tagged). Tidy the
+     hook module and `otelc/all` after adding it, or the next build fails with "updates to go.mod
+     needed".
 5. Wire the module in:
    - Blank-import it from `otelc/all`, the way `orchestrion/all` lists integrations. otelc stops at
      nested modules, so `otelc/all` must name this module directly. Applications import
      `otelc/all`, so nothing else needs editing.
-   - By hand, add the new module's `require` and `replace` to `otelc/all/go.mod`, and its
-     `replace` to `internal/apps/otelc-external-app/go.mod`. `make fix-modules` cannot add them:
-     it tidies modules in module path order and stops at the first failure, and the external app
-     (`example.com/otelcexternalapp`) sorts before `otelc/all`. Every pass then fails with
-     `module github.com/DataDog/dd-trace-go@latest found (...), but does not contain package`.
    - Add it to `go.work` (`make fix-modules` does not touch the workspace).
-   - Add the contrib and its `otelc` module to `OTELC_MODULES` in `.github/workflows/otelc.yml`,
-     which CI tidies before running otelc. Every module otelc reads needs a current `go.mod`.
+   - Run `make fix-modules`. It syncs local `replace` directives first (rewriting changed replace
+     sets into one sorted `replace (...)` block), runs `go mod tidy` in dependency order so
+     `otelc/all` tidies before `internal/apps/otelc-external-app` and
+     `internal/orchestrion/_integration`, and re-syncs replace blocks afterward. Brand-new local
+     requires receive `v2.0.0-00010101000000-000000000000` until release tagging.
+   - In `.github/ci-components.yml`, map the contrib and its `otelc` module to the suite (the
+     module to suites table), and add `contrib/<name>/**` to the `otelc-integrations` component
+     so a change to the contrib runs the OTelc lane. For a suite covering code outside `contrib/`
+     (or without a `*/otelc` module entry, such as `gls`), add the suite to
+     `integration-suites.otelc-extra-suites`. CI discovers `**/otelc` modules and their suites
+     automatically via `scripts/ciselect`, so `.github/workflows/otelc.yml` needs no edit.
 6. Run the validation steps, plus the main app and dependency tests your rules need, and diff the
    otelc spans against the orchestrion ones.
 7. From the repository root, in a shell **without** `GOWORK=off`:
-   - `make fix-modules`, repeatedly until it stops changing files. A brand new module needs two or
-     three passes; the first often fails with `unknown revision 000000000000`.
+   - `make fix-modules`, verifying a second run leaves `git diff` empty.
    - `make lint`, which covers only the root module and `internal/orchestrion/_integration`. Also
      run `golangci-lint run ./...` inside `contrib/<name>` and `contrib/<name>/otelc`.
    - `otelc cleanup`, then `make generate`, and commit what it changes (a new contrib dependency
@@ -186,7 +197,10 @@ wrap its call sites with `wrap_call` instead (see "Rules" under "Cautions").
      Merge `origin/main` and `go mod tidy` the module the error names.
    - Any other failure: fix and push if the cause is obvious, otherwise stop and agree on the fix.
 
-## Cautions
+## Design rules
+
+These decide how the port is built. otelc limits with a workaround, and mistakes that fail late or
+silently, are in `gotchas.md`. Read it before writing hooks or rules.
 
 ### Hooks
 
@@ -209,85 +223,46 @@ wrap its call sites with `wrap_call` instead (see "Rules" under "Cautions").
 - A hook must not run application code. otelc recovers a panic in a hook and then runs the
   original call, so the code runs twice and the panic never reaches the caller. For routers and
   servers, see "Routers and servers" in `pattern-mapping.md`.
-- Rules whose targets do the same thing share one hook when the targets are in the same file and
-  have the same signature. otelc emits a hook's `//go:linkname` stub once per target file, so
-  targets in different files of one package need separate hook names, which delegate to a shared
-  helper; a shared name there fails with `redeclared in this block`. If a library release moves a
-  method to another file, the build fails loudly the same way. Say in a comment above the rules
-  why sharing is safe.
-- Do not declare `...any` for a variadic parameter. otelc keeps the target's element type in the
-  stub, so the hook reads a garbage slice with a green build. If the element is a func type the
-  hook cannot name, declare `_ ...func()` and never read it (every func value is one pointer).
-- For a method, `GetParam` and `SetParam` count the receiver as parameter 0, so the first argument
-  is 1. A wrong index fails at run time only, when the type assertion in the trampoline panics.
-- On a generic target function, `GetParam`, `SetParam`, `GetReturnVal` and `SetReturnVal` are
-  panicking stubs, so even a hook that only reads an argument fails. Use `inject_code` instead
-  (https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/1280).
-- `SetReturnVal` panics in a before-only hook, because only the after trampoline allocates
-  `returnVals`. Pair before and after hooks and pass the value through `SetData`/`GetData`.
-- `inject_hooks` gives no init-ordering guarantee. The trampoline creates no import edge, so a
-  function that other packages call from their own `init()` can run the hook before the hook
-  module and the contrib are initialized. Queue those calls in package variables with no
-  initializer and replay them from the hook module's `init()`
-  (`contrib/database/sql/otelc/hooks.go`).
-- A hook that builds state lazily must not keep a failed build. When a call comes before the
-  contrib's `init`, the build panics and the trampoline recovers it. `sync.Once` and
-  `sync.OnceValue` would then never retry, or replay the panic on every call, and the object stays
-  untraced. Store the state only after the build returns, for example with `LoadOrStore`.
-- Every hook call allocates: the trampoline builds a `HookContext` holding pointers to the
-  parameters, and it escapes. On a hot path in our own code, prefer `inject_code`. On a library's
-  per-request method, a hook that reuses the contrib is usually worth it, but benchmark it under
-  otelc against the alternative before deciding.
+- Rules whose targets do the same thing and have the same signature can share one hook. Say in a
+  comment above the rules why sharing is safe.
+- Contrib code that only otelc builds need, such as a mark that stops a second span, goes in the
+  contrib behind `instrumentation.OtelcEnabled()`, not in an `inject_code` rule that targets the
+  contrib. A refactor of the contrib can make such a rule match nothing without any error, and
+  the check costs plain builds only a bool test (`contrib/gorilla/mux/mux.go`,
+  `contrib/redis/go-redis.v9/otelc_mark.go`).
 
 ### Rules
 
 - When the instrumentation changes what a constructor returns, such as adding a middleware to a
   router or wrapping a client, wrap the constructor's call sites with `wrap_call` instead of
   hooking the constructor. The rewritten package imports the contrib, so Go initializes the
-  contrib before a value built in a package-level variable, such as `var r = gin.New()`. A hook creates no import
-  edge (see the init-ordering caution under "Hooks"), so it can build the contrib's middleware or
-  client before the contrib's `init` runs, and the panic is swallowed. Queueing the calls does not
-  help when the hook must change the value before the caller uses it. Explain this in a comment
-  above the rule, since a hook looks like the more natural choice.
+  contrib before a value built in a package-level variable, such as `var r = gin.New()`. A hook
+  creates no import edge (see init ordering in `gotchas.md`), so it can build the contrib's
+  middleware or client before the contrib's `init` runs, and the panic is swallowed. Queueing the
+  calls does not help when the hook must change the value before the caller uses it. Explain this
+  in a comment above the rule, since a hook looks like the more natural choice.
 - A call-site rule that must also reach call sites in dependencies targets `**` and excludes the
   library and its contrib with `not:` entries (`contrib/go-chi/chi/otelc/otelc.yaml`).
-- A `wrap_call` template must not move the call's arguments into a closure body, because `go f(x)`
-  and `defer f(x)` evaluate `x` at the statement. Pass them as parameters of the closure instead
-  (`fasthttp_serve_conn_func` in `contrib/valyala/fasthttp/otelc/otelc.yaml`).
-- `function_call` and `method_call` only match qualified calls (`pkg.Func()`). Calls inside the
-  library itself, and calls through a dot import, are never matched, so a constructor that calls
-  another one internally is not wrapped twice.
+- In `go f(x)` and `defer f(x)`, Go evaluates `x` at the statement and runs `f` later. A
+  `wrap_call` template replaces `f(x)`, so pick its shape by how callers use the call:
+  - When callers use the result, as with a constructor, pass the result to the wrapper:
+    `echov4trace.Wrap({{ . }})` (`echo_v4_new` in `contrib/labstack/echo.v4/otelc/otelc.yaml`), or
+    a closure that takes `{{ . }}` as its parameter. The original call then runs at the statement,
+    which only matters in a `go` or `defer` statement, where the result is lost anyway.
+  - When callers may run the call with `go` or `defer`, as with `fasthttp.ServeConn`, keep the
+    call in the closure body and pass the call's arguments as the closure's parameters
+    (`fasthttp_serve_conn_func` in `contrib/valyala/fasthttp/otelc/otelc.yaml`). Passing the
+    result instead runs the whole call at the statement and blocks the caller of `go`.
+  - Never move the call's arguments into a closure body. The body runs later, so they are no
+    longer evaluated at the statement.
+- To pass all of a call's arguments, use `{{ .CallArguments }}`, not `{{ .CallArgument 0 }},
+  {{ .CallArgument 1 }}`. A caller may pass a single call that returns every argument
+  (`sarama.NewSyncProducer(producerArgs())`), and `{{ .CallArgument 1 }}` then fails the build.
+  Add a test case for that form.
 - Rules of one integration must not use a field that another integration's rules add, as
   orchestrion's fiber aspect does with fasthttp's `DD_Instrumented`. The build then fails when
   only one of the two rule sets is loaded. Call a function the other integration's otelc module
   exports instead, which builds either way.
-- A rule's `imports:` alias for a path the file already imports is replaced by the file's own
-  alias, so a plain name such as `fiber` cannot collide there. Only a path the rule adds can
-  collide, with an import or a local name that already uses the alias.
-- `target: $root` never matches `package main`, whose compile-time import path is the literal
-  string `main`. Only a `main` entry reaches it, so a rule for the root module and its main package
-  lists both (`target: [$root, main]`). It also needs a main app test (see "Package main and
-  dependency modules").
-
-### The otelc pin
-
-- Hook modules pin `go.opentelemetry.io/otelc/pkg` to the commit in `OTELC_VERSION`. There is no
-  submodule tag
-  (https://github.com/open-telemetry/opentelemetry-go-compile-instrumentation/issues/984), so
-  plain `go mod tidy` drifts them onto HEAD. Resolve the hash from
-  `OTELC_VERSION` with `go list -m go.opentelemetry.io/otelc/pkg@<hash>`, then tidy the hook module
-  and `otelc/all`, or the next build fails with "updates to go.mod needed".
-
-### Green runs with nothing instrumented
-
-- A hook that panics is swallowed by otelc's generated `recover()`. Build and tests stay green, and
-  the only sign is a `failed to exec Before hook <name>` line on stderr. Suspect this whenever
-  spans go missing without an error.
-- A package whose only Go files are `_test.go` is skipped. otelc logs `skipping package without Go
-  files` and falls back to its embedded default rules, so the whole build loses instrumentation
-  and `matched.json` is `null`. Give it a `doc.go`.
-- `.otelc-build/` is gitignored here. If you validate from outside this repo, ignore it there too.
-  otelc's troubleshooting doc covers `--debug`, `--stats` and `otelc cleanup`.
 
 ## Supporting docs
 
@@ -296,4 +271,5 @@ Do not copy rule syntax or API signatures into these docs; link the source in `r
 - `pattern-mapping.md`: Orchestrion aspect patterns to the otelc rule that reproduces them, and
   how to hook a router or a server.
 - `feature-gaps.md`: Orchestrion constructs otelc cannot reproduce (stop-and-flag cases).
+- `gotchas.md`: otelc limits with a workaround, and mistakes that fail late or silently.
 - `references.md`: sources of truth for Orchestrion and otelc.

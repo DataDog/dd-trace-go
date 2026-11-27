@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -30,7 +31,21 @@ import (
 var (
 	mu           sync.Mutex
 	activeLLMObs *LLMObs
+	// isRunning reports whether an LLMObs instance is running. The tracer reads it at
+	// span start and injection, where reading activeLLMObs would race and taking a
+	// lock would cost too much.
+	isRunning atomic.Bool
 )
+
+// Enabled reports whether LLMObs is running.
+func Enabled() bool { return isRunning.Load() }
+
+// SetEnabledForTesting overrides Enabled and returns a function that restores it.
+// It is only for tests of packages that cannot start LLMObs.
+func SetEnabledForTesting(enabled bool) (restore func()) {
+	prev := isRunning.Swap(enabled)
+	return func() { isRunning.Store(prev) }
+}
 
 var (
 	errLLMObsNotEnabled        = errors.New("LLMObs is not enabled. Ensure the tracer has been started with the option tracer.WithLLMObsEnabled(true) or set DD_LLMOBS_ENABLED=true")
@@ -213,6 +228,7 @@ func Start(cfg config.Config, tracer Tracer, startErr error) (err error) {
 	mu.Lock()
 	defer mu.Unlock()
 	if activeLLMObs != nil {
+		isRunning.Store(false)
 		activeLLMObs.Stop()
 	}
 	if startErr != nil {
@@ -227,6 +243,7 @@ func Start(cfg config.Config, tracer Tracer, startErr error) (err error) {
 	}
 	activeLLMObs = l
 	activeLLMObs.Run()
+	isRunning.Store(true)
 	return nil
 }
 
@@ -236,6 +253,7 @@ func Stop() {
 	defer mu.Unlock()
 
 	if activeLLMObs != nil {
+		isRunning.Store(false)
 		activeLLMObs.Stop()
 		activeLLMObs = nil
 	}
@@ -537,6 +555,7 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 	span := &Span{
 		name:      spanName,
 		apm:       apmSpan,
+		spanID:    apmSpan.SpanID(),
 		startTime: cfg.StartTime,
 	}
 	if !l.Config.Enabled {
@@ -558,6 +577,14 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 		span.llmTraceID = newLLMObsTraceID()
 	}
 
+	switch {
+	case span.parent != nil:
+		span.wireTraceID = span.parent.wireTraceID
+		span.sampleRate, span.samplingDecision = span.parent.sampleRate, span.parent.samplingDecision
+	case span.propagated != nil:
+		span.wireTraceID = span.propagated.WireTraceID
+		span.sampleRate, span.samplingDecision = span.propagated.SampleRate, span.propagated.SamplingDecision
+	}
 	span.parentAgentName, span.parentAgentSpanID = resolveParentAgent(span.parent, span.propagated)
 
 	span.mlApp = cfg.MLApp
@@ -579,6 +606,8 @@ func (l *LLMObs) StartSpan(ctx context.Context, kind SpanKind, name string, cfg 
 	if span.sessionID == "" {
 		span.sessionID = span.propagatedSessionID()
 	}
+	sessionID := span.sessionID // a copy: Annotate later rewrites the field
+	span.wireSessionID.Store(&sessionID)
 	if span.mlApp == "" {
 		span.mlApp = span.propagatedMLApp()
 		if span.mlApp == "" {

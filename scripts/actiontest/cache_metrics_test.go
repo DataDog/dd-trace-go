@@ -264,3 +264,91 @@ func TestPayloadSeedTagsOnSetupGoOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestPayloadSaveModeTags(t *testing.T) {
+	// A seeding run reports save_mode:seed; a restore-only run of the
+	// same seed-set key reports seed_key:true with save_mode:restore_only.
+	seeding := restore(map[string]any{
+		"cache_hit":      "true",
+		"seed_key":       "true",
+		"save":           "true",
+		"restore_source": "exact",
+	})
+	all := runPayload(t, observation("cloudx", seeding), false)
+	got := onlyCount(t, all)
+	if v := got.tag("seed_key:"); v != "true" {
+		t.Errorf("seed_key = %q, want true", v)
+	}
+	if v := got.tag("save_mode:"); v != "seed" {
+		t.Errorf("save_mode = %q, want seed", v)
+	}
+
+	// A malformed value coerces to the canonical tag instead of
+	// splitting the series: seed_key becomes false, save_mode reports
+	// restore_only, and a seed run that emits "TRUE" never reads as one.
+	malformed := restore(map[string]any{
+		"cache_hit":      "true",
+		"seed_key":       "TRUE",
+		"save":           "TRUE",
+		"restore_source": "exact",
+	})
+	got = onlyCount(t, runPayload(t, observation("cloudx", malformed), false))
+	if v := got.tag("seed_key:"); v != "false" {
+		t.Errorf("seed_key = %q, want the canonical false for a malformed value", v)
+	}
+	if v := got.tag("save_mode:"); v != "restore_only" {
+		t.Errorf("save_mode = %q, want restore_only for a malformed value", v)
+	}
+
+	restoreOnly := restore(map[string]any{
+		"cache_hit":         "false",
+		"cache_matched_key": "",
+		"restore_source":    "default",
+		"seed_key":          "true",
+		"save":              "false",
+	})
+	got = onlyCount(t, runPayload(t, observation("cloudx", restoreOnly), false))
+	if v := got.tag("seed_key:"); v != "true" {
+		t.Errorf("seed_key = %q, want true", v)
+	}
+	if v := got.tag("save_mode:"); v != "restore_only" {
+		t.Errorf("save_mode = %q, want restore_only", v)
+	}
+}
+
+// TestPayloadRuntimeKeyTag pins the runtime.key tag: records from the
+// repository's setup-go action carry the version class their cache keys
+// use, so per-restore keying is observable. A null or absent key (older
+// records, other runtime sources) emits no tag.
+func TestPayloadRuntimeKeyTag(t *testing.T) {
+	withKey := map[string]any{
+		"provider": "cloudx",
+		"workload": "unit-core",
+		"runtime":  map[string]any{"name": "go", "version": "1.27.2", "key": "1.27"},
+		"restores": []map[string]any{restore(map[string]any{"cache_hit": "true"})},
+	}
+	got := onlyCount(t, runPayload(t, withKey, false))
+	if v := got.tag("runtime.key:"); v != "1.27" {
+		t.Errorf("runtime.key = %q, want 1.27", v)
+	}
+	if v := got.tag("runtime.version:"); v != "1.27.2" {
+		t.Errorf("runtime.version = %q, want 1.27.2", v)
+	}
+
+	for name, runtime := range map[string]map[string]any{
+		"null key":   {"name": "go", "version": "1.27.2", "key": nil},
+		"absent key": {"name": "go", "version": "1.27.2"},
+	} {
+		obs := map[string]any{
+			"provider": "cloudx",
+			"workload": "unit-core",
+			"runtime":  runtime,
+			"restores": []map[string]any{restore(map[string]any{"cache_hit": "true"})},
+		}
+		for _, tag := range onlyCount(t, runPayload(t, obs, false)).Tags {
+			if strings.HasPrefix(tag, "runtime.key:") {
+				t.Errorf("%s: runtime.key tag %q emitted for a keyless record", name, tag)
+			}
+		}
+	}
+}

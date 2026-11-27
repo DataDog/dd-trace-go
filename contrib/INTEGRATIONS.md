@@ -86,7 +86,8 @@ step fails.
 - Config and functional options go in `option.go`.
 - Name the main file after the library package, for example `redis.go`.
 - `example_test.go` holds the godoc examples, see [Testing](#10-testing).
-- `orchestrion.yml` defines auto-instrumentation, see [section 9](#9-auto-instrumentation).
+- `orchestrion.yml` and the `otelc/` module define auto-instrumentation, see
+  [section 9](#9-auto-instrumentation).
 - Keep the number of files small. Split further only along clear boundaries, for example a client and
   a server file (`net/http`), or producer and consumer files (messaging libraries).
 - Put tests next to the code they cover. Tests for `foo.go` go in `foo_test.go`.
@@ -376,9 +377,10 @@ Carriers for common transports:
 ## 9. Auto-instrumentation
 
 New integrations must support compile-time auto-instrumentation, so users get tracing without editing
-their code. Today this is done with Orchestrion. Design your integration with it in mind: favor
-patterns 3.1 through 3.4 over 3.5. Writing the `orchestrion.yml` file and the mandatory integration
-tests is covered in [ORCHESTRION.md](./ORCHESTRION.md).
+their code. dd-trace-go supports two tools, Orchestrion and otelc, and new integrations must support
+both. Design your integration with them in mind: favor patterns 3.1 through 3.4 over 3.5. Writing
+the `orchestrion.yml` file is covered in [ORCHESTRION.md](./ORCHESTRION.md), and the otelc rules and
+hooks in [OTELC.md](./OTELC.md). The mandatory integration tests run under both tools.
 
 ## 10. Testing
 
@@ -410,9 +412,21 @@ Run these in order and commit every change they produce. CI fails on a non-clean
    `fix-modules`. If it changes a `go.mod`, run `make fix-modules` again.
 3. `make lint` and `make format`.
 4. Run your integration's unit tests, for example `go test ./contrib/net/http/...`.
-5. Run the auto-instrumentation integration tests for your integration. For example, for net/http:
+5. Run the auto-instrumentation integration tests for your integration, under both tools. For
+   example, for net/http:
 
    ```
    cd internal/orchestrion/_integration
    go run github.com/DataDog/orchestrion go test ./net_http/...
+   otelc go test ./net_http
    ```
+
+   Use the otelc CLI at `OTELC_VERSION` from `.github/workflows/otelc.yml`.
+
+6. Register the integration with the otelc lane. Add the parent subtree to the `otelc-integrations`
+   component in `.github/ci-components.yml`, and add the module and its `contrib/<name>/otelc`
+   entry to the same file's `integration-suites.modules` mapping (non-empty for `contrib/<name>/otelc`).
+   For a suite covering code outside `contrib/` (without a `*/otelc` module entry), add the suite
+   to `integration-suites.otelc-extra-suites`. CI discovers `**/otelc` modules and their suites
+   automatically via `scripts/ciselect`, so `.github/workflows/otelc.yml` needs no edit, and
+   `make lint/misc` fails until the mapping covers every module.

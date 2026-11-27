@@ -7,12 +7,13 @@ in `references.md`.
 
 | Orchestrion advice | otelc equivalent |
 |---|---|
-| `wrap-expression` on a `function-call` | `wrap_call` with a `replace` template, or an `inject_hooks` after-hook when acting on the constructor's result is easier. The template reads the enclosing function with `.FuncArgumentOfType` / `.FuncReturnOfType` and the call with `.CallArgument N`, so an in-scope `context.Context` can be passed into the call |
+| `wrap-expression` on a `function-call` | `wrap_call` with a `replace` template, or an `inject_hooks` after-hook when acting on the constructor's result is easier. The template reads the enclosing function with `.FuncArgumentOfType` / `.FuncReturnOfType` / `.FuncArgumentThatImplements`, so an in-scope `context.Context` can be passed into the call, and the call itself with `.CallReceiver`, `.CallArguments` and `.CallArgument N`, so it can rebuild a method call around a wrapped receiver (`{{ .CallReceiver }}.With(fields...).Info({{ .CallArguments }})`) |
 | `append-args` | `wrap_call` with `append_args`, plus `variadic_type` when the matched call spreads a slice |
 | `replace-function` | paired before/after hooks: the before-hook calls the drop-in, keeps its result with `SetData` and calls `SetSkipCall(true)`; the after-hook writes it with `SetReturnVal`. Guard re-entrancy if the drop-in calls the target again |
 | `prepend-statements` in a `function-body` | `inject_hooks`, or `inject_code` when the code must run in-package |
+| `order:` on `prepend-statements` | `order` on the `inject_code` modifier. A rule with a higher `order` is applied later, so its code runs first at the start of the function, as in Orchestrion. For other advice, see `feature-gaps.md` |
 | `add-struct-field` | `add_struct_fields`, when the field is read in-package. A hook cannot read the new field, so for a hook keep the state in a side table instead (see below) |
-| `wrap-expression` on a `struct-literal` | `where: {struct_literal:}` with `set_fields`: `value:` to set a field, `wrap:` to wrap what the literal already assigns |
+| `wrap-expression` on a `struct-literal` | `where: {struct_literal:}` with `set_fields`: `value:` to set a field, `wrap:` to wrap what the literal already assigns. `wrap_literal` wraps the whole literal, for instrumentation that needs several of its fields |
 | `assign-value` | `assign_value`: `replace:` for a new expression, `wrap:` to keep the original as `{{ . }}` |
 | `inject-declarations` | `add_file`: a Go file with `//go:build ignore` in the rules module, copied into the target package at build time. It can declare types, functions, methods on the target's types, and a `//go:linkname` to an unexported contrib function. Nothing is needed when the declaration only linked a hook, since otelc links hooks itself. For `package main`, see `feature-gaps.md` |
 | `add-blank-import` | the rule's top-level `imports:` map |
@@ -22,13 +23,14 @@ in `references.md`.
 | Orchestrion join point | otelc |
 |---|---|
 | `function-body` over `function` (`name`, `receiver`) | `where: {func:, recv:}` |
-| `function` with `signature` / `signature-contains` | `where:` filters `signature`, `signature_contains`, `result`, `last_result`, `param`. Only `inject_hooks` reads them; other rule kinds drop them silently |
+| `function` with `signature` / `signature-contains` | `where:` filters `signature`, `signature_contains`, `result`, `last_result`, `param`. `inject_hooks` and `inject_code` read them; other rule kinds drop them silently |
+| `function` with `result-implements` / `final-result-implements` / `argument-implements` | `where:` filters `result_implements`, `last_result_implements`, `param_implements`, read by `inject_hooks` only. In templates, `.FuncArgumentThatImplements` / `.FuncReturnThatImplements` |
 | `function-call` | `where: {function_call: "import/path.Func"}` |
 | `function-call` on a method | `where: {method_call: "import/path.*Type.Method"}`, without `*` for a value receiver. Never matches a call through an interface-typed receiver |
 | `struct-definition` | `where: {struct:}` |
 | `struct-literal` | `where: {struct_literal: "import/path.TypeName"}`, matching literals written in the `target:` package |
 | `declaration-of`, `value-declaration` | `where: {identifier:, kind: var\|const}` |
-| `directive` (`dd:span`) | `where: {directive:}` with `expand_directive`. The template reads the directive's arguments with `.DirectiveArgs` / `.DirectiveArg <key>` |
+| `directive` (`dd:span`) | `where: {directive:}` with `expand_directive`, on functions and function literals. The template reads the directive's arguments with `.DirectiveArgs` / `.DirectiveArg <key>` |
 | `import-path`, `package-name`, `package-filter` | `target:`, exact or glob; `$root` for the module being built |
 | `test-main` | nothing; see `feature-gaps.md` |
 | `all-of` | flat keys in one `where` are an implicit conjunction |
@@ -50,7 +52,8 @@ equivalent, so use it only when the hook depends on that range.
 `inject_code` takes a raw string (`raw:`) rendered as a `text/template`, so the snippet reads the
 matched function instead of naming its identifiers:
 - `.FuncArgument N` for a parameter, `.Receiver` for a method's receiver, `.FuncReturn N` for a
-  result, and `.FuncArgumentOfType` / `.FuncReturnOfType` to pick one by type rather than position.
+  result, and `.FuncArgumentOfType` / `.FuncReturnOfType` (or `.FuncArgumentThatImplements` /
+  `.FuncReturnThatImplements` for an interface) to pick one by type rather than position.
 - Parameters and results the target leaves unnamed, or names `_`, get a synthetic name the first
   time the template reads them.
 - Imports the snippet needs come from the rule's top-level `imports:`.
@@ -62,10 +65,11 @@ literal name breaks when the target renames it, and the compile error then point
 instrumented copy of the package, nowhere near the yaml.
 
 The snippet compiles inside the target package, so the target module's `go` directive caps its
-language version. Against an old dependency, avoid `any` and generic calls. The same applies to
-`add_file`, which blanks every `//go:build` line in the copied file, so `//go:build go1.N` cannot
-raise it. When the contrib's entry point is generic, add a non-generic one for the injected code to
-call.
+language version. When the snippet needs a newer one, for example to use `any` or call a generic
+function, set `lang:` on the `inject_code` modifier. `add_file` has no such key, and it blanks every
+`//go:build` line in the copied file, so `//go:build go1.N` cannot raise it either. Against an old
+dependency, keep `add_file` code to old syntax, and when the contrib's entry point is generic, add a
+non-generic one for it to call.
 
 ## Reaching state the aspect read in-package
 
@@ -118,11 +122,11 @@ copy of the contrib that has drifted from it (`contrib/gorilla/mux/otelc/`):
   writer and request on with `SetParam` and keeps `afterHandle` with `SetData`, and the after hook
   calls `afterHandle`. The after trampoline is deferred, so it also runs when a handler panics, and
   it does not stop the panic.
-- The contrib's `ServeHTTP` calls the hooked method, so the hook would trace the request again. An
-  `inject_code` rule on the contrib's own `ServeHTTP` marks the request with the object, and the
-  hook lets a marked call through. A rule keeps the cost out of plain builds. Put the mark at the
-  top of the function, before any ignore check, so ignored requests are not traced by the hook
-  either. This also gives one span, not two, for an object the application wrapped with the
+- The contrib's `ServeHTTP` calls the hooked method, so the hook would trace the request again. The
+  contrib's own `ServeHTTP` marks the request with the object when `instrumentation.OtelcEnabled()`
+  is true, and the hook lets a marked call through. The check keeps the cost out of plain builds.
+  Put the mark at the top of the function, before any ignore check, so ignored requests are not
+  traced by the hook either. This also gives one span, not two, for an object the application wrapped with the
   contrib itself.
 - Keep the contrib's per-router config in a side table, as described above.
 

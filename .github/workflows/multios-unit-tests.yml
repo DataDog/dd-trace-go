@@ -68,13 +68,63 @@ jobs:
           variant: |-
             {"runner":${{ toJSON(inputs.runs-on) }},
              "modules":["core","contrib"]}
+          # Seed set: the non-Windows multi-OS strata. Windows skips the
+          # isolated caches (see .github/actions/setup-go/action.yml), so
+          # that stratum neither seeds nor restores. The
+          # `ci.cache.pool.*` gauges watch the fill. Nightly schedules
+          # and default-branch dispatches save these keys; every other
+          # run of them, including all PR and merge-queue runs, restores
+          # only. To drop a stratum that does not pay for its restore
+          # cost, replace the literal with a contains() list of the
+          # runs-on/go-version pairs to keep.
+          cache: ${{ runner.os != 'Windows' }}
+          seed: ${{ runner.os != 'Windows' }}
+
+      # A cold Windows runner re-fetches the whole workspace dependency
+      # set from proxy.golang.org on every run, and a saturated proxy
+      # turns minutes into tens of minutes through the |direct fallback.
+      # The module-only archive (the AppSec go-pkg-mod pattern, without
+      # the build cache that measured net-negative above) keeps that
+      # exposure off this lane. Only the nightly schedule and a
+      # default-branch dispatch save the archive; the key is the go.sum
+      # digest, so an unchanged dependency set saves nothing and the pool
+      # holds one entry per dependency-set change.
+      - name: Restore Go modules cache (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # RUNNER_TEMP, not the workspace: extracted module trees inside
+          # the workspace are swept up by the test step's `go list ./...`,
+          # and their go.sum files would re-key hashFiles('**/go.sum')
+          # between this restore and the save below.
+          path: ${{ runner.temp }}/go_pkg_mod_cache
+          key: go-pkg-mod-multios-${{ hashFiles('**/go.sum') }}
+          restore-keys: go-pkg-mod-multios-
+          # Transient cache-service miss/timeout: fall back to a proxy
+          # fetch instead of hard-failing the job.
+          fail-on-cache-miss: false
+      # GITHUB_ENV, not `go env -w`: the latter only sets a default and
+      # loses to any later step that exports GOMODCACHE as a process
+      # environment variable. The export asserts that go resolves the
+      # restored directory, or the restore is decoration.
+      - name: Use the restored module cache (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "GOMODCACHE=${RUNNER_TEMP}/go_pkg_mod_cache" >> "$GITHUB_ENV"
+          export GOMODCACHE="${RUNNER_TEMP}/go_pkg_mod_cache"
+          test "$(go env GOMODCACHE)" = "${RUNNER_TEMP}/go_pkg_mod_cache"
 
       - name: Restore and install development tools
         id: tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
           cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
+      # The gotesting fixture tests invoke this binary directly; without it
+      # they pay `go run` module resolution inside their per-test timeouts.
+      - name: Install orchestrion binary
+        uses: ./.github/actions/install-orchestrion
 
       - name: Mac OS Coreutils
         if: inputs.runs-on == 'macos-latest'
@@ -86,6 +136,25 @@ jobs:
           go list ./... | grep -v -e google.golang.org/api -e sarama -e confluent-kafka-go -e cmemprof | sort >packages.txt
           # shellcheck disable=SC2046
           gotestsum --junitfile "${REPORT}" -- $(cat packages.txt) -v -coverprofile=coverage.txt -covermode=atomic -timeout 15m
+
+      # Seed the Windows module archive (see the restore step above): the
+      # test step has downloaded the full workspace dependency set into
+      # the restored GOMODCACHE, so save it as-is. Only the nightly
+      # schedule through the main-branch-tests caller and a dispatch on
+      # the default branch reach this step, and only after the test step
+      # succeeded, so a partial run cannot publish an incomplete
+      # archive; an unchanged go.sum digest saves nothing because the
+      # key already exists.
+      - name: Save Go modules cache (Windows)
+        if: >-
+          runner.os == 'Windows'
+          && (github.event_name == 'schedule'
+              || (github.event_name == 'workflow_dispatch'
+                  && github.ref == 'refs/heads/main'))
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/go_pkg_mod_cache
+          key: go-pkg-mod-multios-${{ hashFiles('**/go.sum') }}
 
       - name: Get Datadog credentials
         id: dd-sts
@@ -102,7 +171,7 @@ jobs:
         with:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ./
-          tags: go:${{ inputs.go-version }},arch:${{ runner.arch }},os:${{ runner.os }}
+          tags: go:${{ steps.setup-go.outputs.go-version-key }},arch:${{ runner.arch }},os:${{ runner.os }}
 
       - name: Report cache metrics to Datadog
         if: always()

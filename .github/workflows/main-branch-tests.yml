@@ -1,6 +1,10 @@
 name: Main Branch and Release Tests
 
 on:
+  # Manual dispatch re-seeds the default-branch caches by hand, for
+  # example after a cache-key scheme bump renamed every key; only
+  # seed-set keys save (the setup-go action's seed input).
+  workflow_dispatch: # manually
   push:
     branches:
       - release-v*
@@ -15,19 +19,33 @@ on:
   schedule: # nightly
     - cron: "0 0 * * *"
 
+# The group name is repository-scoped, not workflow-scoped, so it
+# carries the workflow name: a bare ref group can collide with another
+# workflow's, and then one nightly cancels the other. A dispatch
+# re-seeds by hand; it gets its own group so
+# it cannot cancel the nightly run it overlaps with, and two dispatches
+# dedupe.
 concurrency:
-  group: ${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && 'reseed' || github.ref }}
   cancel-in-progress: true
 
 jobs:
   unit-integration-tests:
+    strategy:
+      matrix:
+        # Both supported versions on schedule and default-branch
+        # dispatch, where the run seeds the cache. Pushes (merge
+        # queue, releases) cannot seed, so they keep the single
+        # highest version instead of doubling the expansion.
+        go-version: ${{ fromJSON(github.event_name == 'push' && '["stable"]' || '["oldstable", "stable"]') }}
+      fail-fast: false
     uses: ./.github/workflows/unit-integration-tests.yml
     permissions:
       contents: read
       id-token: write
       pull-requests: write
     with:
-      go-version: "1.27" # Should be the highest supported version of Go
+      go-version: ${{ matrix.go-version }}
     secrets: inherit
 
   warm-repo-cache:
@@ -49,7 +67,7 @@ jobs:
     strategy:
       matrix:
         runs-on: [ macos-latest, windows-latest, ubuntu-latest ]
-        go-version: [ "1.26", "1.27" ]
+        go-version: [ "oldstable", "stable" ]
       fail-fast: false
     uses: ./.github/workflows/multios-unit-tests.yml
     permissions:
@@ -90,14 +108,21 @@ jobs:
           submodules: recursive
       - name: Setup Go
         id: setup-go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        # The repository's action, not the upstream one: the tools cache
+        # below keys on the go-version-key output, which only the
+        # repository's action provides. Bootstrap shape — a `go list` walk
+        # needs no caches (the otelc matrix-job pattern).
+        uses: ./.github/actions/setup-go
         with:
           go-version: stable
-          cache: false
+          workload: depgraph-bootstrap
+          cache-provider: github-cache
+          cache: "false"
       - name: Restore and install development tools
         uses: ./.github/actions/tools-cache
         with:
-          go-version: ${{ steps.setup-go.outputs.go-version }}
+          go-version-key: ${{ steps.setup-go.outputs.go-version-key }}
+          cache-metrics: ${{ steps.setup-go.outputs.cache-metrics }}
       # The JUnit file makes failures of this nightly job visible in Datadog
       # CI Visibility, not only in the GitHub Actions log.
       - name: Verify dependent-modules
@@ -121,4 +146,4 @@ jobs:
         with:
           dd-api-key: ${{ steps.dd-sts.outputs.api_key }}
           path: ${{ env.TEST_RESULTS }}
-          tags: go:stable,arch:${{ runner.arch }},os:${{ runner.os }}
+          tags: go:${{ steps.setup-go.outputs.go-version-key }},arch:${{ runner.arch }},os:${{ runner.os }}

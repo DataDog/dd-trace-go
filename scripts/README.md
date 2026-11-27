@@ -25,7 +25,6 @@ This directory contains scripts and small Go tool programs used for development,
 
 The Makefile provides convenient targets that automatically handle tool dependencies:
 
-
 ```txt
 Usage: make [target]
 
@@ -62,6 +61,7 @@ Targets:
   docs                 Generate and Update embedded documentation in README files
   upgrade/orchestrion  Upgrade Orchestrion and fix modules
   config-audit         Report which DD_* configs are migrated to internal/config
+  errtrack-audit       Report internal/log Error/Warn sites that may adopt Error Tracking reporting
 ```
 
 ### Direct Execution
@@ -82,7 +82,6 @@ PATH="$(pwd)/bin:$PATH" ./scripts/script-name.sh
 #### Test Script Options
 
 The test script provides many options for different testing scenarios:
-
 
 ```txt
 test.sh - Run the tests for dd-trace-go
@@ -230,6 +229,26 @@ comment of `scripts/citiming/main.go` and are the report contract. The `comparis
 inserted as needed, so consumers must match columns by header name, not
 by position.
 
+Only seeding runs save Go build/module caches: a seed-set key (the
+setup-go action's `seed` input) on the nightly schedule or a
+default-branch `workflow_dispatch`. Seven dispatch doors reach that
+state on `main`: `main-branch-tests`, the `multios-unit-tests`
+free-form dispatch, the bare `smoke-tests` dispatch, `dynamic-checks`,
+`orchestrion`, `otelc`, and `appsec`. Every other event restores only.
+Windows strata skip the isolated Go build/module caches — neither
+seeding nor restoring — based on the multios measurements in APMLP-2248
+(a 1.4 GiB restore costs 2.6-3.3m in tar.exe extraction and saves about
+2m); the integration lanes' 8-core shared runners are unmeasured, so
+their skip is the conservative default rather than a measured
+conclusion. Revert a cloudx seed by setting that job's `seed` back to
+`"false"`; a dispatch that overrides the pinned tool version (the
+`otelc-version` input) stays restore-only, because it would seed a
+variant no ordinary pull request can restore. The pool gauges
+(`citiming pool`, run hourly by the `cache-pool-metrics` workflow)
+watch whether the seed entries stay present in the pool. Jobs running
+with `cache: "false"` emit no online series; their observation records
+live only in the job logs, where `scripts/citiming` reads them.
+
 Restores are classified from the structured `cache-observation:` record
 that the Go setup actions print into every job log (when a job emits
 several records, the collector keeps the last one): exact, prefix,
@@ -335,9 +354,10 @@ go test -race -count=1 ./scripts/citiming/ ./scripts/actiontest/
 classifies one snapshot of the repository's shared Actions cache pool.
 It reuses the collector's cache snapshot (usage endpoint, entry
 inventory) and classifies every entry by cache kind
-(`go_build`, `tools`, `setup_go_builtin`, `gitdb`, `appsec_modules`,
+(`go_build`, `go_modules`, `tools`, `setup_go_builtin`, `gitdb`,
+`appsec_modules`,
 `datadog_ci`, `other`), cloudx workload family (`n/a` outside `go_build`
-keys in the `ddtg-cx1-` layout), `os.platform`, and ref type (`default`
+keys in the `ddtg-cx`-marked layout), `os.platform`, and ref type (`default`
 for the default branch, `pr`, `mq`, `release`, `other`).
 
 `--format datadog` prints a `/api/v2/series` payload of gauges; the
@@ -352,8 +372,15 @@ for the default branch, `pr`, `mq`, `release`, `other`).
   skipped.
 - `ci.cache.pool.oldest_access_age_seconds`, the eviction horizon.
 - `ci.cache.pool.default_entry_age_seconds`, the age of the newest
-  default-branch entry per kind, workload and platform: the seed
-  presence signal. A missing series means no seed of that cell exists.
+  default-branch entry per kind, workload, platform and variant digest:
+  the seed presence signal, one cell per seeded stratum so one
+  surviving variant cannot hide the eviction of a sibling. A missing
+  series means no seed of that cell exists. Until a monitor exists for
+  this, treat a missing series on a seeded cell as an evicted seed and
+  re-seed through the workflow that owns the family: `main-branch-tests`
+  on `main` for unit-integration, multi-OS and smoke, and the bare
+  `orchestrion`, `otelc` or `appsec` dispatch on `main` for those
+  lanes.
 
 Every series is tagged with the repository. The text format prints the
 same data as a snapshot summary, and the workflow keeps that summary in

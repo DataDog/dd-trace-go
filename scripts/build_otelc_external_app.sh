@@ -9,7 +9,8 @@
 # Every other otelc suite here is an application under
 # github.com/DataDog/dd-trace-go/v2/..., so none of them catch what only breaks
 # outside it, such as otelc pulling an internal package into the file it
-# generates in the application's main package. This app's module path is
+# generates in the application's main package, or a rules module that stops
+# pulling in its contrib (see libraries.go). This app's module path is
 # third-party.
 
 set -euo pipefail
@@ -28,6 +29,9 @@ cd "${APP_DIR}"
 
 # otelc leaves its build tree behind; a stale one makes the build plan wrong.
 rm -rf .otelc-build
+
+echo "==> go test"
+go test -count=1 .
 
 echo "==> otelc go build"
 if ! otelc go build -o /dev/null .; then

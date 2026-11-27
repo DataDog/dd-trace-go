@@ -567,6 +567,9 @@ func TestIsGitCLIDisabled(t *testing.T) {
 	if IsGitCLIDisabled() {
 		t.Fatal("expected git cli enabled by default")
 	}
+	if CurrentMode().GitCLIDisabled {
+		t.Fatal("expected mode field to report git cli enabled by default")
+	}
 
 	ResetForTesting()
 	t.Setenv(PayloadsInFilesEnv, "true")
@@ -574,6 +577,29 @@ func TestIsGitCLIDisabled(t *testing.T) {
 
 	if !IsGitCLIDisabled() {
 		t.Fatal("expected git cli disabled in payload-files mode")
+	}
+	if !CurrentMode().GitCLIDisabled {
+		t.Fatal("expected mode field to report git cli disabled in payload-files mode")
+	}
+}
+
+func TestIsGitCLIDisabledByInternalEnv(t *testing.T) {
+	ResetForTesting()
+	t.Cleanup(ResetForTesting)
+
+	t.Setenv(GitCLIDisabledEnv, "true")
+
+	if !IsGitCLIDisabled() {
+		t.Fatal("expected git cli disabled by internal env")
+	}
+	if !CurrentMode().GitCLIDisabled {
+		t.Fatal("expected mode field to report git cli disabled by internal env")
+	}
+	if IsPayloadFilesModeEnabled() {
+		t.Fatal("expected payload-files mode to stay disabled")
+	}
+	if IsManifestModeEnabled() {
+		t.Fatal("expected manifest mode to stay disabled")
 	}
 }
 
