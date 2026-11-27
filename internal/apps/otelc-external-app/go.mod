@@ -21,6 +21,7 @@ require (
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gocql/gocql v1.7.0
 	github.com/gorilla/mux v1.8.1
+	github.com/graphql-go/graphql v0.8.1
 	github.com/jackc/pgx/v5 v5.9.2
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/redis/go-redis/v9 v9.7.3
@@ -102,6 +103,8 @@ require (
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/otelc/v2 v2.14.0-dev // indirect
+	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/otelc/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 v2.14.0-dev // indirect
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2 v2.14.0-dev // indirect
@@ -342,6 +345,8 @@ replace (
 	github.com/DataDog/dd-trace-go/contrib/gorilla/mux/v2 => ../../../contrib/gorilla/mux
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/otelc/v2 => ../../../contrib/gorm.io/gorm.v1/otelc
 	github.com/DataDog/dd-trace-go/contrib/gorm.io/gorm.v1/v2 => ../../../contrib/gorm.io/gorm.v1
+	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/otelc/v2 => ../../../contrib/graphql-go/graphql/otelc
+	github.com/DataDog/dd-trace-go/contrib/graphql-go/graphql/v2 => ../../../contrib/graphql-go/graphql
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/otelc/v2 => ../../../contrib/jackc/pgx.v5/otelc
 	github.com/DataDog/dd-trace-go/contrib/jackc/pgx.v5/v2 => ../../../contrib/jackc/pgx.v5
 	github.com/DataDog/dd-trace-go/contrib/julienschmidt/httprouter/otelc/v2 => ../../../contrib/julienschmidt/httprouter/otelc
