@@ -63,12 +63,6 @@ root="$(git rev-parse --show-toplevel)"
 cd "$root"
 base="$(git merge-base "$rev" HEAD)"
 
-# New code must not call require.* off the test goroutine. The check covers the
-# root module too, which the rest of this script skips, so it runs first and
-# its result is folded into the exit code of every path below.
-testify_rc=0
-bash "$root/scripts/lint_testifylint_new.sh" "$rev" "$@" || testify_rc=1
-
 excluded=(
   "$root"
   "$root/internal/orchestrion/_integration"
@@ -132,6 +126,15 @@ if grep -q "^$apps_dir/pr-triage-board/" <<< "$changed"; then
   lint_pr_triage_board=true
 fi
 
+# New code must not call require.* off the test goroutine. The check covers the
+# root module and internal/orchestrion/_integration, which the rest of this
+# script skips, so it must run even when no nested module changed. The check
+# runs after the selection above, and skips the modules the loop below lints
+# with testifylint included, so each changed nested module gets one lint pass
+# instead of two.
+testify_rc=0
+LINT_TESTIFYLINT_SKIP_MODULES=" ${selected[*]-} " bash "$root/scripts/lint_testifylint_new.sh" "$rev" "$@" || testify_rc=1
+
 if [[ ${#selected[@]} -eq 0 && $lint_pr_triage_board == false ]]; then
   printf "> No Go changes in nested modules since %s\n" "$base"
   exit "$testify_rc"
@@ -144,10 +147,13 @@ if [[ -z $linters ]]; then
 fi
 
 failed=()
+# testifylint rides on the nested-module pass: the go-require settings are in
+# .golangci.yml, and the child script skips the modules this loop covers.
+nested_linters="$linters,testifylint"
 for dir in "${selected[@]+"${selected[@]}"}"; do
   rel="${dir#"$root"/}"
   printf "\n> Linting %s\n" "$rel"
-  if ! (cd "$dir" && golangci-lint run --enable-only="$linters" --new-from-rev="$base" "$@" ./...); then
+  if ! (cd "$dir" && golangci-lint run --enable-only="$nested_linters" --new-from-rev="$base" "$@" ./...); then
     failed+=("$rel")
   fi
 done

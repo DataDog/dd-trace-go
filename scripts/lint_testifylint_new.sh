@@ -147,6 +147,21 @@ if [[ ${#selected[@]} -eq 0 && $lint_pr_triage_board == false ]]; then
   exit 0
 fi
 
+# The caller (scripts/lint_go_modules.sh) lints these modules with testifylint
+# included, so a second pass here would repeat the same package loading and
+# type-checking. Skip what the caller covers; this script then only lints the
+# modules the caller does not reach.
+skip="${LINT_TESTIFYLINT_SKIP_MODULES:-}"
+if [[ -n $skip ]]; then
+  filtered=()
+  for dir in "${selected[@]+"${selected[@]}"}"; do
+    if [[ $skip != *" $dir "* ]]; then
+      filtered+=("$dir")
+    fi
+  done
+  selected=("${filtered[@]+"${filtered[@]}"}")
+fi
+
 failed=()
 found_require_findings=false
 module_out="$(mktemp "${TMPDIR:-/tmp}/testifylint-lint-out.XXXXXX")"
