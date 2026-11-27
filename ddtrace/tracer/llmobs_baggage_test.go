@@ -368,6 +368,21 @@ func TestLLMObsMergeCallerBaggageOpaqueKeys(t *testing.T) {
 	}, members)
 }
 
+func TestLLMObsInjectSkipsPaddedLLMObsBaggageKey(t *testing.T) {
+	// Whitespace-padded llmobs.* keys in baggage must not bypass the LLMObs filter
+	// and emit a duplicate member after encodeKey trims spaces.
+	defer illmobs.SetEnabledForTesting(true)()
+
+	sc := &SpanContext{trace: newTrace()}
+	sc.setBaggageItem(" llmobs.parent_id ", "stale")
+	sc.setLLMObsPropagated(&illmobs.PropagatedLLMSpan{SpanID: "555", TraceID: testLLMObsHexTraceID}, true)
+
+	carrier := TextMapCarrier{}
+	require.NoError(t, (&propagatorBaggage{}).Inject(sc, carrier))
+
+	assert.Equal(t, "llmobs.parent_id=555,llmobs.trace_id="+testLLMObsHexTraceID, carrier["baggage"])
+}
+
 func TestLLMObsStaleOptionalTagsDoNotCountAgainstTheBudget(t *testing.T) {
 	// A previous injection left a long session in the trace-wide tags. This request
 	// has no session and a long ml_app, which fits the tracestate budget only once

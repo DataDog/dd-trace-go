@@ -1994,7 +1994,7 @@ func (*propagatorBaggage) injectTextMap(ctx *SpanContext, writer TextMapWriter) 
 		}
 	}
 	ctx.ForeachBaggageItem(func(k, v string) bool {
-		if llmobsOn && isLLMObsBaggageKey(k) {
+		if llmobsOn && isLLMObsBaggageKey(strings.TrimSpace(k)) {
 			return true
 		}
 		if !isTokenKey(k) {
