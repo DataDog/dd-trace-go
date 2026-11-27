@@ -107,13 +107,18 @@
 // the value names the supervisor. It does the same for WATCHDOG_PID. It
 // preserves LISTEN_FDS and LISTEN_FDNAMES.
 //
-// Under systemd, the supervisor is the main process of the service, and the
-// application sends its notifications from another PID. A service with
-// Type=notify or WatchdogSec must set NotifyAccess=all. Otherwise systemd
-// rejects READY=1 and the watchdog keep-alives of the application. With
-// KillMode=control-group, the default, systemd sends the stop signal to both
-// processes. The supervisor also forwards it, so the application can receive
-// SIGTERM twice.
+// Under systemd, the supervisor stays the main process of the service.
+// On Linux, if NOTIFY_SOCKET is set, the supervisor relays application
+// notifications, including readiness, watchdog keep-alives, and file descriptors.
+// The relay accepts notifications only from the application process.
+// The relay drops MAINPID= and MAINPIDFD=1 lines and closes the associated pidfd.
+// A service can use NotifyAccess=main.
+// With KillMode=control-group, the default, systemd sends the stop signal to
+// both processes. The supervisor also forwards it, so the application can
+// receive SIGTERM twice.
+//
+// On Linux, if the supervisor is PID 1, it reaps orphaned descendants.
+// It keeps the application's exit status separate from these descendants.
 //
 // The supervisor propagates the child's exit code. On Unix,
 // it re-raises SIGHUP, SIGINT, SIGTERM, or SIGKILL if that signal killed the child.

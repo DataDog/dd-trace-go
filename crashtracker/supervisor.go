@@ -116,12 +116,18 @@ func supervise(cfg *config) error {
 	cmd := exec.Command(exe, os.Args[1:]...) //nolint:gosec // The application re-executes its own binary.
 	cmd.Args[0] = os.Args[0]
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	cmd.Env = os.Environ()
+	startNotifyRelay, stopNotifyRelay, err := supervisorNotifyRelay(cmd)
+	if err != nil {
+		return fmt.Errorf("crashtracker: configure systemd notification relay: %w", err)
+	}
 	terminalMode := supervisorTerminalMode()
 	pipeFD, err := configureChild(cmd, w, terminalMode)
 	if err != nil {
+		stopNotifyRelay()
 		return fmt.Errorf("crashtracker: configure application process: %w", err)
 	}
-	cmd.Env = append(os.Environ(), supervisedFDEnv+"="+strconv.Itoa(os.Getpid())+":"+pipeFD)
+	cmd.Env = append(cmd.Env, supervisedFDEnv+"="+strconv.Itoa(os.Getpid())+":"+pipeFD)
 	// Starts after configureChild, so that its descriptor scan never sees the tee pipe.
 	tee := startStderrTee(cmd, terminalMode)
 	startForwarding, stopForwarding := supervisorSignals(terminalMode)
@@ -136,10 +142,13 @@ func supervise(cfg *config) error {
 		releaseThread()
 		stopForwarding()
 		tee.abort()
+		stopNotifyRelay()
 		return fmt.Errorf("crashtracker: start application process: %w", err)
 	}
 	closeInheritedDescriptors(cmd, w)
 	startForwarding(cmd.Process)
+	startNotifyRelay(cmd.Process.Pid)
+	stopReaping := supervisorReapOrphans(cmd.Process.Pid)
 	_ = w.Close()
 	tee.childStarted()
 	applySupervisorRuntimeLimits()
@@ -152,6 +161,7 @@ func supervise(cfg *config) error {
 		dumps <- crashDump{data: data, truncated: truncated, err: err}
 	}()
 	waitErr := cmd.Wait()
+	stopNotifyRelay()
 	_, exited := errors.AsType[*exec.ExitError](waitErr)
 	if cmd.ProcessState == nil || (waitErr != nil && !exited) {
 		reason := "missing process state"
@@ -161,10 +171,12 @@ func supervise(cfg *config) error {
 		log.Warn("crashtracker: wait for application process failed: %s", reason)
 		// The child status is unknown, but a crash dump can already be in the pipe.
 		finishCrashReport(cfg, r, dumps, tee)
+		stopReaping()
 		stopForwarding()
 		os.Exit(1)
 	}
 	finishCrashReport(cfg, r, dumps, tee)
+	stopReaping()
 	stopForwarding()
 	exitWithChildStatus(cmd.ProcessState)
 	// exitWithChildStatus never returns; this return satisfies the compiler.

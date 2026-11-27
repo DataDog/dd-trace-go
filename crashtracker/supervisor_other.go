@@ -12,3 +12,11 @@ import "os/exec"
 func retainSupervisorThread(_ *exec.Cmd) func() {
 	return func() {}
 }
+
+func supervisorNotifyRelay(_ *exec.Cmd) (start func(appPID int), stop func(), err error) {
+	return func(int) {}, func() {}, nil
+}
+
+func supervisorReapOrphans(_ int) func() {
+	return func() {}
+}
