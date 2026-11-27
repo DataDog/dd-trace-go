@@ -155,12 +155,8 @@ func TestScenario(t *testing.T) {
 				resp.Body.Close()
 			}
 
-			// Worst case for the monitor's own upload attempt is 3 retries at a
-			// 10s client timeout each plus backoff (see crashtracker/upload.go's
-			// uploadAttempts/uploadRetryBackoff), ~31.5s; 45s leaves margin
-			// without leaving this open-ended if something regresses into an
-			// actual hang -- the previous unbounded receive could otherwise
-			// block until the surrounding go test's own timeout.
+			// The supervisor's upload phase has a 10-second deadline. This
+			// longer bound allows for a slow runner without an unbounded wait.
 			const exitWait = 45 * time.Second
 			select {
 			case err := <-process.wait:
@@ -170,15 +166,9 @@ func TestScenario(t *testing.T) {
 				t.Fatalf("app did not exit within %s of the crash request; output so far:\n%s", exitWait, process.Tail())
 			}
 
-			// process.wait only fires once every holder of the app's stderr fd
-			// has closed it -- including the detached crashtracker monitor
-			// (see crashtracker/monitor.go's spawnMonitor), which inherits that
-			// fd and keeps it open until its own upload attempt finishes. So by
-			// the time we get here, the monitor has already logged its outcome
-			// into process.Tail(); assert on that directly rather than just on
-			// the app having crashed, which the deliberate panic guarantees
-			// regardless of whether the monitor ever started or its upload
-			// succeeded.
+			// The supervisor uploads and logs the result before it exits.
+			// process.wait also waits for captured output to close. Check the
+			// upload result, not only the expected non-zero panic exit.
 			tail := process.Tail()
 			require.Contains(t, tail, "crashtracker: upload succeeded",
 				"crash report was not confirmed delivered; captured output:\n%s", tail)

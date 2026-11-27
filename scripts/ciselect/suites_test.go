@@ -17,17 +17,18 @@ import (
 )
 
 // TestOtelcSuiteSetCoversRealSuites reads the otelc lane's suite set from
-// .github/workflows/otelc.yml, the single reviewable copy: it must be
-// non-empty and every entry must be an existing suite directory.
+// .github/ci-components.yml, derived from otelc-extra-suites plus every
+// /otelc module entry: it must be non-empty and every entry must be an
+// existing suite directory.
 func TestOtelcSuiteSetCoversRealSuites(t *testing.T) {
-	_, _, root := testTable(t)
+	tab, _, root := testTable(t)
 
-	otelcSuites, err := loadOtelcSuites(root)
+	otelcSuites, err := tab.otelcSuites()
 	if err != nil {
-		t.Fatalf("loadOtelcSuites() = %v", err)
+		t.Fatalf("otelcSuites() = %v", err)
 	}
 	if len(otelcSuites) == 0 {
-		t.Fatal("OTELC_TEST_PACKAGES parsed to an empty set")
+		t.Fatal("otelc suite set is empty")
 	}
 	suiteDirs, err := loadSuiteDirs(root)
 	if err != nil {
@@ -35,7 +36,7 @@ func TestOtelcSuiteSetCoversRealSuites(t *testing.T) {
 	}
 	for name := range otelcSuites {
 		if !suiteDirs[name] {
-			t.Errorf("OTELC_TEST_PACKAGES names %q, which is not a suite under %s", name, integrationRoot)
+			t.Errorf("otelc suite set names %q, which is not a suite under %s", name, integrationRoot)
 		}
 	}
 }
@@ -81,15 +82,15 @@ func TestEveryContribModuleHasASuitesEntry(t *testing.T) {
 	}
 }
 
-// TestNamedSuitesExist checks every suite named in OTELC_TEST_PACKAGES or in
+// TestNamedSuitesExist checks every suite named in otelc-extra-suites or in
 // a modules value against the real tree: it must be a directory directly
 // under internal/orchestrion/_integration containing Go files.
 func TestNamedSuitesExist(t *testing.T) {
 	tab, _, root := testTable(t)
 
-	otelcSuites, err := loadOtelcSuites(root)
+	otelcSuites, err := tab.otelcSuites()
 	if err != nil {
-		t.Fatalf("loadOtelcSuites() = %v", err)
+		t.Fatalf("otelcSuites() = %v", err)
 	}
 	suites := make(map[string]bool, len(otelcSuites))
 	for s := range otelcSuites {
@@ -450,6 +451,222 @@ func TestGitHubOutputPropagatesSuiteGates(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "otelc=true\n") {
 		t.Errorf("-github-output misses the propagated otelc gate:\n%s", stdout.String())
+	}
+}
+
+// TestListOtelcModules checks that -list-otelc-modules returns exactly the
+// same sorted list as discoverOtelcModules, and that every entry has a
+// go.mod on disk.
+func TestListOtelcModules(t *testing.T) {
+	_, _, root := testTable(t)
+	var stdout bytes.Buffer
+	if err := run([]string{"-list-otelc-modules"}, strings.NewReader(""), &stdout); err != nil {
+		t.Fatalf("run(-list-otelc-modules) = %v", err)
+	}
+	lines := strings.Split(strings.TrimSuffix(stdout.String(), "\n"), "\n")
+	if len(lines) == 0 || lines[0] == "" {
+		t.Fatal("-list-otelc-modules returned an empty list")
+	}
+	expected, err := discoverOtelcModules(root)
+	if err != nil {
+		t.Fatalf("discoverOtelcModules() = %v", err)
+	}
+	if !slices.Equal(lines, expected) {
+		t.Errorf("-list-otelc-modules = %v, discoverOtelcModules = %v", lines, expected)
+	}
+	for _, m := range lines {
+		if _, err := os.Stat(filepath.Join(root, m, "go.mod")); err != nil {
+			t.Errorf("-list-otelc-modules %q: %v", m, err)
+		}
+	}
+}
+
+// TestListOtelcSuites checks that -list-otelc-suites returns a sorted,
+// non-empty list that matches what otelcSuites() returns.
+func TestListOtelcSuites(t *testing.T) {
+	tab, _, _ := testTable(t)
+	var stdout bytes.Buffer
+	if err := run([]string{"-list-otelc-suites"}, strings.NewReader(""), &stdout); err != nil {
+		t.Fatalf("run(-list-otelc-suites) = %v", err)
+	}
+	lines := strings.Split(strings.TrimSuffix(stdout.String(), "\n"), "\n")
+	if len(lines) == 0 || lines[0] == "" {
+		t.Fatal("-list-otelc-suites returned an empty list")
+	}
+	if !slices.IsSorted(lines) {
+		t.Errorf("-list-otelc-suites output is not sorted: %v", lines)
+	}
+	suites, err := tab.otelcSuites()
+	if err != nil {
+		t.Fatalf("otelcSuites() = %v", err)
+	}
+	for _, s := range lines {
+		if !suites[s] {
+			t.Errorf("-list-otelc-suites returned %q, not in otelcSuites()", s)
+		}
+	}
+	if len(lines) != len(suites) {
+		t.Errorf("-list-otelc-suites returned %d suites, otelcSuites() has %d", len(lines), len(suites))
+	}
+}
+
+// TestLoadOtelcSuitesOnlyIgnoresInvalidComponentRules verifies that the
+// fail-open ALL path still resolves otelc suites even when an unrelated gate or
+// component rule in .github/ci-components.yml fails loadTable validation.
+func TestLoadOtelcSuitesOnlyIgnoresInvalidComponentRules(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".github"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	brokenTable := `
+gates:
+  - otelc
+components:
+  broken:
+    paths: ["["]
+    gates: [nonexistent-gate]
+integration-suites:
+  otelc-extra-suites:
+    - otelc
+    - gls
+  modules:
+    contrib/gin-gonic/gin/otelc: [ gin ]
+    contrib/hashicorp/vault: [ vault ]
+`
+	if err := os.WriteFile(filepath.Join(dir, tableRelPath), []byte(brokenTable), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadTable(dir); err == nil {
+		t.Fatal("expected loadTable to reject the invalid component rule")
+	}
+	got, err := loadOtelcSuitesOnly(dir)
+	if err != nil {
+		t.Fatalf("loadOtelcSuitesOnly() = %v", err)
+	}
+	want := map[string]bool{"otelc": true, "gls": true, "gin": true}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("loadOtelcSuitesOnly() = %v, want %v", got, want)
+	}
+
+	t.Run("rejects misspelled key inside integration-suites", func(t *testing.T) {
+		typoTable := `
+integration-suites:
+  otelc-extra-suite:
+    - otelc
+  modules:
+    contrib/gin-gonic/gin/otelc: [ gin ]
+`
+		if err := os.WriteFile(filepath.Join(dir, tableRelPath), []byte(typoTable), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := loadOtelcSuitesOnly(dir); err == nil {
+			t.Fatal("expected loadOtelcSuitesOnly to reject misspelled otelc-extra-suite key")
+		}
+	})
+
+	t.Run("rejects missing integration-suites section", func(t *testing.T) {
+		noSectionTable := `
+gates:
+  - otelc
+`
+		if err := os.WriteFile(filepath.Join(dir, tableRelPath), []byte(noSectionTable), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := loadOtelcSuitesOnly(dir); err == nil {
+			t.Fatal("expected loadOtelcSuitesOnly to fail when integration-suites section is missing")
+		}
+	})
+
+	t.Run("rejects empty otelc suite set", func(t *testing.T) {
+		emptyTable := `
+integration-suites:
+  otelc-extra-suites: []
+  modules:
+    contrib/gin-gonic/gin: [ gin ]
+`
+		if err := os.WriteFile(filepath.Join(dir, tableRelPath), []byte(emptyTable), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := loadOtelcSuitesOnly(dir); err == nil {
+			t.Fatal("expected loadOtelcSuitesOnly to fail when otelc suite set is empty")
+		}
+	})
+}
+
+// TestDiscoverOtelcModulesEdgeCases verifies that discoverOtelcModules skips
+// parent directories without a go.mod (such as contrib/os), discovers otelc
+// modules outside contrib/, and ignores dot-prefixed and testdata directories.
+func TestDiscoverOtelcModulesEdgeCases(t *testing.T) {
+	dir := t.TempDir()
+	write := func(rel string) {
+		t.Helper()
+		abs := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(abs, []byte("module example.com/test\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	write("otelc/all/go.mod")
+	write("contrib/gin/go.mod")
+	write("contrib/gin/otelc/go.mod")
+	write("contrib/os/otelc/go.mod")     // parent contrib/os has no go.mod
+	write("ddtrace/tracer/otelc/go.mod") // non-contrib otelc module, parent has no go.mod
+	write("testdata/fake/otelc/go.mod")  // must be skipped
+	write(".worktrees/wt/otelc/go.mod")  // must be skipped
+
+	got, err := discoverOtelcModules(dir)
+	if err != nil {
+		t.Fatalf("discoverOtelcModules() = %v", err)
+	}
+	want := []string{
+		"contrib/gin",
+		"contrib/gin/otelc",
+		"contrib/os/otelc",
+		"ddtrace/tracer/otelc",
+		"otelc/all",
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("discoverOtelcModules() = %v, want %v", got, want)
+	}
+
+	t.Run("missing otelc/all/go.mod", func(t *testing.T) {
+		noAllDir := t.TempDir()
+		writeIn := func(rel string) {
+			t.Helper()
+			abs := filepath.Join(noAllDir, rel)
+			if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(abs, []byte("module example.com/test\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		writeIn("contrib/gin/otelc/go.mod")
+		if _, err := discoverOtelcModules(noAllDir); err == nil {
+			t.Fatal("expected discoverOtelcModules to fail when otelc/all/go.mod is missing")
+		}
+	})
+}
+
+// TestEveryOtelcModuleMapsToASuite prevents a contrib/**/otelc entry with an
+// empty list [] from silently dropping its integration suite from the otelc lane.
+func TestEveryOtelcModuleMapsToASuite(t *testing.T) {
+	tab, _, _ := testTable(t)
+	var count int
+	for dir, suites := range tab.IntegrationSuites.Modules {
+		if !strings.HasSuffix(dir, "/otelc") {
+			continue
+		}
+		count++
+		if len(suites) == 0 {
+			t.Errorf("%s has an empty suite list in %s; map it to at least one suite so the otelc lane runs it", dir, tableRelPath)
+		}
+	}
+	if count == 0 {
+		t.Fatal("found no */otelc entries in integration-suites.modules")
 	}
 }
 
