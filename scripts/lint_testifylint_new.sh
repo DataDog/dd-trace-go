@@ -87,6 +87,7 @@ changed="$(
 # A file belongs to the deepest module that contains it: modules nest, for
 # example contrib/google.golang.org/api/internal/gen_endpoints.
 selected=()
+nonws_list=" "
 while IFS= read -r file; do
   [[ -z $file ]] && continue
   owner=""
@@ -95,11 +96,29 @@ while IFS= read -r file; do
       owner="$dir"
     fi
   done
+  nonws=false
+  if [[ -n $owner ]]; then
+    # A go.mod between the file and its workspace module marks a Go module
+    # outside go.work. The workspace run's ./... stops at that go.mod, so the
+    # file needs a run from its own module directory instead.
+    dir="$(dirname "$root/$file")"
+    while [[ $dir != "$owner" && $dir != / ]]; do
+      if [[ -f "$dir/go.mod" ]]; then
+        owner="$dir"
+        nonws=true
+        break
+      fi
+      dir="$(dirname "$dir")"
+    done
+  fi
   if [[ -z $owner ]] || is_excluded "$owner"; then
     continue
   fi
   if [[ " ${selected[*]-} " != *" $owner "* ]]; then
     selected+=("$owner")
+    if [[ $nonws == true ]]; then
+      nonws_list+="$owner "
+    fi
   fi
 done <<< "$changed"
 
@@ -126,9 +145,15 @@ for dir in "${selected[@]+"${selected[@]}"}"; do
   rel="${dir#"$root"}"
   rel="${rel#/}"
   printf "\n> testifylint go-require in %s\n" "${rel:-.}"
+  # A module outside go.work cannot be linted in workspace mode, because
+  # ./... never reaches it. Run it standalone with GOWORK=off instead.
+  run_cmd=(golangci-lint)
+  if [[ $nonws_list == *" $dir "* ]]; then
+    run_cmd=(env GOWORK=off golangci-lint)
+  fi
   # tee keeps the findings visible as they print, and the copy lets the
   # summary tell a require.* failure from any other golangci-lint failure.
-  if ! (cd "$dir" && golangci-lint run --enable-only=testifylint --new-from-rev="$base" "$@" ./...) 2>&1 | tee "$module_out"; then
+  if ! (cd "$dir" && "${run_cmd[@]+"${run_cmd[@]}"}" run --enable-only=testifylint --new-from-rev="$base" "$@" ./...) 2>&1 | tee "$module_out"; then
     failed+=("${rel:-.}")
     if grep -q "go-require:" "$module_out"; then
       found_require_findings=true
