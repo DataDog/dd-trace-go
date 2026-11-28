@@ -19,11 +19,13 @@ import (
 )
 
 type configurationImplementation struct {
-	Implementation string   `json:"implementation"`
-	Type           string   `json:"type"`
-	Default        *string  `json:"default"`
-	Allowed        string   `json:"allowed,omitempty"`
-	Aliases        []string `json:"aliases,omitempty"`
+	Implementation       string   `json:"implementation"`
+	Type                 string   `json:"type"`
+	ConfigurationNames   []string `json:"configurationNames,omitempty"`
+	InternalPropertyName string   `json:"internalPropertyName,omitempty"`
+	Default              *string  `json:"default"`
+	Allowed              string   `json:"allowed,omitempty"`
+	Aliases              []string `json:"aliases,omitempty"`
 	// Sensitive marks a configuration whose value must not be reported in
 	// configuration telemetry.
 	Sensitive bool `json:"sensitive,omitempty"`

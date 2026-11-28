@@ -430,35 +430,35 @@ func loadConfig() *Config {
 	}
 	cfg.dogstatsdAddr = initialDogstatsdURL(dogstatsdURL, dogstatsdHost, dogstatsdPort, agentHost, DefaultSocketDSDPath)
 
-	cfg.debug = p.GetBool("DD_TRACE_DEBUG", false)
+	cfg.loadDebug(p)
 	// OTEL_LOG_LEVEL=debug already reaches debug mode through DD_TRACE_DEBUG, which
 	// keeps DD_TRACE_DEBUG precedence; only the higher levels set a threshold here.
 	cfg.logLevel = log.LevelInfo
 	if lvl, ok := log.ParseLevel(p.GetString("OTEL_LOG_LEVEL", "")); ok && lvl != log.LevelDebug {
 		cfg.logLevel = lvl
 	}
-	cfg.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)
-	cfg.serviceName = p.GetString("DD_SERVICE", "")
-	cfg.version = p.GetString("DD_VERSION", "")
-	cfg.universalVersion = p.GetBool("DD_TRACE_UNIVERSAL_VERSION_ENABLED", false)
-	cfg.env = p.GetString("DD_ENV", "")
-	cfg.site = p.GetString("DD_SITE", "datadoghq.com")
+	cfg.loadLogStartup(p)
+	cfg.loadServiceName(p)
+	cfg.loadVersion(p)
+	cfg.loadUniversalVersion(p)
+	cfg.loadEnv(p)
+	cfg.loadSite(p)
 	cfg.serviceMappings = p.GetMap("DD_SERVICE_MAPPING", nil, provider.ParseDDMap)
-	cfg.runtimeMetrics = p.GetBool("DD_RUNTIME_METRICS_ENABLED", false)
-	cfg.runtimeMetricsV2 = p.GetBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
-	cfg.otelSDKDisabled = p.GetBool("OTEL_SDK_DISABLED", false)
+	cfg.loadRuntimeMetrics(p)
+	cfg.loadRuntimeMetricsV2(p)
+	cfg.loadOtelSDKDisabled(p)
 	cfg.runtimeMetricsOtel = resolveOTelSignalEnabled("DD_METRICS_OTEL_ENABLED", p.GetBool("DD_METRICS_OTEL_ENABLED", false), cfg.otelSDKDisabled)
-	cfg.profilerHotspots = p.GetBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
-	cfg.profilerEndpoints = p.GetBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", true)
-	cfg.peerServiceDefaultsEnabled = p.GetBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+	cfg.loadProfilerHotspots(p)
+	cfg.loadProfilerEndpoints(p)
+	cfg.loadPeerServiceDefaultsEnabled(p)
 	cfg.peerServiceMappings = p.GetMap("DD_TRACE_PEER_SERVICE_MAPPING", nil, provider.ParseDDMap)
-	cfg.debugAbandonedSpans = p.GetBool("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
+	cfg.loadDebugAbandonedSpans(p)
 	cfg.spanTimeout = p.GetDuration("DD_TRACE_ABANDONED_SPAN_TIMEOUT", 10*time.Minute)
 	cfg.partialFlushMinSpans = p.GetIntWithValidator("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1000, validatePartialFlushMinSpans)
-	cfg.partialFlushEnabled = p.GetBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
+	cfg.loadPartialFlushEnabled(p)
 	cfg.payloadQueueSize = p.GetIntWithValidator("DD_TRACE_PAYLOAD_QUEUE_SIZE", DefaultPayloadQueueSize, validatePayloadQueueSize)
 	cfg.statsComputationEnabled = p.GetBool("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
-	cfg.traceAnalyticsEnabled = p.GetBool("DD_TRACE_ANALYTICS_ENABLED", false)
+	cfg.loadTraceAnalyticsEnabled(p)
 	cfg.experimentalFeaturesEnabled = p.GetBool("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", false)
 	if v := p.GetString("DD_TRACE_STATS_ADDITIONAL_TAGS", ""); v != "" {
 		var tags []string
@@ -499,28 +499,28 @@ func loadConfig() *Config {
 		log.Warn("ignoring DD_TRACE_STATS_ORIGIN_CARDINALITY_LIMIT: non-positive value %d, using default %d", cfg.statsOriginCardinalityLimit, defaultStatsOriginCardinalityLimit) //errtrack:ignore invalid user configuration
 		cfg.statsOriginCardinalityLimit = defaultStatsOriginCardinalityLimit
 	}
-	cfg.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
+	cfg.loadDataStreamsMonitoringEnabled(p)
 	cfg.dataStreamsIntakeBufferSize = p.GetIntWithValidator("DD_DATA_STREAMS_INTAKE_BUFFER_SIZE", defaultDataStreamsIntakeBufferSize, validateDataStreamsIntakeBufferSize)
-	cfg.injectKinesis = p.GetBool("DD_TRACE_KINESIS_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
-	cfg.injectEventBridge = p.GetBool("DD_TRACE_EVENTBRIDGE_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
-	cfg.injectSQS = p.GetBool("DD_TRACE_SQS_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
-	cfg.injectSNS = p.GetBool("DD_TRACE_SNS_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
-	cfg.injectSFN = p.GetBool("DD_TRACE_SFN_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
+	cfg.loadInjectKinesis(p)
+	cfg.loadInjectEventBridge(p)
+	cfg.loadInjectSQS(p)
+	cfg.loadInjectSNS(p)
+	cfg.loadInjectSFN(p)
 	cfg.ciVisibilityEnabled = p.GetBool(constants.CIVisibilityEnabledEnvironmentVariable, false)
 	cfg.ciVisibilityAgentless = p.GetBool(constants.CIVisibilityAgentlessEnabledEnvironmentVariable, false)
 	cfg.ciVisibilityNoopTracer = p.GetBool(constants.CIVisibilityUseNoopTracer, false)
-	cfg.logDirectory = p.GetString("DD_TRACE_LOG_DIRECTORY", "")
+	cfg.loadLogDirectory(p)
 	cfg.traceRateLimitPerSecond = p.GetFloatWithValidator("DD_TRACE_RATE_LIMIT", DefaultRateLimit, validateRateLimit)
-	cfg.debugStack = p.GetBool("DD_TRACE_DEBUG_STACK", true)
+	cfg.loadDebugStack(p)
 	cfg.retryInterval = p.GetDuration("DD_TRACE_RETRY_INTERVAL", time.Millisecond)
 	cfg.sendRetries = p.GetIntWithValidator("DD_TRACE_SEND_RETRIES", 0, validateSendRetries)
 	cfg.logsOTelEnabled = resolveOTelSignalEnabled("DD_LOGS_OTEL_ENABLED", p.GetBool("DD_LOGS_OTEL_ENABLED", false), cfg.otelSDKDisabled)
-	cfg.blrpMaxQueueSize = p.GetIntWithValidator("OTEL_BLRP_MAX_QUEUE_SIZE", defaultBLRPMaxQueueSize, nil)
+	cfg.loadBlrpMaxQueueSize(p)
 	cfg.blrpScheduleDelay = time.Duration(p.GetInt64WithValidator("OTEL_BLRP_SCHEDULE_DELAY", defaultBLRPScheduleDelay.Milliseconds(), func(v int64) bool { return v > 0 })) * time.Millisecond
 	cfg.blrpExportTimeout = time.Duration(p.GetInt64WithValidator("OTEL_BLRP_EXPORT_TIMEOUT", defaultBLRPExportTimeout.Milliseconds(), func(v int64) bool { return v > 0 })) * time.Millisecond
-	cfg.blrpMaxExportBatchSize = p.GetIntWithValidator("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", defaultBLRPMaxExportBatchSize, nil)
-	cfg.otelSemanticsEnabled = p.GetBool("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
-	cfg.traceOTelEnabled = p.GetBool("DD_TRACE_OTEL_ENABLED", false)
+	cfg.loadBlrpMaxExportBatchSize(p)
+	cfg.loadOtelSemanticsEnabled(p)
+	cfg.loadTraceOTelEnabled(p)
 	if v := p.GetString("OTEL_LOGS_EXPORTER", ""); v != "" {
 		log.Warn("OTEL_LOGS_EXPORTER is not supported") //errtrack:ignore unsupported user configuration
 	}
@@ -589,38 +589,38 @@ func loadConfig() *Config {
 	cfg.otlpLogsProtocol = resolveOTLPProtocol(resolveOTLPSetting(p, "OTEL_EXPORTER_OTLP_LOGS_PROTOCOL", "OTEL_EXPORTER_OTLP_PROTOCOL", otlpGenericProtocols, supportsOTLPProtocol(otlpLogsProtocols), cfg.logsOTelEnabled))
 	logsTimeout := p.GetInt64WithValidator("OTEL_EXPORTER_OTLP_TIMEOUT", defaultOTLPTimeout.Milliseconds(), func(v int64) bool { return v >= 0 })
 	cfg.otlpLogsTimeout = time.Duration(p.GetInt64WithValidator("OTEL_EXPORTER_OTLP_LOGS_TIMEOUT", logsTimeout, func(v int64) bool { return v >= 0 })) * time.Millisecond
-	cfg.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
+	cfg.loadTraceID128BitEnabled(p)
 	cfg.httpClientTimeout = time.Duration(p.GetIntWithValidator("DD_TRACE_AGENT_TIMEOUT", 10, validateAgentTimeout)) * time.Second
 	cfg.propagationStyleInject = p.GetString("DD_TRACE_PROPAGATION_STYLE_INJECT", "")
 	cfg.propagationStyleExtract = p.GetString("DD_TRACE_PROPAGATION_STYLE_EXTRACT", "")
-	cfg.propagationBehaviorExtract = p.GetString("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT", "continue")
-	cfg.propagationExtractFirst = p.GetBool("DD_TRACE_PROPAGATION_EXTRACT_FIRST", false)
-	cfg.appKey = p.GetString("DD_APP_KEY", "")
+	cfg.loadPropagationBehaviorExtract(p)
+	cfg.loadPropagationExtractFirst(p)
+	cfg.loadAppKey(p)
 	cfg.llmObsPromptsCacheTTL = time.Duration(p.GetFloatWithValidator("DD_LLMOBS_PROMPTS_CACHE_TTL", 60, func(value float64) bool {
 		return !math.IsNaN(value) && !math.IsInf(value, 0) && (value <= 0 || value <= maxDurationSeconds)
 	}) * float64(time.Second))
-	cfg.llmObsPromptsFileCacheEnabled = p.GetBool("DD_LLMOBS_PROMPTS_FILE_CACHE_ENABLED", false)
-	cfg.llmObsPromptsCacheDir = p.GetString("DD_LLMOBS_PROMPTS_CACHE_DIR", "")
+	cfg.loadLlmObsPromptsFileCacheEnabled(p)
+	cfg.loadLlmObsPromptsCacheDir(p)
 	cfg.llmObsPromptsTimeout = time.Duration(p.GetFloatWithValidator("DD_LLMOBS_PROMPTS_TIMEOUT", 5, func(value float64) bool {
 		return value >= 0 && !math.IsNaN(value) && !math.IsInf(value, 0) && value <= maxDurationSeconds
 	}) * float64(time.Second))
-	cfg.ciVisibilityAgentlessURL = p.GetString("DD_CIVISIBILITY_AGENTLESS_URL", "")
+	cfg.loadCiVisibilityAgentlessURL(p)
 	legacyFlaggingProviderEnabled, legacyFlaggingProviderOrigin := p.GetBoolWithOrigin("DD_EXPERIMENTAL_FLAGGING_PROVIDER_ENABLED", false)
 	cfg.experimentalFlaggingProviderEnabled = legacyFlaggingProviderEnabled
 	cfg.experimentalFlaggingProviderEnabledSet = legacyFlaggingProviderOrigin != telemetry.OriginDefault
-	cfg.spanPoolEnabled = p.GetBool("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", false)
+	cfg.loadSpanPoolEnabled(p)
 
 	featureFlagsEnabled, featureFlagsEnabledOrigin := p.GetBoolWithOrigin("DD_FEATURE_FLAGS_ENABLED", true)
 	if featureFlagsEnabledOrigin != telemetry.OriginDefault {
 		cfg.featureFlagsEnabled = &featureFlagsEnabled
 	}
-	cfg.flagEvalTelemetryOptOutEnabled = p.GetBool("DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED", false)
-	cfg.featureFlagsExposuresDatadogLoggingEnabled = p.GetBool("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", true)
-	cfg.featureFlagsExperimentationOptOutMode = p.GetString("DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE", "disabled")
+	cfg.loadFlagEvalTelemetryOptOutEnabled(p)
+	cfg.loadFeatureFlagsExposuresDatadogLoggingEnabled(p)
+	cfg.loadFeatureFlagsExperimentationOptOutMode(p)
 	featureFlagsSource, featureFlagsSourceOrigin := p.GetStringWithOrigin("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE", "agentless")
 	cfg.featureFlagsConfigurationSource = featureFlagsSource
 	cfg.featureFlagsConfigurationSourceSet = featureFlagsSourceOrigin != telemetry.OriginDefault
-	cfg.featureFlagsAgentlessBaseURL = p.GetString("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL", "")
+	cfg.loadFeatureFlagsAgentlessBaseURL(p)
 	cfg.featureFlagsAgentlessPollInterval = time.Duration(p.GetIntWithValidator("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_POLL_INTERVAL_SECONDS", 30, validateFeatureFlagsAgentlessPollInterval)) * time.Second
 	cfg.featureFlagsAgentlessRequestTimeout = time.Duration(p.GetIntWithValidator("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_REQUEST_TIMEOUT_SECONDS", 5, validateFeatureFlagsAgentlessRequestTimeout)) * time.Second
 	cfg.flaggingProviderInitTimeout = time.Duration(p.GetIntWithValidator("DD_EXPERIMENTAL_FLAGGING_PROVIDER_INITIALIZATION_TIMEOUT_MS", 10000, validateFlaggingProviderInitTimeout)) * time.Millisecond
@@ -699,7 +699,7 @@ func loadConfig() *Config {
 		cfg.reportHostname = true
 	}
 
-	cfg.apiKey = p.GetString("DD_API_KEY", "")
+	cfg.loadApiKey(p)
 
 	traceRules, traceOrigin := samplingRulesFromSource(p, "DD_TRACE_SAMPLING_RULES", samplingrules.SamplingRuleTrace)
 	cfg.traceSamplingRules = newDynamicConfig("trace_sample_rules", traceRules, traceOrigin, samplingrules.EqualsFalseNegative, nil)
@@ -710,9 +710,9 @@ func loadConfig() *Config {
 	cfg.spanSamplingRulesOrigin = spanOrigin
 	configtelemetry.ReportDefault("span_sample_rules", spanRules)
 
-	cfg.llmObsEnabled = p.GetBool("DD_LLMOBS_ENABLED", false)
-	cfg.llmObsMLApp = p.GetString("DD_LLMOBS_ML_APP", "")
-	cfg.llmObsProjectName = p.GetString("DD_LLMOBS_PROJECT_NAME", "")
+	cfg.loadLlmObsEnabled(p)
+	cfg.loadLlmObsMLApp(p)
+	cfg.loadLlmObsProjectName(p)
 	if v, origin := p.GetBoolWithOrigin("DD_LLMOBS_AGENTLESS_ENABLED", false); origin != telemetry.OriginDefault {
 		cfg.llmObsAgentlessEnabled = &v
 	}

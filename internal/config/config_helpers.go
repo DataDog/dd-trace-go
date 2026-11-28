@@ -67,14 +67,10 @@ const (
 	// defaultStatsOriginCardinalityLimit is the default per-field cap for origin cardinality.
 	defaultStatsOriginCardinalityLimit = 20
 	defaultDataStreamsIntakeBufferSize = 10000
-	// defaultBLRPMaxQueueSize is the default value for OTEL_BLRP_MAX_QUEUE_SIZE.
-	defaultBLRPMaxQueueSize = 2048
 	// defaultBLRPScheduleDelay is the default value for OTEL_BLRP_SCHEDULE_DELAY.
 	defaultBLRPScheduleDelay = time.Second
 	// defaultBLRPExportTimeout is the default value for OTEL_BLRP_EXPORT_TIMEOUT.
 	defaultBLRPExportTimeout = 30 * time.Second
-	// defaultBLRPMaxExportBatchSize is the default value for OTEL_BLRP_MAX_EXPORT_BATCH_SIZE.
-	defaultBLRPMaxExportBatchSize = 512
 	// defaultOTLPProtocol is the default value for OTEL_EXPORTER_OTLP_PROTOCOL.
 	defaultOTLPProtocol = "http/protobuf"
 	// defaultOTLPTimeout is the default value for OTEL_EXPORTER_OTLP_TIMEOUT.

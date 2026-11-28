@@ -3019,8 +3019,8 @@ func TestMalformedBLRPSizesWarn(t *testing.T) {
 	t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "999999999999999999999")
 
 	cfg := loadConfig()
-	assert.Equal(t, defaultBLRPMaxQueueSize, cfg.BLRPMaxQueueSize())
-	assert.Equal(t, defaultBLRPMaxExportBatchSize, cfg.BLRPMaxExportBatchSize())
+	assert.Equal(t, 2048, cfg.BLRPMaxQueueSize())
+	assert.Equal(t, 512, cfg.BLRPMaxExportBatchSize())
 	logs := strings.Join(logger.Logs(), "\n")
 	assert.Contains(t, logs, `ignoring OTEL_BLRP_MAX_QUEUE_SIZE: value "invalid" is not a valid integer`)
 	assert.Contains(t, logs, `ignoring OTEL_BLRP_MAX_EXPORT_BATCH_SIZE: value "999999999999999999999" is not a valid integer`)

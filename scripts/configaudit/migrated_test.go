@@ -6,6 +6,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -46,5 +47,50 @@ func TestLoadMigrated_ResolvesPackageConstants(t *testing.T) {
 	// We require the walker to resolve at least one such cross-package constant.
 	if _, ok := got["DD_CIVISIBILITY_ENABLED"]; !ok {
 		t.Errorf("expected DD_CIVISIBILITY_ENABLED (resolved from constant) in migrated set")
+	}
+}
+
+func TestLoadMigrated_FollowsLocalMethodsByReceiver(t *testing.T) {
+	t.Setenv("GOWORK", "off")
+	pkgDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(pkgDir, "go.mod"), []byte("module example.com/config\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const source = `package config
+
+import "os"
+
+type config struct{}
+type other struct{}
+
+func loadConfig() {
+	var c config
+	c.load(true)
+}
+
+func (c config) load(recurse bool) {
+	_ = os.Getenv("DD_REACHABLE")
+	if recurse {
+		c.load(false)
+	}
+}
+
+func (other) load(bool) {
+	_ = os.Getenv("DD_UNREACHABLE")
+}
+`
+	if err := os.WriteFile(filepath.Join(pkgDir, "config.go"), []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := loadMigrated(pkgDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["DD_UNREACHABLE"]; ok {
+		t.Fatal("a method on another receiver must not count as migrated")
+	}
+	if _, ok := got["DD_REACHABLE"]; !ok {
+		t.Fatal("expected the method called by loadConfig to count as migrated")
 	}
 }

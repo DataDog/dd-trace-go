@@ -8,12 +8,13 @@ backing the migration tracked in [internal/config/README.md](../../internal/conf
 
 | Status | Meaning |
 |---|---|
-| `UNMIGRATED` | The variable is read outside `internal/config` and is **not** yet handled by `loadConfig`. These are the migration backlog. |
+| `UNMIGRATED` | The variable is read outside `internal/config` and still needs handling in singleton initialization. |
 | `STILL_READ` | The variable is migrated, but at least one caller outside `internal/config` is still reading it directly. Migration is incomplete; legacy reads should be replaced with calls to the singleton. |
 | `UNTRACKED` | The variable is read in code but missing from `internal/env/supported_configurations.json`. Likely a bug — add it to the JSON or remove the read. |
 
-Migrations proceed package-by-package, so output is grouped by the package
-containing each call site. A variable that is migrated repo-wide can still
+The audit starts at `loadConfig` and follows statically resolved calls inside
+`internal/config`. Migrations proceed package-by-package, so output is grouped
+by the package containing each call site. A variable that is migrated repo-wide can still
 appear as `STILL_READ` in packages whose call sites haven't switched over
 yet — that's expected, and the audit surfaces exactly which packages remain.
 

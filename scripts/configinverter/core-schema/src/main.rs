@@ -29,7 +29,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         )
         .into());
     }
-    let keys: Vec<_> = snapshot.settings().map(|setting| setting.name).collect();
-    serde_json::to_writer(io::stdout().lock(), &keys)?;
+    serde_json::to_writer(
+        io::stdout().lock(),
+        &snapshot.settings().collect::<Vec<_>>(),
+    )?;
     Ok(())
 }

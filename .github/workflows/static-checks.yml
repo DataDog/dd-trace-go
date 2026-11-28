@@ -428,14 +428,14 @@ jobs:
           cache: false
       - name: Verify supported_configurations.json and generated code are in sync
         run: go run ./scripts/configinverter/main.go check
-      - name: Validate schema and regenerate the Go registry
+      - name: Validate schema and regenerate Go configuration
         env:
           RUSTUP_TOOLCHAIN: "1.91.1"
         run: |
           rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
           cargo test --locked --manifest-path scripts/configinverter/core-schema/Cargo.toml
           go run ./scripts/configinverter/main.go generate-core
-          git diff --exit-code -- internal/env/supported_configurations.gen.go
+          git diff --exit-code -- internal/env/supported_configurations.gen.go internal/config/manifest_config.gen.go
 
   checklocks:
     needs: [changes, warm-tools-cache]
