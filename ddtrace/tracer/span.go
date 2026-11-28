@@ -23,6 +23,7 @@ import (
 	rt "runtime/trace"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
@@ -166,14 +167,13 @@ type Span struct {
 	// +checklocks:mu
 	statSpan *tracerStatSpan `msg:"-"`
 
-	goExecTraced bool         `msg:"-"`
-	noDebugStack bool         `msg:"-"` // disables debug stack traces
-	context      *SpanContext `msg:"-"` // span propagation context
+	goExecTraced bool `msg:"-"`
+	noDebugStack bool `msg:"-"` // disables debug stack traces
 	// +checklocks:mu
 	supportsEvents bool `msg:"-"` // whether the span supports native span events or not
-
 	// +checklocks:mu
-	finished bool `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
+	finished bool         `msg:"-"` // true if the span has been submitted to a tracer. Can only be read/modified if the trace is locked.
+	context  *SpanContext `msg:"-"` // span propagation context
 	// +checklocks:mu
 	integration string `msg:"-"` // where the span was started from, such as a specific contrib or "manual"
 	// +checklocks:mu
@@ -185,7 +185,8 @@ type Span struct {
 	pprofCtxRestore context.Context `msg:"-"` // contains pprof.WithLabel labels of the parent span (if any) that need to be restored when this span finishes
 
 	// +checklocks:mu
-	taskEnd func() // ends execution tracer (runtime/trace) task, if started
+	taskEnd    func()                   // ends execution tracer (runtime/trace) task, if started
+	bridgeView atomic.Pointer[struct{}] `msg:"-"`
 }
 
 func (s *Span) clear() {
@@ -223,6 +224,7 @@ func (s *Span) clear() {
 	s.pprofCtxActive = nil
 	s.pprofCtxRestore = nil
 	s.taskEnd = nil
+	s.bridgeView.Store(nil)
 	// Always keep this unlock as the last line. If we ever introduce
 	// code above that could panic, we should move it as deferred call
 	// under s.mu.Lock().

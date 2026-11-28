@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -122,6 +123,41 @@ func TestBridgeSpanFromContextDatadogSpan(t *testing.T) {
 	want := ddSpanContext(ddSpan)
 	assert.Equal(t, want.TraceID(), sc.TraceID())
 	assert.Equal(t, want.SpanID(), sc.SpanID())
+}
+
+func TestBridgeSpanFromContextReusesView(t *testing.T) {
+	setBridge(t, true)
+	_, _, cleanup := mockTracerProvider(t)
+	defer cleanup()
+
+	ddSpan, ctx := tracer.StartSpanFromContext(context.Background(), "dd.op")
+	bindOwner(ddSpan)
+	defer ddSpan.Finish()
+
+	first, ok := bridgeSpanFromContext(ctx, nil)
+	require.True(t, ok)
+	second, ok := bridgeSpanFromContext(ctx, nil)
+	require.True(t, ok)
+	require.Same(t, first, second)
+	assert.Equal(t, first.SpanContext(), second.SpanContext())
+	first = nil
+	second = nil
+	runtime.GC()
+	runtime.GC()
+	again, ok := bridgeSpanFromContext(ctx, nil)
+	require.True(t, ok)
+	require.True(t, again.SpanContext().IsValid())
+
+	allocs := testing.AllocsPerRun(100, func() {
+		sp, ok := bridgeSpanFromContext(ctx, nil)
+		if !ok {
+			t.Fatal("missing span")
+		}
+		runtime.KeepAlive(sp)
+	})
+	if allocs != 0 {
+		t.Fatalf("bridgeSpanFromContext allocated %v times, want 0", allocs)
+	}
 }
 
 func TestBridgeSpanFromContextInSyncOTelSpan(t *testing.T) {
@@ -463,9 +499,11 @@ func TestBorrowedSpanStatusOkWinsAcrossViews(t *testing.T) {
 	defer cleanup()
 
 	ddSpan, ctx, b1 := borrowDatadogSpan(t)
-	// Each trace.SpanFromContext call creates a new view of the same Datadog span.
-	b2, ok := bridgeSpanFromContext(ctx, nil)
+	cached, ok := bridgeSpanFromContext(ctx, nil)
 	require.True(t, ok)
+	require.Same(t, b1, cached)
+	distinct := *b1.(*borrowedSpan)
+	b2 := &distinct
 	require.NotSame(t, b1, b2)
 	b1.SetStatus(otelcodes.Ok, "")
 	b2.SetStatus(otelcodes.Error, "boom")
@@ -486,10 +524,9 @@ func TestBorrowedSpanStatusConcurrentOkWins(t *testing.T) {
 
 	for range 200 {
 		ddSpan, ctx, b := borrowDatadogSpan(t)
-		// Each trace.SpanFromContext call creates a new view of the same Datadog span.
 		b2, ok := bridgeSpanFromContext(ctx, nil)
 		require.True(t, ok)
-		require.NotSame(t, b, b2)
+		require.Same(t, b, b2)
 		var wg sync.WaitGroup
 		start := make(chan struct{})
 		wg.Add(2)

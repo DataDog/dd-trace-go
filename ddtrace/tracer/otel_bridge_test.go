@@ -9,6 +9,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -78,6 +79,16 @@ func TestOTelBorrowAfterRelease(t *testing.T) {
 	got, sc := borrowSpanFromContext(ctx, nil)
 	assert.Nil(t, got)
 	assert.Nil(t, sc)
+}
+
+func TestBridgeViewClearedWithSpan(t *testing.T) {
+	s := &Span{}
+	view := struct{}{}
+	published := publishBridgeView(s, unsafe.Pointer(&view))
+	require.Equal(t, unsafe.Pointer(&view), published)
+	require.Equal(t, unsafe.Pointer(&view), loadBridgeView(s))
+	s.clear()
+	require.Nil(t, loadBridgeView(s))
 }
 
 // BenchmarkSetBorrowedStatus measures the status precedence of a borrowed span: Ok, then an
