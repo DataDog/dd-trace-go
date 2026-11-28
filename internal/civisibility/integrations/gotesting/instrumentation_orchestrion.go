@@ -411,7 +411,7 @@ func instrumentTestingTFunc(f func(*testing.T)) func(*testing.T) {
 				}
 			}()
 
-			lineCoverageWindow = openLineCoverageWindow(currentT, suite, test)
+			lineCoverageWindow = openLineCoverageWindow(currentT, suite, test, nil)
 			f(currentT)
 		}
 

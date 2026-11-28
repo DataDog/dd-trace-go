@@ -112,6 +112,7 @@ type (
 		collector *lineCoverageCollector
 		slot      uint32     // 0 while paused, or when no slot was free
 		blocks    []blockRef // blocks of the slots the window held before
+		testFile  string     // relative to the source root; see SetTestFile
 		missed    bool
 		closed    bool
 		// closing is set, under the collector's mutex, once the window starts
@@ -421,6 +422,14 @@ func (w *LineCoverageWindow) attach() {
 	runtimeLineCoverageSetSlot(w.slot)
 }
 
+// SetTestFile sets the file of the test's function. The record names it first,
+// without lines, as the records built from cover profiles do (getFilesCovered).
+func (w *LineCoverageWindow) SetTestFile(file string) {
+	if w != nil && file != "" {
+		w.testFile = utils.GetRelativePathFromCITagsSourceRoot(file)
+	}
+}
+
 // RanWithoutSlot reports whether the window ran without a slot for a while,
 // because every slot was held when it opened or when its t.Parallel wait
 // ended. Its test execution then has no coverage record, and what it ran is in
@@ -568,11 +577,15 @@ func (w *LineCoverageWindow) Close(suiteID, testID uint64) {
 		c.mu.Unlock()
 		return
 	}
+	files := c.fileCoverage(w.blocks, true)
+	if w.testFile != "" {
+		files = slices.Insert(files, 0, &ciTestCoverageFile{FileName: w.testFile})
+	}
 	c.send(&ciTestCoverageData{
 		SessionID: c.sessionID,
 		SuiteID:   suiteID,
 		SpanID:    testID,
-		Files:     c.fileCoverage(w.blocks, true),
+		Files:     files,
 	})
 }
 

@@ -532,6 +532,51 @@ func TestLineCoverageWindowRecord(t *testing.T) {
 	assert.Nil(t, lineCoverage.Load())
 }
 
+// TestLineCoverageWindowTestFile checks that the record of a window with a test
+// file names it first, without a bitmap, and that a window that ran without a
+// slot sends no record, test file or not.
+func TestLineCoverageWindowTestFile(t *testing.T) {
+	workspace := setTestWorkspace(t)
+	file := filepath.Join(workspace, "a", "a.go")
+	testFile := filepath.Join(workspace, "a", "a_test.go")
+	rt := &fakeRuntime{packages: []fakePackage{
+		newFakePackage("example/a", []string{file}, []testBlock{{0, 1, 1, false}, {0, 2, 2, false}, {0, 3, 3, false}}, false),
+	}}
+	c, sent := startTestCollector(t, rt)
+
+	w := OpenLineCoverageWindow()
+	w.SetTestFile(testFile)
+	rt.probe(0, 1)
+	w.Close(1, 1)
+
+	// A subtest's window has no test file.
+	w = OpenLineCoverageWindow()
+	rt.probe(0, 0)
+	w.Close(1, 2)
+
+	c.free = nil // every slot is held
+	w = OpenLineCoverageWindow()
+	require.True(t, w.RanWithoutSlot())
+	w.SetTestFile(testFile)
+	rt.probe(0, 2)
+	w.Close(1, 3)
+
+	c.stop()
+	records := (*sent)[0]
+	require.Len(t, records, 3, "no record for the window without a slot")
+	assert.EqualValues(t, 1, records[0]["span_id"])
+	assert.Equal(t, []any{
+		map[string]any{"filename": "a/a_test.go"},
+		map[string]any{"filename": "a/a.go", "bitmap": []byte{0x40}},
+	}, records[0]["files"])
+	assert.EqualValues(t, 2, records[1]["span_id"])
+	assert.Equal(t, []any{
+		map[string]any{"filename": "a/a.go", "bitmap": []byte{0x80}},
+	}, records[1]["files"])
+	assert.Equal(t, "unowned", records[2]["shared"])
+	assert.Equal(t, map[string][]int32{"a/a.go": {3}}, recordLines(t, records[2]))
+}
+
 func TestLineCoverageSubtestWindows(t *testing.T) {
 	workspace := setTestWorkspace(t)
 	file := filepath.Join(workspace, "a.go")

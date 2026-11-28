@@ -212,9 +212,16 @@ func (ddm *M) instrumentInternalTests(internalTests *[]testing.InternalTest) {
 
 // openLineCoverageWindow opens the line coverage window of the test execution
 // that t runs. The window closes in t's first cleanup, which runs last.
-func openLineCoverageWindow(t *testing.T, suite integrations.TestSuite, test integrations.Test) *coverage.LineCoverageWindow {
+// testFunc is the function of a top-level test, whose file the record names.
+// It is nil for a subtest, which has no record in the coverage built from cover
+// profiles, and so no test file.
+func openLineCoverageWindow(t *testing.T, suite integrations.TestSuite, test integrations.Test, testFunc *runtime.Func) *coverage.LineCoverageWindow {
 	window := coverage.OpenLineCoverageWindow()
 	if window != nil {
+		if testFunc != nil {
+			file, _ := testFunc.FileLine(testFunc.Entry())
+			window.SetTestFile(file)
+		}
 		t.Cleanup(func() { window.Close(suite.SuiteID(), test.TestID()) })
 	}
 	return window
@@ -473,7 +480,7 @@ func (ddm *M) executeInternalTest(testInfo *testingTInfo) func(*testing.T) {
 			tCoverage.CollectCoverageBeforeTestExecution()
 		}
 
-		lineCoverageWindow = openLineCoverageWindow(t, suite, test)
+		lineCoverageWindow = openLineCoverageWindow(t, suite, test, originalFunc)
 
 		// Execute the original test function.
 		testInfo.originalFunc(t)
