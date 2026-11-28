@@ -73,6 +73,15 @@ func TestProviderGoroutines_ContainLoggerPanics(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, p.ShutdownWithContext(ctx))
+	// stop does not join an in-flight periodic exposure send.
+	p.mu.Lock()
+	exposureWorkerDone := p.exposureWriter.workerDone
+	p.mu.Unlock()
+	select {
+	case <-exposureWorkerDone:
+	case <-ctx.Done():
+		t.Fatal("exposure writer did not finish before the shutdown context expired")
+	}
 	assert.Greater(t, exposures.Load(), sentExposures, "shutdown must send the pending exposures")
 	assert.Greater(t, evaluations.Load(), sentEvaluations, "shutdown must send the pending evaluations")
 }
