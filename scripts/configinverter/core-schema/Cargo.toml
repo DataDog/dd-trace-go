@@ -1,0 +1,13 @@
+# Copyright 2026-Present Datadog, Inc. https://www.datadoghq.com/
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "ddtrace-go-core-schema"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91.1"
+publish = false
+
+[dependencies]
+libdd-config-core = { git = "https://github.com/DataDog/libdatadog.git", rev = "b3287f9b9836f960264e03c28345578d5e0c7bc9" }
+serde_json = "1"

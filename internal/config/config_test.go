@@ -1403,6 +1403,29 @@ func TestOTLPSpanMetricsConfig(t *testing.T) {
 		assert.Equal(t, TraceProtocolV1, cfg.RequestedTraceProtocol())
 	})
 
+	t.Run("span metrics fallback reads the stats source once", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+
+		const stats = "DD_TRACE_STATS_COMPUTATION_ENABLED"
+		t.Setenv(stats, "invalid")
+		t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", "false")
+
+		assert.False(t, Get().StatsComputationEnabled())
+
+		var attempts int
+		for _, c := range rec.Configuration {
+			if c.Name == stats && c.Origin == telemetry.OriginEnvVar {
+				assert.Equal(t, "invalid", c.Value)
+				attempts++
+			}
+		}
+		assert.Equal(t, 1, attempts)
+	})
+
 	t.Run("OTelSemanticsEnabled disabled by default", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()
@@ -3010,6 +3033,20 @@ func TestResolveBLRPMaxExportBatchSize(t *testing.T) {
 		size := loadConfig().BLRPMaxExportBatchSize()
 		assert.Equal(t, 512, size)
 	})
+}
+
+func TestMalformedBLRPSizesWarn(t *testing.T) {
+	logger := new(log.RecordLogger)
+	defer log.UseLogger(logger)()
+	t.Setenv("OTEL_BLRP_MAX_QUEUE_SIZE", "invalid")
+	t.Setenv("OTEL_BLRP_MAX_EXPORT_BATCH_SIZE", "999999999999999999999")
+
+	cfg := loadConfig()
+	assert.Equal(t, 2048, cfg.BLRPMaxQueueSize())
+	assert.Equal(t, 512, cfg.BLRPMaxExportBatchSize())
+	logs := strings.Join(logger.Logs(), "\n")
+	assert.Contains(t, logs, `ignoring OTEL_BLRP_MAX_QUEUE_SIZE: value "invalid" is not a valid integer`)
+	assert.Contains(t, logs, `ignoring OTEL_BLRP_MAX_EXPORT_BATCH_SIZE: value "999999999999999999999" is not a valid integer`)
 }
 
 func TestRuntimeMetricsProtocol(t *testing.T) {

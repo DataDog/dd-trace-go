@@ -68,6 +68,7 @@
       {
         "implementation": "B",
         "type": "string",
+        "internalPropertyName": "apiKey",
         "default": null,
         "aliases": [
           "DD-API-KEY"
@@ -250,6 +251,7 @@
       {
         "implementation": "A",
         "type": "string",
+        "internalPropertyName": "appKey",
         "default": null,
         "sensitive": true
       }
@@ -265,6 +267,7 @@
       {
         "implementation": "A",
         "type": "string",
+        "internalPropertyName": "ciVisibilityAgentlessURL",
         "default": null
       }
     ],
@@ -468,6 +471,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "dataStreamsMonitoringEnabled",
         "default": "false"
       }
     ],
@@ -517,6 +521,10 @@
       {
         "implementation": "A",
         "type": "string",
+        "configurationNames": [
+          "env"
+        ],
+        "internalPropertyName": "env",
         "default": ""
       }
     ],
@@ -566,6 +574,7 @@
       {
         "implementation": "A",
         "type": "string",
+        "internalPropertyName": "featureFlagsAgentlessBaseURL",
         "default": null,
         "sensitive": true
       }
@@ -595,6 +604,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "flagEvalTelemetryOptOutEnabled",
         "default": "false"
       }
     ],
@@ -602,6 +612,7 @@
       {
         "implementation": "A",
         "type": "string",
+        "internalPropertyName": "featureFlagsExperimentationOptOutMode",
         "default": "disabled"
       }
     ],
@@ -609,6 +620,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "featureFlagsExposuresDatadogLoggingEnabled",
         "default": "true"
       }
     ],
@@ -798,13 +810,14 @@
       {
         "implementation": "C",
         "type": "boolean",
-        "default": ""
+        "default": null
       }
     ],
     "DD_LLMOBS_ENABLED": [
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "llmObsEnabled",
         "default": "false"
       }
     ],
@@ -812,6 +825,10 @@
       {
         "implementation": "B",
         "type": "string",
+        "configurationNames": [
+          "llmobs.mlApp"
+        ],
+        "internalPropertyName": "llmObsMLApp",
         "default": null
       }
     ],
@@ -819,6 +836,10 @@
       {
         "implementation": "A",
         "type": "string",
+        "configurationNames": [
+          "llmobs.projectName"
+        ],
+        "internalPropertyName": "llmObsProjectName",
         "default": null
       }
     ],
@@ -826,6 +847,7 @@
       {
         "implementation": "A",
         "type": "string",
+        "internalPropertyName": "llmObsPromptsCacheDir",
         "default": null
       }
     ],
@@ -843,6 +865,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "llmObsPromptsFileCacheEnabled",
         "default": "false"
       }
     ],
@@ -895,6 +918,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "profilerHotspots",
         "default": "true"
       }
     ],
@@ -923,6 +947,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "profilerEndpoints",
         "default": "true"
       }
     ],
@@ -1035,6 +1060,11 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "configurationNames": [
+          "runtimeMetrics.enabled",
+          "runtimeMetrics"
+        ],
+        "internalPropertyName": "runtimeMetrics",
         "default": "false"
       }
     ],
@@ -1042,6 +1072,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "runtimeMetricsV2",
         "default": "true"
       }
     ],
@@ -1049,6 +1080,10 @@
       {
         "implementation": "E",
         "type": "string",
+        "configurationNames": [
+          "service"
+        ],
+        "internalPropertyName": "serviceName",
         "default": null
       }
     ],
@@ -1126,6 +1161,7 @@
       {
         "implementation": "C",
         "type": "string",
+        "internalPropertyName": "site",
         "default": "datadoghq.com"
       }
     ],
@@ -1147,6 +1183,9 @@
       {
         "implementation": "A",
         "type": "map",
+        "configurationNames": [
+          "tags"
+        ],
         "default": ""
       }
     ],
@@ -1252,6 +1291,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "spanPoolEnabled",
         "default": "false"
       }
     ],
@@ -1259,6 +1299,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "traceID128BitEnabled",
         "default": "true"
       }
     ],
@@ -1315,6 +1356,7 @@
       {
         "implementation": "B",
         "type": "boolean",
+        "internalPropertyName": "traceAnalyticsEnabled",
         "default": "false"
       }
     ],
@@ -1392,6 +1434,7 @@
       {
         "implementation": "B",
         "type": "boolean",
+        "internalPropertyName": "debug",
         "default": "false"
       }
     ],
@@ -1399,6 +1442,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "debugAbandonedSpans",
         "default": "false"
       }
     ],
@@ -1406,6 +1450,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "debugStack",
         "default": "true"
       }
     ],
@@ -1441,6 +1486,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "injectEventBridge",
         "default": "true"
       }
     ],
@@ -1672,6 +1718,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "injectKinesis",
         "default": "true"
       }
     ],
@@ -1693,6 +1740,7 @@
       {
         "implementation": "A",
         "type": "string",
+        "internalPropertyName": "logDirectory",
         "default": null
       }
     ],
@@ -1756,6 +1804,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "traceOTelEnabled",
         "default": "false"
       }
     ],
@@ -1763,6 +1812,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "otelSemanticsEnabled",
         "default": "false"
       }
     ],
@@ -1770,6 +1820,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "partialFlushEnabled",
         "default": "false"
       }
     ],
@@ -1777,6 +1828,9 @@
       {
         "implementation": "B",
         "type": "int",
+        "configurationNames": [
+          "flushMinSpans"
+        ],
         "default": "1000"
       }
     ],
@@ -1791,6 +1845,10 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "configurationNames": [
+          "spanComputePeerService"
+        ],
+        "internalPropertyName": "peerServiceDefaultsEnabled",
         "default": "false"
       }
     ],
@@ -1805,6 +1863,7 @@
       {
         "implementation": "B",
         "type": "string",
+        "internalPropertyName": "propagationBehaviorExtract",
         "default": "continue"
       }
     ],
@@ -1812,6 +1871,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "propagationExtractFirst",
         "default": "false"
       }
     ],
@@ -1945,6 +2005,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "injectSFN",
         "default": "true"
       }
     ],
@@ -1952,6 +2013,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "injectSNS",
         "default": "true"
       }
     ],
@@ -1987,6 +2049,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "injectSQS",
         "default": "true"
       }
     ],
@@ -1994,6 +2057,10 @@
       {
         "implementation": "C",
         "type": "boolean",
+        "configurationNames": [
+          "startupLogs"
+        ],
+        "internalPropertyName": "logStartup",
         "default": "true"
       }
     ],
@@ -2022,6 +2089,10 @@
       {
         "implementation": "B",
         "type": "boolean",
+        "configurationNames": [
+          "stats"
+        ],
+        "internalPropertyName": "statsComputationEnabled",
         "default": "true"
       }
     ],
@@ -2064,6 +2135,7 @@
       {
         "implementation": "A",
         "type": "boolean",
+        "internalPropertyName": "universalVersion",
         "default": "false"
       }
     ],
@@ -2120,6 +2192,10 @@
       {
         "implementation": "A",
         "type": "string",
+        "configurationNames": [
+          "version"
+        ],
+        "internalPropertyName": "version",
         "default": ""
       }
     ],
@@ -2134,14 +2210,18 @@
       {
         "implementation": "A",
         "type": "int",
-        "default": "512"
+        "internalPropertyName": "blrpMaxExportBatchSize",
+        "default": "512",
+        "allowed": "[1-9][0-9]*"
       }
     ],
     "OTEL_BLRP_MAX_QUEUE_SIZE": [
       {
         "implementation": "A",
         "type": "int",
-        "default": "2048"
+        "internalPropertyName": "blrpMaxQueueSize",
+        "default": "2048",
+        "allowed": "[1-9][0-9]*"
       }
     ],
     "OTEL_BLRP_SCHEDULE_DELAY": [
@@ -2327,6 +2407,7 @@
       {
         "implementation": "B",
         "type": "boolean",
+        "internalPropertyName": "otelSDKDisabled",
         "default": null
       }
     ],

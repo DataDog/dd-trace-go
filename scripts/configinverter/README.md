@@ -18,6 +18,20 @@ From the root of `dd-trace-go` run the following command to generate the file:
 go run ./scripts/configinverter/main.go generate
 ```
 
+Use `generate-core` to validate the manifest and resolve defaults with libdatadog.
+This requires Cargo on the development machine. An entry with an
+`internalPropertyName` generates a typed initialization method for that field
+on the configuration singleton. Use `configurationNames` to declare the
+programmatic names for the same setting. Tracer startup options write to the
+singleton through its typed setters.
+
+```sh
+go run ./scripts/configinverter/main.go generate-core
+```
+
+With a custom `-output`, pass `-config-output` to select the output directory
+for the singleton initialization methods.
+
 ### Check for missing generated keys
 
 Keys are automatically added to the JSON file when detected in a `go test` scenario. After running test
@@ -58,8 +72,10 @@ If your test passes it's probably not testing what it should.
 [embedmd]:# (tmp/help.txt)
 ```txt
 Usage of ./configinverter:
+  -config-output string
+        Path to the singleton output directory for generate-core (./internal/config with the default registry output)
   -input string
-    	Path to the input file (default "./internal/env/supported_configurations.json")
+        Path to the input file (default "./internal/env/supported_configurations.json")
   -output string
-    	Path to the output directory (default "./internal/env")
+        Path to the registry output directory (default "./internal/env")
 ```

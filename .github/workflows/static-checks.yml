@@ -228,6 +228,10 @@ jobs:
         # @go-hygiene group and on every push, so a regression in the tool
         # blocks the PR instead of merging silently.
         run: cd scripts/errtrackaudit && GOWORK=off go test -race -count=1 ./...
+      - name: Test configaudit module
+        run: |
+          source .github/workflows/apps/go-retry.sh
+          GOWORK=off retry_on_corruption go -C scripts/configaudit test -race -count=1 ./...
 
   check-docs:
     needs: [changes, warm-tools-cache]
@@ -428,6 +432,14 @@ jobs:
           cache: false
       - name: Verify supported_configurations.json and generated code are in sync
         run: go run ./scripts/configinverter/main.go check
+      - name: Validate schema and regenerate Go configuration
+        env:
+          RUSTUP_TOOLCHAIN: "1.91.1"
+        run: |
+          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+          cargo test --locked --manifest-path scripts/configinverter/core-schema/Cargo.toml
+          go run ./scripts/configinverter/main.go generate-core
+          git diff --exit-code -- internal/env/supported_configurations.gen.go internal/config/manifest_config.gen.go
 
   checklocks:
     needs: [changes, warm-tools-cache]

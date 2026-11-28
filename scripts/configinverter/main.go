@@ -10,10 +10,16 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"go/token"
 	"log/slog"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/dave/jennifer/jen"
 
@@ -21,12 +27,15 @@ import (
 )
 
 func main() {
+	const defaultRegistryOutput = "./internal/env"
 	var (
-		input  string
-		output string
+		input        string
+		output       string
+		configOutput string
 	)
 	flag.StringVar(&input, "input", "./internal/env/supported_configurations.json", "Path to the input file")
-	flag.StringVar(&output, "output", "./internal/env", "Path to the output directory")
+	flag.StringVar(&output, "output", defaultRegistryOutput, "Path to the registry output directory")
+	flag.StringVar(&configOutput, "config-output", "", "Path to the singleton output directory for generate-core (./internal/config with the default registry output)")
 	flag.Parse()
 
 	// Get command and keys from positional arguments
@@ -41,7 +50,12 @@ func main() {
 	var err error
 	switch command {
 	case "generate":
-		err = generate(input, output)
+		err = generate(input, output, false, "")
+	case "generate-core":
+		if configOutput == "" && output == defaultRegistryOutput {
+			configOutput = "./internal/config"
+		}
+		err = generate(input, output, true, configOutput)
 	case "check":
 		err = check(input)
 	case "add":
@@ -63,10 +77,13 @@ type supportedConfiguration struct {
 }
 
 type configurationImplementation struct {
-	Implementation string   `json:"implementation"`
-	Type           string   `json:"type"`
-	Default        *string  `json:"default"`
-	Aliases        []string `json:"aliases,omitempty"`
+	Implementation       string   `json:"implementation"`
+	Type                 string   `json:"type"`
+	ConfigurationNames   []string `json:"configurationNames,omitempty"`
+	InternalPropertyName string   `json:"internalPropertyName,omitempty"`
+	Default              *string  `json:"default"`
+	Allowed              string   `json:"allowed,omitempty"`
+	Aliases              []string `json:"aliases,omitempty"`
 	// Sensitive marks a configuration whose value must not be reported in
 	// configuration telemetry. When set on any implementation of a key, that key
 	// is emitted in the generated SensitiveConfigurations set.
@@ -75,13 +92,35 @@ type configurationImplementation struct {
 
 // generate generates the supported configurations map from the supported configurations
 // JSON file.
-func generate(input, output string) error {
+func generate(input, output string, compileSchema bool, configOutput string) error {
 	cfg, err := getSupportedConfigurations(input)
 	if err != nil {
 		return fmt.Errorf("error getting supported configuration keys: %w", err)
 	}
 
 	keys := sortSupportedConfigurationsKeys(cfg)
+	var initializers *jen.File
+	if compileSchema {
+		settings, err := compileConfigSchema(input)
+		if err != nil {
+			return err
+		}
+		keys = make([]string, 0, len(settings))
+		for key := range settings {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		if configOutput != "" {
+			initializers, err = configInitializers(cfg, settings, keys)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	patterns, err := allowedPatterns(cfg)
+	if err != nil {
+		return err
+	}
 
 	slog.Info("supported configuration keys count", "count", len(keys))
 
@@ -136,19 +175,139 @@ func generate(input, output string) error {
 		}
 		g.Line()
 	})
+	f.Line()
+	f.Comment("AllowedConfigurationValues matches the complete parsed value for a configuration.")
+	f.Var().Id("AllowedConfigurationValues").Op("=").Map(jen.String()).Op("*").Qual("regexp", "Regexp").
+		ValuesFunc(func(g *jen.Group) {
+			for _, key := range keys {
+				if pattern, ok := patterns[key]; ok {
+					g.Add(jen.Line(), jen.Lit(key), jen.Op(":"), jen.Qual("regexp", "MustCompile").Call(jen.Lit(pattern)))
+				}
+			}
+			g.Line()
+		})
 
-	if err := f.Save(output + "/supported_configurations.gen.go"); err != nil {
+	if initializers != nil {
+		if err := initializers.Save(filepath.Join(configOutput, "manifest_config.gen.go")); err != nil {
+			return fmt.Errorf("save configuration initializers: %w", err)
+		}
+	}
+	if err := f.Save(filepath.Join(output, "supported_configurations.gen.go")); err != nil {
 		return fmt.Errorf("error saving file: %w", err)
 	}
 
 	return nil
 }
 
+type compiledSetting struct {
+	Name     string `json:"name"`
+	Property string `json:"property"`
+	Resolved *struct {
+		Value struct {
+			Value json.RawMessage `json:"value"`
+		} `json:"value"`
+	} `json:"resolved"`
+}
+
+func compileConfigSchema(input string) (map[string]compiledSetting, error) {
+	compiler := exec.Command("cargo", "run", "--locked", "--quiet",
+		"--manifest-path", "scripts/configinverter/core-schema/Cargo.toml", "--", input)
+	compiler.Stderr = os.Stderr
+	output, err := compiler.Output()
+	if err != nil {
+		return nil, fmt.Errorf("compile configuration schema: %w", err)
+	}
+
+	var compiled []compiledSetting
+	if err := json.Unmarshal(output, &compiled); err != nil {
+		return nil, fmt.Errorf("read compiled configuration settings: %w", err)
+	}
+	settings := make(map[string]compiledSetting, len(compiled))
+	for _, setting := range compiled {
+		settings[setting.Name] = setting
+	}
+	return settings, nil
+}
+
+func configInitializers(cfg *supportedConfiguration, settings map[string]compiledSetting, keys []string) (*jen.File, error) {
+	const (
+		providerPath  = "github.com/DataDog/dd-trace-go/v2/internal/config/provider"
+		telemetryPath = "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	)
+	f := jen.NewFile("config")
+	f.HeaderComment("Copyright 2026-Present Datadog, Inc. https://www.datadoghq.com/")
+	f.HeaderComment("SPDX-License-Identifier: Apache-2.0")
+	f.HeaderComment("Code generated by configinverter generate-core. DO NOT EDIT.")
+	f.ImportName(providerPath, "provider")
+
+	methods := make(map[string]string)
+	for _, key := range keys {
+		setting := settings[key]
+		for _, implementation := range cfg.SupportedConfigurations[key] {
+			if implementation.InternalPropertyName == "" {
+				continue
+			}
+			field := setting.Property
+			first, size := utf8.DecodeRuneInString(field)
+			if field != implementation.InternalPropertyName || !token.IsIdentifier(field) || !unicode.IsLower(first) {
+				return nil, fmt.Errorf("invalid Config field %q for %q", implementation.InternalPropertyName, key)
+			}
+			method := "load" + string(unicode.ToUpper(first)) + field[size:]
+			if previous, exists := methods[method]; exists {
+				return nil, fmt.Errorf("Config initializer %s is bound to both %q and %q", method, previous, key)
+			}
+			methods[method] = key
+			value := json.RawMessage("null")
+			if setting.Resolved != nil {
+				value = setting.Resolved.Value.Value
+			}
+			read, err := configRead(setting.Name, implementation.Type, value)
+			if err != nil {
+				return nil, fmt.Errorf("initialize Config.%s from %q: %w", field, key, err)
+			}
+			initializer := f.Func().Params(jen.Id("c").Op("*").Id("Config")).Id(method).
+				Params(jen.Id("p").Op("*").Qual(providerPath, "Provider"))
+			target := jen.Id("c").Dot(field)
+			if implementation.Type == "boolean" {
+				initializer.Params(jen.Id("origin").Qual(telemetryPath, "Origin")).Block(
+					jen.List(target, jen.Id("origin")).Op("=").Add(read),
+					jen.Return(jen.Id("origin")),
+				)
+			} else {
+				initializer.Block(target.Op("=").Add(read))
+			}
+			f.Line()
+		}
+	}
+	return f, nil
+}
+
+func configRead(key, kind string, value json.RawMessage) (*jen.Statement, error) {
+	read := jen.Id("p")
+	switch kind {
+	case "string":
+		var fallback string
+		err := json.Unmarshal(value, &fallback)
+		return read.Dot("GetString").Call(jen.Lit(key), jen.Lit(fallback)), err
+	case "boolean":
+		var fallback bool
+		err := json.Unmarshal(value, &fallback)
+		return read.Dot("GetBoolWithOrigin").Call(jen.Lit(key), jen.Lit(fallback)), err
+	case "int":
+		var fallback int32
+		err := json.Unmarshal(value, &fallback)
+		return read.Dot("GetIntWithValidator").Call(jen.Lit(key), jen.Lit(int(fallback)), jen.Nil()), err
+	default:
+		return nil, fmt.Errorf("unsupported singleton field type %q", kind)
+	}
+}
+
 // check verifies that there is no difference between the supported configurations
-// JSON file and the generated Go code. It validates four things:
+// JSON file and the generated Go code. It validates:
 //   - SupportedConfigurations: exact key-set match (no missing, no extra)
 //   - SensitiveConfigurations: exact key-set match (no missing, no extra)
 //   - keyAliases: exact alias-set match per key (no missing, no extra)
+//   - AllowedConfigurationValues: exact match of the anchored regexps
 //   - JSON sort order: the JSON file must be byte-identical to its canonical form
 func check(input string) error {
 	rawJSON, err := os.ReadFile(input)
@@ -162,6 +321,21 @@ func check(input string) error {
 	}
 
 	var failures []string
+	patterns, err := allowedPatterns(cfg)
+	if err != nil {
+		return err
+	}
+	for key, pattern := range patterns {
+		compiled := env.AllowedConfigurationValues[key]
+		if compiled == nil || compiled.String() != pattern {
+			failures = append(failures, fmt.Sprintf("AllowedConfigurationValues: %q differs from JSON", key))
+		}
+	}
+	for key := range env.AllowedConfigurationValues {
+		if _, ok := patterns[key]; !ok {
+			failures = append(failures, fmt.Sprintf("AllowedConfigurationValues: %q is missing from JSON", key))
+		}
+	}
 
 	// --- SupportedConfigurations: JSON ↔ generated ---
 	jsonKeys := sortSupportedConfigurationsKeys(cfg)
@@ -302,7 +476,7 @@ func add(input, output string, newKeys []string) error {
 		return fmt.Errorf("error adding supported configuration keys to file: %w", err)
 	}
 
-	if err := generate(input, output); err != nil {
+	if err := generate(input, output, false, ""); err != nil {
 		return fmt.Errorf("error running generate command after adding supported configuration keys: %w", err)
 	}
 
@@ -343,6 +517,31 @@ func collectAliasMap(cfg *supportedConfiguration) map[string][]string {
 		}
 	}
 	return result
+}
+
+func allowedPatterns(cfg *supportedConfiguration) (map[string]string, error) {
+	patterns := make(map[string]string)
+	for name, implementations := range cfg.SupportedConfigurations {
+		for _, implementation := range implementations {
+			if implementation.Allowed == "" {
+				continue
+			}
+			switch implementation.Type {
+			case "string", "boolean", "int", "decimal":
+			default:
+				return nil, fmt.Errorf("allowed regexp requires a scalar setting for %q", name)
+			}
+			pattern := `\A(?:` + implementation.Allowed + `)\z`
+			if _, err := regexp.Compile(pattern); err != nil {
+				return nil, fmt.Errorf("invalid allowed regexp for %q: %w", name, err)
+			}
+			if previous, exists := patterns[name]; exists && previous != pattern {
+				return nil, fmt.Errorf("multiple allowed regexps for %q", name)
+			}
+			patterns[name] = pattern
+		}
+	}
+	return patterns, nil
 }
 
 // sensitiveConfigurationKeys returns the sorted list of configuration keys that have

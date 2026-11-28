@@ -10,14 +10,16 @@ import (
 	"go/ast"
 	"go/constant"
 	"go/types"
+	"slices"
 	"strings"
 
 	"golang.org/x/tools/go/packages"
+	"golang.org/x/tools/go/types/typeutil"
 )
 
-// providerGetterPrefixes are the method names on *provider.Provider that read
+// providerGetters are the method names on *provider.Provider that read
 // a DD_* config value. Keep in sync with internal/config/provider/provider.go.
-var providerGetterPrefixes = []string{
+var providerGetters = []string{
 	"GetString", "GetStringWithValidator", "GetStringWithOrigin",
 	"GetBool", "GetBoolWithOrigin",
 	"GetInt", "GetIntWithValidator",
@@ -26,18 +28,8 @@ var providerGetterPrefixes = []string{
 	"GetMap",
 }
 
-func isProviderGetter(name string) bool {
-	for _, p := range providerGetterPrefixes {
-		if name == p {
-			return true
-		}
-	}
-	return false
-}
-
-// loadMigrated walks the loadConfig function inside the package at pkgDir and
-// returns the set of DD_* keys passed as the first argument to any provider
-// getter call.
+// loadMigrated finds configuration keys read by loadConfig and its
+// statically resolved package-local calls.
 func loadMigrated(pkgDir string) (map[string]struct{}, error) {
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |
@@ -58,44 +50,60 @@ func loadMigrated(pkgDir string) (map[string]struct{}, error) {
 
 	out := make(map[string]struct{})
 	for _, pkg := range pkgs {
-		for _, file := range pkg.Syntax {
-			ast.Inspect(file, func(n ast.Node) bool {
-				fn, ok := n.(*ast.FuncDecl)
-				if !ok || fn.Name.Name != "loadConfig" {
-					return true
-				}
-				ast.Inspect(fn.Body, func(inner ast.Node) bool {
-					call, ok := inner.(*ast.CallExpr)
-					if !ok {
-						return true
-					}
-					if len(call.Args) == 0 {
-						return true
-					}
-					// Match provider getters (p.GetString, p.GetBool, ...) by
-					// selector name, and additionally pick up any call whose
-					// first argument resolves to a DD_*-prefixed string
-					// constant (e.g. env.Get("DD_API_KEY"),
-					// env.Lookup("DD_TRACE_SOURCE_HOSTNAME")). A config is
-					// considered migrated if it is read inside loadConfig.
-					providerCall := false
-					if sel, ok := call.Fun.(*ast.SelectorExpr); ok && isProviderGetter(sel.Sel.Name) {
-						providerCall = true
-					}
-					key, resolved := resolveStringArg(pkg.TypesInfo, call.Args[0])
-					if !resolved {
-						return true
-					}
-					if providerCall || strings.HasPrefix(key, "DD_") {
-						out[key] = struct{}{}
-					}
-					return true
-				})
-				return false
-			})
-		}
+		collectMigratedReads(pkg, out)
 	}
 	return out, nil
+}
+
+func collectMigratedReads(pkg *packages.Package, out map[string]struct{}) {
+	bodies := make(map[*types.Func]*ast.BlockStmt)
+	var loadConfig *types.Func
+	for _, file := range pkg.Syntax {
+		for _, declaration := range file.Decls {
+			fn, ok := declaration.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			symbol, ok := pkg.TypesInfo.Defs[fn.Name].(*types.Func)
+			if !ok {
+				continue
+			}
+			bodies[symbol] = fn.Body
+			if fn.Recv == nil && fn.Name.Name == "loadConfig" {
+				loadConfig = symbol
+			}
+		}
+	}
+
+	var visit func(*types.Func)
+	visit = func(symbol *types.Func) {
+		body := bodies[symbol]
+		if body == nil {
+			return
+		}
+		delete(bodies, symbol)
+		ast.Inspect(body, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			visit(typeutil.StaticCallee(pkg.TypesInfo, call))
+			if len(call.Args) == 0 {
+				return true
+			}
+			key, resolved := resolveStringArg(pkg.TypesInfo, call.Args[0])
+			if !resolved {
+				return true
+			}
+			sel, isSelector := call.Fun.(*ast.SelectorExpr)
+			// Legacy startup readers also pass DD_* keys to wrappers outside the provider.
+			if strings.HasPrefix(key, "DD_") || isSelector && slices.Contains(providerGetters, sel.Sel.Name) {
+				out[key] = struct{}{}
+			}
+			return true
+		})
+	}
+	visit(loadConfig)
 }
 
 // resolveStringArg returns the string value of expr if it is a constant string
