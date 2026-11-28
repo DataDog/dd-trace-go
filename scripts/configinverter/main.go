@@ -230,7 +230,10 @@ func compileConfigSchema(input string) (map[string]compiledSetting, error) {
 }
 
 func configInitializers(cfg *supportedConfiguration, settings map[string]compiledSetting, keys []string) (*jen.File, error) {
-	const providerPath = "github.com/DataDog/dd-trace-go/v2/internal/config/provider"
+	const (
+		providerPath  = "github.com/DataDog/dd-trace-go/v2/internal/config/provider"
+		telemetryPath = "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+	)
 	f := jen.NewFile("config")
 	f.HeaderComment("Copyright 2026-Present Datadog, Inc. https://www.datadoghq.com/")
 	f.HeaderComment("SPDX-License-Identifier: Apache-2.0")
@@ -262,9 +265,17 @@ func configInitializers(cfg *supportedConfiguration, settings map[string]compile
 			if err != nil {
 				return nil, fmt.Errorf("initialize Config.%s from %q: %w", field, key, err)
 			}
-			f.Func().Params(jen.Id("c").Op("*").Id("Config")).Id(method).
-				Params(jen.Id("p").Op("*").Qual(providerPath, "Provider")).
-				Block(jen.Id("c").Dot(field).Op("=").Add(read))
+			initializer := f.Func().Params(jen.Id("c").Op("*").Id("Config")).Id(method).
+				Params(jen.Id("p").Op("*").Qual(providerPath, "Provider"))
+			target := jen.Id("c").Dot(field)
+			if implementation.Type == "boolean" {
+				initializer.Params(jen.Id("origin").Qual(telemetryPath, "Origin")).Block(
+					jen.List(target, jen.Id("origin")).Op("=").Add(read),
+					jen.Return(jen.Id("origin")),
+				)
+			} else {
+				initializer.Block(target.Op("=").Add(read))
+			}
 			f.Line()
 		}
 	}
@@ -281,7 +292,7 @@ func configRead(key, kind string, value json.RawMessage) (*jen.Statement, error)
 	case "boolean":
 		var fallback bool
 		err := json.Unmarshal(value, &fallback)
-		return read.Dot("GetBool").Call(jen.Lit(key), jen.Lit(fallback)), err
+		return read.Dot("GetBoolWithOrigin").Call(jen.Lit(key), jen.Lit(fallback)), err
 	case "int":
 		var fallback int32
 		err := json.Unmarshal(value, &fallback)

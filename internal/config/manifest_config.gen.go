@@ -4,7 +4,10 @@
 
 package config
 
-import "github.com/DataDog/dd-trace-go/v2/internal/config/provider"
+import (
+	"github.com/DataDog/dd-trace-go/v2/internal/config/provider"
+	telemetry "github.com/DataDog/dd-trace-go/v2/internal/telemetry"
+)
 
 func (c *Config) loadApiKey(p *provider.Provider) {
 	c.apiKey = p.GetString("DD_API_KEY", "")
@@ -18,8 +21,9 @@ func (c *Config) loadCiVisibilityAgentlessURL(p *provider.Provider) {
 	c.ciVisibilityAgentlessURL = p.GetString("DD_CIVISIBILITY_AGENTLESS_URL", "")
 }
 
-func (c *Config) loadDataStreamsMonitoringEnabled(p *provider.Provider) {
-	c.dataStreamsMonitoringEnabled = p.GetBool("DD_DATA_STREAMS_ENABLED", false)
+func (c *Config) loadDataStreamsMonitoringEnabled(p *provider.Provider) (origin telemetry.Origin) {
+	c.dataStreamsMonitoringEnabled, origin = p.GetBoolWithOrigin("DD_DATA_STREAMS_ENABLED", false)
+	return origin
 }
 
 func (c *Config) loadEnv(p *provider.Provider) {
@@ -30,20 +34,23 @@ func (c *Config) loadFeatureFlagsAgentlessBaseURL(p *provider.Provider) {
 	c.featureFlagsAgentlessBaseURL = p.GetString("DD_FEATURE_FLAGS_CONFIGURATION_SOURCE_AGENTLESS_BASE_URL", "")
 }
 
-func (c *Config) loadFlagEvalTelemetryOptOutEnabled(p *provider.Provider) {
-	c.flagEvalTelemetryOptOutEnabled = p.GetBool("DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED", false)
+func (c *Config) loadFlagEvalTelemetryOptOutEnabled(p *provider.Provider) (origin telemetry.Origin) {
+	c.flagEvalTelemetryOptOutEnabled, origin = p.GetBoolWithOrigin("DD_FEATURE_FLAGS_EVALUATION_TELEMETRY_PER_SUBJECT_OPT_OUT_ENABLED", false)
+	return origin
 }
 
 func (c *Config) loadFeatureFlagsExperimentationOptOutMode(p *provider.Provider) {
 	c.featureFlagsExperimentationOptOutMode = p.GetString("DD_FEATURE_FLAGS_EXPERIMENTATION_OPT_OUT_MODE", "disabled")
 }
 
-func (c *Config) loadFeatureFlagsExposuresDatadogLoggingEnabled(p *provider.Provider) {
-	c.featureFlagsExposuresDatadogLoggingEnabled = p.GetBool("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", true)
+func (c *Config) loadFeatureFlagsExposuresDatadogLoggingEnabled(p *provider.Provider) (origin telemetry.Origin) {
+	c.featureFlagsExposuresDatadogLoggingEnabled, origin = p.GetBoolWithOrigin("DD_FEATURE_FLAGS_EXPOSURES_DATADOG_LOGGING_ENABLED", true)
+	return origin
 }
 
-func (c *Config) loadLlmObsEnabled(p *provider.Provider) {
-	c.llmObsEnabled = p.GetBool("DD_LLMOBS_ENABLED", false)
+func (c *Config) loadLlmObsEnabled(p *provider.Provider) (origin telemetry.Origin) {
+	c.llmObsEnabled, origin = p.GetBoolWithOrigin("DD_LLMOBS_ENABLED", false)
+	return origin
 }
 
 func (c *Config) loadLlmObsMLApp(p *provider.Provider) {
@@ -58,24 +65,29 @@ func (c *Config) loadLlmObsPromptsCacheDir(p *provider.Provider) {
 	c.llmObsPromptsCacheDir = p.GetString("DD_LLMOBS_PROMPTS_CACHE_DIR", "")
 }
 
-func (c *Config) loadLlmObsPromptsFileCacheEnabled(p *provider.Provider) {
-	c.llmObsPromptsFileCacheEnabled = p.GetBool("DD_LLMOBS_PROMPTS_FILE_CACHE_ENABLED", false)
+func (c *Config) loadLlmObsPromptsFileCacheEnabled(p *provider.Provider) (origin telemetry.Origin) {
+	c.llmObsPromptsFileCacheEnabled, origin = p.GetBoolWithOrigin("DD_LLMOBS_PROMPTS_FILE_CACHE_ENABLED", false)
+	return origin
 }
 
-func (c *Config) loadProfilerHotspots(p *provider.Provider) {
-	c.profilerHotspots = p.GetBool("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
+func (c *Config) loadProfilerHotspots(p *provider.Provider) (origin telemetry.Origin) {
+	c.profilerHotspots, origin = p.GetBoolWithOrigin("DD_PROFILING_CODE_HOTSPOTS_COLLECTION_ENABLED", true)
+	return origin
 }
 
-func (c *Config) loadProfilerEndpoints(p *provider.Provider) {
-	c.profilerEndpoints = p.GetBool("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", true)
+func (c *Config) loadProfilerEndpoints(p *provider.Provider) (origin telemetry.Origin) {
+	c.profilerEndpoints, origin = p.GetBoolWithOrigin("DD_PROFILING_ENDPOINT_COLLECTION_ENABLED", true)
+	return origin
 }
 
-func (c *Config) loadRuntimeMetrics(p *provider.Provider) {
-	c.runtimeMetrics = p.GetBool("DD_RUNTIME_METRICS_ENABLED", false)
+func (c *Config) loadRuntimeMetrics(p *provider.Provider) (origin telemetry.Origin) {
+	c.runtimeMetrics, origin = p.GetBoolWithOrigin("DD_RUNTIME_METRICS_ENABLED", false)
+	return origin
 }
 
-func (c *Config) loadRuntimeMetricsV2(p *provider.Provider) {
-	c.runtimeMetricsV2 = p.GetBool("DD_RUNTIME_METRICS_V2_ENABLED", true)
+func (c *Config) loadRuntimeMetricsV2(p *provider.Provider) (origin telemetry.Origin) {
+	c.runtimeMetricsV2, origin = p.GetBoolWithOrigin("DD_RUNTIME_METRICS_V2_ENABLED", true)
+	return origin
 }
 
 func (c *Config) loadServiceName(p *provider.Provider) {
@@ -86,84 +98,107 @@ func (c *Config) loadSite(p *provider.Provider) {
 	c.site = p.GetString("DD_SITE", "datadoghq.com")
 }
 
-func (c *Config) loadSpanPoolEnabled(p *provider.Provider) {
-	c.spanPoolEnabled = p.GetBool("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", false)
+func (c *Config) loadSpanPoolEnabled(p *provider.Provider) (origin telemetry.Origin) {
+	c.spanPoolEnabled, origin = p.GetBoolWithOrigin("DD_TRACER_EXPERIMENTAL_SPAN_POOL_ENABLED", false)
+	return origin
 }
 
-func (c *Config) loadTraceID128BitEnabled(p *provider.Provider) {
-	c.traceID128BitEnabled = p.GetBool("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
+func (c *Config) loadTraceID128BitEnabled(p *provider.Provider) (origin telemetry.Origin) {
+	c.traceID128BitEnabled, origin = p.GetBoolWithOrigin("DD_TRACE_128_BIT_TRACEID_GENERATION_ENABLED", true)
+	return origin
 }
 
-func (c *Config) loadTraceAnalyticsEnabled(p *provider.Provider) {
-	c.traceAnalyticsEnabled = p.GetBool("DD_TRACE_ANALYTICS_ENABLED", false)
+func (c *Config) loadTraceAnalyticsEnabled(p *provider.Provider) (origin telemetry.Origin) {
+	c.traceAnalyticsEnabled, origin = p.GetBoolWithOrigin("DD_TRACE_ANALYTICS_ENABLED", false)
+	return origin
 }
 
-func (c *Config) loadDebug(p *provider.Provider) {
-	c.debug = p.GetBool("DD_TRACE_DEBUG", false)
+func (c *Config) loadDebug(p *provider.Provider) (origin telemetry.Origin) {
+	c.debug, origin = p.GetBoolWithOrigin("DD_TRACE_DEBUG", false)
+	return origin
 }
 
-func (c *Config) loadDebugAbandonedSpans(p *provider.Provider) {
-	c.debugAbandonedSpans = p.GetBool("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
+func (c *Config) loadDebugAbandonedSpans(p *provider.Provider) (origin telemetry.Origin) {
+	c.debugAbandonedSpans, origin = p.GetBoolWithOrigin("DD_TRACE_DEBUG_ABANDONED_SPANS", false)
+	return origin
 }
 
-func (c *Config) loadDebugStack(p *provider.Provider) {
-	c.debugStack = p.GetBool("DD_TRACE_DEBUG_STACK", true)
+func (c *Config) loadDebugStack(p *provider.Provider) (origin telemetry.Origin) {
+	c.debugStack, origin = p.GetBoolWithOrigin("DD_TRACE_DEBUG_STACK", true)
+	return origin
 }
 
-func (c *Config) loadInjectEventBridge(p *provider.Provider) {
-	c.injectEventBridge = p.GetBool("DD_TRACE_EVENTBRIDGE_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
+func (c *Config) loadInjectEventBridge(p *provider.Provider) (origin telemetry.Origin) {
+	c.injectEventBridge, origin = p.GetBoolWithOrigin("DD_TRACE_EVENTBRIDGE_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
+	return origin
 }
 
-func (c *Config) loadInjectKinesis(p *provider.Provider) {
-	c.injectKinesis = p.GetBool("DD_TRACE_KINESIS_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
+func (c *Config) loadInjectKinesis(p *provider.Provider) (origin telemetry.Origin) {
+	c.injectKinesis, origin = p.GetBoolWithOrigin("DD_TRACE_KINESIS_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
+	return origin
 }
 
 func (c *Config) loadLogDirectory(p *provider.Provider) {
 	c.logDirectory = p.GetString("DD_TRACE_LOG_DIRECTORY", "")
 }
 
-func (c *Config) loadTraceOTelEnabled(p *provider.Provider) {
-	c.traceOTelEnabled = p.GetBool("DD_TRACE_OTEL_ENABLED", false)
+func (c *Config) loadTraceOTelEnabled(p *provider.Provider) (origin telemetry.Origin) {
+	c.traceOTelEnabled, origin = p.GetBoolWithOrigin("DD_TRACE_OTEL_ENABLED", false)
+	return origin
 }
 
-func (c *Config) loadOtelSemanticsEnabled(p *provider.Provider) {
-	c.otelSemanticsEnabled = p.GetBool("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
+func (c *Config) loadOtelSemanticsEnabled(p *provider.Provider) (origin telemetry.Origin) {
+	c.otelSemanticsEnabled, origin = p.GetBoolWithOrigin("DD_TRACE_OTEL_SEMANTICS_ENABLED", false)
+	return origin
 }
 
-func (c *Config) loadPartialFlushEnabled(p *provider.Provider) {
-	c.partialFlushEnabled = p.GetBool("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
+func (c *Config) loadPartialFlushEnabled(p *provider.Provider) (origin telemetry.Origin) {
+	c.partialFlushEnabled, origin = p.GetBoolWithOrigin("DD_TRACE_PARTIAL_FLUSH_ENABLED", false)
+	return origin
 }
 
-func (c *Config) loadPeerServiceDefaultsEnabled(p *provider.Provider) {
-	c.peerServiceDefaultsEnabled = p.GetBool("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+func (c *Config) loadPeerServiceDefaultsEnabled(p *provider.Provider) (origin telemetry.Origin) {
+	c.peerServiceDefaultsEnabled, origin = p.GetBoolWithOrigin("DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED", false)
+	return origin
 }
 
 func (c *Config) loadPropagationBehaviorExtract(p *provider.Provider) {
 	c.propagationBehaviorExtract = p.GetString("DD_TRACE_PROPAGATION_BEHAVIOR_EXTRACT", "continue")
 }
 
-func (c *Config) loadPropagationExtractFirst(p *provider.Provider) {
-	c.propagationExtractFirst = p.GetBool("DD_TRACE_PROPAGATION_EXTRACT_FIRST", false)
+func (c *Config) loadPropagationExtractFirst(p *provider.Provider) (origin telemetry.Origin) {
+	c.propagationExtractFirst, origin = p.GetBoolWithOrigin("DD_TRACE_PROPAGATION_EXTRACT_FIRST", false)
+	return origin
 }
 
-func (c *Config) loadInjectSFN(p *provider.Provider) {
-	c.injectSFN = p.GetBool("DD_TRACE_SFN_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
+func (c *Config) loadInjectSFN(p *provider.Provider) (origin telemetry.Origin) {
+	c.injectSFN, origin = p.GetBoolWithOrigin("DD_TRACE_SFN_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
+	return origin
 }
 
-func (c *Config) loadInjectSNS(p *provider.Provider) {
-	c.injectSNS = p.GetBool("DD_TRACE_SNS_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
+func (c *Config) loadInjectSNS(p *provider.Provider) (origin telemetry.Origin) {
+	c.injectSNS, origin = p.GetBoolWithOrigin("DD_TRACE_SNS_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
+	return origin
 }
 
-func (c *Config) loadInjectSQS(p *provider.Provider) {
-	c.injectSQS = p.GetBool("DD_TRACE_SQS_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
+func (c *Config) loadInjectSQS(p *provider.Provider) (origin telemetry.Origin) {
+	c.injectSQS, origin = p.GetBoolWithOrigin("DD_TRACE_SQS_INJECT_DATADOG_ATTRIBUTE_ENABLED", true)
+	return origin
 }
 
-func (c *Config) loadLogStartup(p *provider.Provider) {
-	c.logStartup = p.GetBool("DD_TRACE_STARTUP_LOGS", true)
+func (c *Config) loadLogStartup(p *provider.Provider) (origin telemetry.Origin) {
+	c.logStartup, origin = p.GetBoolWithOrigin("DD_TRACE_STARTUP_LOGS", true)
+	return origin
 }
 
-func (c *Config) loadUniversalVersion(p *provider.Provider) {
-	c.universalVersion = p.GetBool("DD_TRACE_UNIVERSAL_VERSION_ENABLED", false)
+func (c *Config) loadStatsComputationEnabled(p *provider.Provider) (origin telemetry.Origin) {
+	c.statsComputationEnabled, origin = p.GetBoolWithOrigin("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
+	return origin
+}
+
+func (c *Config) loadUniversalVersion(p *provider.Provider) (origin telemetry.Origin) {
+	c.universalVersion, origin = p.GetBoolWithOrigin("DD_TRACE_UNIVERSAL_VERSION_ENABLED", false)
+	return origin
 }
 
 func (c *Config) loadVersion(p *provider.Provider) {
@@ -178,6 +213,7 @@ func (c *Config) loadBlrpMaxQueueSize(p *provider.Provider) {
 	c.blrpMaxQueueSize = p.GetIntWithValidator("OTEL_BLRP_MAX_QUEUE_SIZE", 2048, nil)
 }
 
-func (c *Config) loadOtelSDKDisabled(p *provider.Provider) {
-	c.otelSDKDisabled = p.GetBool("OTEL_SDK_DISABLED", false)
+func (c *Config) loadOtelSDKDisabled(p *provider.Provider) (origin telemetry.Origin) {
+	c.otelSDKDisabled, origin = p.GetBoolWithOrigin("OTEL_SDK_DISABLED", false)
+	return origin
 }

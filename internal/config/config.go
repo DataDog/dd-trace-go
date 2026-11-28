@@ -457,7 +457,7 @@ func loadConfig() *Config {
 	cfg.partialFlushMinSpans = p.GetIntWithValidator("DD_TRACE_PARTIAL_FLUSH_MIN_SPANS", 1000, validatePartialFlushMinSpans)
 	cfg.loadPartialFlushEnabled(p)
 	cfg.payloadQueueSize = p.GetIntWithValidator("DD_TRACE_PAYLOAD_QUEUE_SIZE", DefaultPayloadQueueSize, validatePayloadQueueSize)
-	cfg.statsComputationEnabled = p.GetBool("DD_TRACE_STATS_COMPUTATION_ENABLED", true)
+	statsOrigin := cfg.loadStatsComputationEnabled(p)
 	cfg.loadTraceAnalyticsEnabled(p)
 	cfg.experimentalFeaturesEnabled = p.GetBool("DD_TRACE_EXPERIMENTAL_FEATURES_ENABLED", false)
 	if v := p.GetString("DD_TRACE_STATS_ADDITIONAL_TAGS", ""); v != "" {
@@ -549,14 +549,12 @@ func loadConfig() *Config {
 	if origin != telemetry.OriginDefault {
 		cfg.otlpSpanMetricsEnabled = &v
 		// When OTEL_TRACES_SPAN_METRICS_ENABLED is explicitly set to false and
-		// DD_TRACE_STATS_COMPUTATION_ENABLED was not explicitly configured,
+		// DD_TRACE_STATS_COMPUTATION_ENABLED has no valid override,
 		// disable native stats too: the user has signalled they want no SDK-side
 		// span metrics, and the Datadog-Client-Computed-Stats header should
 		// therefore be absent.
-		if !v {
-			if _, statsOrigin := p.GetBoolWithOrigin("DD_TRACE_STATS_COMPUTATION_ENABLED", true); statsOrigin == telemetry.OriginDefault {
-				cfg.SetStatsComputationEnabled(false, telemetry.OriginCalculated)
-			}
+		if !v && statsOrigin == telemetry.OriginDefault {
+			cfg.SetStatsComputationEnabled(false, telemetry.OriginCalculated)
 		}
 	}
 	// Only warn about OTLP metrics values the span metrics exporter is going to use.

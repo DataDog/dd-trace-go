@@ -1403,6 +1403,29 @@ func TestOTLPSpanMetricsConfig(t *testing.T) {
 		assert.Equal(t, TraceProtocolV1, cfg.RequestedTraceProtocol())
 	})
 
+	t.Run("span metrics fallback reads the stats source once", func(t *testing.T) {
+		resetGlobalState()
+		defer resetGlobalState()
+
+		rec := new(telemetrytest.RecordClient)
+		defer telemetry.MockClient(rec)()
+
+		const stats = "DD_TRACE_STATS_COMPUTATION_ENABLED"
+		t.Setenv(stats, "invalid")
+		t.Setenv("OTEL_TRACES_SPAN_METRICS_ENABLED", "false")
+
+		assert.False(t, Get().StatsComputationEnabled())
+
+		var attempts int
+		for _, c := range rec.Configuration {
+			if c.Name == stats && c.Origin == telemetry.OriginEnvVar {
+				assert.Equal(t, "invalid", c.Value)
+				attempts++
+			}
+		}
+		assert.Equal(t, 1, attempts)
+	})
+
 	t.Run("OTelSemanticsEnabled disabled by default", func(t *testing.T) {
 		resetGlobalState()
 		defer resetGlobalState()

@@ -228,6 +228,10 @@ jobs:
         # @go-hygiene group and on every push, so a regression in the tool
         # blocks the PR instead of merging silently.
         run: cd scripts/errtrackaudit && GOWORK=off go test -race -count=1 ./...
+      - name: Test configaudit module
+        run: |
+          source .github/workflows/apps/go-retry.sh
+          GOWORK=off retry_on_corruption go -C scripts/configaudit test -race -count=1 ./...
 
   check-docs:
     needs: [changes, warm-tools-cache]
