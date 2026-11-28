@@ -8,11 +8,13 @@ package fiber
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -175,6 +177,53 @@ func TestCustomError(t *testing.T) {
 	assert.Equal("gofiber/fiber.v2", span.Tag(ext.Component))
 	assert.Equal(componentName, span.Integration())
 	assert.Equal("/err", span.Tag(ext.HTTPRoute))
+}
+
+func TestReturnedErrorStatus(t *testing.T) {
+	for name, tc := range map[string]struct {
+		err        error
+		wantStatus int
+	}{
+		"fiber error":           {err: fiber.NewError(http.StatusNotFound, "nope"), wantStatus: 404},
+		"plain error":           {err: errors.New("boom"), wantStatus: 500},
+		"wrapped fiber error":   {err: fmt.Errorf("lookup: %w", fiber.ErrForbidden), wantStatus: 403},
+		"typed nil fiber error": {err: (*fiber.Error)(nil), wantStatus: 500},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert := assert.New(t)
+			mt := mocktracer.Start()
+			defer mt.Stop()
+
+			// Fiber's default error handler dereferences a typed nil
+			// *fiber.Error itself, so render the error without reading it.
+			router := fiber.New(fiber.Config{
+				ErrorHandler: func(c *fiber.Ctx, err error) error {
+					if fe, ok := err.(*fiber.Error); ok && fe == nil {
+						return c.SendStatus(http.StatusInternalServerError)
+					}
+					return fiber.DefaultErrorHandler(c, err)
+				},
+			})
+			router.Use(Middleware())
+			router.Get("/err", func(c *fiber.Ctx) error { return tc.err })
+
+			response, err := router.Test(httptest.NewRequest("GET", "/err", nil))
+			assert.NoError(err)
+			defer response.Body.Close()
+			assert.Equal(tc.wantStatus, response.StatusCode)
+
+			spans := mt.FinishedSpans()
+			if !assert.Len(spans, 1) {
+				return
+			}
+			assert.Equal(strconv.Itoa(tc.wantStatus), spans[0].Tag(ext.HTTPCode))
+			if fe, ok := tc.err.(*fiber.Error); ok && fe == nil {
+				// a typed nil error has no message to read
+				return
+			}
+			assert.Equal(tc.err.Error(), spans[0].Tag(ext.ErrorMsg))
+		})
+	}
 }
 
 func TestUserContext(t *testing.T) {
