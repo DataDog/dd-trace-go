@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	_ "unsafe" // for go:linkname
+	"unsafe"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/internal"
@@ -109,6 +109,12 @@ func borrowSpanFromContext(ctx context.Context, exclude *tracer.Span) (*tracer.S
 //go:linkname setBorrowedStatus github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.setBorrowedStatus
 func setBorrowedStatus(sc *tracer.SpanContext, ok bool, description string)
 
+//go:linkname loadBridgeView github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.loadBridgeView
+func loadBridgeView(s *tracer.Span) unsafe.Pointer
+
+//go:linkname publishBridgeView github.com/DataDog/dd-trace-go/v2/ddtrace/tracer.publishBridgeView
+func publishBridgeView(s *tracer.Span, view unsafe.Pointer) unsafe.Pointer
+
 // bridgeSpanFromContext returns the span that trace.SpanFromContext must return when ctx
 // carries a Datadog span that the OpenTelemetry span key does not show. current is the
 // value of the OpenTelemetry span key in ctx. The function returns false when
@@ -154,7 +160,14 @@ func bridgeSpanFromContext(ctx context.Context, current any) (oteltrace.Span, bo
 	if ddSpan == nil {
 		return nil, false
 	}
-	return &borrowedSpan{ddSpan: ddSpan, sc: sc, tracer: bridgeOTelTracer()}, true
+	if cached := loadBridgeView(ddSpan); cached != nil {
+		return (*borrowedSpan)(cached), true
+	}
+	view := &borrowedSpan{ddSpan: ddSpan, sc: sc, tracer: bridgeOTelTracer()}
+	if prev := publishBridgeView(ddSpan, unsafe.Pointer(view)); prev != unsafe.Pointer(view) {
+		return (*borrowedSpan)(prev), true
+	}
+	return view, true
 }
 
 // borrowedSpan is the OpenTelemetry view of a span that a Datadog integration started and

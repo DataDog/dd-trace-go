@@ -7,6 +7,7 @@ package tracer
 
 import (
 	"context"
+	"unsafe"
 
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/ext"
 )
@@ -58,6 +59,22 @@ func borrowSpanFromContext(ctx context.Context, exclude *Span) (*Span, *SpanCont
 		return nil, nil
 	}
 	return sc.bridgeOwner, sc
+}
+
+func loadBridgeView(s *Span) unsafe.Pointer {
+	return unsafe.Pointer(s.bridgeView.Load())
+}
+
+func publishBridgeView(s *Span, view unsafe.Pointer) unsafe.Pointer {
+	fresh := (*struct{})(view)
+	for {
+		if old := s.bridgeView.Load(); old != nil {
+			return unsafe.Pointer(old)
+		}
+		if s.bridgeView.CompareAndSwap(nil, fresh) {
+			return view
+		}
+	}
 }
 
 // setBorrowedStatus sets the error state of the span of sc for an OpenTelemetry view. Ok has the
