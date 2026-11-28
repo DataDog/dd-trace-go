@@ -63,6 +63,7 @@ func startHandlerScope(ctx *fasthttp.RequestCtx, cfg *config) *handlerScope {
 		instrumentation.ServiceNameWithSource(cfg.serviceName, cfg.serviceSource),
 	}
 	spanOpts = append(spanOpts, defaultSpanOptions(ctx)...)
+	spanOpts = append(spanOpts, headerTagOptions(ctx, cfg.headerTags)...)
 	carrier := &HTTPHeadersCarrier{ReqHeader: &ctx.Request.Header}
 	if sctx, err := tracer.Extract(carrier); err == nil {
 		if sctx != nil && sctx.SpanLinks() != nil {

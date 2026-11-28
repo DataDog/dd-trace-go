@@ -25,6 +25,7 @@ import (
 	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/DataDog/dd-trace-go/v2/instrumentation"
 	instrhttptrace "github.com/DataDog/dd-trace-go/v2/instrumentation/httptrace"
+	"github.com/DataDog/dd-trace-go/v2/instrumentation/testutils"
 )
 
 const errMsg = "This is an error!"
@@ -470,4 +471,142 @@ func TestSecurityTestingHeadersWithDisabledHeaderNamesNormalizing(t *testing.T) 
 	span := spans[0]
 	assert.Equal("true", span.Tag(ext.HTTPRequestHeaders+".x-datadog-endpoint-scan"))
 	assert.Equal("test-value", span.Tag(ext.HTTPRequestHeaders+".x-datadog-security-test"))
+}
+
+func TestWithHeaderTags(t *testing.T) {
+	doRequest := func(t *testing.T, addr string) {
+		req, err := http.NewRequest("GET", addr+"/any", nil)
+		require.NoError(t, err)
+		req.Header.Set("X-Multi", "val")
+		req.Header.Add("X-Multi", "val2")
+		req.Header.Set("2header", "2val")
+		req.Header.Set("3header", "3val")
+		resp, err := (&http.Client{}).Do(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+	}
+
+	t.Run("default-off", func(t *testing.T) {
+		addr := startServer(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		doRequest(t, addr)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		instrumentation.NewHeaderTags([]string{"X-Multi", "2header", "3header"}).Iter(func(_ string, tag string) {
+			assert.NotContains(t, spans[0].Tags(), tag)
+		})
+	})
+	t.Run("integration", func(t *testing.T) {
+		addr := startServer(t, WithHeaderTags([]string{"X-Multi", "2header:tag"}))
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		doRequest(t, addr)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		tags := spans[0].Tags()
+		assert.Equal(t, "val,val2", tags["http.request.headers.x-multi"])
+		assert.Equal(t, "2val", tags["tag"])
+		assert.NotContains(t, tags, "http.request.headers.3header")
+	})
+	t.Run("global", func(t *testing.T) {
+		testutils.SetGlobalHeaderTags(t, "3header")
+		addr := startServer(t)
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		doRequest(t, addr)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		tags := spans[0].Tags()
+		assert.Equal(t, "3val", tags["http.request.headers.3header"])
+		assert.NotContains(t, tags, "http.request.headers.2header")
+	})
+	t.Run("override", func(t *testing.T) {
+		testutils.SetGlobalHeaderTags(t, "3header")
+		addr := startServer(t, WithHeaderTags([]string{"2header"}))
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		doRequest(t, addr)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		tags := spans[0].Tags()
+		assert.Equal(t, "2val", tags["http.request.headers.2header"])
+		assert.NotContains(t, tags, "http.request.headers.3header")
+	})
+	t.Run("special-headers", func(t *testing.T) {
+		addr := startServer(t, WithHeaderTags([]string{"User-Agent:ua", "Content-Type:ct"}))
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		req, err := http.NewRequest("GET", addr+"/any", nil)
+		require.NoError(t, err)
+		req.Header.Set("User-Agent", "tester/1.0")
+		req.Header.Set("Content-Type", "text/plain")
+		resp, err := (&http.Client{}).Do(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, "tester/1.0", spans[0].Tag("ua"))
+		assert.Equal(t, "text/plain", spans[0].Tag("ct"))
+	})
+	t.Run("disabled-header-names-normalizing", func(t *testing.T) {
+		addr := startServerWithConfig(t, func(server *fasthttp.Server) {
+			server.DisableHeaderNamesNormalizing = true
+		}, WithHeaderTags([]string{"2header"}))
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		doRequest(t, addr)
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		assert.Equal(t, "2val", spans[0].Tag("http.request.headers.2header"))
+	})
+	t.Run("colliding-tag-names", func(t *testing.T) {
+		addr := startServer(t, WithHeaderTags([]string{"X.User", "X_User"}))
+		mt := mocktracer.Start()
+		defer mt.Stop()
+
+		req, err := http.NewRequest("GET", addr+"/any", nil)
+		require.NoError(t, err)
+		req.Header.Set("X.User", "alice")
+		req.Header.Set("X_User", "bob")
+		resp, err := (&http.Client{}).Do(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+
+		spans := mt.FinishedSpans()
+		require.Len(t, spans, 1)
+		// Both headers map to the same tag. The values must not be joined.
+		assert.Contains(t, []any{"alice", "bob"}, spans[0].Tag("http.request.headers.x_user"))
+	})
+}
+
+func TestHeaderTagOptionsSingleOption(t *testing.T) {
+	var fctx fasthttp.RequestCtx
+	fctx.Request.Header.Set("X-One", "1")
+	fctx.Request.Header.Set("X-Two", "2")
+	fctx.Request.Header.Set("X-Three", "3")
+	cfg := &config{}
+	WithHeaderTags([]string{"X-One", "X-Two", "X-Three"})(cfg)
+
+	opts := headerTagOptions(&fctx, cfg.headerTags)
+	require.Len(t, opts, 1)
+
+	var ssc tracer.StartSpanConfig
+	ssc.Tags = make(map[string]any)
+	opts[0](&ssc)
+	assert.Equal(t, "1", ssc.Tags["http.request.headers.x-one"])
+	assert.Equal(t, "2", ssc.Tags["http.request.headers.x-two"])
+	assert.Equal(t, "3", ssc.Tags["http.request.headers.x-three"])
 }
